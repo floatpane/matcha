@@ -97,6 +97,10 @@ Matcha is written in **Go**. To build it manually:
    ./matcha
    ```
 
+### Open Build Service
+
+Also, a build of Matcha is available on [OBS](https://build.opensuse.org/package/show/home:mantarimay:apps/matcha). Thanks, @mantarimay!
+
 ## Features
 
 ### Email Management
