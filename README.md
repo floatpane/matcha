@@ -16,30 +16,86 @@
 
 [![Go CI](https://github.com/floatpane/matcha/actions/workflows/ci.yml/badge.svg)](https://github.com/floatpane/matcha/actions/workflows/ci.yml)
 [![Go Release](https://github.com/floatpane/matcha/actions/workflows/release.yml/badge.svg)](https://github.com/floatpane/matcha/actions/workflows/release.yml)
-[![GoReleaser](https://img.shields.io/badge/GoReleaser-blue?logo=goreleaser)](https://goreleaser.com)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/floatpane/matcha)](https://golang.org)
 [![Go Report Card](https://goreportcard.com/badge/github.com/floatpane/matcha)](https://goreportcard.com/report/github.com/floatpane/matcha)
-
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/floatpane/matcha)](https://github.com/floatpane/matcha/releases)
 [![GitHub All Releases](https://img.shields.io/github/downloads/floatpane/matcha/total)](https://github.com/floatpane/matcha/releases)
-[![GitHub stars](https://img.shields.io/github/stars/floatpane/matcha)](https://github.com/floatpane/matcha/stargazers)
-[![GitHub issues](https://img.shields.io/github/issues/floatpane/matcha)](https://github.com/floatpane/matcha/issues)
 [![GitHub license](https://img.shields.io/github/license/floatpane/matcha)](https://github.com/floatpane/matcha/blob/master/LICENSE)
 
-[![macOS](https://img.shields.io/badge/macOS-Supported-000000?logo=macos&logoColor=white)](https://www.apple.com/macos)
-[![Linux](https://img.shields.io/badge/Linux-Supported-FCC624?logo=linux&logoColor=black)](https://www.linux.org/)
-[![Homebrew](https://img.shields.io/badge/homebrew-tap-21648C.svg?logo=homebrew)](https://brew.sh)
-[![Snapcraft](https://img.shields.io/badge/snap-available-82BEA0.svg?logo=snapcraft)](https://snapcraft.io/matcha)
-
-[![Patreon](https://img.shields.io/badge/Patreon-F96854?logo=patreon&logoColor=white)](https://patreon.com/andrinoff)
-[![GitHub contributors](https://img.shields.io/github/contributors/floatpane/matcha)](https://github.com/floatpane/matcha/graphs/contributors)
-[![Built with Bubble Tea](https://img.shields.io/badge/Built%20with-Bubble%20Tea-FF75B7.svg)](https://github.com/charmbracelet/bubbletea)
-
 **A powerful, feature-rich email client for your terminal.** Built with Go and the Bubble Tea TUI framework, Matcha brings a beautiful, modern email experience to the command line with support for rich content, multiple accounts, and advanced terminal features.
+
 
 </div>
 
 ![Demo GIF](public/assets/demo.gif)
+
+## Installation
+There are several ways to install Matcha:
+
+### Package Managers
+
+#### Homebrew (macOS & Linux)
+
+```bash
+brew tap floatpane/matcha
+brew install floatpane/matcha/matcha
+```
+
+After installation, run:
+
+```bash
+matcha
+```
+
+> [!WARNING]
+> If you have the [*"other"* Matcha](https://github.com/piqoni/matcha) already installed, you will have to rename the executable
+
+
+### Install using Snap (Linux)
+
+> [!NOTE]
+> When using Snap, the config folder is going to be located at `~/snap/matcha/36/.config`, see [why](https://github.com/floatpane/matcha/issues/117)
+
+```bash
+sudo snap install matcha
+```
+
+### Build from Source
+
+Matcha is written in **Go**. To build it manually:
+
+1. Ensure you have Go installed (`go version`).
+2. Clone the repository:
+
+   ```bash
+   git clone https://github.com/floatpane/matcha.git
+   ```
+
+3. Navigate to the project folder:
+
+   ```bash
+   cd matcha
+   ```
+
+4. Build the binary:
+
+   ```bash
+   go build -trimpath -ldflags="-s -w" -o matcha
+   ```
+
+   For an even smaller binary, compress with UPX (install via `brew install upx` or `apt install upx`):
+
+   ```bash
+   upx --best --lzma matcha
+   ```
+
+> [!WARNING]
+> UPX compression does NOT work on macOS ARM builds. See [#97](https://github.com/floatpane/matcha/pull/97)
+
+5. Run it:
+   ```bash
+   ./matcha
+   ```
 
 ## Features
 
@@ -166,70 +222,7 @@ For Gmail and iCloud, you'll need to generate an **app-specific password**:
 - **Gmail**: [Create an App Password](https://support.google.com/accounts/answer/185833)
 - **iCloud**: [Generate an app-specific password](https://support.apple.com/en-us/HT204397)
 
-## Installation
 
-There are several ways to install Matcha:
-
-### Package Managers
-
-#### Homebrew (macOS & Linux)
-
-```bash
-brew tap floatpane/matcha
-brew install floatpane/matcha/matcha
-```
-
-After installation, run:
-
-> [!WARNING]
-> If you have the [*"other"* Matcha](https://github.com/piqoni/matcha) already installed, you will have to rename the executable
-
-```bash
-matcha
-```
-
-### Install using Snap
-
-```bash
-sudo snap install matcha
-```
-
-### Build from Source
-
-Matcha is written in **Go**. To build it manually:
-
-1. Ensure you have Go installed (`go version`).
-2. Clone the repository:
-
-   ```bash
-   git clone https://github.com/floatpane/matcha.git
-   ```
-
-3. Navigate to the project folder:
-
-   ```bash
-   cd matcha
-   ```
-
-4. Build the binary:
-
-   ```bash
-   go build -trimpath -ldflags="-s -w" -o matcha
-   ```
-
-   For an even smaller binary, compress with UPX (install via `brew install upx` or `apt install upx`):
-
-   ```bash
-   upx --best --lzma matcha
-   ```
-
-> [!WARNING]
-> UPX compression does NOT work on macOS ARM builds. See [#97](https://github.com/floatpane/matcha/pull/97)
-
-5. Run it:
-   ```bash
-   ./matcha
-   ```
 
 ## Usage
 
@@ -405,8 +398,6 @@ Built with:
 
 <div align="center">
 
-**[Report Bug](https://github.com/floatpane/matcha/issues)** · **[Request Feature](https://github.com/floatpane/matcha/issues)** · **[Contributing Guidelines](https://github.com/floatpane/matcha/blob/master/CONTRIBUTING.md)**
-
-Made with ♥ for terminal enthusiasts
+**[Report Bug](https://github.com/floatpane/matcha/issues/new?template=bug_report.md)** · **[Request Feature](https://github.com/floatpane/matcha/issues/new?template=feature_request.md)** · **[Contributing Guidelines](https://github.com/floatpane/matcha/blob/master/CONTRIBUTING.md)**
 
 </div>
