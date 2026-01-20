@@ -99,7 +99,7 @@ Matcha is written in **Go**. To build it manually:
 
 ### Open Build Service
 
-Also, a build of Matcha is available on [OBS](https://build.opensuse.org/package/show/home:mantarimay:apps/matcha). Thanks, @mantarimay!
+Also, a build of Matcha is available on [OBS](https://build.opensuse.org/package/show/home:mantarimay:apps/matcha). Thanks, [@mantarimay](https://github.com/mantarimay)!
 
 ## Features
 
