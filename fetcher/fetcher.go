@@ -134,6 +134,35 @@ func getSentMailbox(account *config.Account) string {
 	}
 }
 
+// getMailboxByAttr finds a mailbox with the given IMAP attribute (e.g., \All, \Sent, \Trash).
+func getMailboxByAttr(c *client.Client, attr string) (string, error) {
+	mailboxes := make(chan *imap.MailboxInfo, 10)
+	done := make(chan error, 1)
+	go func() {
+		done <- c.List("", "*", mailboxes)
+	}()
+
+	var foundMailbox string
+	for m := range mailboxes {
+		for _, a := range m.Attributes {
+			if a == attr {
+				foundMailbox = m.Name
+				break
+			}
+		}
+	}
+
+	if err := <-done; err != nil {
+		return "", err
+	}
+
+	if foundMailbox == "" {
+		return "", fmt.Errorf("no mailbox found with attribute %s", attr)
+	}
+
+	return foundMailbox, nil
+}
+
 func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset uint32) ([]Email, error) {
 	c, err := connect(account)
 	if err != nil {
@@ -586,14 +615,33 @@ func DeleteEmailFromMailbox(account *config.Account, mailbox string, uid uint32)
 }
 
 func ArchiveEmailFromMailbox(account *config.Account, mailbox string, uid uint32) error {
+	c, err := connect(account)
+	if err != nil {
+		return err
+	}
+	defer c.Logout()
+
 	var archiveMailbox string
 	switch account.ServiceProvider {
 	case "gmail":
-		archiveMailbox = "[Gmail]/All Mail"
+		// For Gmail, find the mailbox with the \All attribute
+		archiveMailbox, err = getMailboxByAttr(c, imap.AllAttr)
+		if err != nil {
+			// Fallback to hardcoded path if attribute lookup fails
+			archiveMailbox = "[Gmail]/All Mail"
+		}
 	default:
 		archiveMailbox = "Archive"
 	}
-	return moveEmail(account, uid, mailbox, archiveMailbox)
+
+	if _, err := c.Select(mailbox, false); err != nil {
+		return err
+	}
+
+	seqSet := new(imap.SeqSet)
+	seqSet.AddNum(uid)
+
+	return c.UidMove(seqSet, archiveMailbox)
 }
 
 // Convenience wrappers defaulting to INBOX for existing call sites.
