@@ -219,15 +219,15 @@ func (m *Inbox) updateList() {
 func (m *Inbox) getTitle() string {
 	var title string
 	if m.currentAccountID == "" {
-		title = m.getBaseTitleWithCount() + " - All Accounts"
+		title = m.getBaseTitle() + " - All Accounts"
 	} else {
-		title = m.getBaseTitleWithCount()
+		title = m.getBaseTitle()
 		for _, acc := range m.accounts {
 			if acc.ID == m.currentAccountID {
 				if acc.Name != "" {
-					title = fmt.Sprintf("%s - %s", m.getBaseTitleWithCount(), acc.Name)
+					title = fmt.Sprintf("%s - %s", m.getBaseTitle(), acc.Name)
 				} else {
-					title = fmt.Sprintf("%s - %s", m.getBaseTitleWithCount(), acc.Email)
+					title = fmt.Sprintf("%s - %s", m.getBaseTitle(), acc.Email)
 				}
 				break
 			}
@@ -249,10 +249,6 @@ func (m *Inbox) getBaseTitle() string {
 	default:
 		return "Inbox"
 	}
-}
-
-func (m *Inbox) getBaseTitleWithCount() string {
-	return fmt.Sprintf("%s (%d)", m.getBaseTitle(), m.emailsCount)
 }
 
 func (m *Inbox) Init() tea.Cmd {
