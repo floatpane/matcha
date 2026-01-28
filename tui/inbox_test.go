@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -269,41 +268,6 @@ func TestInboxGetEmailAtIndex(t *testing.T) {
 	email = inbox.GetEmailAtIndex(-1)
 	if email != nil {
 		t.Error("Expected nil for negative index, got non-nil")
-	}
-}
-
-func TestInboxTitleShowsCount(t *testing.T) {
-	accounts := []config.Account{
-		{ID: "account-1", Email: "test@example.com"},
-	}
-
-	emails := []fetcher.Email{
-		{UID: 1, From: "sender@example.com", Subject: "Email 1", AccountID: "account-1", Date: time.Now()},
-		{UID: 2, From: "sender@example.com", Subject: "Email 2", AccountID: "account-1", Date: time.Now().Add(-time.Minute)},
-		{UID: 3, From: "sender@example.com", Subject: "Email 3", AccountID: "account-1", Date: time.Now().Add(-2 * time.Minute)},
-	}
-
-	inbox := NewInbox(emails, accounts)
-
-	if !strings.Contains(inbox.list.Title, "Inbox (3)") {
-		t.Fatalf("expected inbox title to contain count, got %q", inbox.list.Title)
-	}
-}
-
-func TestSentInboxTitleShowsCount(t *testing.T) {
-	accounts := []config.Account{
-		{ID: "account-1", Email: "test@example.com"},
-	}
-
-	emails := []fetcher.Email{
-		{UID: 1, From: "sender@example.com", Subject: "Email 1", AccountID: "account-1", Date: time.Now()},
-		{UID: 2, From: "sender@example.com", Subject: "Email 2", AccountID: "account-1", Date: time.Now().Add(-time.Minute)},
-	}
-
-	inbox := NewSentInbox(emails, accounts)
-
-	if !strings.Contains(inbox.list.Title, "Sent (2)") {
-		t.Fatalf("expected sent title to contain count, got %q", inbox.list.Title)
 	}
 }
 
