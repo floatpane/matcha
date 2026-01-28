@@ -125,9 +125,9 @@ func TestInboxSingleAccount(t *testing.T) {
 
 	inbox := NewInbox(emails, accounts)
 
-	// Should have 2 tabs: ALL + 1 account
-	if len(inbox.tabs) != 2 {
-		t.Errorf("Expected 2 tabs, got %d", len(inbox.tabs))
+	// Should have 0 tabs (visually)
+	if len(inbox.tabs) != 1 {
+		t.Errorf("Expected 1 phantom tab, got %d", len(inbox.tabs))
 	}
 }
 
