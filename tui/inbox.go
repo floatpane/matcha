@@ -106,11 +106,15 @@ func NewSentInbox(emails []fetcher.Email, accounts []config.Account) *Inbox {
 }
 
 func NewInboxWithMailbox(emails []fetcher.Email, accounts []config.Account, mailbox MailboxKind) *Inbox {
-	// Build tabs: "ALL" + one per account
-	tabs := []AccountTab{{ID: "", Label: "ALL", Email: ""}}
-	for _, acc := range accounts {
-		label := acc.Email
-		tabs = append(tabs, AccountTab{ID: acc.ID, Label: label, Email: acc.Email})
+	// Build tabs: empty for single account, "ALL" + accounts for multiple
+	var tabs []AccountTab
+	if len(accounts) <= 1 {
+		tabs = []AccountTab{{ID: "", Label: "", Email: ""}}
+	} else {
+		tabs = []AccountTab{{ID: "", Label: "ALL", Email: ""}}
+		for _, acc := range accounts {
+			tabs = append(tabs, AccountTab{ID: acc.ID, Label: acc.Email, Email: acc.Email})
+		}
 	}
 
 	// Group emails by account
@@ -152,7 +156,7 @@ func (m *Inbox) updateList() {
 	if m.currentAccountID == "" {
 		// "ALL" view - show all emails sorted by date
 		displayEmails = m.allEmails
-		showAccountLabel = len(m.accounts) > 1
+		showAccountLabel = !(len(m.accounts) <= 1)
 	} else {
 		// Specific account view
 		displayEmails = m.emailsByAccount[m.currentAccountID]
@@ -520,11 +524,15 @@ func (m *Inbox) SetEmails(emails []fetcher.Email, accounts []config.Account) {
 	m.accounts = accounts
 	m.allEmails = emails
 
-	// Rebuild tabs
-	tabs := []AccountTab{{ID: "", Label: "ALL", Email: ""}}
-	for _, acc := range accounts {
-		label := acc.Email
-		tabs = append(tabs, AccountTab{ID: acc.ID, Label: label, Email: acc.Email})
+	// Rebuild tabs: empty for single account, "ALL" + accounts for multiple
+	var tabs []AccountTab
+	if len(accounts) <= 1 {
+		tabs = []AccountTab{{ID: "", Label: "", Email: ""}}
+	} else {
+		tabs = []AccountTab{{ID: "", Label: "ALL", Email: ""}}
+		for _, acc := range accounts {
+			tabs = append(tabs, AccountTab{ID: acc.ID, Label: acc.Email, Email: acc.Email})
+		}
 	}
 	m.tabs = tabs
 
