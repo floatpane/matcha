@@ -25,10 +25,11 @@ Set BorderRadius 10
 
 Sleep 500ms
 
-# Show the command being typed
-Type "matcha"
-Sleep 500ms
+# Show the command being typed but actually run "go run ."
+Hide
+Type "go run ."
 Enter
+Show
 
 # Wait for app to load and show main menu
 Sleep 2s
@@ -48,6 +49,8 @@ Down
 Sleep 600ms
 
 # Navigate back up to "View Inbox"
+Up
+Sleep 400ms
 Up
 Sleep 400ms
 Up
@@ -117,11 +120,12 @@ Down
 Sleep 400ms
 Down
 Sleep 400ms
+Down
+Sleep 400ms
 Enter
-Sleep 1.5s
 
 # Show settings briefly
-Sleep 1s
+Sleep 1.5s
 
 # Go back to menu
 Escape
