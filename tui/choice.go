@@ -40,7 +40,7 @@ type Choice struct {
 
 func NewChoice() Choice {
 	hasSavedDrafts := config.HasDrafts()
-	choices := []string{"View Inbox", "View Sent", "Compose Email"}
+	choices := []string{"View Inbox", "View Sent", "Trash & Archive", "Compose Email"}
 	if hasSavedDrafts {
 		choices = append(choices, "Drafts")
 	}
@@ -77,6 +77,8 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg { return GoToInboxMsg{} }
 			case "View Sent":
 				return m, func() tea.Msg { return GoToSentInboxMsg{} }
+			case "Trash & Archive":
+				return m, func() tea.Msg { return GoToTrashArchiveMsg{} }
 			case "Compose Email":
 				return m, func() tea.Msg { return GoToSendMsg{} }
 			case "Drafts":

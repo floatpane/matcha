@@ -685,3 +685,258 @@ func ArchiveEmail(account *config.Account, uid uint32) error {
 func ArchiveSentEmail(account *config.Account, uid uint32) error {
 	return ArchiveEmailFromMailbox(account, getSentMailbox(account), uid)
 }
+
+// getTrashMailbox returns the trash mailbox name for the account
+func getTrashMailbox(account *config.Account) string {
+	switch account.ServiceProvider {
+	case "gmail":
+		return "[Gmail]/Trash"
+	case "icloud":
+		return "Deleted Messages"
+	default:
+		return "Trash"
+	}
+}
+
+// getArchiveMailbox returns the archive/all mail mailbox name for the account
+func getArchiveMailbox(account *config.Account) string {
+	switch account.ServiceProvider {
+	case "gmail":
+		return "[Gmail]/All Mail"
+	case "icloud":
+		return "Archive"
+	default:
+		return "Archive"
+	}
+}
+
+// FetchTrashEmails fetches emails from the trash folder
+func FetchTrashEmails(account *config.Account, limit, offset uint32) ([]Email, error) {
+	c, err := connect(account)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Logout()
+
+	// Try to find trash by attribute first
+	trashMailbox, err := getMailboxByAttr(c, imap.TrashAttr)
+	if err != nil {
+		// Fallback to hardcoded path
+		trashMailbox = getTrashMailbox(account)
+	}
+
+	return FetchMailboxEmails(account, trashMailbox, limit, offset)
+}
+
+// FetchArchiveEmails fetches emails from the archive/all mail folder
+// Archive contains all emails, so we match where user is sender OR recipient
+func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email, error) {
+	c, err := connect(account)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Logout()
+
+	// Try to find archive by attribute first (Gmail uses \All)
+	archiveMailbox, err := getMailboxByAttr(c, imap.AllAttr)
+	if err != nil {
+		// Fallback to hardcoded path
+		archiveMailbox = getArchiveMailbox(account)
+	}
+
+	mbox, err := c.Select(archiveMailbox, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if mbox.Messages == 0 {
+		return []Email{}, nil
+	}
+
+	to := mbox.Messages - offset
+	from := uint32(1)
+	if to > limit {
+		from = to - limit + 1
+	}
+
+	if to < 1 {
+		return []Email{}, nil
+	}
+
+	seqset := new(imap.SeqSet)
+	seqset.AddRange(from, to)
+
+	messages := make(chan *imap.Message, limit)
+	done := make(chan error, 1)
+	fetchItems := []imap.FetchItem{imap.FetchEnvelope, imap.FetchUid}
+	go func() {
+		done <- c.Fetch(seqset, fetchItems, messages)
+	}()
+
+	var msgs []*imap.Message
+	for msg := range messages {
+		msgs = append(msgs, msg)
+	}
+
+	if err := <-done; err != nil {
+		return nil, err
+	}
+
+	// Determine which email to filter on: prefer Account.FetchEmail, fallback to Account.Email
+	fetchEmail := strings.ToLower(strings.TrimSpace(account.FetchEmail))
+	if fetchEmail == "" {
+		fetchEmail = strings.ToLower(strings.TrimSpace(account.Email))
+	}
+
+	var emails []Email
+	for _, msg := range msgs {
+		if msg == nil || msg.Envelope == nil {
+			continue
+		}
+
+		var fromAddr string
+		if len(msg.Envelope.From) > 0 {
+			fromAddr = msg.Envelope.From[0].Address()
+		}
+
+		var toAddrList []string
+		for _, addr := range msg.Envelope.To {
+			toAddrList = append(toAddrList, addr.Address())
+		}
+		for _, addr := range msg.Envelope.Cc {
+			toAddrList = append(toAddrList, addr.Address())
+		}
+
+		// For archive/All Mail, match emails where user is sender OR recipient
+		matched := false
+		// Check if user is the sender
+		if strings.EqualFold(strings.TrimSpace(fromAddr), fetchEmail) {
+			matched = true
+		}
+		// Check if user is a recipient
+		if !matched {
+			for _, r := range toAddrList {
+				if strings.EqualFold(strings.TrimSpace(r), fetchEmail) {
+					matched = true
+					break
+				}
+			}
+		}
+
+		if !matched {
+			continue
+		}
+
+		emails = append(emails, Email{
+			UID:       msg.Uid,
+			From:      fromAddr,
+			To:        toAddrList,
+			Subject:   decodeHeader(msg.Envelope.Subject),
+			Date:      msg.Envelope.Date,
+			AccountID: account.ID,
+		})
+	}
+
+	// Reverse to get newest first
+	for i, j := 0, len(emails)-1; i < j; i, j = i+1, j-1 {
+		emails[i], emails[j] = emails[j], emails[i]
+	}
+
+	return emails, nil
+}
+
+// FetchTrashEmailBody fetches the body of an email from trash
+func FetchTrashEmailBody(account *config.Account, uid uint32) (string, []Attachment, error) {
+	c, err := connect(account)
+	if err != nil {
+		return "", nil, err
+	}
+	defer c.Logout()
+
+	trashMailbox, err := getMailboxByAttr(c, imap.TrashAttr)
+	if err != nil {
+		trashMailbox = getTrashMailbox(account)
+	}
+
+	return FetchEmailBodyFromMailbox(account, trashMailbox, uid)
+}
+
+// FetchArchiveEmailBody fetches the body of an email from archive
+func FetchArchiveEmailBody(account *config.Account, uid uint32) (string, []Attachment, error) {
+	c, err := connect(account)
+	if err != nil {
+		return "", nil, err
+	}
+	defer c.Logout()
+
+	archiveMailbox, err := getMailboxByAttr(c, imap.AllAttr)
+	if err != nil {
+		archiveMailbox = getArchiveMailbox(account)
+	}
+
+	return FetchEmailBodyFromMailbox(account, archiveMailbox, uid)
+}
+
+// FetchTrashAttachment fetches an attachment from trash
+func FetchTrashAttachment(account *config.Account, uid uint32, partID string, encoding string) ([]byte, error) {
+	c, err := connect(account)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Logout()
+
+	trashMailbox, err := getMailboxByAttr(c, imap.TrashAttr)
+	if err != nil {
+		trashMailbox = getTrashMailbox(account)
+	}
+
+	return FetchAttachmentFromMailbox(account, trashMailbox, uid, partID, encoding)
+}
+
+// FetchArchiveAttachment fetches an attachment from archive
+func FetchArchiveAttachment(account *config.Account, uid uint32, partID string, encoding string) ([]byte, error) {
+	c, err := connect(account)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Logout()
+
+	archiveMailbox, err := getMailboxByAttr(c, imap.AllAttr)
+	if err != nil {
+		archiveMailbox = getArchiveMailbox(account)
+	}
+
+	return FetchAttachmentFromMailbox(account, archiveMailbox, uid, partID, encoding)
+}
+
+// DeleteTrashEmail permanently deletes an email from trash
+func DeleteTrashEmail(account *config.Account, uid uint32) error {
+	c, err := connect(account)
+	if err != nil {
+		return err
+	}
+	defer c.Logout()
+
+	trashMailbox, err := getMailboxByAttr(c, imap.TrashAttr)
+	if err != nil {
+		trashMailbox = getTrashMailbox(account)
+	}
+
+	return DeleteEmailFromMailbox(account, trashMailbox, uid)
+}
+
+// DeleteArchiveEmail deletes an email from archive (moves to trash)
+func DeleteArchiveEmail(account *config.Account, uid uint32) error {
+	c, err := connect(account)
+	if err != nil {
+		return err
+	}
+	defer c.Logout()
+
+	archiveMailbox, err := getMailboxByAttr(c, imap.AllAttr)
+	if err != nil {
+		archiveMailbox = getArchiveMailbox(account)
+	}
+
+	return DeleteEmailFromMailbox(account, archiveMailbox, uid)
+}

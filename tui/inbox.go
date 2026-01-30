@@ -105,6 +105,14 @@ func NewSentInbox(emails []fetcher.Email, accounts []config.Account) *Inbox {
 	return NewInboxWithMailbox(emails, accounts, MailboxSent)
 }
 
+func NewTrashInbox(emails []fetcher.Email, accounts []config.Account) *Inbox {
+	return NewInboxWithMailbox(emails, accounts, MailboxTrash)
+}
+
+func NewArchiveInbox(emails []fetcher.Email, accounts []config.Account) *Inbox {
+	return NewInboxWithMailbox(emails, accounts, MailboxArchive)
+}
+
 func NewInboxWithMailbox(emails []fetcher.Email, accounts []config.Account, mailbox MailboxKind) *Inbox {
 	// Build tabs: empty for single account, "ALL" + accounts for multiple
 	var tabs []AccountTab
@@ -113,7 +121,12 @@ func NewInboxWithMailbox(emails []fetcher.Email, accounts []config.Account, mail
 	} else {
 		tabs = []AccountTab{{ID: "", Label: "ALL", Email: ""}}
 		for _, acc := range accounts {
-			tabs = append(tabs, AccountTab{ID: acc.ID, Label: acc.Email, Email: acc.Email})
+			// Use FetchEmail for display, fall back to Email if not set
+			displayEmail := acc.FetchEmail
+			if displayEmail == "" {
+				displayEmail = acc.Email
+			}
+			tabs = append(tabs, AccountTab{ID: acc.ID, Label: displayEmail, Email: displayEmail})
 		}
 	}
 
@@ -250,6 +263,10 @@ func (m *Inbox) getBaseTitle() string {
 	switch m.mailbox {
 	case MailboxSent:
 		return "Sent"
+	case MailboxTrash:
+		return "Trash"
+	case MailboxArchive:
+		return "Archive"
 	default:
 		return "Inbox"
 	}

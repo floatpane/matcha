@@ -65,8 +65,13 @@ type mainModel struct {
 	emailsByAcct  map[string][]fetcher.Email
 	sentEmails    []fetcher.Email
 	sentByAcct    map[string][]fetcher.Email
+	trashEmails   []fetcher.Email
+	trashByAcct   map[string][]fetcher.Email
+	archiveEmails []fetcher.Email
+	archiveByAcct map[string][]fetcher.Email
 	inbox         *tui.Inbox
 	sentInbox     *tui.Inbox
+	trashArchive  *tui.TrashArchive
 	width         int
 	height        int
 	err           error
@@ -74,8 +79,10 @@ type mainModel struct {
 
 func newInitialModel(cfg *config.Config) *mainModel {
 	initialModel := &mainModel{
-		emailsByAcct: make(map[string][]fetcher.Email),
-		sentByAcct:   make(map[string][]fetcher.Email),
+		emailsByAcct:  make(map[string][]fetcher.Email),
+		sentByAcct:    make(map[string][]fetcher.Email),
+		trashByAcct:   make(map[string][]fetcher.Email),
+		archiveByAcct: make(map[string][]fetcher.Email),
 	}
 
 	if cfg == nil || !cfg.HasAccounts() {
@@ -112,7 +119,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.current.(type) {
 			case *tui.FilePicker:
 				return m, func() tea.Msg { return tui.CancelFilePickerMsg{} }
-			case *tui.Inbox, *tui.Login:
+			case *tui.Inbox, *tui.Login, *tui.TrashArchive:
 				m.current = tui.NewChoice()
 				return m, m.current.Init()
 			}
@@ -136,6 +143,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tui.MailboxInbox:
 			if m.inbox != nil {
 				m.current = m.inbox
+				return m, nil
+			}
+		case tui.MailboxTrash, tui.MailboxArchive:
+			if m.trashArchive != nil {
+				m.current = m.trashArchive
 				return m, nil
 			}
 		}
@@ -226,6 +238,18 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current = tui.NewStatus("Fetching sent emails from all accounts...")
 		return m, tea.Batch(m.current.Init(), fetchAllAccountsEmails(m.config, tui.MailboxSent))
 
+	case tui.GoToTrashArchiveMsg:
+		if m.config == nil || !m.config.HasAccounts() {
+			m.current = tui.NewLogin()
+			return m, m.current.Init()
+		}
+		m.current = tui.NewStatus("Fetching trash and archive emails...")
+		return m, tea.Batch(
+			m.current.Init(),
+			fetchAllAccountsEmails(m.config, tui.MailboxTrash),
+			fetchAllAccountsEmails(m.config, tui.MailboxArchive),
+		)
+
 	case tui.CachedEmailsLoadedMsg:
 		if msg.Cache == nil {
 			// Cache load failed, fetch normally
@@ -305,6 +329,36 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.current.Init()
 		}
 
+		if msg.Mailbox == tui.MailboxTrash {
+			m.trashByAcct = msg.EmailsByAccount
+			m.trashEmails = flattenAndSort(msg.EmailsByAccount)
+
+			// Create or update trash/archive view
+			if m.trashArchive == nil {
+				m.trashArchive = tui.NewTrashArchive(m.trashEmails, m.archiveEmails, m.config.Accounts)
+			} else {
+				m.trashArchive.SetTrashEmails(m.trashEmails, m.config.Accounts)
+			}
+			m.current = m.trashArchive
+			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			return m, m.current.Init()
+		}
+
+		if msg.Mailbox == tui.MailboxArchive {
+			m.archiveByAcct = msg.EmailsByAccount
+			m.archiveEmails = flattenAndSort(msg.EmailsByAccount)
+
+			// Create or update trash/archive view
+			if m.trashArchive == nil {
+				m.trashArchive = tui.NewTrashArchive(m.trashEmails, m.archiveEmails, m.config.Accounts)
+			} else {
+				m.trashArchive.SetArchiveEmails(m.archiveEmails, m.config.Accounts)
+			}
+			m.current = m.trashArchive
+			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			return m, m.current.Init()
+		}
+
 		m.emailsByAcct = msg.EmailsByAccount
 		m.emails = flattenAndSort(msg.EmailsByAccount)
 
@@ -358,7 +412,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(
 			func() tea.Msg { return tui.FetchingMoreEmailsMsg{} },
-			fetchEmails(account, paginationLimit, msg.Offset, msg.Mailbox),
+			fetchEmailsForMailbox(account, paginationLimit, msg.Offset, msg.Mailbox),
 		)
 
 	case tui.EmailsAppendedMsg:
@@ -368,6 +422,22 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.sentByAcct[msg.AccountID] = append(m.sentByAcct[msg.AccountID], msg.Emails...)
 			m.sentEmails = append(m.sentEmails, msg.Emails...)
+			return m, nil
+		}
+		if msg.Mailbox == tui.MailboxTrash {
+			if m.trashByAcct == nil {
+				m.trashByAcct = make(map[string][]fetcher.Email)
+			}
+			m.trashByAcct[msg.AccountID] = append(m.trashByAcct[msg.AccountID], msg.Emails...)
+			m.trashEmails = append(m.trashEmails, msg.Emails...)
+			return m, nil
+		}
+		if msg.Mailbox == tui.MailboxArchive {
+			if m.archiveByAcct == nil {
+				m.archiveByAcct = make(map[string][]fetcher.Email)
+			}
+			m.archiveByAcct[msg.AccountID] = append(m.archiveByAcct[msg.AccountID], msg.Emails...)
+			m.archiveEmails = append(m.archiveEmails, msg.Emails...)
 			return m, nil
 		}
 		// Inbox
@@ -629,10 +699,19 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != nil {
 			log.Printf("Action failed: %v", msg.Err)
 			m.previousModel = m.current
-			if msg.Mailbox == tui.MailboxSent && m.sentInbox != nil {
-				m.previousModel = m.sentInbox
-			} else if m.inbox != nil {
-				m.previousModel = m.inbox
+			switch msg.Mailbox {
+			case tui.MailboxSent:
+				if m.sentInbox != nil {
+					m.previousModel = m.sentInbox
+				}
+			case tui.MailboxTrash, tui.MailboxArchive:
+				if m.trashArchive != nil {
+					m.previousModel = m.trashArchive
+				}
+			default:
+				if m.inbox != nil {
+					m.previousModel = m.inbox
+				}
 			}
 			m.current = tui.NewStatus(fmt.Sprintf("Error: %v", msg.Err))
 			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
@@ -647,6 +726,17 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.sentInbox != nil {
 				m.sentInbox.RemoveEmail(msg.UID, msg.AccountID)
 				m.current = m.sentInbox
+				m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+				return m, m.current.Init()
+			}
+			m.current = tui.NewChoice()
+			return m, m.current.Init()
+		}
+
+		if msg.Mailbox == tui.MailboxTrash || msg.Mailbox == tui.MailboxArchive {
+			if m.trashArchive != nil {
+				m.trashArchive.RemoveEmail(msg.UID, msg.AccountID, msg.Mailbox)
+				m.current = m.trashArchive
 				m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 				return m, m.current.Init()
 			}
@@ -727,6 +817,14 @@ func (m *mainModel) getEmailByIndex(index int, mailbox tui.MailboxKind) *fetcher
 		if index >= 0 && index < len(m.sentEmails) {
 			return &m.sentEmails[index]
 		}
+	case tui.MailboxTrash:
+		if index >= 0 && index < len(m.trashEmails) {
+			return &m.trashEmails[index]
+		}
+	case tui.MailboxArchive:
+		if index >= 0 && index < len(m.archiveEmails) {
+			return &m.archiveEmails[index]
+		}
 	default:
 		if index >= 0 && index < len(m.emails) {
 			return &m.emails[index]
@@ -741,6 +839,18 @@ func (m *mainModel) getEmailByUIDAndAccount(uid uint32, accountID string, mailbo
 		for i := range m.sentEmails {
 			if m.sentEmails[i].UID == uid && m.sentEmails[i].AccountID == accountID {
 				return &m.sentEmails[i]
+			}
+		}
+	case tui.MailboxTrash:
+		for i := range m.trashEmails {
+			if m.trashEmails[i].UID == uid && m.trashEmails[i].AccountID == accountID {
+				return &m.trashEmails[i]
+			}
+		}
+	case tui.MailboxArchive:
+		for i := range m.archiveEmails {
+			if m.archiveEmails[i].UID == uid && m.archiveEmails[i].AccountID == accountID {
+				return &m.archiveEmails[i]
 			}
 		}
 	default:
@@ -758,6 +868,18 @@ func (m *mainModel) getEmailIndex(uid uint32, accountID string, mailbox tui.Mail
 	case tui.MailboxSent:
 		for i := range m.sentEmails {
 			if m.sentEmails[i].UID == uid && m.sentEmails[i].AccountID == accountID {
+				return i
+			}
+		}
+	case tui.MailboxTrash:
+		for i := range m.trashEmails {
+			if m.trashEmails[i].UID == uid && m.trashEmails[i].AccountID == accountID {
+				return i
+			}
+		}
+	case tui.MailboxArchive:
+		for i := range m.archiveEmails {
+			if m.archiveEmails[i].UID == uid && m.archiveEmails[i].AccountID == accountID {
 				return i
 			}
 		}
@@ -782,6 +904,40 @@ func (m *mainModel) updateEmailBodyByUID(uid uint32, accountID string, mailbox t
 			}
 		}
 		if emails, ok := m.sentByAcct[accountID]; ok {
+			for i := range emails {
+				if emails[i].UID == uid {
+					emails[i].Body = body
+					emails[i].Attachments = attachments
+					break
+				}
+			}
+		}
+	case tui.MailboxTrash:
+		for i := range m.trashEmails {
+			if m.trashEmails[i].UID == uid && m.trashEmails[i].AccountID == accountID {
+				m.trashEmails[i].Body = body
+				m.trashEmails[i].Attachments = attachments
+				break
+			}
+		}
+		if emails, ok := m.trashByAcct[accountID]; ok {
+			for i := range emails {
+				if emails[i].UID == uid {
+					emails[i].Body = body
+					emails[i].Attachments = attachments
+					break
+				}
+			}
+		}
+	case tui.MailboxArchive:
+		for i := range m.archiveEmails {
+			if m.archiveEmails[i].UID == uid && m.archiveEmails[i].AccountID == accountID {
+				m.archiveEmails[i].Body = body
+				m.archiveEmails[i].Attachments = attachments
+				break
+			}
+		}
+		if emails, ok := m.archiveByAcct[accountID]; ok {
 			for i := range emails {
 				if emails[i].UID == uid {
 					emails[i].Body = body
@@ -828,6 +984,40 @@ func (m *mainModel) removeEmailByMailbox(uid uint32, accountID string, mailbox t
 				}
 			}
 			m.sentByAcct[accountID] = filteredAcct
+		}
+	case tui.MailboxTrash:
+		var filtered []fetcher.Email
+		for _, e := range m.trashEmails {
+			if !(e.UID == uid && e.AccountID == accountID) {
+				filtered = append(filtered, e)
+			}
+		}
+		m.trashEmails = filtered
+		if emails, ok := m.trashByAcct[accountID]; ok {
+			var filteredAcct []fetcher.Email
+			for _, e := range emails {
+				if e.UID != uid {
+					filteredAcct = append(filteredAcct, e)
+				}
+			}
+			m.trashByAcct[accountID] = filteredAcct
+		}
+	case tui.MailboxArchive:
+		var filtered []fetcher.Email
+		for _, e := range m.archiveEmails {
+			if !(e.UID == uid && e.AccountID == accountID) {
+				filtered = append(filtered, e)
+			}
+		}
+		m.archiveEmails = filtered
+		if emails, ok := m.archiveByAcct[accountID]; ok {
+			var filteredAcct []fetcher.Email
+			for _, e := range emails {
+				if e.UID != uid {
+					filteredAcct = append(filteredAcct, e)
+				}
+			}
+			m.archiveByAcct[accountID] = filteredAcct
 		}
 	default:
 		var filtered []fetcher.Email
@@ -880,9 +1070,14 @@ func fetchAllAccountsEmails(cfg *config.Config, mailbox tui.MailboxKind) tea.Cmd
 				defer wg.Done()
 				var emails []fetcher.Email
 				var err error
-				if mailbox == tui.MailboxSent {
+				switch mailbox {
+				case tui.MailboxSent:
 					emails, err = fetcher.FetchSentEmails(&acc, initialEmailLimit, 0)
-				} else {
+				case tui.MailboxTrash:
+					emails, err = fetcher.FetchTrashEmails(&acc, initialEmailLimit, 0)
+				case tui.MailboxArchive:
+					emails, err = fetcher.FetchArchiveEmails(&acc, initialEmailLimit, 0)
+				default:
 					emails, err = fetcher.FetchEmails(&acc, initialEmailLimit, 0)
 				}
 				if err != nil {
@@ -907,6 +1102,30 @@ func fetchEmails(account *config.Account, limit, offset uint32, mailbox tui.Mail
 		if mailbox == tui.MailboxSent {
 			emails, err = fetcher.FetchSentEmails(account, limit, offset)
 		} else {
+			emails, err = fetcher.FetchEmails(account, limit, offset)
+		}
+		if err != nil {
+			return tui.FetchErr(err)
+		}
+		if offset == 0 {
+			return tui.EmailsFetchedMsg{Emails: emails, AccountID: account.ID, Mailbox: mailbox}
+		}
+		return tui.EmailsAppendedMsg{Emails: emails, AccountID: account.ID, Mailbox: mailbox}
+	}
+}
+
+func fetchEmailsForMailbox(account *config.Account, limit, offset uint32, mailbox tui.MailboxKind) tea.Cmd {
+	return func() tea.Msg {
+		var emails []fetcher.Email
+		var err error
+		switch mailbox {
+		case tui.MailboxSent:
+			emails, err = fetcher.FetchSentEmails(account, limit, offset)
+		case tui.MailboxTrash:
+			emails, err = fetcher.FetchTrashEmails(account, limit, offset)
+		case tui.MailboxArchive:
+			emails, err = fetcher.FetchArchiveEmails(account, limit, offset)
+		default:
 			emails, err = fetcher.FetchEmails(account, limit, offset)
 		}
 		if err != nil {
@@ -1017,9 +1236,14 @@ func fetchEmailBodyCmd(cfg *config.Config, email fetcher.Email, uid uint32, acco
 			attachments []fetcher.Attachment
 			err         error
 		)
-		if mailbox == tui.MailboxSent {
+		switch mailbox {
+		case tui.MailboxSent:
 			body, attachments, err = fetcher.FetchSentEmailBody(account, uid)
-		} else {
+		case tui.MailboxTrash:
+			body, attachments, err = fetcher.FetchTrashEmailBody(account, uid)
+		case tui.MailboxArchive:
+			body, attachments, err = fetcher.FetchArchiveEmailBody(account, uid)
+		default:
 			body, attachments, err = fetcher.FetchEmailBody(account, uid)
 		}
 		if err != nil {
@@ -1103,9 +1327,14 @@ func sendEmail(account *config.Account, msg tui.SendEmailMsg) tea.Cmd {
 func deleteEmailCmd(account *config.Account, uid uint32, accountID string, mailbox tui.MailboxKind) tea.Cmd {
 	return func() tea.Msg {
 		var err error
-		if mailbox == tui.MailboxSent {
+		switch mailbox {
+		case tui.MailboxSent:
 			err = fetcher.DeleteSentEmail(account, uid)
-		} else {
+		case tui.MailboxTrash:
+			err = fetcher.DeleteTrashEmail(account, uid)
+		case tui.MailboxArchive:
+			err = fetcher.DeleteArchiveEmail(account, uid)
+		default:
 			err = fetcher.DeleteEmail(account, uid)
 		}
 		return tui.EmailActionDoneMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
@@ -1129,9 +1358,14 @@ func downloadAttachmentCmd(account *config.Account, uid uint32, msg tui.Download
 		// Download and decode the attachment using encoding provided in msg.Encoding.
 		var data []byte
 		var err error
-		if msg.Mailbox == tui.MailboxSent {
+		switch msg.Mailbox {
+		case tui.MailboxSent:
 			data, err = fetcher.FetchSentAttachment(account, uid, msg.PartID, msg.Encoding)
-		} else {
+		case tui.MailboxTrash:
+			data, err = fetcher.FetchTrashAttachment(account, uid, msg.PartID, msg.Encoding)
+		case tui.MailboxArchive:
+			data, err = fetcher.FetchArchiveAttachment(account, uid, msg.PartID, msg.Encoding)
+		default:
 			data, err = fetcher.FetchAttachment(account, uid, msg.PartID, msg.Encoding)
 		}
 		if err != nil {

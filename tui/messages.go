@@ -8,8 +8,10 @@ import (
 type MailboxKind string
 
 const (
-	MailboxInbox MailboxKind = "inbox"
-	MailboxSent  MailboxKind = "sent"
+	MailboxInbox   MailboxKind = "inbox"
+	MailboxSent    MailboxKind = "sent"
+	MailboxTrash   MailboxKind = "trash"
+	MailboxArchive MailboxKind = "archive"
 )
 
 type ViewEmailMsg struct {
@@ -72,6 +74,8 @@ type GoToSendMsg struct {
 }
 
 type GoToSettingsMsg struct{}
+
+type GoToTrashArchiveMsg struct{}
 
 type GoToSignatureEditorMsg struct{}
 
