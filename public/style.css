@@ -37,8 +37,8 @@
     --font-sans:
         "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
         sans-serif;
-    --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
-
+    --font-mono:
+        "SF Mono", "Menlo", "Monaco", "Cascadia Code", "Consolas", "monospace";
     --shadow-glow: 0 0 60px rgba(34, 197, 94, 0.15);
     --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
 }
