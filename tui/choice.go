@@ -40,11 +40,11 @@ type Choice struct {
 
 func NewChoice() Choice {
 	hasSavedDrafts := config.HasDrafts()
-	choices := []string{"View Inbox", "View Sent", "Trash & Archive", "Compose Email"}
+	choices := []string{"\ueb1c Inbox", "\ueb1b Compose Email", "\uf1d8 Sent"}
 	if hasSavedDrafts {
-		choices = append(choices, "Drafts")
+		choices = append(choices, "\uec0e Drafts")
 	}
-	choices = append(choices, "Settings")
+	choices = append(choices, "\uf013 Settings", "\uea81 Trash & Archive")
 	return Choice{
 		choices:         choices,
 		hasSavedDrafts:  hasSavedDrafts,
@@ -52,6 +52,7 @@ func NewChoice() Choice {
 		LatestVersion:   "",
 		CurrentVersion:  "",
 	}
+
 }
 
 func (m Choice) Init() tea.Cmd {
@@ -73,19 +74,20 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			selectedChoice := m.choices[m.cursor]
 			switch selectedChoice {
-			case "View Inbox":
+			case "\ueb1c Inbox":
 				return m, func() tea.Msg { return GoToInboxMsg{} }
-			case "View Sent":
-				return m, func() tea.Msg { return GoToSentInboxMsg{} }
-			case "Trash & Archive":
-				return m, func() tea.Msg { return GoToTrashArchiveMsg{} }
-			case "Compose Email":
+			case "\ueb1b Compose Email":
 				return m, func() tea.Msg { return GoToSendMsg{} }
-			case "Drafts":
+			case "\uf1d8 Sent":
+				return m, func() tea.Msg { return GoToSentInboxMsg{} }
+			case "\uec0e Drafts":
 				return m, func() tea.Msg { return GoToDraftsMsg{} }
-			case "Settings":
+			case "\uf013 Settings":
 				return m, func() tea.Msg { return GoToSettingsMsg{} }
+			case "\uea81 Trash & Archive":
+				return m, func() tea.Msg { return GoToTrashArchiveMsg{} }
 			}
+
 		}
 	}
 

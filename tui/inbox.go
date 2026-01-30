@@ -211,9 +211,9 @@ func (m *Inbox) updateList() {
 	l.SetStatusBarItemName("email", "emails")
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		bindings := []key.Binding{
-			key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
-			key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "archive")),
-			key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+			key.NewBinding(key.WithKeys("d"), key.WithHelp("\uf014 d", "delete")),
+			key.NewBinding(key.WithKeys("a"), key.WithHelp("\uea98 a", "archive")),
+			key.NewBinding(key.WithKeys("r"), key.WithHelp("\ue348 r", "refresh")),
 		}
 		if len(m.tabs) > 1 {
 			bindings = append(bindings,

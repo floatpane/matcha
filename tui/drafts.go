@@ -91,8 +91,8 @@ func NewDrafts(drafts []config.Draft) *Drafts {
 	l.SetStatusBarItemName("draft", "drafts")
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open")),
-			key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("\ue5fe enter", "open")),
+			key.NewBinding(key.WithKeys("d"), key.WithHelp("\uea81 d", "delete")),
 		}
 	}
 	l.KeyMap.Quit.SetEnabled(false)

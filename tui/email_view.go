@@ -179,7 +179,7 @@ func (m *EmailView) View() string {
 	if m.focusOnAttachments {
 		help = helpStyle.Render("↑/↓: navigate • enter: download • esc/tab: back to email body")
 	} else {
-		help = helpStyle.Render("r: reply • d: delete • a: archive • tab: focus attachments • esc: back to inbox")
+		help = helpStyle.Render("\uf112 r: reply • \uea81 d: delete • \uea98 a: archive • \uf435 tab: focus attachments • \ueb06 esc: back to inbox")
 	}
 
 	var attachmentView string
