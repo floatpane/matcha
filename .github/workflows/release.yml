@@ -22,7 +22,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.25" # Match the Go version in go.mod
+          go-version: "1.26" # Match the Go version in go.mod
 
       - name: Bump version and push tag
         id: tag_version
