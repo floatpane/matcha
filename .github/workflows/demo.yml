@@ -1,0 +1,72 @@
+name: Update Demo VHS
+
+on:
+  workflow_dispact:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-demo:
+    name: Generate and Update Demo GIF
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Install VHS
+        run: |
+          sudo mkdir -p /etc/apt/keyrings
+          curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
+          sudo apt-get update
+          sudo apt-get install -y vhs
+
+      - name: Create Dummy Config
+        # Creates the config file expected by config/config.go
+        # using the "custom" provider to bypass specific Gmail/iCloud checks.
+        run: |
+          mkdir -p ~/.config/matcha
+          cat <<EOF > ~/.config/matcha/config.json
+          {
+            "accounts": [
+              {
+                "id": "demo-user",
+                "name": "Matcha Client",
+                "email": "matcha@floatpane.com",
+                "password": "dummy-password",
+                "service_provider": "custom"
+              }
+            ]
+          }
+          EOF
+
+      - name: Run VHS
+        # Runs the tape file which executes "go run ."
+        run: vhs demo.tape
+
+      - name: Move GIF to Assets
+        # The README expects the image at public/assets/demo.gif
+        # simpler to overwrite the existing one than change the tape output.
+        run: mv demo.gif public/assets/demo.gif
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update demo.gif from release [skip ci]"
+          title: "chore: update demo.gif"
+          body: |
+            This PR updates the demo GIF based on the latest release version.
+            Generated automatically by the Update Demo VHS workflow.
+          branch: "update-demo-gif"
+          base: "main"
+          add-paths: public/assets/demo.gif
