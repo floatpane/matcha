@@ -1,6 +1,6 @@
 module github.com/floatpane/matcha
 
-go 1.24.2
+go 1.26.0
 
 require (
 	github.com/PuerkitoBio/goquery v1.11.0
