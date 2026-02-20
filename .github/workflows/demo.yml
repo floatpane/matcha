@@ -45,12 +45,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          LATEST_TAG=$(gh release view --repo floatpane/matcha --json tagName -q '.tagName')
+          LATEST_TAG=$(gh release view --json tagName -q '.tagName')
           echo "Found latest release: $LATEST_VERSION
 
           git fetch --tags
           git checkout "$LATEST_TAG"
-          
+      
           COMMIT=$(git rev-parse --short HEAD)
           DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
           go build -ldflags="-s -w -X main.version=$LATEST_TAG -X main.commit=$COMMIT -X main.date=$DATE" -o matcha .
