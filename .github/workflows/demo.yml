@@ -49,7 +49,6 @@ jobs:
           echo "Found latest release: $LATEST_TAG"
 
           git fetch --tags
-          git checkout "$LATEST_TAG"
 
           COMMIT=$(git rev-parse --short HEAD)
           DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
