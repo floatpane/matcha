@@ -45,7 +45,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          LATEST_TAG=$(gh release view --repo https://github.com/floatpane/matcha --json tagName -q ".tagName")
+          LATEST_TAG=$(gh release view --repo floatpane/matcha --json tagName -q '.tagName')
           echo "Found latest release: $LATEST_VERSION
 
           git fetch --tags
