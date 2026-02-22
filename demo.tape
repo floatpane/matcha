@@ -124,8 +124,6 @@ Down
 Sleep 400ms
 Down
 Sleep 400ms
-Down
-Sleep 400ms
 Enter
 
 # Show settings briefly
