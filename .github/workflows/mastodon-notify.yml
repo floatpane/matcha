@@ -1,0 +1,23 @@
+name: Announce Release on Fosstodon
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  post-to-fosstodon:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Post to Fosstodon
+        env:
+          MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }} 
+          MESSAGE: |
+            Release ${{ github.event.release.tag_name }} of Matcha is out!
+            Check it out! ${{ github.event.release.html_url }}
+        run: |
+          JSON_PAYLOAD=$(jq -n --arg status "$MESSAGE" '{status: $status}')
+          
+          curl -sS -X POST "https://fosstodon.org/api/v1/statuses" \
+            -H "Authorization: Bearer $MASTODON_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$JSON_PAYLOAD"
