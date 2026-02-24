@@ -1,44 +1,15 @@
-"bug":
-  - '\bbug(s)?\b'
-  - '\berror(s)?\b'
-  - '\bfix(es)?\b'
-  - '\bissue(s)?\b'
-  - '\bproblem(s)?\b'
+"bug": '\b([Bb]ug(s)?|[Ee]rror(s)?|[Ff]ix(es)?|[Ii]ssue(s)?|[Pp]roblem(s)?)\b'
 
-"enhancement":
-  - '\benhancement(s)?\b'
-  - '\bfeature(s)?\b'
-  - '\bidea(s)?\b'
-  - '\bsuggestion(s)?\b'
+"enhancement": '\b([Ee]nhancement(s)?|[Ff]eature(s)?|[Ii]dea(s)?|[Ss]uggestion(s)?)\b'
 
-"documentation":
-  - '\bdocumentation\b'
-  - '\bdocs\b'
-  - '\breadme\b'
+"documentation": '\b([Dd]ocumentation|[Dd]ocs|[Rr]eadme)\b'
 
-"question":
-  - '\bquestion(s)?\b'
-  - '\bhelp\b'
-  - '\bhow to\b'
+"question": '\b([Qq]uestion(s)?|[Hh]elp|[Hh]ow to)\b'
 
-"performance":
-  - '\bperformance\b'
-  - '\boptimiz(e|ation)\b'
-  - '\bspeed\b'
-  - '\befficiency\b'
+"performance": '\b([Pp]erformance|[Oo]ptimiz(e|ation)|[Ss]peed|[Ee]fficiency)\b'
 
-"dependencies":
-  - '\bchore\(deps\)\b'
-  - '\bfix\(deps\)\b'
+"dependencies": '([Cc]hore\(deps\)|[Ff]ix\(deps\))'
 
-"ci":
-  - '\bci\b'
-  - '\bcontinuous integration\b'
-  - '\bbuild\b'
-  - '\bworkflow\b'
+"ci": '\b([Cc]i|[Cc]ontinuous integration|[Bb]uild|[Ww]orkflow)\b'
 
-"chore":
-  - '\bchore\b'
-  - '\bmaintenance\b'
-  - '\brefactor\b'
-  - '\bcleanup\b'
+"chore": '\b([Cc]hore|[Mm]aintenance|[Rr]efactor|[Cc]leanup)\b'
