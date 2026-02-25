@@ -35,6 +35,7 @@ jobs:
                 "id": "demo-user",
                 "name": "Matcha Client",
                 "email": "matcha@floatpane.com",
+                "fetch_email": "matcha@floatpane.com"
                 "password": "dummy-password",
                 "service_provider": "custom"
               }
