@@ -166,7 +166,7 @@ func (m *Composer) getFromAddress() string {
 	if len(m.accounts) > 0 && m.selectedAccountIdx < len(m.accounts) {
 		acc := m.accounts[m.selectedAccountIdx]
 		if acc.Name != "" {
-			return fmt.Sprintf("%s <%s>", acc.Name, acc.Email)
+			return fmt.Sprintf("%s <%s>", acc.Name, acc.FetchEmail)
 		}
 		return acc.Email
 	}
