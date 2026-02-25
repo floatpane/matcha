@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
 )
@@ -63,7 +63,7 @@ func TestTrashArchiveToggle(t *testing.T) {
 	}
 
 	// Press tab to switch to Archive
-	ta.Update(tea.KeyMsg{Type: tea.KeyTab})
+	ta.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 
 	if ta.activeView != MailboxArchive {
 		t.Errorf("Expected view to be MailboxArchive after tab, got %v", ta.activeView)
@@ -74,7 +74,7 @@ func TestTrashArchiveToggle(t *testing.T) {
 	}
 
 	// Press tab again to switch back to Trash
-	ta.Update(tea.KeyMsg{Type: tea.KeyTab})
+	ta.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 
 	if ta.activeView != MailboxTrash {
 		t.Errorf("Expected view to be MailboxTrash after second tab, got %v", ta.activeView)
@@ -180,7 +180,7 @@ func TestTrashArchiveViewEmailMsg(t *testing.T) {
 	ta := NewTrashArchive(trashEmails, nil, accounts)
 
 	// Simulate pressing Enter on trash view
-	_, cmd := ta.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := ta.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("Expected a command, but got nil")
 	}
@@ -213,10 +213,10 @@ func TestTrashArchiveDeleteEmailMsg(t *testing.T) {
 	ta := NewTrashArchive(nil, archiveEmails, accounts)
 
 	// Switch to archive view
-	ta.Update(tea.KeyMsg{Type: tea.KeyTab})
+	ta.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 
 	// Simulate pressing 'd' to delete
-	_, cmd := ta.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	_, cmd := ta.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
 	if cmd == nil {
 		t.Fatal("Expected a command, but got nil")
 	}

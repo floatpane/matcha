@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/config"
 )
 
@@ -23,49 +23,49 @@ func TestComposerUpdate(t *testing.T) {
 		}
 
 		// Simulate pressing Tab to move to the 'Cc' field.
-		model, _ := composer.Update(tea.KeyMsg{Type: tea.KeyTab})
+		model, _ := composer.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		composer = model.(*Composer)
 		if composer.focusIndex != focusCc {
 			t.Errorf("After one Tab, focusIndex should be %d (focusCc), got %d", focusCc, composer.focusIndex)
 		}
 
 		// Simulate pressing Tab to move to the 'Bcc' field.
-		model, _ = composer.Update(tea.KeyMsg{Type: tea.KeyTab})
+		model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		composer = model.(*Composer)
 		if composer.focusIndex != focusBcc {
 			t.Errorf("After two Tabs, focusIndex should be %d (focusBcc), got %d", focusBcc, composer.focusIndex)
 		}
 
 		// Simulate pressing Tab to move to the 'Subject' field.
-		model, _ = composer.Update(tea.KeyMsg{Type: tea.KeyTab})
+		model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		composer = model.(*Composer)
 		if composer.focusIndex != focusSubject {
 			t.Errorf("After three Tabs, focusIndex should be %d (focusSubject), got %d", focusSubject, composer.focusIndex)
 		}
 
 		// Simulate pressing Tab again to move to the 'Body' field.
-		model, _ = composer.Update(tea.KeyMsg{Type: tea.KeyTab})
+		model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		composer = model.(*Composer)
 		if composer.focusIndex != focusBody {
 			t.Errorf("After four Tabs, focusIndex should be %d (focusBody), got %d", focusBody, composer.focusIndex)
 		}
 
 		// Simulate pressing Tab again to move to the 'Signature' field.
-		model, _ = composer.Update(tea.KeyMsg{Type: tea.KeyTab})
+		model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		composer = model.(*Composer)
 		if composer.focusIndex != focusSignature {
 			t.Errorf("After five Tabs, focusIndex should be %d (focusSignature), got %d", focusSignature, composer.focusIndex)
 		}
 
 		// Simulate pressing Tab again to move to the 'Attachment' field.
-		model, _ = composer.Update(tea.KeyMsg{Type: tea.KeyTab})
+		model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		composer = model.(*Composer)
 		if composer.focusIndex != focusAttachment {
 			t.Errorf("After six Tabs, focusIndex should be %d (focusAttachment), got %d", focusAttachment, composer.focusIndex)
 		}
 
 		// Simulate pressing Tab again to move to the 'Send' button.
-		model, _ = composer.Update(tea.KeyMsg{Type: tea.KeyTab})
+		model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		composer = model.(*Composer)
 		if composer.focusIndex != focusSend {
 			t.Errorf("After seven Tabs, focusIndex should be %d (focusSend), got %d", focusSend, composer.focusIndex)
@@ -73,7 +73,7 @@ func TestComposerUpdate(t *testing.T) {
 
 		// Simulate one more Tab to wrap around.
 		// With single account, From field is skipped, so it wraps to focusTo.
-		model, _ = composer.Update(tea.KeyMsg{Type: tea.KeyTab})
+		model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		composer = model.(*Composer)
 		if composer.focusIndex != focusTo {
 			t.Errorf("After eight Tabs, focusIndex should wrap to %d (focusTo) since single account skips From, got %d", focusTo, composer.focusIndex)
@@ -92,7 +92,7 @@ func TestComposerUpdate(t *testing.T) {
 		composer.focusIndex = focusSend
 
 		// Simulate pressing Enter to send the email.
-		_, cmd := composer.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		_, cmd := composer.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		if cmd == nil {
 			t.Fatal("Expected a command to be returned, but got nil.")
 		}
@@ -130,7 +130,7 @@ func TestComposerUpdate(t *testing.T) {
 		multiComposer.focusIndex = focusFrom
 
 		// Press Enter to open account picker
-		model, _ := multiComposer.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		model, _ := multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		multiComposer = model.(*Composer)
 
 		if !multiComposer.showAccountPicker {
@@ -138,7 +138,7 @@ func TestComposerUpdate(t *testing.T) {
 		}
 
 		// Navigate down to select second account
-		model, _ = multiComposer.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		multiComposer = model.(*Composer)
 
 		if multiComposer.selectedAccountIdx != 1 {
@@ -146,7 +146,7 @@ func TestComposerUpdate(t *testing.T) {
 		}
 
 		// Press Enter to confirm selection
-		model, _ = multiComposer.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		multiComposer = model.(*Composer)
 
 		if multiComposer.showAccountPicker {
@@ -169,7 +169,7 @@ func TestComposerUpdate(t *testing.T) {
 		singleComposer.focusIndex = focusFrom
 
 		// Press Enter - should not open picker with single account
-		model, _ := singleComposer.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		model, _ := singleComposer.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		singleComposer = model.(*Composer)
 
 		if singleComposer.showAccountPicker {
@@ -190,23 +190,23 @@ func TestComposerUpdate(t *testing.T) {
 		}
 
 		// Tab through all fields: To -> Cc -> Bcc -> Subject -> Body -> Signature -> Attachment -> Send -> From (wrap)
-		model, _ := multiComposer.Update(tea.KeyMsg{Type: tea.KeyTab}) // To -> Cc
+		model, _ := multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // To -> Cc
 		multiComposer = model.(*Composer)
-		model, _ = multiComposer.Update(tea.KeyMsg{Type: tea.KeyTab}) // Cc -> Bcc
+		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // Cc -> Bcc
 		multiComposer = model.(*Composer)
-		model, _ = multiComposer.Update(tea.KeyMsg{Type: tea.KeyTab}) // Bcc -> Subject
+		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // Bcc -> Subject
 		multiComposer = model.(*Composer)
-		model, _ = multiComposer.Update(tea.KeyMsg{Type: tea.KeyTab}) // Subject -> Body
+		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // Subject -> Body
 		multiComposer = model.(*Composer)
-		model, _ = multiComposer.Update(tea.KeyMsg{Type: tea.KeyTab}) // Body -> Signature
+		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // Body -> Signature
 		multiComposer = model.(*Composer)
-		model, _ = multiComposer.Update(tea.KeyMsg{Type: tea.KeyTab}) // Signature -> Attachment
+		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // Signature -> Attachment
 		multiComposer = model.(*Composer)
-		model, _ = multiComposer.Update(tea.KeyMsg{Type: tea.KeyTab}) // Attachment -> Send
+		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // Attachment -> Send
 		multiComposer = model.(*Composer)
-		model, _ = multiComposer.Update(tea.KeyMsg{Type: tea.KeyTab}) // Send -> From (wrap)
+		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // Send -> From (wrap)
 		multiComposer = model.(*Composer)
-		model, _ = multiComposer.Update(tea.KeyMsg{Type: tea.KeyTab}) // From -> To (wrap)
+		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // From -> To (wrap)
 		multiComposer = model.(*Composer)
 
 		// With multiple accounts, From field should be included in tab order
@@ -257,9 +257,9 @@ func TestComposerGetFromAddress(t *testing.T) {
 // TestComposerSetSelectedAccount verifies account selection.
 func TestComposerSetSelectedAccount(t *testing.T) {
 	accounts := []config.Account{
-		{ID: "account-1", Email: "test1@example.com"},
-		{ID: "account-2", Email: "test2@example.com"},
-		{ID: "account-3", Email: "test3@example.com"},
+		{ID: "account-1", FetchEmail: "test1@example.com"},
+		{ID: "account-2", FetchEmail: "test2@example.com"},
+		{ID: "account-3", FetchEmail: "test3@example.com"},
 	}
 	composer := NewComposerWithAccounts(accounts, "account-1", "", "", "")
 

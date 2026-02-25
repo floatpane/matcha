@@ -2,10 +2,11 @@ package view
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // clearAllTerminalEnv clears all environment variables that could indicate terminal capabilities
@@ -478,7 +479,7 @@ func TestProcessBodyWithHyperlinkSupport(t *testing.T) {
 			},
 			input:               `<a href="http://example.com">Click here</a>`,
 			expectedContains:    "Click here",
-			expectedNotContains: "&lt;http://example.com&gt;",
+			expectedNotContains: "<http://example.com>",
 		},
 		{
 			name: "Link without hyperlink support",
@@ -497,7 +498,7 @@ func TestProcessBodyWithHyperlinkSupport(t *testing.T) {
 			},
 			input:               `<img src="http://example.com/img.png" alt="alt text">`,
 			expectedContains:    "[Click here to view image: alt text]",
-			expectedNotContains: "&lt;http://example.com/img.png&gt;",
+			expectedNotContains: "<http://example.com/img.png>",
 		},
 		{
 			name: "Image link without hyperlink support",
@@ -509,6 +510,9 @@ func TestProcessBodyWithHyperlinkSupport(t *testing.T) {
 		},
 	}
 
+	// Regex to strip out ANSI SGR escape codes (e.g. \x1b[38;2;...m)
+	ansiEscapeRegex := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.setupHyperlinks()
@@ -518,12 +522,14 @@ func TestProcessBodyWithHyperlinkSupport(t *testing.T) {
 				t.Fatalf("ProcessBody() failed: %v", err)
 			}
 
-			if !strings.Contains(processed, tc.expectedContains) {
-				t.Errorf("Processed body does not contain expected text.\nGot: %q\nWant to contain: %q", processed, tc.expectedContains)
+			cleanProcessed := ansiEscapeRegex.ReplaceAllString(processed, "")
+
+			if !strings.Contains(cleanProcessed, tc.expectedContains) {
+				t.Errorf("Processed body does not contain expected text.\nGot: %q\nWant to contain: %q", cleanProcessed, tc.expectedContains)
 			}
 
-			if tc.expectedNotContains != "" && strings.Contains(processed, tc.expectedNotContains) {
-				t.Errorf("Processed body contains unexpected text.\nGot: %q\nShould not contain: %q", processed, tc.expectedNotContains)
+			if tc.expectedNotContains != "" && strings.Contains(cleanProcessed, tc.expectedNotContains) {
+				t.Errorf("Processed body contains unexpected text.\nGot: %q\nShould not contain: %q", cleanProcessed, tc.expectedNotContains)
 			}
 		})
 	}
@@ -630,6 +636,8 @@ func TestProcessBodyWithImageProtocol(t *testing.T) {
 		},
 	}
 
+	ansiEscapeRegex := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.clearAllImageEnv()
@@ -640,12 +648,14 @@ func TestProcessBodyWithImageProtocol(t *testing.T) {
 				t.Fatalf("ProcessBody() failed: %v", err)
 			}
 
-			if !strings.Contains(processed, tc.expectedContains) {
-				t.Errorf("Processed body does not contain expected text.\nGot: %q\nWant to contain: %q", processed, tc.expectedContains)
+			cleanProcessed := ansiEscapeRegex.ReplaceAllString(processed, "")
+
+			if !strings.Contains(cleanProcessed, tc.expectedContains) {
+				t.Errorf("Processed body does not contain expected text.\nGot: %q\nWant to contain: %q", cleanProcessed, tc.expectedContains)
 			}
 
-			if tc.expectedNotContains != "" && strings.Contains(processed, tc.expectedNotContains) {
-				t.Errorf("Processed body contains unexpected text.\nGot: %q\nShould not contain: %q", processed, tc.expectedNotContains)
+			if tc.expectedNotContains != "" && strings.Contains(cleanProcessed, tc.expectedNotContains) {
+				t.Errorf("Processed body contains unexpected text.\nGot: %q\nShould not contain: %q", cleanProcessed, tc.expectedNotContains)
 			}
 		})
 	}
@@ -683,15 +693,19 @@ func TestProcessBody(t *testing.T) {
 		},
 	}
 
+	ansiEscapeRegex := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			processed, err := ProcessBody(tc.input, h1Style, h2Style, bodyStyle, false)
 			if err != nil {
 				t.Fatalf("ProcessBody() failed: %v", err)
 			}
-			// Use Contains because styles add ANSI codes
-			if !strings.Contains(processed, tc.expected) {
-				t.Errorf("Processed body does not contain expected text.\nGot: %q\nWant to contain: %q", processed, tc.expected)
+
+			cleanProcessed := ansiEscapeRegex.ReplaceAllString(processed, "")
+
+			if !strings.Contains(cleanProcessed, tc.expected) {
+				t.Errorf("Processed body does not contain expected text.\nGot: %q\nWant to contain: %q", cleanProcessed, tc.expected)
 			}
 		})
 	}

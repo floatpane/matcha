@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
 )
@@ -14,21 +14,21 @@ func collectMsgs(cmd tea.Cmd) []tea.Msg {
 		return nil
 	}
 	msg := cmd()
-	switch batch := msg.(type) {
-	case tea.BatchMsg:
+	if msg == nil {
+		return nil
+	}
+
+	// Try type assertion to see if it's a BatchMsg
+	if batch, ok := msg.(tea.BatchMsg); ok {
 		var msgs []tea.Msg
 		for _, m := range batch {
-			if m != nil {
-				msgs = append(msgs, m)
-			}
+			msgs = append(msgs, collectMsgs(m)...)
 		}
 		return msgs
-	default:
-		if msg != nil {
-			return []tea.Msg{msg}
-		}
 	}
-	return nil
+
+	// Otherwise it's a regular message
+	return []tea.Msg{msg}
 }
 
 // TestInboxUpdate verifies the state transitions in the inbox view.
@@ -51,10 +51,10 @@ func TestInboxUpdate(t *testing.T) {
 	t.Run("Select email to view", func(t *testing.T) {
 		// By default, the first item is selected (index 0).
 		// Move down to the second item (index 1).
-		inbox.list, _ = inbox.list.Update(tea.KeyMsg{Type: tea.KeyDown})
+		inbox.list, _ = inbox.list.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 
 		// Simulate pressing Enter to view the selected email.
-		_, cmd := inbox.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		_, cmd := inbox.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		if cmd == nil {
 			t.Fatal("Expected a command, but got nil.")
 		}
@@ -157,7 +157,7 @@ func TestInboxDeleteEmailMsg(t *testing.T) {
 	inbox := NewInbox(emails, accounts)
 
 	// Simulate pressing 'd' to delete
-	_, cmd := inbox.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	_, cmd := inbox.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
 	if cmd == nil {
 		t.Fatal("Expected a command, but got nil.")
 	}
@@ -190,7 +190,7 @@ func TestInboxArchiveEmailMsg(t *testing.T) {
 	inbox := NewInbox(emails, accounts)
 
 	// Simulate pressing 'a' to archive
-	_, cmd := inbox.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	_, cmd := inbox.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	if cmd == nil {
 		t.Fatal("Expected a command, but got nil.")
 	}
@@ -283,7 +283,7 @@ func TestFetchMoreTriggeredAtListEnd(t *testing.T) {
 
 	inbox := NewInbox(emails, accounts)
 
-	_, cmd := inbox.Update(tea.KeyMsg{Type: tea.KeyDown})
+	_, cmd := inbox.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	msgs := collectMsgs(cmd)
 
 	var fetchMsg FetchMoreEmailsMsg

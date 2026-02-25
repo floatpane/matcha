@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/fetcher"
 )
 
@@ -34,7 +34,7 @@ func TestEmailViewUpdate(t *testing.T) {
 		}
 
 		// Tab to focus on attachments
-		model, _ := emailView.Update(tea.KeyMsg{Type: tea.KeyTab})
+		model, _ := emailView.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		emailView = model.(*EmailView)
 
 		if !emailView.focusOnAttachments {
@@ -42,7 +42,7 @@ func TestEmailViewUpdate(t *testing.T) {
 		}
 
 		// Tab back to body
-		model, _ = emailView.Update(tea.KeyMsg{Type: tea.KeyTab})
+		model, _ = emailView.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		emailView = model.(*EmailView)
 		if emailView.focusOnAttachments {
 			t.Error("focusOnAttachments should be false after tabbing again")
@@ -55,7 +55,7 @@ func TestEmailViewUpdate(t *testing.T) {
 			t.Error("focusOnAttachments should be initially false")
 		}
 		// Tab
-		model, _ := emailView.Update(tea.KeyMsg{Type: tea.KeyTab})
+		model, _ := emailView.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		emailView = model.(*EmailView)
 		if emailView.focusOnAttachments {
 			t.Error("focusOnAttachments should remain false when there are no attachments")
@@ -65,7 +65,7 @@ func TestEmailViewUpdate(t *testing.T) {
 	t.Run("Navigate attachments", func(t *testing.T) {
 		emailView := NewEmailView(emailWithAttachments, 0, 80, 24, MailboxInbox, false)
 		// Focus on attachments
-		model, _ := emailView.Update(tea.KeyMsg{Type: tea.KeyTab})
+		model, _ := emailView.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		emailView = model.(*EmailView)
 
 		if emailView.attachmentCursor != 0 {
@@ -73,21 +73,21 @@ func TestEmailViewUpdate(t *testing.T) {
 		}
 
 		// Move down
-		model, _ = emailView.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model, _ = emailView.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		emailView = model.(*EmailView)
 		if emailView.attachmentCursor != 1 {
 			t.Errorf("After one down arrow, attachmentCursor should be 1, got %d", emailView.attachmentCursor)
 		}
 
 		// Move down again (should not go past the end)
-		model, _ = emailView.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model, _ = emailView.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		emailView = model.(*EmailView)
 		if emailView.attachmentCursor != 1 {
 			t.Errorf("attachmentCursor should not go past the end of the list, got %d", emailView.attachmentCursor)
 		}
 
 		// Move up
-		model, _ = emailView.Update(tea.KeyMsg{Type: tea.KeyUp})
+		model, _ = emailView.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 		emailView = model.(*EmailView)
 		if emailView.attachmentCursor != 0 {
 			t.Errorf("After one up arrow, attachmentCursor should be 0, got %d", emailView.attachmentCursor)
@@ -97,15 +97,15 @@ func TestEmailViewUpdate(t *testing.T) {
 	t.Run("Download attachment", func(t *testing.T) {
 		emailView := NewEmailView(emailWithAttachments, 0, 80, 24, MailboxInbox, false)
 		// Focus on attachments
-		model, _ := emailView.Update(tea.KeyMsg{Type: tea.KeyTab})
+		model, _ := emailView.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		emailView = model.(*EmailView)
 
 		// Move to the second attachment
-		model, _ = emailView.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model, _ = emailView.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		emailView = model.(*EmailView)
 
 		// Press enter
-		_, cmd := emailView.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		_, cmd := emailView.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		if cmd == nil {
 			t.Fatal("Expected a command, but got nil")
 		}
@@ -126,7 +126,7 @@ func TestEmailViewUpdate(t *testing.T) {
 	t.Run("Reply to email", func(t *testing.T) {
 		emailView := NewEmailView(emailWithAttachments, 0, 80, 24, MailboxInbox, false)
 
-		_, cmd := emailView.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+		_, cmd := emailView.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 		if cmd == nil {
 			t.Fatal("Expected a command, but got nil")
 		}
