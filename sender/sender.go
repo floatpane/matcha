@@ -37,9 +37,9 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 
 	auth := smtp.PlainAuth("", account.Email, account.Password, smtpServer)
 
-	fromHeader := account.Email
+	fromHeader := account.FetchEmail
 	if account.Name != "" {
-		fromHeader = fmt.Sprintf("%s <%s>", account.Name, account.Email)
+		fromHeader = fmt.Sprintf("%s <%s>", account.Name, account.FetchEmail)
 	}
 
 	// Main message buffer
@@ -52,7 +52,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		"To":           strings.Join(to, ", "),
 		"Subject":      subject,
 		"Date":         time.Now().Format(time.RFC1123Z),
-		"Message-ID":   generateMessageID(account.Email),
+		"Message-ID":   generateMessageID(account.FetchEmail),
 		"Content-Type": "multipart/mixed; boundary=" + mainWriter.Boundary(),
 	}
 
