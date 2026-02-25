@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 var (
@@ -52,7 +52,7 @@ func (m *FilePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "up", "k":
 			if m.cursor > 0 {
@@ -92,7 +92,7 @@ func (m *FilePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *FilePicker) View() string {
+func (m *FilePicker) View() tea.View {
 	var b strings.Builder
 
 	b.WriteString(titleStyle.Render("Select a File") + "\n")
@@ -121,5 +121,5 @@ func (m *FilePicker) View() string {
 
 	b.WriteString("\n" + helpStyle.Render("↑/↓: navigate • enter: select • backspace: up • esc: cancel"))
 
-	return docStyle.Render(b.String())
+	return tea.NewView(docStyle.Render(b.String()))
 }

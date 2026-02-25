@@ -5,17 +5,18 @@ import (
 	"io"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
 )
 
 var (
-	paginationStyle = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
-	inboxHelpStyle  = list.DefaultStyles().HelpStyle.PaddingLeft(4).PaddingBottom(1)
+	// In bubbles v2, list.DefaultStyles() takes a boolean for hasDarkBackground
+	paginationStyle = list.DefaultStyles(true).PaginationStyle.PaddingLeft(4)
+	inboxHelpStyle  = list.DefaultStyles(true).HelpStyle.PaddingLeft(4).PaddingBottom(1)
 	tabStyle        = lipgloss.NewStyle().Padding(0, 2)
 	activeTabStyle  = lipgloss.NewStyle().Padding(0, 2).Foreground(lipgloss.Color("42")).Bold(true).Underline(true)
 	tabBarStyle     = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).PaddingBottom(1).MarginBottom(1)
@@ -299,7 +300,7 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.list.FilterState() == list.Filtering {
 			break
 		}
@@ -490,7 +491,7 @@ func (m *Inbox) fetchMoreCmds() []tea.Cmd {
 	return cmds
 }
 
-func (m *Inbox) View() string {
+func (m *Inbox) View() tea.View {
 	var b strings.Builder
 
 	// Render tabs if there are multiple accounts
@@ -564,7 +565,7 @@ func (m *Inbox) View() string {
 
 	b.WriteString(helpView)
 
-	return b.String()
+	return tea.NewView(b.String())
 }
 
 // GetCurrentAccountID returns the currently selected account ID

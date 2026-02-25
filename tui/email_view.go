@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/view"
 )
@@ -59,8 +59,10 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 	}
 
 	// Build viewport with initial size and set wrapped content.
-	vp := viewport.New(width, height-headerHeight-attachmentHeight)
-	wrapped := wrapBodyToWidth(body, vp.Width)
+	vp := viewport.New()
+	vp.SetWidth(width)
+	vp.SetHeight(height - headerHeight - attachmentHeight)
+	wrapped := wrapBodyToWidth(body, vp.Width())
 	vp.SetContent("\x1b_Ga=d\x1b\\\n" + wrapped + "\n")
 
 	return &EmailView{
@@ -83,9 +85,9 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// Handle 'esc' key locally
-		if msg.Type == tea.KeyEsc {
+		if msg.String() == "esc" {
 			if m.focusOnAttachments {
 				m.focusOnAttachments = false
 				return m, nil
@@ -136,7 +138,7 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if err != nil {
 						body = fmt.Sprintf("Error rendering body: %v", err)
 					}
-					wrapped := wrapBodyToWidth(body, m.viewport.Width)
+					wrapped := wrapBodyToWidth(body, m.viewport.Width())
 					m.viewport.SetContent("\x1b_Ga=d\x1b\\\n" + wrapped + "\n")
 					return m, nil
 				}
@@ -178,8 +180,8 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			attachmentHeight = len(m.email.Attachments) + 2
 		}
 		// Update viewport dimensions
-		m.viewport.Width = msg.Width
-		m.viewport.Height = msg.Height - headerHeight - attachmentHeight
+		m.viewport.SetWidth(msg.Width)
+		m.viewport.SetHeight(msg.Height - headerHeight - attachmentHeight)
 
 		// When the window size changes, wrap and clear kitty images to keep placement stable
 		inlineImages := inlineImagesFromAttachments(m.email.Attachments)
@@ -187,7 +189,7 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err != nil {
 			body = fmt.Sprintf("Error rendering body: %v", err)
 		}
-		wrapped := wrapBodyToWidth(body, m.viewport.Width)
+		wrapped := wrapBodyToWidth(body, m.viewport.Width())
 		m.viewport.SetContent("\x1b_Ga=d\x1b\\\n" + wrapped + "\n")
 	}
 
@@ -197,14 +199,14 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *EmailView) View() string {
+func (m *EmailView) View() tea.View {
 	// Clear all Kitty graphics before rendering to prevent image stacking on scroll.
 	// This must be done synchronously via stdout before the frame is drawn,
 	// as escape sequences in the return string execute too late.
 	clearKittyGraphics()
 
 	header := fmt.Sprintf("From: %s | Subject: %s", m.email.From, m.email.Subject)
-	styledHeader := emailHeaderStyle.Width(m.viewport.Width).Render(header)
+	styledHeader := emailHeaderStyle.Width(m.viewport.Width()).Render(header)
 
 	var help string
 	if m.focusOnAttachments {
@@ -234,7 +236,8 @@ func (m *EmailView) View() string {
 		attachmentView = attachmentBoxStyle.Render(b.String())
 	}
 
-	return fmt.Sprintf("%s\n%s\n%s\n%s", styledHeader, m.viewport.View(), attachmentView, help)
+	// m.viewport.View() returns a string in Bubbles v2 viewport
+	return tea.NewView(fmt.Sprintf("%s\n%s\n%s\n%s", styledHeader, m.viewport.View(), attachmentView, help))
 }
 
 // GetAccountID returns the account ID for this email

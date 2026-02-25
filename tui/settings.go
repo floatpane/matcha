@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
 )
 
@@ -58,7 +58,7 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.state == SettingsMain {
 			return m.updateMain(msg)
 		} else {
@@ -68,7 +68,7 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Settings) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Settings) updateMain(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
 		if m.cursor > 0 {
@@ -99,7 +99,7 @@ func (m *Settings) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Settings) updateAccounts(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Settings) updateAccounts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.confirmingDelete {
 		switch msg.String() {
 		case "y", "Y":
@@ -146,11 +146,11 @@ func (m *Settings) updateAccounts(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the settings screen.
-func (m *Settings) View() string {
+func (m *Settings) View() tea.View {
 	if m.state == SettingsMain {
-		return m.viewMain()
+		return tea.NewView(m.viewMain())
 	}
-	return m.viewAccounts()
+	return tea.NewView(m.viewAccounts())
 }
 
 func (m *Settings) viewMain() string {

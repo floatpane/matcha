@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/sender"
@@ -112,7 +112,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
@@ -856,8 +856,10 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *mainModel) View() string {
-	return m.current.View()
+func (m *mainModel) View() tea.View {
+	v := m.current.View()
+	v.AltScreen = true
+	return v
 }
 
 func (m *mainModel) getEmailByIndex(index int, mailbox tui.MailboxKind) *fetcher.Email {
@@ -1881,7 +1883,7 @@ func main() {
 		initialModel = newInitialModel(cfg)
 	}
 
-	p := tea.NewProgram(initialModel, tea.WithAltScreen())
+	p := tea.NewProgram(initialModel)
 
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)

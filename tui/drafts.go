@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
 )
 
@@ -116,7 +116,7 @@ func (m *Drafts) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list.SetHeight(msg.Height - 4)
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// Handle delete confirmation
 		if m.confirmDelete {
 			switch msg.String() {
@@ -183,7 +183,7 @@ func (m *Drafts) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *Drafts) View() string {
+func (m *Drafts) View() tea.View {
 	var b strings.Builder
 
 	if m.confirmDelete {
@@ -193,18 +193,19 @@ func (m *Drafts) View() string {
 				HelpStyle.Render("\n(y/n)"),
 			),
 		)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog)
+		return tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
 	}
 
 	if len(m.drafts) == 0 {
 		emptyMsg := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("240")).
 			Render("No drafts saved.\n\nPress esc to go back.")
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, emptyMsg)
+		return tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, emptyMsg))
 	}
 
+	// list.View() still returns string in v2
 	b.WriteString(m.list.View())
-	return b.String()
+	return tea.NewView(b.String())
 }
 
 // SetDrafts updates the drafts list

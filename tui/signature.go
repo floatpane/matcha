@@ -1,9 +1,9 @@
 package tui
 
 import (
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
 )
 
@@ -48,11 +48,11 @@ func (m *SignatureEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.SetHeight(msg.Height - 10)
 		return m, nil
 
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlC:
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "ctrl+c":
 			return m, tea.Quit
-		case tea.KeyEsc:
+		case "esc":
 			// Save and go back to settings
 			signature := m.textarea.Value()
 			go config.SaveSignature(signature)
@@ -65,16 +65,16 @@ func (m *SignatureEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the signature editor screen.
-func (m *SignatureEditor) View() string {
+func (m *SignatureEditor) View() tea.View {
 	title := titleStyle.Render("Email Signature")
 	hint := accountEmailStyle.Render("This signature will be appended to your emails.")
 
-	return lipgloss.JoinVertical(lipgloss.Left,
+	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left,
 		title,
 		hint,
 		"",
 		m.textarea.View(),
 		"",
 		helpStyle.Render("esc: save & back"),
-	)
+	))
 }

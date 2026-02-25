@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
 	"github.com/google/uuid"
 )
@@ -22,7 +22,6 @@ var (
 var (
 	focusedStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	blurredStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	cursorStyle         = focusedStyle.Copy()
 	noStyle             = lipgloss.NewStyle()
 	helpStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	focusedButton       = focusedStyle.Copy().Render("[ Send ]")
@@ -87,41 +86,34 @@ func NewComposer(from, to, subject, body string) *Composer {
 	}
 
 	m.toInput = textinput.New()
-	m.toInput.Cursor.Style = cursorStyle
 	m.toInput.Placeholder = "To"
 	m.toInput.SetValue(to)
 	m.toInput.Prompt = "> "
 	m.toInput.CharLimit = 256
 
 	m.ccInput = textinput.New()
-	m.ccInput.Cursor.Style = cursorStyle
 	m.ccInput.Placeholder = "Cc"
 	m.ccInput.Prompt = "> "
 	m.ccInput.CharLimit = 256
 
 	m.bccInput = textinput.New()
-	m.bccInput.Cursor.Style = cursorStyle
 	m.bccInput.Placeholder = "Bcc"
 	m.bccInput.Prompt = "> "
 	m.bccInput.CharLimit = 256
 
 	m.subjectInput = textinput.New()
-	m.subjectInput.Cursor.Style = cursorStyle
 	m.subjectInput.Placeholder = "Subject"
 	m.subjectInput.SetValue(subject)
 	m.subjectInput.Prompt = "> "
 	m.subjectInput.CharLimit = 256
 
 	m.bodyInput = textarea.New()
-	m.bodyInput.Cursor.Style = cursorStyle
 	m.bodyInput.Placeholder = "Body (Markdown supported)..."
 	m.bodyInput.SetValue(body)
 	m.bodyInput.Prompt = "> "
 	m.bodyInput.SetHeight(10)
-	m.bodyInput.SetCursor(0)
 
 	m.signatureInput = textarea.New()
-	m.signatureInput.Cursor.Style = cursorStyle
 	m.signatureInput.Placeholder = "Signature (optional)..."
 	m.signatureInput.Prompt = "> "
 	m.signatureInput.SetHeight(3)
@@ -153,7 +145,7 @@ func NewComposerWithAccounts(accounts []config.Account, selectedAccountID string
 	return m
 }
 
-// ResetConfirmation ensures a restored draft isn't stuck in the exit prompt.
+// ResetConfirmation ensures a restored draft isnt stuck in the exit prompt.
 func (m *Composer) ResetConfirmation() {
 	m.confirmingExit = false
 }
@@ -189,22 +181,18 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		inputWidth := msg.Width - 6
-		m.toInput.Width = inputWidth
-		m.ccInput.Width = inputWidth
-		m.bccInput.Width = inputWidth
-		m.subjectInput.Width = inputWidth
+		m.toInput.SetWidth(inputWidth)
+		m.ccInput.SetWidth(inputWidth)
+		m.bccInput.SetWidth(inputWidth)
+		m.subjectInput.SetWidth(inputWidth)
 		m.bodyInput.SetWidth(inputWidth)
 		m.signatureInput.SetWidth(inputWidth)
-
-	case SetComposerCursorToStartMsg:
-		m.bodyInput.SetCursor(0)
-		return m, nil
 
 	case FileSelectedMsg:
 		m.attachmentPath = msg.Path
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// Handle contact suggestions mode
 		if m.showSuggestions && len(m.suggestions) > 0 {
 			switch msg.String() {
@@ -236,7 +224,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			// For shift+tab, close suggestions and let it fall through to normal handling
-			if msg.Type == tea.KeyShiftTab {
+			if msg.String() == "shift+tab" {
 				m.showSuggestions = false
 				m.suggestions = nil
 			}
@@ -273,15 +261,15 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		switch msg.Type {
-		case tea.KeyCtrlC:
+		switch msg.String() {
+		case "ctrl+c":
 			return m, tea.Quit
-		case tea.KeyEsc:
+		case "esc":
 			m.confirmingExit = true
 			return m, nil
 
-		case tea.KeyTab, tea.KeyShiftTab:
-			if msg.Type == tea.KeyShiftTab {
+		case "tab", "shift+tab":
+			if msg.String() == "shift+tab" {
 				m.focusIndex--
 			} else {
 				m.focusIndex++
@@ -318,13 +306,12 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, m.subjectInput.Focus())
 			case focusBody:
 				cmds = append(cmds, m.bodyInput.Focus())
-				cmds = append(cmds, func() tea.Msg { return SetComposerCursorToStartMsg{} })
 			case focusSignature:
 				cmds = append(cmds, m.signatureInput.Focus())
 			}
 			return m, tea.Batch(cmds...)
 
-		case tea.KeyEnter:
+		case "enter":
 			switch m.focusIndex {
 			case focusFrom:
 				if len(m.accounts) > 1 {
@@ -396,7 +383,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *Composer) View() string {
+func (m *Composer) View() tea.View {
 	var composerView strings.Builder
 	var button string
 
@@ -494,7 +481,7 @@ func (m *Composer) View() string {
 		accountList.WriteString(HelpStyle.Render("↑/↓: navigate • enter: select • esc: cancel"))
 
 		dialog := DialogBoxStyle.Render(accountList.String())
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog)
+		return tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
 	}
 
 	if m.confirmingExit {
@@ -504,10 +491,10 @@ func (m *Composer) View() string {
 				HelpStyle.Render("\n(y/n)"),
 			),
 		)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog)
+		return tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
 	}
 
-	return composerView.String()
+	return tea.NewView(composerView.String())
 }
 
 // SetAccounts sets the available accounts for sending.

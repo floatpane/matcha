@@ -3,9 +3,9 @@ package tui
 import (
 	"strconv"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Login holds the state for the login/add account form.
@@ -41,7 +41,6 @@ func NewLogin() *Login {
 	var t textinput.Model
 	for i := range m.inputs {
 		t = textinput.New()
-		t.Cursor.Style = focusedStyle
 		t.CharLimit = 128
 
 		switch i {
@@ -93,15 +92,15 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		for i := range m.inputs {
-			m.inputs[i].Width = msg.Width - 6
+			m.inputs[i].SetWidth(msg.Width - 6)
 		}
 
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyEsc:
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "esc":
 			return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
 
-		case tea.KeyEnter:
+		case "enter":
 			// Check if provider is "custom" to show/hide custom fields
 			provider := m.inputs[inputProvider].Value()
 			if provider == "custom" {
@@ -146,7 +145,7 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			fallthrough
 
-		case tea.KeyTab, tea.KeyShiftTab, tea.KeyUp, tea.KeyDown:
+		case "tab", "shift+tab", "up", "down":
 			s := msg.String()
 
 			// Check provider to update showCustom
@@ -205,7 +204,7 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the login form.
-func (m *Login) View() string {
+func (m *Login) View() tea.View {
 	title := "Add Account"
 	if m.isEditMode {
 		title = "Edit Account"
@@ -240,7 +239,7 @@ func (m *Login) View() string {
 
 	views = append(views, helpStyle.Render("\nenter: save • tab: next field • esc: back to menu"))
 
-	return lipgloss.JoinVertical(lipgloss.Left, views...)
+	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, views...))
 }
 
 // SetEditMode sets the login form to edit an existing account.

@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
 )
 
@@ -61,7 +61,7 @@ func (m Choice) Init() tea.Cmd {
 
 func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "up", "k":
 			if m.cursor > 0 {
@@ -115,7 +115,7 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Choice) View() string {
+func (m Choice) View() tea.View {
 	var b strings.Builder
 
 	b.WriteString(logoStyle.Render(choiceLogo))
@@ -147,5 +147,5 @@ func (m Choice) View() string {
 	b.WriteString("\n\n")
 	b.WriteString(helpStyle.Render("Use ↑/↓ to navigate, enter to select, and ctrl+c to quit."))
 
-	return docStyle.Render(b.String())
+	return tea.NewView(docStyle.Render(b.String()))
 }

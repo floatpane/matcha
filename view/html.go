@@ -17,8 +17,8 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 
+	"charm.land/lipgloss/v2"
 	"github.com/PuerkitoBio/goquery"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/renderer/html"
 	"golang.org/x/sys/unix"

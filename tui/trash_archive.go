@@ -3,9 +3,9 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
 )
@@ -42,7 +42,7 @@ func (m *TrashArchive) Init() tea.Cmd {
 
 func (m *TrashArchive) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "tab":
 			// Toggle between trash and archive
@@ -81,7 +81,7 @@ func (m *TrashArchive) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *TrashArchive) View() string {
+func (m *TrashArchive) View() tea.View {
 	var b strings.Builder
 
 	// Render the mailbox toggle tabs
@@ -104,12 +104,12 @@ func (m *TrashArchive) View() string {
 
 	// Render the active inbox
 	if m.activeView == MailboxTrash {
-		b.WriteString(m.trashInbox.View())
+		b.WriteString(m.trashInbox.View().Content)
 	} else {
-		b.WriteString(m.archiveInbox.View())
+		b.WriteString(m.archiveInbox.View().Content)
 	}
 
-	return b.String()
+	return tea.NewView(b.String())
 }
 
 // GetActiveMailbox returns the currently active mailbox kind

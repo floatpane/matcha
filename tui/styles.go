@@ -3,9 +3,9 @@ package tui
 import (
 	"fmt"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // ASCII logo for Matcha displayed during loading screens
@@ -68,11 +68,11 @@ func (m Status) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Status) View() string {
+func (m Status) View() tea.View {
 	logoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	styledLogo := logoStyle.Render(asciiLogo)
 
 	spinnerLine := fmt.Sprintf("   %s %s", m.spinner.View(), m.message)
 
-	return fmt.Sprintf("%s\n%s\n\n", styledLogo, spinnerLine)
+	return tea.NewView(fmt.Sprintf("%s\n%s\n\n", styledLogo, spinnerLine))
 }
