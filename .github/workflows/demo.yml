@@ -37,6 +37,7 @@ jobs:
                 "email": "matcha@floatpane.com",
                 "password": "dummy-password",
                 "service_provider": "custom"
+                "fetch_email": "matcha@floatpane.com"
               }
             ]
           }

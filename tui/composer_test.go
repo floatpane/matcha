@@ -220,7 +220,7 @@ func TestComposerUpdate(t *testing.T) {
 func TestComposerGetFromAddress(t *testing.T) {
 	t.Run("With name", func(t *testing.T) {
 		accounts := []config.Account{
-			{ID: "account-1", Email: "test@example.com", Name: "Test User"},
+			{ID: "account-1", FetchEmail: "test@example.com", Name: "Test User"},
 		}
 		composer := NewComposerWithAccounts(accounts, "account-1", "", "", "")
 
@@ -233,7 +233,7 @@ func TestComposerGetFromAddress(t *testing.T) {
 
 	t.Run("Without name", func(t *testing.T) {
 		accounts := []config.Account{
-			{ID: "account-1", Email: "test@example.com"},
+			{ID: "account-1", FetchEmail: "test@example.com"},
 		}
 		composer := NewComposerWithAccounts(accounts, "account-1", "", "", "")
 

@@ -3,10 +3,15 @@ package config
 import (
 	"reflect"
 	"testing"
+
+	"github.com/zalando/go-keyring"
 )
 
 // TestSaveAndLoadConfig verifies that the config can be saved to and loaded from a file correctly.
 func TestSaveAndLoadConfig(t *testing.T) {
+	// Use an in-memory mock keyring so tests do not interact with the host OS keyring
+	keyring.MockInit()
+
 	// Create a temporary directory for the test to avoid interfering with actual user config.
 	tempDir := t.TempDir()
 
@@ -107,6 +112,9 @@ func TestAccountGetSMTPServer(t *testing.T) {
 
 // TestConfigAddRemoveAccount tests adding and removing accounts from config.
 func TestConfigAddRemoveAccount(t *testing.T) {
+	// Use an in-memory mock keyring to test the deletion step cleanly
+	keyring.MockInit()
+
 	cfg := &Config{}
 
 	// Add an account

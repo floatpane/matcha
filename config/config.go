@@ -6,14 +6,17 @@ import (
 	"path/filepath"
 
 	"github.com/google/uuid"
+	"github.com/zalando/go-keyring"
 )
+
+const keyringServiceName = "matcha-email-client"
 
 // Account stores the configuration for a single email account.
 type Account struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
 	Email           string `json:"email"`
-	Password        string `json:"password"`
+	Password        string `json:"-"`                // "-" prevents the password from being saved to config.json
 	ServiceProvider string `json:"service_provider"` // "gmail", "icloud", or "custom"
 	// FetchEmail is the single email address for which messages should be fetched.
 	// If empty, it will default to `Email` when accounts are added.
@@ -108,8 +111,17 @@ func configFile() (string, error) {
 	return filepath.Join(dir, "config.json"), nil
 }
 
-// SaveConfig saves the given configuration to the config file.
+// SaveConfig saves the given configuration to the config file and passwords to the keyring.
 func SaveConfig(config *Config) error {
+	// Save passwords to the OS keyring before writing the JSON file
+	for _, acc := range config.Accounts {
+		if acc.Password != "" {
+			// We ignore the error here because some environments (like headless CI)
+			// might not have a keyring service, but we still want to save the rest of the config.
+			_ = keyring.Set(keyringServiceName, acc.Email, acc.Password)
+		}
+	}
+
 	path, err := configFile()
 	if err != nil {
 		return err
@@ -124,7 +136,8 @@ func SaveConfig(config *Config) error {
 	return os.WriteFile(path, data, 0600)
 }
 
-// LoadConfig loads the configuration from the config file.
+// LoadConfig loads the configuration from the config file and passwords from the keyring.
+// It automatically migrates plain-text passwords to the OS keyring if they exist.
 func LoadConfig() (*Config, error) {
 	path, err := configFile()
 	if err != nil {
@@ -134,12 +147,31 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var config Config
-	if err := json.Unmarshal(data, &config); err != nil {
-		// Try to load legacy single-account config
+	var needsMigration bool
+
+	type rawAccount struct {
+		ID              string `json:"id"`
+		Name            string `json:"name"`
+		Email           string `json:"email"`
+		Password        string `json:"password,omitempty"`
+		ServiceProvider string `json:"service_provider"`
+		FetchEmail      string `json:"fetch_email,omitempty"`
+		IMAPServer      string `json:"imap_server,omitempty"`
+		IMAPPort        int    `json:"imap_port,omitempty"`
+		SMTPServer      string `json:"smtp_server,omitempty"`
+		SMTPPort        int    `json:"smtp_port,omitempty"`
+	}
+	type diskConfig struct {
+		Accounts      []rawAccount `json:"accounts"`
+		DisableImages bool         `json:"disable_images,omitempty"`
+	}
+
+	var raw diskConfig
+	if err := json.Unmarshal(data, &raw); err != nil {
 		var legacyConfig legacyConfigFormat
 		if legacyErr := json.Unmarshal(data, &legacyConfig); legacyErr == nil && legacyConfig.Email != "" {
-			// Convert legacy config to new format
 			config = Config{
 				Accounts: []Account{
 					{
@@ -148,12 +180,11 @@ func LoadConfig() (*Config, error) {
 						Email:           legacyConfig.Email,
 						Password:        legacyConfig.Password,
 						ServiceProvider: legacyConfig.ServiceProvider,
-						// Default FetchEmail to the legacy Email value
-						FetchEmail: legacyConfig.Email,
+						FetchEmail:      legacyConfig.Email,
 					},
 				},
 			}
-			// Save the migrated config
+			// SaveConfig automatically pushes the password to the keyring and strips it from JSON
 			if saveErr := SaveConfig(&config); saveErr != nil {
 				return nil, saveErr
 			}
@@ -161,6 +192,42 @@ func LoadConfig() (*Config, error) {
 		}
 		return nil, err
 	}
+
+	config.DisableImages = raw.DisableImages
+	for _, rawAcc := range raw.Accounts {
+		acc := Account{
+			ID:              rawAcc.ID,
+			Name:            rawAcc.Name,
+			Email:           rawAcc.Email,
+			ServiceProvider: rawAcc.ServiceProvider,
+			FetchEmail:      rawAcc.FetchEmail,
+			IMAPServer:      rawAcc.IMAPServer,
+			IMAPPort:        rawAcc.IMAPPort,
+			SMTPServer:      rawAcc.SMTPServer,
+			SMTPPort:        rawAcc.SMTPPort,
+		}
+
+		if rawAcc.Password != "" {
+			// Found a plain-text password! Move it to the OS Keyring.
+			_ = keyring.Set(keyringServiceName, rawAcc.Email, rawAcc.Password)
+			acc.Password = rawAcc.Password
+			needsMigration = true
+		} else {
+			// No plaintext password in JSON, fetch from Keyring as normal.
+			if pwd, err := keyring.Get(keyringServiceName, acc.Email); err == nil {
+				acc.Password = pwd
+			}
+		}
+
+		config.Accounts = append(config.Accounts, acc)
+	}
+
+	if needsMigration {
+		if saveErr := SaveConfig(&config); saveErr != nil {
+			return nil, saveErr
+		}
+	}
+
 	return &config, nil
 }
 
@@ -184,10 +251,13 @@ func (c *Config) AddAccount(account Account) {
 	c.Accounts = append(c.Accounts, account)
 }
 
-// RemoveAccount removes an account by its ID.
+// RemoveAccount removes an account by its ID and deletes its password from the keyring.
 func (c *Config) RemoveAccount(id string) bool {
 	for i, acc := range c.Accounts {
 		if acc.ID == id {
+			// Delete password from OS Keyring when account is removed
+			_ = keyring.Delete(keyringServiceName, acc.Email)
+
 			c.Accounts = append(c.Accounts[:i], c.Accounts[i+1:]...)
 			return true
 		}
