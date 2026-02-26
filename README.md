@@ -19,7 +19,7 @@
 
 ## Documentation
 
-Matcha Documention is available on [https://docs.matcha.floatpane.com](our website)
+Matcha Documention is available on [our website](https://docs.matcha.floatpane.com)
 
 ## Star History
 
