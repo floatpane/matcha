@@ -27,6 +27,7 @@ type Account struct {
 	IMAPPort   int    `json:"imap_port,omitempty"`
 	SMTPServer string `json:"smtp_server,omitempty"`
 	SMTPPort   int    `json:"smtp_port,omitempty"`
+	Insecure   bool   `json:"insecure,omitempty"`
 }
 
 // MailingList represents a named group of email addresses.
@@ -170,6 +171,7 @@ func LoadConfig() (*Config, error) {
 		IMAPPort        int    `json:"imap_port,omitempty"`
 		SMTPServer      string `json:"smtp_server,omitempty"`
 		SMTPPort        int    `json:"smtp_port,omitempty"`
+		Insecure        bool   `json:"insecure,omitempty"`
 	}
 	type diskConfig struct {
 		Accounts      []rawAccount  `json:"accounts"`
@@ -215,6 +217,7 @@ func LoadConfig() (*Config, error) {
 			IMAPPort:        rawAcc.IMAPPort,
 			SMTPServer:      rawAcc.SMTPServer,
 			SMTPPort:        rawAcc.SMTPPort,
+			Insecure:        rawAcc.Insecure,
 		}
 
 		if rawAcc.Password != "" {

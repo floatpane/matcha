@@ -3,6 +3,7 @@ package sender
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"mime"
@@ -166,7 +167,63 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	allRecipients = append(allRecipients, bcc...)
 
 	addr := fmt.Sprintf("%s:%d", smtpServer, smtpPort)
-	return smtp.SendMail(addr, auth, account.Email, allRecipients, msg.Bytes())
+
+	// Custom SMTP dialer to support skipping TLS verification for Proton Bridge
+	c, err := smtp.Dial(addr)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	if err = c.Hello("localhost"); err != nil {
+		return err
+	}
+
+	// Trigger STARTTLS if supported
+	if ok, _ := c.Extension("STARTTLS"); ok {
+		tlsConfig := &tls.Config{
+			ServerName:         smtpServer,
+			InsecureSkipVerify: account.Insecure,
+		}
+		if err = c.StartTLS(tlsConfig); err != nil {
+			return err
+		}
+	}
+
+	// Authenticate
+	if auth != nil {
+		if ok, _ := c.Extension("AUTH"); ok {
+			if err = c.Auth(auth); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Send Envelope
+	if err = c.Mail(account.Email); err != nil {
+		return err
+	}
+	for _, r := range allRecipients {
+		if err = c.Rcpt(r); err != nil {
+			return err
+		}
+	}
+
+	// Write Data
+	w, err := c.Data()
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(msg.Bytes())
+	if err != nil {
+		return err
+	}
+	err = w.Close()
+	if err != nil {
+		return err
+	}
+
+	return c.Quit()
 }
 
 // wrapBase64 wraps base64-encoded data at 76 characters per line as required by MIME.

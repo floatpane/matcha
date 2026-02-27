@@ -2,6 +2,7 @@ package fetcher
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -111,9 +112,30 @@ func connect(account *config.Account) (*client.Client, error) {
 	}
 
 	addr := fmt.Sprintf("%s:%d", imapServer, imapPort)
-	c, err := client.DialTLS(addr, nil)
-	if err != nil {
-		return nil, err
+
+	tlsConfig := &tls.Config{
+		ServerName:         imapServer,
+		InsecureSkipVerify: account.Insecure,
+	}
+
+	var c *client.Client
+	var err error
+
+	// If using standard non-implicit ports (1143 or 143), use Dial + STARTTLS
+	if imapPort == 1143 || imapPort == 143 {
+		c, err = client.Dial(addr)
+		if err != nil {
+			return nil, err
+		}
+		if err := c.StartTLS(tlsConfig); err != nil {
+			return nil, err
+		}
+	} else {
+		// Otherwise default to implicit TLS (port 993)
+		c, err = client.DialTLS(addr, tlsConfig)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if err := c.Login(account.Email, account.Password); err != nil {
