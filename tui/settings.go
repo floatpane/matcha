@@ -75,8 +75,8 @@ func (m *Settings) updateMain(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.cursor--
 		}
 	case "down", "j":
-		// Options: 0: Email Accounts, 1: Image Display, 2: Edit Signature
-		if m.cursor < 2 {
+		// Options: 0: Email Accounts, 1: Image Display, 2: Edit Signature, 3: Contextual Tips
+		if m.cursor < 3 {
 			m.cursor++
 		}
 	case "enter":
@@ -92,6 +92,11 @@ func (m *Settings) updateMain(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case 2: // Edit Signature
 			return m, func() tea.Msg { return GoToSignatureEditorMsg{} }
+		case 3: // Contextual Tips
+			m.cfg.HideTips = !m.cfg.HideTips
+			// Save config immediately
+			_ = config.SaveConfig(m.cfg)
+			return m, nil
 		}
 	case "esc":
 		return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
@@ -189,7 +194,37 @@ func (m *Settings) viewMain() string {
 	} else {
 		b.WriteString(accountItemStyle.Render("  " + sigText))
 	}
+	b.WriteString("\n")
+
+	// Option 3: Contextual Tips
+	tipsStatus := "ON"
+	if m.cfg.HideTips {
+		tipsStatus = "OFF"
+	}
+	tipsText := fmt.Sprintf("Contextual Tips: %s", tipsStatus)
+	if m.cursor == 3 {
+		b.WriteString(selectedAccountItemStyle.Render("> " + tipsText))
+	} else {
+		b.WriteString(accountItemStyle.Render("  " + tipsText))
+	}
 	b.WriteString("\n\n")
+
+	if !m.cfg.HideTips {
+		tip := ""
+		switch m.cursor {
+		case 0:
+			tip = "Manage your connected email accounts."
+		case 1:
+			tip = "Toggle displaying images in emails."
+		case 2:
+			tip = "Configure the signature appended to your outgoing emails."
+		case 3:
+			tip = "Toggle displaying helpful contextual tips like this one."
+		}
+		if tip != "" {
+			b.WriteString(TipStyle.Render("Tip: "+tip) + "\n\n")
+		}
+	}
 
 	b.WriteString(helpStyle.Render("↑/↓: navigate • enter: select/toggle • esc: back"))
 

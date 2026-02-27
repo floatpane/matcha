@@ -13,7 +13,7 @@ func TestComposerUpdate(t *testing.T) {
 	accounts := []config.Account{
 		{ID: "account-1", Email: "test@example.com", Name: "Test User"},
 	}
-	composer := NewComposerWithAccounts(accounts, "account-1", "", "", "")
+	composer := NewComposerWithAccounts(accounts, "account-1", "", "", "", false)
 
 	t.Run("Focus cycling", func(t *testing.T) {
 		// Initial focus is on the 'To' input (index 1, since From is 0).
@@ -82,7 +82,7 @@ func TestComposerUpdate(t *testing.T) {
 
 	t.Run("Send email message", func(t *testing.T) {
 		// Re-initialize composer for this test
-		composer = NewComposerWithAccounts(accounts, "account-1", "", "", "")
+		composer = NewComposerWithAccounts(accounts, "account-1", "", "", "", false)
 
 		// Set values for the email fields.
 		composer.toInput.SetValue("recipient@example.com")
@@ -124,7 +124,7 @@ func TestComposerUpdate(t *testing.T) {
 			{ID: "account-1", Email: "test1@example.com", Name: "User 1"},
 			{ID: "account-2", Email: "test2@example.com", Name: "User 2"},
 		}
-		multiComposer := NewComposerWithAccounts(multiAccounts, "account-1", "", "", "")
+		multiComposer := NewComposerWithAccounts(multiAccounts, "account-1", "", "", "", false)
 
 		// Move focus to From field
 		multiComposer.focusIndex = focusFrom
@@ -163,7 +163,7 @@ func TestComposerUpdate(t *testing.T) {
 		singleAccounts := []config.Account{
 			{ID: "account-1", Email: "test@example.com"},
 		}
-		singleComposer := NewComposerWithAccounts(singleAccounts, "account-1", "", "", "")
+		singleComposer := NewComposerWithAccounts(singleAccounts, "account-1", "", "", "", false)
 
 		// Move focus to From field
 		singleComposer.focusIndex = focusFrom
@@ -182,7 +182,7 @@ func TestComposerUpdate(t *testing.T) {
 			{ID: "account-1", Email: "test1@example.com"},
 			{ID: "account-2", Email: "test2@example.com"},
 		}
-		multiComposer := NewComposerWithAccounts(multiAccounts, "account-1", "", "", "")
+		multiComposer := NewComposerWithAccounts(multiAccounts, "account-1", "", "", "", false)
 
 		// Initial focus is on 'To' field
 		if multiComposer.focusIndex != focusTo {
@@ -222,7 +222,7 @@ func TestComposerGetFromAddress(t *testing.T) {
 		accounts := []config.Account{
 			{ID: "account-1", FetchEmail: "test@example.com", Name: "Test User"},
 		}
-		composer := NewComposerWithAccounts(accounts, "account-1", "", "", "")
+		composer := NewComposerWithAccounts(accounts, "account-1", "", "", "", false)
 
 		fromAddr := composer.getFromAddress()
 		expected := "Test User <test@example.com>"
@@ -235,7 +235,7 @@ func TestComposerGetFromAddress(t *testing.T) {
 		accounts := []config.Account{
 			{ID: "account-1", FetchEmail: "test@example.com"},
 		}
-		composer := NewComposerWithAccounts(accounts, "account-1", "", "", "")
+		composer := NewComposerWithAccounts(accounts, "account-1", "", "", "", false)
 
 		fromAddr := composer.getFromAddress()
 		expected := "test@example.com"
@@ -245,7 +245,7 @@ func TestComposerGetFromAddress(t *testing.T) {
 	})
 
 	t.Run("No accounts", func(t *testing.T) {
-		composer := NewComposer("", "", "", "")
+		composer := NewComposer("", "", "", "", false)
 
 		fromAddr := composer.getFromAddress()
 		if fromAddr != "" {
@@ -261,7 +261,7 @@ func TestComposerSetSelectedAccount(t *testing.T) {
 		{ID: "account-2", FetchEmail: "test2@example.com"},
 		{ID: "account-3", FetchEmail: "test3@example.com"},
 	}
-	composer := NewComposerWithAccounts(accounts, "account-1", "", "", "")
+	composer := NewComposerWithAccounts(accounts, "account-1", "", "", "", false)
 
 	composer.SetSelectedAccount("account-3")
 	if composer.selectedAccountIdx != 2 {

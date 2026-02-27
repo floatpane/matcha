@@ -33,6 +33,7 @@ type Account struct {
 type Config struct {
 	Accounts      []Account `json:"accounts"`
 	DisableImages bool      `json:"disable_images,omitempty"`
+	HideTips      bool      `json:"hide_tips,omitempty"`
 }
 
 // GetIMAPServer returns the IMAP server address for the account.

@@ -28,6 +28,7 @@ var (
 			BorderBottom(true)
 
 	HelpStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	TipStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Italic(true)
 	SuccessStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 	InfoStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 

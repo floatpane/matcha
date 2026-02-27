@@ -56,6 +56,7 @@ type Composer struct {
 	width          int
 	height         int
 	confirmingExit bool
+	hideTips       bool
 
 	// Multi-account support
 	accounts           []config.Account
@@ -80,9 +81,10 @@ type Composer struct {
 }
 
 // NewComposer initializes a new composer model.
-func NewComposer(from, to, subject, body string) *Composer {
+func NewComposer(from, to, subject, body string, hideTips bool) *Composer {
 	m := &Composer{
-		draftID: uuid.New().String(),
+		draftID:  uuid.New().String(),
+		hideTips: hideTips,
 	}
 
 	m.toInput = textinput.New()
@@ -130,8 +132,8 @@ func NewComposer(from, to, subject, body string) *Composer {
 }
 
 // NewComposerWithAccounts initializes a composer with multiple account support.
-func NewComposerWithAccounts(accounts []config.Account, selectedAccountID string, to, subject, body string) *Composer {
-	m := NewComposer("", to, subject, body)
+func NewComposerWithAccounts(accounts []config.Account, selectedAccountID string, to, subject, body string, hideTips bool) *Composer {
+	m := NewComposer("", to, subject, body, hideTips)
 	m.accounts = accounts
 
 	// Find the selected account index
@@ -446,7 +448,29 @@ func (m *Composer) View() tea.View {
 		signatureLabel = blurredStyle.Render("Signature:")
 	}
 
-	composerView.WriteString(lipgloss.JoinVertical(lipgloss.Left,
+	tip := ""
+	switch m.focusIndex {
+	case focusFrom:
+		tip = "Select the account to send from."
+	case focusTo:
+		tip = "Enter recipient email addresses."
+	case focusCc:
+		tip = "Carbon copy recipients."
+	case focusBcc:
+		tip = "Blind carbon copy recipients."
+	case focusSubject:
+		tip = "The subject line of your email."
+	case focusBody:
+		tip = "The main content of your email. Markdown and HTML are supported."
+	case focusSignature:
+		tip = "Your email signature. This will be appended to the end of the email."
+	case focusAttachment:
+		tip = "Press Enter to select a file to attach to this email."
+	case focusSend:
+		tip = "Press Enter to send the email."
+	}
+
+	composerViewElements := []string{
 		"Compose New Email",
 		fromField,
 		toFieldView,
@@ -458,8 +482,15 @@ func (m *Composer) View() tea.View {
 		m.signatureInput.View(),
 		attachmentStyle.Render(attachmentField),
 		button,
-		helpStyle.Render("Markdown/HTML • tab/shift+tab: navigate • esc: save draft & exit"),
-	))
+		"",
+	}
+
+	if !m.hideTips && tip != "" {
+		composerViewElements = append(composerViewElements, TipStyle.Render("Tip: "+tip))
+	}
+	composerViewElements = append(composerViewElements, helpStyle.Render("Markdown/HTML • tab/shift+tab: navigate • esc: save draft & exit"))
+
+	composerView.WriteString(lipgloss.JoinVertical(lipgloss.Left, composerViewElements...))
 
 	// Account picker overlay
 	if m.showAccountPicker {
@@ -602,8 +633,8 @@ func (m *Composer) ToDraft() config.Draft {
 }
 
 // NewComposerFromDraft creates a composer from an existing draft.
-func NewComposerFromDraft(draft config.Draft, accounts []config.Account) *Composer {
-	m := NewComposerWithAccounts(accounts, draft.AccountID, draft.To, draft.Subject, draft.Body)
+func NewComposerFromDraft(draft config.Draft, accounts []config.Account, hideTips bool) *Composer {
+	m := NewComposerWithAccounts(accounts, draft.AccountID, draft.To, draft.Subject, draft.Body, hideTips)
 	m.ccInput.SetValue(draft.Cc)
 	m.bccInput.SetValue(draft.Bcc)
 	m.draftID = draft.ID

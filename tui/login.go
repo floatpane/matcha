@@ -15,6 +15,7 @@ type Login struct {
 	showCustom bool // Show custom server fields
 	isEditMode bool // Whether we're editing an existing account
 	accountID  string
+	hideTips   bool
 	width      int
 	height     int
 }
@@ -33,9 +34,10 @@ const (
 )
 
 // NewLogin creates a new login model for adding accounts.
-func NewLogin() *Login {
+func NewLogin(hideTips bool) *Login {
 	m := &Login{
-		inputs: make([]textinput.Model, inputCount),
+		inputs:   make([]textinput.Model, inputCount),
+		hideTips: hideTips,
 	}
 
 	var t textinput.Model
@@ -215,6 +217,28 @@ func (m *Login) View() tea.View {
 		customHint = "\n" + accountEmailStyle.Render("Custom provider selected - configure server settings below")
 	}
 
+	tip := ""
+	switch m.focusIndex {
+	case inputProvider:
+		tip = "Enter your email provider (e.g., gmail, icloud) or 'custom'."
+	case inputName:
+		tip = "The name that will appear on emails you send."
+	case inputEmail:
+		tip = "Your full email address used to log in."
+	case inputFetchEmail:
+		tip = "The email address to fetch messages from (often same as Username)."
+	case inputPassword:
+		tip = "Your password or an app-specific password if using 2FA."
+	case inputIMAPServer:
+		tip = "The server address for receiving emails."
+	case inputIMAPPort:
+		tip = "The port for the IMAP server (usually 993 for SSL)."
+	case inputSMTPServer:
+		tip = "The server address for sending emails."
+	case inputSMTPPort:
+		tip = "The port for the SMTP server (usually 587 for TLS)."
+	}
+
 	views := []string{
 		titleStyle.Render(title),
 		"Enter your email account credentials.",
@@ -237,6 +261,10 @@ func (m *Login) View() tea.View {
 		)
 	}
 
+	views = append(views, "")
+	if !m.hideTips && tip != "" {
+		views = append(views, TipStyle.Render("Tip: "+tip))
+	}
 	views = append(views, helpStyle.Render("\nenter: save • tab: next field • esc: back to menu"))
 
 	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, views...))

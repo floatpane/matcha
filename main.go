@@ -87,7 +87,11 @@ func newInitialModel(cfg *config.Config) *mainModel {
 	}
 
 	if cfg == nil || !cfg.HasAccounts() {
-		initialModel.current = tui.NewLogin()
+		hideTips := false
+		if cfg != nil {
+			hideTips = cfg.HideTips
+		}
+		initialModel.current = tui.NewLogin(hideTips)
 	} else {
 		initialModel.current = tui.NewChoice()
 		initialModel.config = cfg
@@ -220,7 +224,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tui.GoToInboxMsg:
 		if m.config == nil || !m.config.HasAccounts() {
-			m.current = tui.NewLogin()
+			hideTips := false
+			if m.config != nil {
+				hideTips = m.config.HideTips
+			}
+			m.current = tui.NewLogin(hideTips)
 			return m, m.current.Init()
 		}
 		// Try to load from cache first for instant display
@@ -233,7 +241,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tui.GoToSentInboxMsg:
 		if m.config == nil || !m.config.HasAccounts() {
-			m.current = tui.NewLogin()
+			hideTips := false
+			if m.config != nil {
+				hideTips = m.config.HideTips
+			}
+			m.current = tui.NewLogin(hideTips)
 			return m, m.current.Init()
 		}
 		m.current = tui.NewStatus("Fetching sent emails from all accounts...")
@@ -241,7 +253,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tui.GoToTrashArchiveMsg:
 		if m.config == nil || !m.config.HasAccounts() {
-			m.current = tui.NewLogin()
+			hideTips := false
+			if m.config != nil {
+				hideTips = m.config.HideTips
+			}
+			m.current = tui.NewLogin(hideTips)
 			return m, m.current.Init()
 		}
 		m.current = tui.NewStatus("Fetching trash and archive emails...")
@@ -467,12 +483,16 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tui.GoToSendMsg:
+		hideTips := false
+		if m.config != nil {
+			hideTips = m.config.HideTips
+		}
 		if m.config != nil && len(m.config.Accounts) > 0 {
 			firstAccount := m.config.GetFirstAccount()
-			composer := tui.NewComposerWithAccounts(m.config.Accounts, firstAccount.ID, msg.To, msg.Subject, msg.Body)
+			composer := tui.NewComposerWithAccounts(m.config.Accounts, firstAccount.ID, msg.To, msg.Subject, msg.Body, hideTips)
 			m.current = composer
 		} else {
-			m.current = tui.NewComposer("", msg.To, msg.Subject, msg.Body)
+			m.current = tui.NewComposer("", msg.To, msg.Subject, msg.Body, hideTips)
 		}
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
@@ -485,10 +505,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tui.OpenDraftMsg:
 		var accounts []config.Account
+		hideTips := false
 		if m.config != nil {
 			accounts = m.config.Accounts
+			hideTips = m.config.HideTips
 		}
-		composer := tui.NewComposerFromDraft(msg.Draft, accounts)
+		composer := tui.NewComposerFromDraft(msg.Draft, accounts, hideTips)
 		m.current = composer
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
@@ -509,7 +531,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.current.Init()
 
 	case tui.GoToAddAccountMsg:
-		m.current = tui.NewLogin()
+		hideTips := false
+		if m.config != nil {
+			hideTips = m.config.HideTips
+		}
+		m.current = tui.NewLogin(hideTips)
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
 
@@ -592,15 +618,19 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		quotedText := fmt.Sprintf("\n\nOn %s, %s wrote:\n> %s", msg.Email.Date.Format("Jan 2, 2006 at 3:04 PM"), msg.Email.From, strings.ReplaceAll(msg.Email.Body, "\n", "\n> "))
 
 		var composer *tui.Composer
+		hideTips := false
+		if m.config != nil {
+			hideTips = m.config.HideTips
+		}
 		if m.config != nil && len(m.config.Accounts) > 0 {
 			// Use the account that received the email
 			accountID := msg.Email.AccountID
 			if accountID == "" {
 				accountID = m.config.GetFirstAccount().ID
 			}
-			composer = tui.NewComposerWithAccounts(m.config.Accounts, accountID, to, subject, "")
+			composer = tui.NewComposerWithAccounts(m.config.Accounts, accountID, to, subject, "", hideTips)
 		} else {
-			composer = tui.NewComposer("", to, subject, "")
+			composer = tui.NewComposer("", to, subject, "", hideTips)
 		}
 		composer.SetQuotedText(quotedText)
 
@@ -629,15 +659,19 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		body := forwardHeader + msg.Email.Body
 
 		var composer *tui.Composer
+		hideTips := false
+		if m.config != nil {
+			hideTips = m.config.HideTips
+		}
 		if m.config != nil && len(m.config.Accounts) > 0 {
 			// Use the account that received the email
 			accountID := msg.Email.AccountID
 			if accountID == "" {
 				accountID = m.config.GetFirstAccount().ID
 			}
-			composer = tui.NewComposerWithAccounts(m.config.Accounts, accountID, "", subject, body)
+			composer = tui.NewComposerWithAccounts(m.config.Accounts, accountID, "", subject, body, hideTips)
 		} else {
-			composer = tui.NewComposer("", "", subject, body)
+			composer = tui.NewComposer("", "", subject, body, hideTips)
 		}
 
 		m.current = composer
