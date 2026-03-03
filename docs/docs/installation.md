@@ -64,6 +64,20 @@ You can install Matcha via Flatpak using the following command:
 flatpak install https://matcha.floatpane.com/matcha.flatpakref
 ```
 
+### Nix
+
+You can run Matcha directly using [Nix](https://nixos.org/) flakes:
+
+```bash
+nix run github:floatpane/matcha
+```
+
+Or install it into your profile:
+
+```bash
+nix profile install github:floatpane/matcha
+```
+
 ### Manual Binary Download
 
 You can download pre-compiled binaries from the [Releases page](https://github.com/floatpane/matcha/releases).
