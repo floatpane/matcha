@@ -322,8 +322,21 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tui.EmailsRefreshedMsg:
 		if msg.Mailbox == tui.MailboxSent {
-			m.sentByAcct = msg.EmailsByAccount
-			m.sentEmails = flattenAndSort(msg.EmailsByAccount)
+			for accID, refreshed := range msg.EmailsByAccount {
+				refreshedUIDs := make(map[uint32]struct{}, len(refreshed))
+				for _, e := range refreshed {
+					refreshedUIDs[e.UID] = struct{}{}
+				}
+				if existing, ok := m.sentByAcct[accID]; ok {
+					for _, e := range existing {
+						if _, found := refreshedUIDs[e.UID]; !found {
+							refreshed = append(refreshed, e)
+						}
+					}
+				}
+				m.sentByAcct[accID] = refreshed
+			}
+			m.sentEmails = flattenAndSort(m.sentByAcct)
 			if m.sentInbox != nil {
 				m.sentInbox.SetEmails(m.sentEmails, m.config.Accounts)
 				m.current, _ = m.current.Update(msg)
@@ -331,8 +344,27 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		m.emailsByAcct = msg.EmailsByAccount
-		m.emails = flattenAndSort(msg.EmailsByAccount)
+		// Merge refreshed emails with any paginated emails already loaded.
+		// The refresh only fetches the initial batch; paginated emails beyond
+		// that must be preserved.
+		for accID, refreshed := range msg.EmailsByAccount {
+			refreshedUIDs := make(map[uint32]struct{}, len(refreshed))
+			for _, e := range refreshed {
+				refreshedUIDs[e.UID] = struct{}{}
+			}
+			// Keep paginated emails not covered by the refresh
+			if existing, ok := m.emailsByAcct[accID]; ok {
+				for _, e := range existing {
+					if _, found := refreshedUIDs[e.UID]; !found {
+						refreshed = append(refreshed, e)
+					}
+				}
+			}
+			m.emailsByAcct[accID] = refreshed
+		}
+		// Accounts not in the refresh response (e.g. fetch failed) are
+		// kept as-is since m.emailsByAcct was not cleared.
+		m.emails = flattenAndSort(m.emailsByAcct)
 
 		// Save to cache (inbox only)
 		go saveEmailsToCache(m.emails)
@@ -604,12 +636,8 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.current.Init()
 
 	case tui.ViewEmailMsg:
-		email := m.getEmailByUIDAndAccount(msg.UID, msg.AccountID, msg.Mailbox)
-		if email == nil {
-			return m, nil
-		}
 		m.current = tui.NewStatus("Fetching email content...")
-		return m, tea.Batch(m.current.Init(), fetchEmailBodyCmd(m.config, *email, msg.UID, msg.AccountID, msg.Mailbox))
+		return m, tea.Batch(m.current.Init(), fetchEmailBodyCmd(m.config, msg.UID, msg.AccountID, msg.Mailbox))
 
 	case tui.EmailBodyFetchedMsg:
 		if msg.Err != nil {
@@ -1354,7 +1382,7 @@ func parseEmailAddress(addr string) (name, email string) {
 	return name, email
 }
 
-func fetchEmailBodyCmd(cfg *config.Config, email fetcher.Email, uid uint32, accountID string, mailbox tui.MailboxKind) tea.Cmd {
+func fetchEmailBodyCmd(cfg *config.Config, uid uint32, accountID string, mailbox tui.MailboxKind) tea.Cmd {
 	return func() tea.Msg {
 		account := cfg.GetAccountByID(accountID)
 		if account == nil {
