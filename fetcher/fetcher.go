@@ -307,14 +307,11 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 			})
 		}
 
-		// Sort batch Newest -> Oldest (since IMAP usually returns Oldest->Newest or arbitrary)
-		// Assuming seqset order or standard behavior, we want to ensure we append Newest emails first
-		// so that the final list is correct.
-		// Actually, let's just sort the batch by UID desc (Newest first)
-		// Simple bubble sort for small batch
+		// Sort batch by Date descending (newest first)
+		// UID ordering is not reliable for all IMAP servers (e.g. Proton Bridge)
 		for i := 0; i < len(batchEmails); i++ {
 			for j := i + 1; j < len(batchEmails); j++ {
-				if batchEmails[j].UID > batchEmails[i].UID {
+				if batchEmails[j].Date.After(batchEmails[i].Date) {
 					batchEmails[i], batchEmails[j] = batchEmails[j], batchEmails[i]
 				}
 			}
