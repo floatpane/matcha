@@ -339,7 +339,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sentEmails = flattenAndSort(m.sentByAcct)
 			if m.sentInbox != nil {
 				m.sentInbox.SetEmails(m.sentEmails, m.config.Accounts)
-				m.current, _ = m.current.Update(msg)
+				// Clear refreshing state on the sent inbox directly so we
+				// don't accidentally swap m.current away from an email view.
+				m.sentInbox.Update(msg)
 			}
 			return m, nil
 		}
@@ -372,8 +374,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update inbox if it exists
 		if m.inbox != nil {
 			m.inbox.SetEmails(m.emails, m.config.Accounts)
-			// Forward the message to inbox to clear refreshing state
-			m.current, _ = m.current.Update(msg)
+			// Clear refreshing state on the inbox directly so we don't
+			// accidentally swap m.current away from an email view.
+			m.inbox.Update(msg)
 		}
 		return m, nil
 
@@ -454,12 +457,22 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.emails = flattenAndSort(m.emailsByAcct)
 		if m.inbox == nil {
 			m.inbox = tui.NewInbox(m.emails, m.config.Accounts)
-		} else {
-			m.inbox.SetEmails(m.emails, m.config.Accounts)
+			m.current = m.inbox
+			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			return m, m.current.Init()
 		}
-		m.current = m.inbox
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-		return m, m.current.Init()
+		m.inbox.SetEmails(m.emails, m.config.Accounts)
+		// Only switch to inbox if we're on a loading/status screen, not
+		// when the user is viewing an email or composing.
+		if _, onInbox := m.current.(*tui.Inbox); onInbox {
+			return m, nil
+		}
+		if _, onStatus := m.current.(tui.Status); onStatus {
+			m.current = m.inbox
+			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			return m, m.current.Init()
+		}
+		return m, nil
 
 	case tui.FetchMoreEmailsMsg:
 		if msg.AccountID == "" {

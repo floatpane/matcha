@@ -403,35 +403,11 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Mailbox != m.mailbox {
 			return m, nil
 		}
+		// Only clear the refreshing indicator. The actual email data is
+		// merged by the main model (preserving paginated emails) and
+		// pushed to us via SetEmails, so we must not overwrite it here.
 		m.isRefreshing = false
-
-		// Replace emails with fresh data
-		m.emailsByAccount = msg.EmailsByAccount
-
-		// Flatten all emails
-		var allEmails []fetcher.Email
-		for _, emails := range msg.EmailsByAccount {
-			allEmails = append(allEmails, emails...)
-		}
-
-		// Sort by date (newest first)
-		for i := 0; i < len(allEmails); i++ {
-			for j := i + 1; j < len(allEmails); j++ {
-				if allEmails[j].Date.After(allEmails[i].Date) {
-					allEmails[i], allEmails[j] = allEmails[j], allEmails[i]
-				}
-			}
-		}
-
-		m.allEmails = allEmails
-
-		// Update email counts
-		m.emailCountByAcct = make(map[string]int)
-		for accID, accEmails := range m.emailsByAccount {
-			m.emailCountByAcct[accID] = len(accEmails)
-		}
-
-		m.updateList()
+		m.list.Title = m.getTitle()
 		return m, nil
 	}
 
