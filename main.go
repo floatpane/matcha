@@ -636,6 +636,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.current.Init()
 
 	case tui.ViewEmailMsg:
+		if m.getEmailByUIDAndAccount(msg.UID, msg.AccountID, msg.Mailbox) == nil {
+			return m, nil
+		}
 		m.current = tui.NewStatus("Fetching email content...")
 		return m, tea.Batch(m.current.Init(), fetchEmailBodyCmd(m.config, msg.UID, msg.AccountID, msg.Mailbox))
 
