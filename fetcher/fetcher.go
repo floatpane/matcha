@@ -52,6 +52,13 @@ type Email struct {
 	AccountID   string // ID of the account this email belongs to
 }
 
+// Folder represents an IMAP mailbox/folder.
+type Folder struct {
+	Name       string
+	Delimiter  string
+	Attributes []string
+}
+
 func decodePart(reader io.Reader, header mail.PartHeader) (string, error) {
 	mediaType, params, err := mime.ParseMediaType(header.Get("Content-Type"))
 	if err != nil {
@@ -307,11 +314,14 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 			})
 		}
 
-		// Sort batch by Date descending (newest first)
-		// UID ordering is not reliable for all IMAP servers (e.g. Proton Bridge)
+		// Sort batch Newest -> Oldest (since IMAP usually returns Oldest->Newest or arbitrary)
+		// Assuming seqset order or standard behavior, we want to ensure we append Newest emails first
+		// so that the final list is correct.
+		// Actually, let's just sort the batch by UID desc (Newest first)
+		// Simple bubble sort for small batch
 		for i := 0; i < len(batchEmails); i++ {
 			for j := i + 1; j < len(batchEmails); j++ {
-				if batchEmails[j].Date.After(batchEmails[i].Date) {
+				if batchEmails[j].UID > batchEmails[i].UID {
 					batchEmails[i], batchEmails[j] = batchEmails[j], batchEmails[i]
 				}
 			}
@@ -791,27 +801,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 		}
 	}
 
-	MarkEmailAsRead(account, mailbox, uid)
-
 	return body, attachments, nil
-}
-
-func MarkEmailAsRead(account *config.Account, mailbox string, uid uint32) error {
-	c, err := connect(account)
-	if err != nil {
-		return err
-	}
-	defer c.Logout()
-
-	if _, err := c.Select(mailbox, false); err != nil {
-		return err
-	}
-
-	seqSet := new(imap.SeqSet)
-	seqSet.AddNum(uid)
-	item := imap.FormatFlagsOp(imap.AddFlags, true)
-	flags := []interface{}{imap.SeenFlag}
-	return c.UidStore(seqSet, item, flags, nil)
 }
 
 func FetchAttachmentFromMailbox(account *config.Account, mailbox string, uid uint32, partID string, encoding string) ([]byte, error) {
@@ -1232,4 +1222,64 @@ func DeleteArchiveEmail(account *config.Account, uid uint32) error {
 	}
 
 	return DeleteEmailFromMailbox(account, archiveMailbox, uid)
+}
+
+// FetchFolders lists all IMAP folders/mailboxes for an account.
+func FetchFolders(account *config.Account) ([]Folder, error) {
+	c, err := connect(account)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Logout()
+
+	mailboxes := make(chan *imap.MailboxInfo, 50)
+	done := make(chan error, 1)
+	go func() {
+		done <- c.List("", "*", mailboxes)
+	}()
+
+	var folders []Folder
+	for m := range mailboxes {
+		folders = append(folders, Folder{
+			Name:       m.Name,
+			Delimiter:  m.Delimiter,
+			Attributes: m.Attributes,
+		})
+	}
+
+	if err := <-done; err != nil {
+		return nil, err
+	}
+
+	return folders, nil
+}
+
+// MoveEmailToFolder moves an email from one folder to another via IMAP.
+func MoveEmailToFolder(account *config.Account, uid uint32, sourceFolder, destFolder string) error {
+	return moveEmail(account, uid, sourceFolder, destFolder)
+}
+
+// FetchFolderEmails fetches emails from an arbitrary folder.
+func FetchFolderEmails(account *config.Account, folder string, limit, offset uint32) ([]Email, error) {
+	return FetchMailboxEmails(account, folder, limit, offset)
+}
+
+// FetchFolderEmailBody fetches the body of an email from an arbitrary folder.
+func FetchFolderEmailBody(account *config.Account, folder string, uid uint32) (string, []Attachment, error) {
+	return FetchEmailBodyFromMailbox(account, folder, uid)
+}
+
+// FetchFolderAttachment fetches an attachment from an arbitrary folder.
+func FetchFolderAttachment(account *config.Account, folder string, uid uint32, partID string, encoding string) ([]byte, error) {
+	return FetchAttachmentFromMailbox(account, folder, uid, partID, encoding)
+}
+
+// DeleteFolderEmail deletes an email from an arbitrary folder.
+func DeleteFolderEmail(account *config.Account, folder string, uid uint32) error {
+	return DeleteEmailFromMailbox(account, folder, uid)
+}
+
+// ArchiveFolderEmail archives an email from an arbitrary folder.
+func ArchiveFolderEmail(account *config.Account, folder string, uid uint32) error {
+	return ArchiveEmailFromMailbox(account, folder, uid)
 }

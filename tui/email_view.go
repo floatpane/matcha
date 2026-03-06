@@ -53,6 +53,11 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 			smimeTrusted = att.SMIMEVerified
 			isEncrypted = att.IsSMIMEEncrypted
 		} else if att.IsSMIMESignature || att.Filename == "smime.p7s" || att.Filename == "smime.p7m" || strings.HasPrefix(att.MIMEType, "application/pkcs7") {
+			// Extract S/MIME status from detached signature attachments
+			if att.IsSMIMESignature && !isSMIME {
+				isSMIME = true
+				smimeTrusted = att.SMIMEVerified
+			}
 			// Skip UI rendering
 		} else {
 			filteredAtts = append(filteredAtts, att)

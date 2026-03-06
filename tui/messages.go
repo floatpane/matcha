@@ -291,6 +291,67 @@ type EmailsRefreshedMsg struct {
 
 // RequestRefreshMsg signals a request to refresh emails from the server.
 type RequestRefreshMsg struct {
-	Mailbox MailboxKind
-	Counts  map[string]int
+	Mailbox    MailboxKind
+	Counts     map[string]int
+	FolderName string
+}
+
+// --- Folder Messages ---
+
+// FoldersFetchedMsg signals that IMAP folders have been fetched for all accounts.
+type FoldersFetchedMsg struct {
+	FoldersByAccount map[string][]fetcher.Folder // accountID -> folders
+	MergedFolders    []fetcher.Folder            // unique folders across all accounts
+}
+
+// SwitchFolderMsg signals switching to a different IMAP folder.
+type SwitchFolderMsg struct {
+	FolderName string
+	AccountID  string
+}
+
+// FolderEmailsFetchedMsg signals that emails from a folder have been fetched.
+type FolderEmailsFetchedMsg struct {
+	Emails     []fetcher.Email
+	AccountID  string
+	FolderName string
+}
+
+// FolderEmailsAppendedMsg signals that more emails from a folder have been fetched (pagination).
+type FolderEmailsAppendedMsg struct {
+	Emails     []fetcher.Email
+	AccountID  string
+	FolderName string
+}
+
+// MoveEmailMsg signals a request to show the move-to-folder picker.
+type MoveEmailMsg struct {
+	UID          uint32
+	AccountID    string
+	SourceFolder string
+}
+
+// MoveEmailToFolderMsg signals that an email should be moved to a folder.
+type MoveEmailToFolderMsg struct {
+	UID          uint32
+	AccountID    string
+	SourceFolder string
+	DestFolder   string
+}
+
+// EmailMovedMsg signals that an email was moved to a folder.
+type EmailMovedMsg struct {
+	UID          uint32
+	AccountID    string
+	SourceFolder string
+	DestFolder   string
+	Err          error
+}
+
+// FetchFolderMoreEmailsMsg signals a request to fetch more emails from a folder (pagination).
+type FetchFolderMoreEmailsMsg struct {
+	Offset     uint32
+	AccountID  string
+	FolderName string
+	Limit      uint32
 }

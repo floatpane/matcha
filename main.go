@@ -30,8 +30,8 @@ import (
 )
 
 const (
-	initialEmailLimit = 20
-	paginationLimit   = 20
+	initialEmailLimit = 50
+	paginationLimit   = 50
 	maxCacheEmails    = 100
 )
 
@@ -62,28 +62,21 @@ type mainModel struct {
 	current       tea.Model
 	previousModel tea.Model
 	config        *config.Config
-	emails        []fetcher.Email
-	emailsByAcct  map[string][]fetcher.Email
-	sentEmails    []fetcher.Email
-	sentByAcct    map[string][]fetcher.Email
-	trashEmails   []fetcher.Email
-	trashByAcct   map[string][]fetcher.Email
-	archiveEmails []fetcher.Email
-	archiveByAcct map[string][]fetcher.Email
-	inbox         *tui.Inbox
-	sentInbox     *tui.Inbox
-	trashArchive  *tui.TrashArchive
-	width         int
-	height        int
-	err           error
+	// Folder-based email storage
+	folderEmails map[string][]fetcher.Email // key: folderName
+	folderInbox  *tui.FolderInbox
+	// Legacy fields kept for email actions
+	emails       []fetcher.Email
+	emailsByAcct map[string][]fetcher.Email
+	width        int
+	height       int
+	err          error
 }
 
 func newInitialModel(cfg *config.Config) *mainModel {
 	initialModel := &mainModel{
-		emailsByAcct:  make(map[string][]fetcher.Email),
-		sentByAcct:    make(map[string][]fetcher.Email),
-		trashByAcct:   make(map[string][]fetcher.Email),
-		archiveByAcct: make(map[string][]fetcher.Email),
+		emailsByAcct: make(map[string][]fetcher.Email),
+		folderEmails: make(map[string][]fetcher.Email),
 	}
 
 	if cfg == nil || !cfg.HasAccounts() {
@@ -124,7 +117,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.current.(type) {
 			case *tui.FilePicker:
 				return m, func() tea.Msg { return tui.CancelFilePickerMsg{} }
-			case *tui.Inbox, *tui.Login, *tui.TrashArchive:
+			case *tui.FolderInbox, *tui.Inbox, *tui.Login:
 				m.current = tui.NewChoice()
 				m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 				return m, m.current.Init()
@@ -132,8 +125,8 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tui.BackToInboxMsg:
-		if m.inbox != nil {
-			m.current = m.inbox
+		if m.folderInbox != nil {
+			m.current = m.folderInbox
 		} else {
 			m.current = tui.NewChoice()
 			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
@@ -143,22 +136,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tui.BackToMailboxMsg:
 		// Ensure kitty graphics are cleared when leaving email view
 		tui.ClearKittyGraphics()
-		switch msg.Mailbox {
-		case tui.MailboxSent:
-			if m.sentInbox != nil {
-				m.current = m.sentInbox
-				return m, nil
-			}
-		case tui.MailboxInbox:
-			if m.inbox != nil {
-				m.current = m.inbox
-				return m, nil
-			}
-		case tui.MailboxTrash, tui.MailboxArchive:
-			if m.trashArchive != nil {
-				m.current = m.trashArchive
-				return m, nil
-			}
+		if m.folderInbox != nil {
+			m.current = m.folderInbox
+			return m, nil
 		}
 		m.current = tui.NewChoice()
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
@@ -238,247 +218,124 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.current = tui.NewLogin(hideTips)
 			return m, m.current.Init()
 		}
-		// Try to load from cache first for instant display
-		if config.HasEmailCache() {
-			return m, loadCachedEmails()
-		}
-		// No cache, fetch normally
-		m.current = tui.NewStatus("Fetching emails from all accounts...")
-		return m, tea.Batch(m.current.Init(), fetchAllAccountsEmails(m.config, tui.MailboxInbox))
-
-	case tui.GoToSentInboxMsg:
-		if m.config == nil || !m.config.HasAccounts() {
-			hideTips := false
-			if m.config != nil {
-				hideTips = m.config.HideTips
-			}
-			m.current = tui.NewLogin(hideTips)
-			return m, m.current.Init()
-		}
-		m.current = tui.NewStatus("Fetching sent emails from all accounts...")
-		return m, tea.Batch(m.current.Init(), fetchAllAccountsEmails(m.config, tui.MailboxSent))
-
-	case tui.GoToTrashArchiveMsg:
-		if m.config == nil || !m.config.HasAccounts() {
-			hideTips := false
-			if m.config != nil {
-				hideTips = m.config.HideTips
-			}
-			m.current = tui.NewLogin(hideTips)
-			return m, m.current.Init()
-		}
-		m.current = tui.NewStatus("Fetching trash and archive emails...")
-		return m, tea.Batch(
-			m.current.Init(),
-			fetchAllAccountsEmails(m.config, tui.MailboxTrash),
-			fetchAllAccountsEmails(m.config, tui.MailboxArchive),
-		)
-
-	case tui.CachedEmailsLoadedMsg:
-		if msg.Cache == nil {
-			// Cache load failed, fetch normally
-			m.current = tui.NewStatus("Fetching emails from all accounts...")
-			return m, tea.Batch(m.current.Init(), fetchAllAccountsEmails(m.config, tui.MailboxInbox))
-		}
-
-		// Convert cached emails to fetcher.Email
-		var cachedEmails []fetcher.Email
-		emailsByAcct := make(map[string][]fetcher.Email)
-		for _, cached := range msg.Cache.Emails {
-			email := fetcher.Email{
-				UID:       cached.UID,
-				From:      cached.From,
-				To:        cached.To,
-				Subject:   cached.Subject,
-				Date:      cached.Date,
-				MessageID: cached.MessageID,
-				AccountID: cached.AccountID,
-			}
-			cachedEmails = append(cachedEmails, email)
-			emailsByAcct[cached.AccountID] = append(emailsByAcct[cached.AccountID], email)
-		}
-
-		m.emails = cachedEmails
-		m.emailsByAcct = emailsByAcct
-		m.inbox = tui.NewInbox(m.emails, m.config.Accounts)
-		m.current = m.inbox
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-
-		counts := make(map[string]int)
-		for k, v := range emailsByAcct {
-			counts[k] = len(v)
-		}
-
-		// Start background refresh
-		return m, tea.Batch(
-			m.current.Init(),
-			func() tea.Msg { return tui.RefreshingEmailsMsg{Mailbox: tui.MailboxInbox} },
-			refreshEmails(m.config, tui.MailboxInbox, counts),
-		)
-
-	case tui.RequestRefreshMsg:
-		return m, tea.Batch(
-			func() tea.Msg { return tui.RefreshingEmailsMsg{Mailbox: msg.Mailbox} },
-			refreshEmails(m.config, msg.Mailbox, msg.Counts),
-		)
-
-	case tui.EmailsRefreshedMsg:
-		if msg.Mailbox == tui.MailboxSent {
-			for accID, refreshed := range msg.EmailsByAccount {
-				refreshedUIDs := make(map[uint32]struct{}, len(refreshed))
-				for _, e := range refreshed {
-					refreshedUIDs[e.UID] = struct{}{}
-				}
-				if existing, ok := m.sentByAcct[accID]; ok {
-					for _, e := range existing {
-						if _, found := refreshedUIDs[e.UID]; !found {
-							refreshed = append(refreshed, e)
-						}
-					}
-				}
-				m.sentByAcct[accID] = refreshed
-			}
-			m.sentEmails = flattenAndSort(m.sentByAcct)
-			if m.sentInbox != nil {
-				m.sentInbox.SetEmails(m.sentEmails, m.config.Accounts)
-				// Clear refreshing state on the sent inbox directly so we
-				// don't accidentally swap m.current away from an email view.
-				m.sentInbox.Update(msg)
-			}
-			return m, nil
-		}
-
-		// Merge refreshed emails with any paginated emails already loaded.
-		// The refresh only fetches the initial batch; paginated emails beyond
-		// that must be preserved.
-		for accID, refreshed := range msg.EmailsByAccount {
-			refreshedUIDs := make(map[uint32]struct{}, len(refreshed))
-			for _, e := range refreshed {
-				refreshedUIDs[e.UID] = struct{}{}
-			}
-			// Keep paginated emails not covered by the refresh
-			if existing, ok := m.emailsByAcct[accID]; ok {
-				for _, e := range existing {
-					if _, found := refreshedUIDs[e.UID]; !found {
-						refreshed = append(refreshed, e)
-					}
+		// Load cached folders from all accounts, merge unique names
+		seen := make(map[string]bool)
+		var cachedFolders []string
+		for _, acc := range m.config.Accounts {
+			for _, f := range config.GetCachedFolders(acc.ID) {
+				if !seen[f] {
+					seen[f] = true
+					cachedFolders = append(cachedFolders, f)
 				}
 			}
-			m.emailsByAcct[accID] = refreshed
 		}
-		// Accounts not in the refresh response (e.g. fetch failed) are
-		// kept as-is since m.emailsByAcct was not cleared.
-		m.emails = flattenAndSort(m.emailsByAcct)
-
-		// Save to cache (inbox only)
-		go saveEmailsToCache(m.emails)
-
-		// Update inbox if it exists
-		if m.inbox != nil {
-			m.inbox.SetEmails(m.emails, m.config.Accounts)
-			// Clear refreshing state on the inbox directly so we don't
-			// accidentally swap m.current away from an email view.
-			m.inbox.Update(msg)
+		if len(cachedFolders) == 0 {
+			cachedFolders = []string{"INBOX"}
 		}
-		return m, nil
-
-	case tui.AllEmailsFetchedMsg:
-		if msg.Mailbox == tui.MailboxSent {
-			m.sentByAcct = msg.EmailsByAccount
-			m.sentEmails = flattenAndSort(msg.EmailsByAccount)
-
-			m.sentInbox = tui.NewSentInbox(m.sentEmails, m.config.Accounts)
-			m.current = m.sentInbox
-			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-			return m, m.current.Init()
-		}
-
-		if msg.Mailbox == tui.MailboxTrash {
-			m.trashByAcct = msg.EmailsByAccount
-			m.trashEmails = flattenAndSort(msg.EmailsByAccount)
-
-			// Create or update trash/archive view
-			if m.trashArchive == nil {
-				m.trashArchive = tui.NewTrashArchive(m.trashEmails, m.archiveEmails, m.config.Accounts)
-			} else {
-				m.trashArchive.SetTrashEmails(m.trashEmails, m.config.Accounts)
-			}
-			m.current = m.trashArchive
-			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-			return m, m.current.Init()
-		}
-
-		if msg.Mailbox == tui.MailboxArchive {
-			m.archiveByAcct = msg.EmailsByAccount
-			m.archiveEmails = flattenAndSort(msg.EmailsByAccount)
-
-			// Create or update trash/archive view
-			if m.trashArchive == nil {
-				m.trashArchive = tui.NewTrashArchive(m.trashEmails, m.archiveEmails, m.config.Accounts)
-			} else {
-				m.trashArchive.SetArchiveEmails(m.archiveEmails, m.config.Accounts)
-			}
-			m.current = m.trashArchive
-			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-			return m, m.current.Init()
-		}
-
-		m.emailsByAcct = msg.EmailsByAccount
-		m.emails = flattenAndSort(msg.EmailsByAccount)
-
-		// Save to cache
-		go saveEmailsToCache(m.emails)
-
-		m.inbox = tui.NewInbox(m.emails, m.config.Accounts)
-		m.current = m.inbox
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-		return m, m.current.Init()
-
-	case tui.EmailsFetchedMsg:
-		if msg.Mailbox == tui.MailboxSent {
-			if m.sentByAcct == nil {
-				m.sentByAcct = make(map[string][]fetcher.Email)
-			}
-			m.sentByAcct[msg.AccountID] = msg.Emails
-			m.sentEmails = flattenAndSort(m.sentByAcct)
-			if m.sentInbox == nil {
-				m.sentInbox = tui.NewSentInbox(m.sentEmails, m.config.Accounts)
-			} else {
-				m.sentInbox.SetEmails(m.sentEmails, m.config.Accounts)
-			}
-			m.current = m.sentInbox
-			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-			return m, m.current.Init()
-		}
-
-		// Inbox path
-		if m.emailsByAcct == nil {
+		m.folderInbox = tui.NewFolderInbox(cachedFolders, m.config.Accounts)
+		// Use cached INBOX emails for instant display (memory first, then disk)
+		if cached, ok := m.folderEmails["INBOX"]; ok && len(cached) > 0 {
+			m.folderInbox.SetEmails(cached, m.config.Accounts)
+		} else if diskCached := loadFolderEmailsFromCache("INBOX"); len(diskCached) > 0 {
+			m.folderEmails["INBOX"] = diskCached
+			m.emails = diskCached
 			m.emailsByAcct = make(map[string][]fetcher.Email)
+			for _, email := range diskCached {
+				m.emailsByAcct[email.AccountID] = append(m.emailsByAcct[email.AccountID], email)
+			}
+			m.folderInbox.SetEmails(diskCached, m.config.Accounts)
 		}
-		m.emailsByAcct[msg.AccountID] = msg.Emails
-		m.emails = flattenAndSort(m.emailsByAcct)
-		if m.inbox == nil {
-			m.inbox = tui.NewInbox(m.emails, m.config.Accounts)
-			m.current = m.inbox
-			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-			return m, m.current.Init()
-		}
-		m.inbox.SetEmails(m.emails, m.config.Accounts)
-		// Only switch to inbox if we're on a loading/status screen, not
-		// when the user is viewing an email or composing.
-		if _, onInbox := m.current.(*tui.Inbox); onInbox {
+		m.current = m.folderInbox
+		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		// Fetch folders and INBOX emails in parallel (background refresh)
+		return m, tea.Batch(
+			m.current.Init(),
+			fetchFoldersCmd(m.config),
+			fetchFolderEmailsCmd(m.config, "INBOX"),
+		)
+
+	case tui.FoldersFetchedMsg:
+		if m.folderInbox == nil {
 			return m, nil
 		}
-		if _, onStatus := m.current.(tui.Status); onStatus {
-			m.current = m.inbox
-			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-			return m, m.current.Init()
+		var folderNames []string
+		for _, f := range msg.MergedFolders {
+			folderNames = append(folderNames, f.Name)
+		}
+		m.folderInbox.SetFolders(folderNames)
+		// Cache folder lists per account
+		for accID, folders := range msg.FoldersByAccount {
+			var names []string
+			for _, f := range folders {
+				names = append(names, f.Name)
+			}
+			go config.SaveAccountFolders(accID, names)
 		}
 		return m, nil
 
-	case tui.FetchMoreEmailsMsg:
-		if msg.AccountID == "" {
-			return m, nil // Don't fetch more for "ALL" view
+	case tui.SwitchFolderMsg:
+		if m.config == nil {
+			return m, nil
+		}
+		// Use in-memory cache if available
+		if cached, ok := m.folderEmails[msg.FolderName]; ok {
+			m.emails = cached
+			m.emailsByAcct = make(map[string][]fetcher.Email)
+			for _, email := range cached {
+				m.emailsByAcct[email.AccountID] = append(m.emailsByAcct[email.AccountID], email)
+			}
+			if m.folderInbox != nil {
+				m.folderInbox.SetEmails(cached, m.config.Accounts)
+				m.folderInbox.GetInbox().SetFolderName(msg.FolderName)
+				m.folderInbox.SetLoadingEmails(false)
+			}
+			return m, nil
+		}
+		// Fall back to disk cache for instant display, then fetch fresh in background
+		if diskCached := loadFolderEmailsFromCache(msg.FolderName); len(diskCached) > 0 {
+			m.folderEmails[msg.FolderName] = diskCached
+			m.emails = diskCached
+			m.emailsByAcct = make(map[string][]fetcher.Email)
+			for _, email := range diskCached {
+				m.emailsByAcct[email.AccountID] = append(m.emailsByAcct[email.AccountID], email)
+			}
+			if m.folderInbox != nil {
+				m.folderInbox.SetEmails(diskCached, m.config.Accounts)
+				m.folderInbox.GetInbox().SetFolderName(msg.FolderName)
+				m.folderInbox.SetLoadingEmails(false)
+			}
+			// Still fetch fresh emails in background
+			return m, fetchFolderEmailsCmd(m.config, msg.FolderName)
+		}
+		if m.folderInbox != nil {
+			m.folderInbox.SetLoadingEmails(true)
+		}
+		return m, fetchFolderEmailsCmd(m.config, msg.FolderName)
+
+	case tui.FolderEmailsFetchedMsg:
+		if m.folderInbox == nil {
+			return m, nil
+		}
+		// Always cache in memory and to disk
+		m.folderEmails[msg.FolderName] = msg.Emails
+		go saveFolderEmailsToCache(msg.FolderName, msg.Emails)
+		// Only update the view if the user is still on this folder
+		if m.folderInbox.GetCurrentFolder() != msg.FolderName {
+			return m, nil
+		}
+		m.emails = msg.Emails
+		m.emailsByAcct = make(map[string][]fetcher.Email)
+		for _, email := range msg.Emails {
+			m.emailsByAcct[email.AccountID] = append(m.emailsByAcct[email.AccountID], email)
+		}
+		m.folderInbox.SetEmails(msg.Emails, m.config.Accounts)
+		m.folderInbox.GetInbox().SetFolderName(msg.FolderName)
+		m.folderInbox.SetLoadingEmails(false)
+		return m, nil
+
+	case tui.FetchFolderMoreEmailsMsg:
+		if msg.AccountID == "" || m.config == nil {
+			return m, nil
 		}
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
@@ -490,48 +347,150 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(
 			func() tea.Msg { return tui.FetchingMoreEmailsMsg{} },
-			fetchEmailsForMailbox(account, limit, msg.Offset, msg.Mailbox),
+			fetchFolderEmailsPaginatedCmd(account, msg.FolderName, limit, msg.Offset),
+		)
+
+	case tui.FolderEmailsAppendedMsg:
+		// Ignore stale appends for a folder the user has moved away from
+		if m.folderInbox == nil || m.folderInbox.GetCurrentFolder() != msg.FolderName {
+			return m, nil
+		}
+		m.folderInbox.Update(msg)
+		// Update local stores and per-folder cache
+		for _, email := range msg.Emails {
+			m.emails = append(m.emails, email)
+			m.emailsByAcct[email.AccountID] = append(m.emailsByAcct[email.AccountID], email)
+		}
+		m.folderEmails[msg.FolderName] = append(m.folderEmails[msg.FolderName], msg.Emails...)
+		go saveFolderEmailsToCache(msg.FolderName, m.folderEmails[msg.FolderName])
+		return m, nil
+
+	case tui.MoveEmailToFolderMsg:
+		if m.config == nil {
+			return m, nil
+		}
+		account := m.config.GetAccountByID(msg.AccountID)
+		if account == nil {
+			return m, nil
+		}
+		m.previousModel = m.current
+		m.current = tui.NewStatus("Moving email...")
+		return m, tea.Batch(m.current.Init(), moveEmailToFolderCmd(account, msg.UID, msg.AccountID, msg.SourceFolder, msg.DestFolder))
+
+	case tui.EmailMovedMsg:
+		if msg.Err != nil {
+			log.Printf("Move failed: %v", msg.Err)
+			if m.folderInbox != nil {
+				m.previousModel = m.folderInbox
+			}
+			m.current = tui.NewStatus(fmt.Sprintf("Error: %v", msg.Err))
+			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+				return tui.RestoreViewMsg{}
+			})
+		}
+		// Remove email from current view
+		if m.folderInbox != nil {
+			m.folderInbox.RemoveEmail(msg.UID, msg.AccountID)
+			m.current = m.folderInbox
+		}
+		return m, nil
+
+	case tui.CachedEmailsLoadedMsg:
+		// Cache is no longer used for the folder-based inbox flow
+		// This handler is kept for backwards compatibility but simply fetches normally
+		if m.folderInbox == nil {
+			return m, nil
+		}
+		return m, fetchFolderEmailsCmd(m.config, m.folderInbox.GetCurrentFolder())
+
+	case tui.RequestRefreshMsg:
+		// Folder-based refresh: clear folder cache and refetch
+		if msg.FolderName != "" && m.config != nil {
+			delete(m.folderEmails, msg.FolderName)
+			if m.folderInbox != nil {
+				m.folderInbox.SetLoadingEmails(true)
+			}
+			return m, fetchFolderEmailsCmd(m.config, msg.FolderName)
+		}
+		return m, tea.Batch(
+			func() tea.Msg { return tui.RefreshingEmailsMsg{Mailbox: msg.Mailbox} },
+			refreshEmails(m.config, msg.Mailbox, msg.Counts),
+		)
+
+	case tui.EmailsRefreshedMsg:
+		// Merge refreshed emails with any paginated emails already loaded.
+		for accID, refreshed := range msg.EmailsByAccount {
+			refreshedUIDs := make(map[uint32]struct{}, len(refreshed))
+			for _, e := range refreshed {
+				refreshedUIDs[e.UID] = struct{}{}
+			}
+			if existing, ok := m.emailsByAcct[accID]; ok {
+				for _, e := range existing {
+					if _, found := refreshedUIDs[e.UID]; !found {
+						refreshed = append(refreshed, e)
+					}
+				}
+			}
+			m.emailsByAcct[accID] = refreshed
+		}
+		m.emails = flattenAndSort(m.emailsByAcct)
+
+		// Update folder inbox if it exists
+		if m.folderInbox != nil {
+			m.folderInbox.SetEmails(m.emails, m.config.Accounts)
+			m.folderInbox.GetInbox().Update(msg)
+		}
+		return m, nil
+
+	case tui.AllEmailsFetchedMsg:
+		m.emailsByAcct = msg.EmailsByAccount
+		m.emails = flattenAndSort(msg.EmailsByAccount)
+
+		if m.folderInbox != nil {
+			m.folderInbox.SetEmails(m.emails, m.config.Accounts)
+			m.folderInbox.SetLoadingEmails(false)
+		}
+		return m, nil
+
+	case tui.EmailsFetchedMsg:
+		if m.emailsByAcct == nil {
+			m.emailsByAcct = make(map[string][]fetcher.Email)
+		}
+		m.emailsByAcct[msg.AccountID] = msg.Emails
+		m.emails = flattenAndSort(m.emailsByAcct)
+		if m.folderInbox != nil {
+			m.folderInbox.SetEmails(m.emails, m.config.Accounts)
+		}
+		return m, nil
+
+	case tui.FetchMoreEmailsMsg:
+		if msg.AccountID == "" {
+			return m, nil
+		}
+		account := m.config.GetAccountByID(msg.AccountID)
+		if account == nil {
+			return m, nil
+		}
+		limit := uint32(paginationLimit)
+		if msg.Limit > 0 {
+			limit = msg.Limit
+		}
+		folderName := "INBOX"
+		if m.folderInbox != nil {
+			folderName = m.folderInbox.GetCurrentFolder()
+		}
+		return m, tea.Batch(
+			func() tea.Msg { return tui.FetchingMoreEmailsMsg{} },
+			fetchFolderEmailsPaginatedCmd(account, folderName, limit, msg.Offset),
 		)
 
 	case tui.EmailsAppendedMsg:
-		if msg.Mailbox == tui.MailboxSent {
-			if m.sentByAcct == nil {
-				m.sentByAcct = make(map[string][]fetcher.Email)
-			}
-			unique := filterUnique(m.sentByAcct[msg.AccountID], msg.Emails)
-			m.sentByAcct[msg.AccountID] = append(m.sentByAcct[msg.AccountID], unique...)
-			m.sentEmails = append(m.sentEmails, unique...)
-			return m, nil
-		}
-		if msg.Mailbox == tui.MailboxTrash {
-			if m.trashByAcct == nil {
-				m.trashByAcct = make(map[string][]fetcher.Email)
-			}
-			unique := filterUnique(m.trashByAcct[msg.AccountID], msg.Emails)
-			m.trashByAcct[msg.AccountID] = append(m.trashByAcct[msg.AccountID], unique...)
-			m.trashEmails = append(m.trashEmails, unique...)
-			return m, nil
-		}
-		if msg.Mailbox == tui.MailboxArchive {
-			if m.archiveByAcct == nil {
-				m.archiveByAcct = make(map[string][]fetcher.Email)
-			}
-			unique := filterUnique(m.archiveByAcct[msg.AccountID], msg.Emails)
-			m.archiveByAcct[msg.AccountID] = append(m.archiveByAcct[msg.AccountID], unique...)
-			m.archiveEmails = append(m.archiveEmails, unique...)
-			return m, nil
-		}
-		// Inbox
 		if m.emailsByAcct == nil {
 			m.emailsByAcct = make(map[string][]fetcher.Email)
 		}
 		unique := filterUnique(m.emailsByAcct[msg.AccountID], msg.Emails)
 		m.emailsByAcct[msg.AccountID] = append(m.emailsByAcct[msg.AccountID], unique...)
 		m.emails = append(m.emails, unique...)
-
-		// Save to cache
-		go saveEmailsToCache(m.emails)
-
 		return m, nil
 
 	case tui.GoToSendMsg:
@@ -654,16 +613,18 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.getEmailByUIDAndAccount(msg.UID, msg.AccountID, msg.Mailbox) == nil {
 			return m, nil
 		}
+		folderName := "INBOX"
+		if m.folderInbox != nil {
+			folderName = m.folderInbox.GetCurrentFolder()
+		}
 		m.current = tui.NewStatus("Fetching email content...")
-		return m, tea.Batch(m.current.Init(), fetchEmailBodyCmd(m.config, msg.UID, msg.AccountID, msg.Mailbox))
+		return m, tea.Batch(m.current.Init(), fetchFolderEmailBodyCmd(m.config, msg.UID, msg.AccountID, folderName, msg.Mailbox))
 
 	case tui.EmailBodyFetchedMsg:
 		if msg.Err != nil {
 			log.Printf("could not fetch email body: %v", msg.Err)
-			if msg.Mailbox == tui.MailboxSent && m.sentInbox != nil {
-				m.current = m.sentInbox
-			} else {
-				m.current = m.inbox
+			if m.folderInbox != nil {
+				m.current = m.folderInbox
 			}
 			return m, nil
 		}
@@ -673,10 +634,8 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		email := m.getEmailByUIDAndAccount(msg.UID, msg.AccountID, msg.Mailbox)
 		if email == nil {
-			if msg.Mailbox == tui.MailboxSent && m.sentInbox != nil {
-				m.current = m.sentInbox
-			} else {
-				m.current = m.inbox
+			if m.folderInbox != nil {
+				m.current = m.folderInbox
 			}
 			return m, nil
 		}
@@ -830,15 +789,17 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
-			if msg.Mailbox == tui.MailboxSent && m.sentInbox != nil {
-				m.current = m.sentInbox
-			} else {
-				m.current = m.inbox
+			if m.folderInbox != nil {
+				m.current = m.folderInbox
 			}
 			return m, nil
 		}
 
-		return m, tea.Batch(m.current.Init(), deleteEmailCmd(account, msg.UID, msg.AccountID, msg.Mailbox))
+		folderName := "INBOX"
+		if m.folderInbox != nil {
+			folderName = m.folderInbox.GetCurrentFolder()
+		}
+		return m, tea.Batch(m.current.Init(), deleteFolderEmailCmd(account, msg.UID, msg.AccountID, folderName, msg.Mailbox))
 
 	case tui.ArchiveEmailMsg:
 		tui.ClearKittyGraphics()
@@ -847,33 +808,23 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
-			if msg.Mailbox == tui.MailboxSent && m.sentInbox != nil {
-				m.current = m.sentInbox
-			} else {
-				m.current = m.inbox
+			if m.folderInbox != nil {
+				m.current = m.folderInbox
 			}
 			return m, nil
 		}
 
-		return m, tea.Batch(m.current.Init(), archiveEmailCmd(account, msg.UID, msg.AccountID, msg.Mailbox))
+		folderName := "INBOX"
+		if m.folderInbox != nil {
+			folderName = m.folderInbox.GetCurrentFolder()
+		}
+		return m, tea.Batch(m.current.Init(), archiveFolderEmailCmd(account, msg.UID, msg.AccountID, folderName, msg.Mailbox))
 
 	case tui.EmailActionDoneMsg:
 		if msg.Err != nil {
 			log.Printf("Action failed: %v", msg.Err)
-			m.previousModel = m.current
-			switch msg.Mailbox {
-			case tui.MailboxSent:
-				if m.sentInbox != nil {
-					m.previousModel = m.sentInbox
-				}
-			case tui.MailboxTrash, tui.MailboxArchive:
-				if m.trashArchive != nil {
-					m.previousModel = m.trashArchive
-				}
-			default:
-				if m.inbox != nil {
-					m.previousModel = m.inbox
-				}
+			if m.folderInbox != nil {
+				m.previousModel = m.folderInbox
 			}
 			m.current = tui.NewStatus(fmt.Sprintf("Error: %v", msg.Err))
 			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
@@ -882,35 +833,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Remove email from stores
-		m.removeEmailByMailbox(msg.UID, msg.AccountID, msg.Mailbox)
+		m.removeEmailFromStores(msg.UID, msg.AccountID)
 
-		if msg.Mailbox == tui.MailboxSent {
-			if m.sentInbox != nil {
-				m.sentInbox.RemoveEmail(msg.UID, msg.AccountID)
-				m.current = m.sentInbox
-				m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-				return m, m.current.Init()
-			}
-			m.current = tui.NewChoice()
-			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-			return m, m.current.Init()
-		}
-
-		if msg.Mailbox == tui.MailboxTrash || msg.Mailbox == tui.MailboxArchive {
-			if m.trashArchive != nil {
-				m.trashArchive.RemoveEmail(msg.UID, msg.AccountID, msg.Mailbox)
-				m.current = m.trashArchive
-				m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-				return m, m.current.Init()
-			}
-			m.current = tui.NewChoice()
-			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-			return m, m.current.Init()
-		}
-
-		if m.inbox != nil {
-			m.inbox.RemoveEmail(msg.UID, msg.AccountID)
-			m.current = m.inbox
+		if m.folderInbox != nil {
+			m.folderInbox.RemoveEmail(msg.UID, msg.AccountID)
+			m.current = m.folderInbox
 			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 			return m, m.current.Init()
 		}
@@ -983,230 +910,65 @@ func (m *mainModel) View() tea.View {
 }
 
 func (m *mainModel) getEmailByIndex(index int, mailbox tui.MailboxKind) *fetcher.Email {
-	switch mailbox {
-	case tui.MailboxSent:
-		if index >= 0 && index < len(m.sentEmails) {
-			return &m.sentEmails[index]
-		}
-	case tui.MailboxTrash:
-		if index >= 0 && index < len(m.trashEmails) {
-			return &m.trashEmails[index]
-		}
-	case tui.MailboxArchive:
-		if index >= 0 && index < len(m.archiveEmails) {
-			return &m.archiveEmails[index]
-		}
-	default:
-		if index >= 0 && index < len(m.emails) {
-			return &m.emails[index]
-		}
+	if index >= 0 && index < len(m.emails) {
+		return &m.emails[index]
 	}
 	return nil
 }
 
 func (m *mainModel) getEmailByUIDAndAccount(uid uint32, accountID string, mailbox tui.MailboxKind) *fetcher.Email {
-	switch mailbox {
-	case tui.MailboxSent:
-		for i := range m.sentEmails {
-			if m.sentEmails[i].UID == uid && m.sentEmails[i].AccountID == accountID {
-				return &m.sentEmails[i]
-			}
-		}
-	case tui.MailboxTrash:
-		for i := range m.trashEmails {
-			if m.trashEmails[i].UID == uid && m.trashEmails[i].AccountID == accountID {
-				return &m.trashEmails[i]
-			}
-		}
-	case tui.MailboxArchive:
-		for i := range m.archiveEmails {
-			if m.archiveEmails[i].UID == uid && m.archiveEmails[i].AccountID == accountID {
-				return &m.archiveEmails[i]
-			}
-		}
-	default:
-		for i := range m.emails {
-			if m.emails[i].UID == uid && m.emails[i].AccountID == accountID {
-				return &m.emails[i]
-			}
+	for i := range m.emails {
+		if m.emails[i].UID == uid && m.emails[i].AccountID == accountID {
+			return &m.emails[i]
 		}
 	}
 	return nil
 }
 
 func (m *mainModel) getEmailIndex(uid uint32, accountID string, mailbox tui.MailboxKind) int {
-	switch mailbox {
-	case tui.MailboxSent:
-		for i := range m.sentEmails {
-			if m.sentEmails[i].UID == uid && m.sentEmails[i].AccountID == accountID {
-				return i
-			}
-		}
-	case tui.MailboxTrash:
-		for i := range m.trashEmails {
-			if m.trashEmails[i].UID == uid && m.trashEmails[i].AccountID == accountID {
-				return i
-			}
-		}
-	case tui.MailboxArchive:
-		for i := range m.archiveEmails {
-			if m.archiveEmails[i].UID == uid && m.archiveEmails[i].AccountID == accountID {
-				return i
-			}
-		}
-	default:
-		for i := range m.emails {
-			if m.emails[i].UID == uid && m.emails[i].AccountID == accountID {
-				return i
-			}
+	for i := range m.emails {
+		if m.emails[i].UID == uid && m.emails[i].AccountID == accountID {
+			return i
 		}
 	}
 	return -1
 }
 
 func (m *mainModel) updateEmailBodyByUID(uid uint32, accountID string, mailbox tui.MailboxKind, body string, attachments []fetcher.Attachment) {
-	switch mailbox {
-	case tui.MailboxSent:
-		for i := range m.sentEmails {
-			if m.sentEmails[i].UID == uid && m.sentEmails[i].AccountID == accountID {
-				m.sentEmails[i].Body = body
-				m.sentEmails[i].Attachments = attachments
+	for i := range m.emails {
+		if m.emails[i].UID == uid && m.emails[i].AccountID == accountID {
+			m.emails[i].Body = body
+			m.emails[i].Attachments = attachments
+			break
+		}
+	}
+	if emails, ok := m.emailsByAcct[accountID]; ok {
+		for i := range emails {
+			if emails[i].UID == uid {
+				emails[i].Body = body
+				emails[i].Attachments = attachments
 				break
-			}
-		}
-		if emails, ok := m.sentByAcct[accountID]; ok {
-			for i := range emails {
-				if emails[i].UID == uid {
-					emails[i].Body = body
-					emails[i].Attachments = attachments
-					break
-				}
-			}
-		}
-	case tui.MailboxTrash:
-		for i := range m.trashEmails {
-			if m.trashEmails[i].UID == uid && m.trashEmails[i].AccountID == accountID {
-				m.trashEmails[i].Body = body
-				m.trashEmails[i].Attachments = attachments
-				break
-			}
-		}
-		if emails, ok := m.trashByAcct[accountID]; ok {
-			for i := range emails {
-				if emails[i].UID == uid {
-					emails[i].Body = body
-					emails[i].Attachments = attachments
-					break
-				}
-			}
-		}
-	case tui.MailboxArchive:
-		for i := range m.archiveEmails {
-			if m.archiveEmails[i].UID == uid && m.archiveEmails[i].AccountID == accountID {
-				m.archiveEmails[i].Body = body
-				m.archiveEmails[i].Attachments = attachments
-				break
-			}
-		}
-		if emails, ok := m.archiveByAcct[accountID]; ok {
-			for i := range emails {
-				if emails[i].UID == uid {
-					emails[i].Body = body
-					emails[i].Attachments = attachments
-					break
-				}
-			}
-		}
-	default:
-		for i := range m.emails {
-			if m.emails[i].UID == uid && m.emails[i].AccountID == accountID {
-				m.emails[i].Body = body
-				m.emails[i].Attachments = attachments
-				break
-			}
-		}
-		if emails, ok := m.emailsByAcct[accountID]; ok {
-			for i := range emails {
-				if emails[i].UID == uid {
-					emails[i].Body = body
-					emails[i].Attachments = attachments
-					break
-				}
 			}
 		}
 	}
 }
 
-func (m *mainModel) removeEmailByMailbox(uid uint32, accountID string, mailbox tui.MailboxKind) {
-	switch mailbox {
-	case tui.MailboxSent:
-		var filtered []fetcher.Email
-		for _, e := range m.sentEmails {
-			if !(e.UID == uid && e.AccountID == accountID) {
-				filtered = append(filtered, e)
+func (m *mainModel) removeEmailFromStores(uid uint32, accountID string) {
+	var filtered []fetcher.Email
+	for _, e := range m.emails {
+		if !(e.UID == uid && e.AccountID == accountID) {
+			filtered = append(filtered, e)
+		}
+	}
+	m.emails = filtered
+	if emails, ok := m.emailsByAcct[accountID]; ok {
+		var filteredAcct []fetcher.Email
+		for _, e := range emails {
+			if e.UID != uid {
+				filteredAcct = append(filteredAcct, e)
 			}
 		}
-		m.sentEmails = filtered
-		if emails, ok := m.sentByAcct[accountID]; ok {
-			var filteredAcct []fetcher.Email
-			for _, e := range emails {
-				if e.UID != uid {
-					filteredAcct = append(filteredAcct, e)
-				}
-			}
-			m.sentByAcct[accountID] = filteredAcct
-		}
-	case tui.MailboxTrash:
-		var filtered []fetcher.Email
-		for _, e := range m.trashEmails {
-			if !(e.UID == uid && e.AccountID == accountID) {
-				filtered = append(filtered, e)
-			}
-		}
-		m.trashEmails = filtered
-		if emails, ok := m.trashByAcct[accountID]; ok {
-			var filteredAcct []fetcher.Email
-			for _, e := range emails {
-				if e.UID != uid {
-					filteredAcct = append(filteredAcct, e)
-				}
-			}
-			m.trashByAcct[accountID] = filteredAcct
-		}
-	case tui.MailboxArchive:
-		var filtered []fetcher.Email
-		for _, e := range m.archiveEmails {
-			if !(e.UID == uid && e.AccountID == accountID) {
-				filtered = append(filtered, e)
-			}
-		}
-		m.archiveEmails = filtered
-		if emails, ok := m.archiveByAcct[accountID]; ok {
-			var filteredAcct []fetcher.Email
-			for _, e := range emails {
-				if e.UID != uid {
-					filteredAcct = append(filteredAcct, e)
-				}
-			}
-			m.archiveByAcct[accountID] = filteredAcct
-		}
-	default:
-		var filtered []fetcher.Email
-		for _, e := range m.emails {
-			if !(e.UID == uid && e.AccountID == accountID) {
-				filtered = append(filtered, e)
-			}
-		}
-		m.emails = filtered
-		if emails, ok := m.emailsByAcct[accountID]; ok {
-			var filteredAcct []fetcher.Email
-			for _, e := range emails {
-				if e.UID != uid {
-					filteredAcct = append(filteredAcct, e)
-				}
-			}
-			m.emailsByAcct[accountID] = filteredAcct
-		}
+		m.emailsByAcct[accountID] = filteredAcct
 	}
 }
 
@@ -1353,6 +1115,53 @@ func refreshEmails(cfg *config.Config, mailbox tui.MailboxKind, counts map[strin
 		wg.Wait()
 		return tui.EmailsRefreshedMsg{EmailsByAccount: emailsByAccount, Mailbox: mailbox}
 	}
+}
+
+func emailsToCache(emails []fetcher.Email) []config.CachedEmail {
+	var cached []config.CachedEmail
+	for _, email := range emails {
+		cached = append(cached, config.CachedEmail{
+			UID:       email.UID,
+			From:      email.From,
+			To:        email.To,
+			Subject:   email.Subject,
+			Date:      email.Date,
+			MessageID: email.MessageID,
+			AccountID: email.AccountID,
+		})
+	}
+	return cached
+}
+
+func cacheToEmails(cached []config.CachedEmail) []fetcher.Email {
+	var emails []fetcher.Email
+	for _, c := range cached {
+		emails = append(emails, fetcher.Email{
+			UID:       c.UID,
+			From:      c.From,
+			To:        c.To,
+			Subject:   c.Subject,
+			Date:      c.Date,
+			MessageID: c.MessageID,
+			AccountID: c.AccountID,
+		})
+	}
+	return emails
+}
+
+func saveFolderEmailsToCache(folderName string, emails []fetcher.Email) {
+	cached := emailsToCache(emails)
+	if err := config.SaveFolderEmailCache(folderName, cached); err != nil {
+		log.Printf("Error saving folder email cache for %s: %v", folderName, err)
+	}
+}
+
+func loadFolderEmailsFromCache(folderName string) []fetcher.Email {
+	cached, err := config.LoadFolderEmailCache(folderName)
+	if err != nil {
+		return nil
+	}
+	return cacheToEmails(cached)
 }
 
 func saveEmailsToCache(emails []fetcher.Email) {
@@ -1544,6 +1353,157 @@ func archiveEmailCmd(account *config.Account, uid uint32, accountID string, mail
 			err = fetcher.ArchiveEmail(account, uid)
 		}
 		return tui.EmailActionDoneMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
+	}
+}
+
+// --- Folder-based command functions ---
+
+func fetchFoldersCmd(cfg *config.Config) tea.Cmd {
+	return func() tea.Msg {
+		if !cfg.HasAccounts() {
+			return nil
+		}
+		foldersByAccount := make(map[string][]fetcher.Folder)
+		seen := make(map[string]fetcher.Folder)
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+
+		for _, account := range cfg.Accounts {
+			wg.Add(1)
+			go func(acc config.Account) {
+				defer wg.Done()
+				folders, err := fetcher.FetchFolders(&acc)
+				if err != nil {
+					return
+				}
+				mu.Lock()
+				foldersByAccount[acc.ID] = folders
+				for _, f := range folders {
+					if _, ok := seen[f.Name]; !ok {
+						seen[f.Name] = f
+					}
+				}
+				mu.Unlock()
+			}(account)
+		}
+		wg.Wait()
+
+		var merged []fetcher.Folder
+		for _, f := range seen {
+			merged = append(merged, f)
+		}
+
+		return tui.FoldersFetchedMsg{
+			FoldersByAccount: foldersByAccount,
+			MergedFolders:    merged,
+		}
+	}
+}
+
+func fetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
+	return func() tea.Msg {
+		emailsByAccount := make(map[string][]fetcher.Email)
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+
+		for _, account := range cfg.Accounts {
+			wg.Add(1)
+			go func(acc config.Account) {
+				defer wg.Done()
+				emails, err := fetcher.FetchFolderEmails(&acc, folderName, initialEmailLimit, 0)
+				if err != nil {
+					// Folder may not exist for this account — silently skip
+					return
+				}
+				mu.Lock()
+				emailsByAccount[acc.ID] = emails
+				mu.Unlock()
+			}(account)
+		}
+
+		wg.Wait()
+
+		// Flatten all account emails
+		var allEmails []fetcher.Email
+		for _, emails := range emailsByAccount {
+			allEmails = append(allEmails, emails...)
+		}
+		// Sort newest first
+		for i := 0; i < len(allEmails); i++ {
+			for j := i + 1; j < len(allEmails); j++ {
+				if allEmails[j].Date.After(allEmails[i].Date) {
+					allEmails[i], allEmails[j] = allEmails[j], allEmails[i]
+				}
+			}
+		}
+
+		return tui.FolderEmailsFetchedMsg{
+			Emails:     allEmails,
+			FolderName: folderName,
+		}
+	}
+}
+
+func fetchFolderEmailsPaginatedCmd(account *config.Account, folderName string, limit, offset uint32) tea.Cmd {
+	return func() tea.Msg {
+		emails, err := fetcher.FetchFolderEmails(account, folderName, limit, offset)
+		if err != nil {
+			return tui.FetchErr(err)
+		}
+		return tui.FolderEmailsAppendedMsg{
+			Emails:     emails,
+			AccountID:  account.ID,
+			FolderName: folderName,
+		}
+	}
+}
+
+func fetchFolderEmailBodyCmd(cfg *config.Config, uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
+	return func() tea.Msg {
+		account := cfg.GetAccountByID(accountID)
+		if account == nil {
+			return tui.EmailBodyFetchedMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: fmt.Errorf("account not found")}
+		}
+
+		body, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
+		if err != nil {
+			return tui.EmailBodyFetchedMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
+		}
+
+		return tui.EmailBodyFetchedMsg{
+			UID:         uid,
+			Body:        body,
+			Attachments: attachments,
+			AccountID:   accountID,
+			Mailbox:     mailbox,
+		}
+	}
+}
+
+func deleteFolderEmailCmd(account *config.Account, uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
+	return func() tea.Msg {
+		err := fetcher.DeleteFolderEmail(account, folderName, uid)
+		return tui.EmailActionDoneMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
+	}
+}
+
+func archiveFolderEmailCmd(account *config.Account, uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
+	return func() tea.Msg {
+		err := fetcher.ArchiveFolderEmail(account, folderName, uid)
+		return tui.EmailActionDoneMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
+	}
+}
+
+func moveEmailToFolderCmd(account *config.Account, uid uint32, accountID string, sourceFolder, destFolder string) tea.Cmd {
+	return func() tea.Msg {
+		err := fetcher.MoveEmailToFolder(account, uid, sourceFolder, destFolder)
+		return tui.EmailMovedMsg{
+			UID:          uid,
+			AccountID:    accountID,
+			SourceFolder: sourceFolder,
+			DestFolder:   destFolder,
+			Err:          err,
+		}
 	}
 }
 

@@ -42,11 +42,11 @@ type Choice struct {
 
 func NewChoice() Choice {
 	hasSavedDrafts := config.HasDrafts()
-	choices := []string{"\ueb1c Inbox", "\ueb1b Compose Email", "\uf1d8 Sent"}
+	choices := []string{"\ueb1c Inbox", "\ueb1b Compose Email"}
 	if hasSavedDrafts {
 		choices = append(choices, "\uec0e Drafts")
 	}
-	choices = append(choices, "\uf013 Settings", "\uea81 Trash & Archive")
+	choices = append(choices, "\uf013 Settings")
 	return Choice{
 		choices:         choices,
 		hasSavedDrafts:  hasSavedDrafts,
@@ -84,14 +84,10 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg { return GoToInboxMsg{} }
 			case "\ueb1b Compose Email":
 				return m, func() tea.Msg { return GoToSendMsg{} }
-			case "\uf1d8 Sent":
-				return m, func() tea.Msg { return GoToSentInboxMsg{} }
 			case "\uec0e Drafts":
 				return m, func() tea.Msg { return GoToDraftsMsg{} }
 			case "\uf013 Settings":
 				return m, func() tea.Msg { return GoToSettingsMsg{} }
-			case "\uea81 Trash & Archive":
-				return m, func() tea.Msg { return GoToTrashArchiveMsg{} }
 			}
 
 		}

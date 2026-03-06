@@ -94,8 +94,11 @@ type Inbox struct {
 	width            int
 	height           int
 	currentAccountID string // Empty means "ALL"
-	emailCountByAcct map[string]int
-	mailbox          MailboxKind
+	emailCountByAcct  map[string]int
+	mailbox             MailboxKind
+	folderName          string // Custom folder name override for title
+	noMoreByAccount     map[string]bool // Per-account: true when pagination returns 0 results
+	extraShortHelpKeys  []key.Binding
 }
 
 func NewInbox(emails []fetcher.Email, accounts []config.Account) *Inbox {
@@ -225,6 +228,7 @@ func (m *Inbox) updateList() {
 				key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "next tab")),
 			)
 		}
+		bindings = append(bindings, m.extraShortHelpKeys...)
 		return bindings
 	}
 
@@ -280,6 +284,9 @@ func (m *Inbox) getTitle() string {
 }
 
 func (m *Inbox) getBaseTitle() string {
+	if m.folderName != "" {
+		return m.folderName
+	}
 	switch m.mailbox {
 	case MailboxSent:
 		return "Sent"
@@ -381,6 +388,14 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isFetching = false
 		m.list.Title = m.getTitle()
 
+		if len(msg.Emails) == 0 {
+			if m.noMoreByAccount == nil {
+				m.noMoreByAccount = make(map[string]bool)
+			}
+			m.noMoreByAccount[msg.AccountID] = true
+			return m, nil
+		}
+
 		// Add emails to the appropriate account
 		for _, email := range msg.Emails {
 			m.emailsByAccount[email.AccountID] = append(m.emailsByAccount[email.AccountID], email)
@@ -425,6 +440,9 @@ func (m *Inbox) shouldFetchMore() bool {
 	if m.isFetching {
 		return false
 	}
+	if m.allAccountsExhausted() {
+		return false
+	}
 	if len(m.list.Items()) == 0 {
 		return false
 	}
@@ -433,6 +451,23 @@ func (m *Inbox) shouldFetchMore() bool {
 	}
 	// Fetch if we've reached the bottom OR if we don't have enough items to fill the view
 	return m.list.Index() >= len(m.list.Items())-1 || len(m.list.Items()) < m.list.Height()
+}
+
+// allAccountsExhausted returns true if all relevant accounts have no more emails to fetch.
+func (m *Inbox) allAccountsExhausted() bool {
+	if len(m.noMoreByAccount) == 0 {
+		return false
+	}
+	if m.currentAccountID != "" {
+		return m.noMoreByAccount[m.currentAccountID]
+	}
+	// "ALL" view: all accounts must be exhausted
+	for _, acc := range m.accounts {
+		if !m.noMoreByAccount[acc.ID] {
+			return false
+		}
+	}
+	return len(m.accounts) > 0
 }
 
 func (m *Inbox) fetchMoreCmds() []tea.Cmd {
@@ -448,6 +483,9 @@ func (m *Inbox) fetchMoreCmds() []tea.Cmd {
 		}
 		for _, acc := range m.accounts {
 			accountID := acc.ID
+			if m.noMoreByAccount[accountID] {
+				continue
+			}
 			offset := uint32(len(m.emailsByAccount[accountID]))
 			cmds = append(cmds, func(id string, off uint32) tea.Cmd {
 				return func() tea.Msg {
@@ -458,6 +496,9 @@ func (m *Inbox) fetchMoreCmds() []tea.Cmd {
 		return cmds
 	}
 
+	if m.noMoreByAccount[m.currentAccountID] {
+		return nil
+	}
 	offset := uint32(len(m.emailsByAccount[m.currentAccountID]))
 	cmds = append(cmds, func(id string, off uint32) tea.Cmd {
 		return func() tea.Msg {
@@ -565,10 +606,25 @@ func (m *Inbox) RemoveEmail(uid uint32, accountID string) {
 	m.updateList()
 }
 
+// SetSize sets the width and height of the inbox, then updates the list.
+func (m *Inbox) SetSize(width, height int) {
+	m.width = width
+	m.height = height
+	m.list.SetWidth(width)
+	m.list.SetHeight(height / 2)
+}
+
+// SetFolderName sets a custom folder name for the inbox title.
+func (m *Inbox) SetFolderName(name string) {
+	m.folderName = name
+	m.list.Title = m.getTitle()
+}
+
 // SetEmails updates all emails (used after fetch)
 func (m *Inbox) SetEmails(emails []fetcher.Email, accounts []config.Account) {
 	m.accounts = accounts
 	m.allEmails = emails
+	m.noMoreByAccount = make(map[string]bool)
 
 	// Rebuild tabs: empty for single account, "ALL" + accounts for multiple
 	var tabs []AccountTab
