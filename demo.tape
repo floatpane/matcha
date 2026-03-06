@@ -43,20 +43,12 @@ Down
 Sleep 600ms
 Down
 Sleep 600ms
-Down
-Sleep 600ms
-Down
-Sleep 600ms
 
 # Navigate back up to "View Inbox"
 Up
 Sleep 400ms
 Up
 Sleep 400ms
-Up
-Sleep 400ms
-Up
-Sleep 600ms
 
 # ============================================
 # SECTION 2: Compose Email Demo
