@@ -23,6 +23,31 @@ import (
 	"go.mozilla.org/pkcs7"
 )
 
+// loginAuth implements the SMTP LOGIN authentication mechanism.
+// Some SMTP servers (e.g. Mailo) only support LOGIN and not PLAIN.
+type loginAuth struct {
+	username, password string
+}
+
+func (a *loginAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+	return "LOGIN", nil, nil
+}
+
+func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+	if !more {
+		return nil, nil
+	}
+	prompt := strings.TrimSpace(string(fromServer))
+	switch strings.ToLower(prompt) {
+	case "username:":
+		return []byte(a.username), nil
+	case "password:":
+		return []byte(a.password), nil
+	default:
+		return nil, fmt.Errorf("unexpected LOGIN prompt: %s", prompt)
+	}
+}
+
 // generateMessageID creates a unique Message-ID header.
 func generateMessageID(from string) string {
 	buf := make([]byte, 16)
@@ -42,7 +67,8 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		return fmt.Errorf("unsupported or missing service_provider: %s", account.ServiceProvider)
 	}
 
-	auth := smtp.PlainAuth("", account.Email, account.Password, smtpServer)
+	plainAuth := smtp.PlainAuth("", account.Email, account.Password, smtpServer)
+	loginAuthFallback := &loginAuth{username: account.Email, password: account.Password}
 
 	fromHeader := account.FetchEmail
 	if account.Name != "" {
@@ -325,10 +351,31 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 
 	addr := fmt.Sprintf("%s:%d", smtpServer, smtpPort)
 
-	// Custom SMTP dialer to support skipping TLS verification for Proton Bridge
-	c, err := smtp.Dial(addr)
-	if err != nil {
-		return err
+	tlsConfig := &tls.Config{
+		ServerName:         smtpServer,
+		InsecureSkipVerify: account.Insecure,
+	}
+
+	var c *smtp.Client
+
+	// Port 465 uses implicit TLS (the connection starts with TLS).
+	// All other ports use plain TCP with optional STARTTLS upgrade.
+	if smtpPort == 465 {
+		conn, err := tls.Dial("tcp", addr, tlsConfig)
+		if err != nil {
+			return err
+		}
+		c, err = smtp.NewClient(conn, smtpServer)
+		if err != nil {
+			conn.Close()
+			return err
+		}
+	} else {
+		var err error
+		c, err = smtp.Dial(addr)
+		if err != nil {
+			return err
+		}
 	}
 	defer c.Close()
 
@@ -336,23 +383,29 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		return err
 	}
 
-	// Trigger STARTTLS if supported
-	if ok, _ := c.Extension("STARTTLS"); ok {
-		tlsConfig := &tls.Config{
-			ServerName:         smtpServer,
-			InsecureSkipVerify: account.Insecure,
-		}
-		if err = c.StartTLS(tlsConfig); err != nil {
-			return err
+	// Trigger STARTTLS if supported (not needed for implicit TLS on port 465)
+	if smtpPort != 465 {
+		if ok, _ := c.Extension("STARTTLS"); ok {
+			if err = c.StartTLS(tlsConfig); err != nil {
+				return err
+			}
 		}
 	}
 
-	// Authenticate
-	if auth != nil {
-		if ok, _ := c.Extension("AUTH"); ok {
-			if err = c.Auth(auth); err != nil {
-				return err
-			}
+	// Authenticate using the best available mechanism.
+	// c.Extension("AUTH") returns the list of supported mechanisms.
+	if ok, mechs := c.Extension("AUTH"); ok {
+		mechList := strings.ToUpper(mechs)
+		if strings.Contains(mechList, "PLAIN") {
+			err = c.Auth(plainAuth)
+		} else if strings.Contains(mechList, "LOGIN") {
+			err = c.Auth(loginAuthFallback)
+		} else {
+			// Fall back to PLAIN and let the server decide
+			err = c.Auth(plainAuth)
+		}
+		if err != nil {
+			return err
 		}
 	}
 
