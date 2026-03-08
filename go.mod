@@ -13,7 +13,7 @@ require (
 	github.com/yuin/goldmark v1.7.16
 	github.com/zalando/go-keyring v0.2.6
 	go.mozilla.org/pkcs7 v0.9.0
-	golang.org/x/sys v0.41.0
+	golang.org/x/sys v0.42.0
 	golang.org/x/text v0.34.0
 )
 
