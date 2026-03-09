@@ -153,7 +153,7 @@ func AddContact(name, email string) error {
 		return nil
 	}
 
-	email = strings.ToLower(strings.TrimSpace(email))
+	email = strings.ToLower(strings.Trim(strings.TrimSpace(email), ","))
 	name = strings.TrimSpace(name)
 
 	cache, err := LoadContactsCache()

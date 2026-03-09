@@ -752,10 +752,16 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		go func() {
 			// Save the recipient as a contact
 			if msg.To != "" {
-				// Parse "Name <email>" format
-				name, email := parseEmailAddress(msg.To)
-				if err := config.AddContact(name, email); err != nil {
-					log.Printf("Error saving contact: %v", err)
+				recipients := strings.Split(msg.To, ",")
+				for _, r := range recipients {
+					r = strings.TrimSpace(r)
+					if r == "" {
+						continue
+					}
+					name, email := parseEmailAddress(r)
+					if err := config.AddContact(name, email); err != nil {
+						log.Printf("Error saving contact: %v", err)
+					}
 				}
 			}
 			// Delete the draft since email is being sent
