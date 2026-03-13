@@ -200,6 +200,49 @@ func TestConfigGetAccountByEmail(t *testing.T) {
 	}
 }
 
+// TestAddContactStripsCommas verifies that trailing/leading commas are stripped from email addresses when saving contacts.
+func TestAddContactStripsCommas(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("HOME", tempDir)
+
+	testCases := []struct {
+		name       string
+		inputEmail string
+		wantEmail  string
+	}{
+		{"trailing comma", "friend@example.com,", "friend@example.com"},
+		{"leading comma", ",friend@example.com", "friend@example.com"},
+		{"both commas", ",friend@example.com,", "friend@example.com"},
+		{"no comma", "friend@example.com", "friend@example.com"},
+		{"whitespace and comma", "  friend@example.com,  ", "friend@example.com"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Use a fresh temp dir per sub-test to avoid state leakage.
+			subDir := t.TempDir()
+			t.Setenv("HOME", subDir)
+
+			if err := AddContact("Friend", tc.inputEmail); err != nil {
+				t.Fatalf("AddContact() failed: %v", err)
+			}
+
+			cache, err := LoadContactsCache()
+			if err != nil {
+				t.Fatalf("LoadContactsCache() failed: %v", err)
+			}
+
+			if len(cache.Contacts) != 1 {
+				t.Fatalf("Expected 1 contact, got %d", len(cache.Contacts))
+			}
+
+			if cache.Contacts[0].Email != tc.wantEmail {
+				t.Errorf("Email = %q, want %q", cache.Contacts[0].Email, tc.wantEmail)
+			}
+		})
+	}
+}
+
 // TestConfigHasAccounts tests the HasAccounts method.
 func TestConfigHasAccounts(t *testing.T) {
 	cfg := &Config{}
