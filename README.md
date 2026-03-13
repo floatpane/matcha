@@ -17,6 +17,8 @@
 
 </div>
 
+
+
 ![Demo GIF](public/assets/demo.gif)
 
 ## Documentation
@@ -37,8 +39,15 @@ This project is distributed under the MIT License. See the `LICENSE` file for mo
 
 ---
 
+## GitAds Sponsored
+[![Sponsored by GitAds](https://gitads.dev/v1/ad-serve?source=floatpane/matcha@github)](https://gitads.dev/v1/ad-track?source=floatpane/matcha@github)
+>[!TIP]
+> Want to sponsor our development and be featured here? You can do so [here](https://andrinoff.com/sponsor), or via discuss it with [our team](us@floatpane.com)
+
 <div align="center">
 
 **[Report Bug](https://github.com/floatpane/matcha/issues/new?template=bug_report.md)** · **[Request Feature](https://github.com/floatpane/matcha/issues/new?template=feature_request.md)** · **[Contributing Guidelines](https://github.com/floatpane/matcha/blob/master/CONTRIBUTING.md)**
 
 </div>
+
+
