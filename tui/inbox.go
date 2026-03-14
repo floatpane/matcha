@@ -24,7 +24,7 @@ var (
 	tabBarStyle     = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).PaddingBottom(1).MarginBottom(1)
 )
 
-var dateStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+var dateStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
 var senderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Bold(true)
 
 type item struct {
@@ -184,23 +184,23 @@ type AccountTab struct {
 }
 
 type Inbox struct {
-	list             list.Model
-	isFetching       bool
-	isRefreshing     bool
-	emailsCount      int
-	accounts         []config.Account
-	emailsByAccount  map[string][]fetcher.Email
-	allEmails        []fetcher.Email
-	tabs             []AccountTab
-	activeTabIndex   int
-	width            int
-	height           int
-	currentAccountID string // Empty means "ALL"
-	emailCountByAcct  map[string]int
-	mailbox             MailboxKind
-	folderName          string // Custom folder name override for title
-	noMoreByAccount     map[string]bool // Per-account: true when pagination returns 0 results
-	extraShortHelpKeys  []key.Binding
+	list               list.Model
+	isFetching         bool
+	isRefreshing       bool
+	emailsCount        int
+	accounts           []config.Account
+	emailsByAccount    map[string][]fetcher.Email
+	allEmails          []fetcher.Email
+	tabs               []AccountTab
+	activeTabIndex     int
+	width              int
+	height             int
+	currentAccountID   string // Empty means "ALL"
+	emailCountByAcct   map[string]int
+	mailbox            MailboxKind
+	folderName         string          // Custom folder name override for title
+	noMoreByAccount    map[string]bool // Per-account: true when pagination returns 0 results
+	extraShortHelpKeys []key.Binding
 }
 
 func NewInbox(emails []fetcher.Email, accounts []config.Account) *Inbox {

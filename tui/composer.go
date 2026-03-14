@@ -193,6 +193,25 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.subjectInput.SetWidth(inputWidth)
 		m.bodyInput.SetWidth(inputWidth)
 		m.signatureInput.SetWidth(inputWidth)
+		if msg.Height > 0 {
+			// Fixed rows: title, from, to, cc, bcc, subject, sig label,
+			// attachment, smime, button, blank, tip, help = 13
+			const fixedRows = 13
+			available := msg.Height - fixedRows
+			if available < 6 {
+				available = 6
+			}
+			bodyHeight := (available * 55) / 100
+			sigHeight := (available * 15) / 100
+			if bodyHeight < 3 {
+				bodyHeight = 3
+			}
+			if sigHeight < 2 {
+				sigHeight = 2
+			}
+			m.bodyInput.SetHeight(bodyHeight)
+			m.signatureInput.SetHeight(sigHeight)
+		}
 
 	case FileSelectedMsg:
 		// Avoid duplicates

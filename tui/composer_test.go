@@ -286,3 +286,38 @@ func TestComposerSetSelectedAccount(t *testing.T) {
 		t.Errorf("Expected selectedAccountIdx to remain 2, got %d", composer.selectedAccountIdx)
 	}
 }
+
+// TestComposerDynamicHeight verifies that window resize updates textarea heights.
+func TestComposerDynamicHeight(t *testing.T) {
+	composer := NewComposer("", "", "", "", false)
+
+	model, _ := composer.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	composer = model.(*Composer)
+
+	if composer.height != 40 {
+		t.Errorf("Expected height 40, got %d", composer.height)
+	}
+
+	bodyH := composer.bodyInput.Height()
+	sigH := composer.signatureInput.Height()
+
+	if bodyH <= 3 {
+		t.Errorf("Expected bodyInput height > 3, got %d", bodyH)
+	}
+	if sigH <= 1 {
+		t.Errorf("Expected signatureInput height > 1, got %d", sigH)
+	}
+	if bodyH <= sigH {
+		t.Errorf("Expected bodyInput height (%d) > signatureInput height (%d)", bodyH, sigH)
+	}
+
+	// Small window: heights should not go below minimums
+	model, _ = composer.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+	composer = model.(*Composer)
+	if composer.bodyInput.Height() < 3 {
+		t.Errorf("bodyInput height should be at least 3, got %d", composer.bodyInput.Height())
+	}
+	if composer.signatureInput.Height() < 2 {
+		t.Errorf("signatureInput height should be at least 2, got %d", composer.signatureInput.Height())
+	}
+}
