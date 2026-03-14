@@ -12,6 +12,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/floatpane/matcha)](https://goreportcard.com/report/github.com/floatpane/matcha)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/floatpane/matcha)](https://github.com/floatpane/matcha/releases)
 [![Go Reference](https://pkg.go.dev/badge/github.com/floatpane/matcha.svg)](https://pkg.go.dev/github.com/floatpane/matcha)
+[![Awesome](https://awesome.re/badge.svg)](https://github.com/rothgar/awesome-tuis#messaging)
 
 **A powerful, feature-rich email client for your terminal.** Built with Go and the Bubble Tea TUI framework, Matcha brings a beautiful, modern email experience to the command line with support for rich content, multiple accounts, and advanced terminal features.
 
