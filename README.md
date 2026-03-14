@@ -43,7 +43,7 @@ This project is distributed under the MIT License. See the `LICENSE` file for mo
 ## GitAds Sponsored
 [![Sponsored by GitAds](https://gitads.dev/v1/ad-serve?source=floatpane/matcha@github)](https://gitads.dev/v1/ad-track?source=floatpane/matcha@github)
 >[!TIP]
-> Want to sponsor our development and be featured here? You can do so [here](https://andrinoff.com/sponsor), or via discuss it with [our team](us@floatpane.com)
+> Want to sponsor our development and be featured here? You can do so [here](https://andrinoff.com/sponsor), or discuss it via email with [our team](mailto:us@floatpane.com)
 
 <div align="center">
 
