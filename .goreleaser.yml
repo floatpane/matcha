@@ -20,6 +20,7 @@ builds:
     goos:
       - linux
       - darwin # macOS
+      - windows
     goarch:
       - amd64 # Intel
       - arm64 # Apple Silicon
@@ -39,10 +40,14 @@ archives:
   - # The archive configuration.
     # This will create .tar.gz files.
     formats: [tar.gz]
+
     # A template for the archive file names.
     # e.g., matcha_1.2.3_darwin_amd64.tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     # Files to include in the archive.
+    format_overrides:
+      - goos: windows
+        formats: ["zip"]
     files:
       - LICENSE
 
