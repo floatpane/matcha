@@ -6,7 +6,9 @@
     {
       "matchPackageNames": ["go"],
       "matchManagers": ["gomod", "github-actions"],
-      "groupName": "go"
+      "groupName": "go",
+      "rangeStrategy": "bump",
+      "updateTypes": ["major", "minor", "patch"]
     }
   ]
 }
