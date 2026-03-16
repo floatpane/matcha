@@ -102,7 +102,8 @@ func hyperlinkSupported() bool {
 	// Check for specific environment variables that indicate hyperlink support
 	if os.Getenv("KITTY_WINDOW_ID") != "" ||
 		os.Getenv("GHOSTTY_RESOURCES_DIR") != "" ||
-		os.Getenv("WEZTERM_EXECUTABLE") != "" {
+		os.Getenv("WEZTERM_EXECUTABLE") != "" ||
+		os.Getenv("WT_SESSION") != "" {
 		return true
 	}
 
