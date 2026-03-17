@@ -50,6 +50,7 @@ type Email struct {
 	References  []string
 	Attachments []Attachment
 	AccountID   string // ID of the account this email belongs to
+	Seen        bool
 }
 
 // Folder represents an IMAP mailbox/folder.
@@ -261,7 +262,7 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 
 		messages := make(chan *imap.Message, chunkSize)
 		done := make(chan error, 1)
-		fetchItems := []imap.FetchItem{imap.FetchEnvelope, imap.FetchUid}
+		fetchItems := []imap.FetchItem{imap.FetchEnvelope, imap.FetchUid, imap.FetchFlags}
 
 		go func() {
 			done <- c.Fetch(seqset, fetchItems, messages)
@@ -318,6 +319,14 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 				continue
 			}
 
+			seen := false
+			for _, f := range msg.Flags {
+				if f == imap.SeenFlag {
+					seen = true
+					break
+				}
+			}
+
 			batchEmails = append(batchEmails, Email{
 				UID:       msg.Uid,
 				From:      fromAddr,
@@ -325,6 +334,7 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 				Subject:   decodeHeader(msg.Envelope.Subject),
 				Date:      msg.Envelope.Date,
 				AccountID: account.ID,
+				Seen:      seen,
 			})
 		}
 
@@ -1065,7 +1075,7 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 
 	messages := make(chan *imap.Message, limit)
 	done := make(chan error, 1)
-	fetchItems := []imap.FetchItem{imap.FetchEnvelope, imap.FetchUid}
+	fetchItems := []imap.FetchItem{imap.FetchEnvelope, imap.FetchUid, imap.FetchFlags}
 	go func() {
 		done <- c.Fetch(seqset, fetchItems, messages)
 	}()
@@ -1124,6 +1134,14 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 			continue
 		}
 
+		seen := false
+		for _, f := range msg.Flags {
+			if f == imap.SeenFlag {
+				seen = true
+				break
+			}
+		}
+
 		emails = append(emails, Email{
 			UID:       msg.Uid,
 			From:      fromAddr,
@@ -1131,6 +1149,7 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 			Subject:   decodeHeader(msg.Envelope.Subject),
 			Date:      msg.Envelope.Date,
 			AccountID: account.ID,
+			Seen:      seen,
 		})
 	}
 
