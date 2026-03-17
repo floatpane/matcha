@@ -815,7 +815,27 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 		}
 	}
 
+	MarkEmailAsRead(account, mailbox, uid)
+
 	return body, attachments, nil
+}
+
+func MarkEmailAsRead(account *config.Account, mailbox string, uid uint32) error {
+	c, err := connect(account)
+	if err != nil {
+		return err
+	}
+	defer c.Logout()
+
+	if _, err := c.Select(mailbox, false); err != nil {
+		return err
+	}
+
+	seqSet := new(imap.SeqSet)
+	seqSet.AddNum(uid)
+	item := imap.FormatFlagsOp(imap.AddFlags, true)
+	flags := []interface{}{imap.SeenFlag}
+	return c.UidStore(seqSet, item, flags, nil)
 }
 
 func FetchAttachmentFromMailbox(account *config.Account, mailbox string, uid uint32, partID string, encoding string) ([]byte, error) {
