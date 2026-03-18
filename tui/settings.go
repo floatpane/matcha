@@ -200,6 +200,24 @@ func (m *Settings) updateAccounts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.cursor < len(m.cfg.Accounts) && len(m.cfg.Accounts) > 0 {
 			m.confirmingDelete = true
 		}
+	case "e":
+		// Edit selected account
+		if m.cursor < len(m.cfg.Accounts) {
+			acc := m.cfg.Accounts[m.cursor]
+			return m, func() tea.Msg {
+				return GoToEditAccountMsg{
+					AccountID:  acc.ID,
+					Provider:   acc.ServiceProvider,
+					Name:       acc.Name,
+					Email:      acc.Email,
+					FetchEmail: acc.FetchEmail,
+					IMAPServer: acc.IMAPServer,
+					IMAPPort:   acc.IMAPPort,
+					SMTPServer: acc.SMTPServer,
+					SMTPPort:   acc.SMTPPort,
+				}
+			}
+		}
 	case "enter":
 		// If cursor is on "Add Account"
 		if m.cursor == len(m.cfg.Accounts) {
@@ -321,6 +339,19 @@ func (m *Settings) updateMailingLists(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 	case "d":
 		if m.cursor < len(m.cfg.MailingLists) && len(m.cfg.MailingLists) > 0 {
 			m.confirmingDelete = true
+		}
+	case "e":
+		// Edit selected mailing list
+		if m.cursor < len(m.cfg.MailingLists) {
+			list := m.cfg.MailingLists[m.cursor]
+			idx := m.cursor
+			return m, func() tea.Msg {
+				return GoToEditMailingListMsg{
+					Index:     idx,
+					Name:      list.Name,
+					Addresses: strings.Join(list.Addresses, ", "),
+				}
+			}
 		}
 	case "enter":
 		if m.cursor == len(m.cfg.MailingLists) {
@@ -500,7 +531,7 @@ func (m *Settings) viewAccounts() string {
 	b.WriteString("\n")
 
 	mainContent := b.String()
-	helpView := helpStyle.Render("↑/↓: navigate • enter: select • d: delete account • esc: back")
+	helpView := helpStyle.Render("↑/↓: navigate • enter: select • e: edit • d: delete • esc: back")
 
 	if m.height > 0 {
 		currentHeight := lipgloss.Height(docStyle.Render(mainContent + helpView))
@@ -629,7 +660,7 @@ func (m *Settings) viewMailingLists() string {
 	}
 	b.WriteString("\n")
 
-	helpView := helpStyle.Render("↑/↓: navigate • enter: select • d: delete • esc: back")
+	helpView := helpStyle.Render("↑/↓: navigate • enter: select • e: edit • d: delete • esc: back")
 	mainContent := b.String()
 
 	if m.height > 0 {

@@ -184,10 +184,31 @@ type GoToAddAccountMsg struct{}
 // GoToAddMailingListMsg signals navigation to the add mailing list screen.
 type GoToAddMailingListMsg struct{}
 
-// SaveMailingListMsg signals that a new mailing list should be saved.
+// GoToEditAccountMsg signals navigation to edit an existing account.
+type GoToEditAccountMsg struct {
+	AccountID      string
+	Provider       string
+	Name           string
+	Email          string
+	FetchEmail     string
+	IMAPServer     string
+	IMAPPort       int
+	SMTPServer     string
+	SMTPPort       int
+}
+
+// GoToEditMailingListMsg signals navigation to edit an existing mailing list.
+type GoToEditMailingListMsg struct {
+	Index     int
+	Name      string
+	Addresses string
+}
+
+// SaveMailingListMsg signals that a new or edited mailing list should be saved.
 type SaveMailingListMsg struct {
 	Name      string
 	Addresses string
+	EditIndex int // -1 means new, >= 0 means editing existing
 }
 
 // AddAccountMsg signals that a new account should be added.

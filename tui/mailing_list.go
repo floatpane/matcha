@@ -8,13 +8,15 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// MailingListEditor displays the screen to add a new mailing list.
+// MailingListEditor displays the screen to add or edit a mailing list.
 type MailingListEditor struct {
-	nameInput textinput.Model
-	addrInput textinput.Model
-	focus     int // 0 = name, 1 = addresses
-	width     int
-	height    int
+	nameInput  textinput.Model
+	addrInput  textinput.Model
+	focus      int // 0 = name, 1 = addresses
+	width      int
+	height     int
+	isEditMode bool
+	editIndex  int // index of the mailing list being edited
 }
 
 // NewMailingListEditor creates a new mailing list editor model.
@@ -27,10 +29,19 @@ func NewMailingListEditor() *MailingListEditor {
 	addr.Placeholder = "e.g., alice@example.com, bob@example.com"
 
 	return &MailingListEditor{
-		nameInput: name,
-		addrInput: addr,
-		focus:     0,
+		nameInput:  name,
+		addrInput:  addr,
+		focus:      0,
+		editIndex:  -1,
 	}
+}
+
+// SetEditMode sets the editor to edit an existing mailing list.
+func (m *MailingListEditor) SetEditMode(index int, name, addresses string) {
+	m.isEditMode = true
+	m.editIndex = index
+	m.nameInput.SetValue(name)
+	m.addrInput.SetValue(addresses)
 }
 
 // Init initializes the mailing list editor model.
@@ -78,10 +89,12 @@ func (m *MailingListEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				name := strings.TrimSpace(m.nameInput.Value())
 				addrs := strings.TrimSpace(m.addrInput.Value())
 				if name != "" && addrs != "" {
+					editIdx := m.editIndex
 					return m, func() tea.Msg {
 						return SaveMailingListMsg{
 							Name:      name,
 							Addresses: addrs,
+							EditIndex: editIdx,
 						}
 					}
 				}
@@ -100,7 +113,11 @@ func (m *MailingListEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the mailing list editor screen.
 func (m *MailingListEditor) View() tea.View {
-	title := titleStyle.Render("Add Mailing List")
+	titleText := "Add Mailing List"
+	if m.isEditMode {
+		titleText = "Edit Mailing List"
+	}
+	title := titleStyle.Render(titleText)
 
 	var nameView, addrView string
 	if m.focus == 0 {

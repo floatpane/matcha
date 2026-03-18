@@ -187,12 +187,20 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Check if we're editing an existing account
+		isEdit := false
 		if login, ok := m.current.(*tui.Login); ok && login.IsEditMode() {
-			// Find and update the existing account
+			isEdit = true
+			// Find and update the existing account, preserving S/MIME settings
 			existingID := login.GetAccountID()
 			for i, acc := range m.config.Accounts {
 				if acc.ID == existingID {
 					account.ID = existingID
+					account.SMIMECert = acc.SMIMECert
+					account.SMIMEKey = acc.SMIMEKey
+					account.SMIMESignByDefault = acc.SMIMESignByDefault
+					if account.Password == "" {
+						account.Password = acc.Password
+					}
 					m.config.Accounts[i] = account
 					break
 				}
@@ -206,7 +214,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-		m.current = tui.NewChoice()
+		if isEdit {
+			m.current = tui.NewSettings(m.config)
+		} else {
+			m.current = tui.NewChoice()
+		}
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
 
@@ -556,6 +568,24 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
 
+	case tui.GoToEditAccountMsg:
+		hideTips := false
+		if m.config != nil {
+			hideTips = m.config.HideTips
+		}
+		login := tui.NewLogin(hideTips)
+		login.SetEditMode(msg.AccountID, msg.Provider, msg.Name, msg.Email, msg.FetchEmail, msg.IMAPServer, msg.IMAPPort, msg.SMTPServer, msg.SMTPPort)
+		m.current = login
+		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		return m, m.current.Init()
+
+	case tui.GoToEditMailingListMsg:
+		editor := tui.NewMailingListEditor()
+		editor.SetEditMode(msg.Index, msg.Name, msg.Addresses)
+		m.current = editor
+		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		return m, m.current.Init()
+
 	case tui.SaveMailingListMsg:
 		if m.config != nil {
 			var addrs []string
@@ -564,10 +594,17 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					addrs = append(addrs, trimmed)
 				}
 			}
-			m.config.MailingLists = append(m.config.MailingLists, config.MailingList{
-				Name:      msg.Name,
-				Addresses: addrs,
-			})
+			if msg.EditIndex >= 0 && msg.EditIndex < len(m.config.MailingLists) {
+				m.config.MailingLists[msg.EditIndex] = config.MailingList{
+					Name:      msg.Name,
+					Addresses: addrs,
+				}
+			} else {
+				m.config.MailingLists = append(m.config.MailingLists, config.MailingList{
+					Name:      msg.Name,
+					Addresses: addrs,
+				})
+			}
 			if err := config.SaveConfig(m.config); err != nil {
 				log.Printf("could not save config: %v", err)
 			}
