@@ -13,6 +13,6 @@ jobs:
     steps:
       - name: Enable Auto-Merge
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
 
         run: gh pr merge --auto --squash "${{ github.event.pull_request.html_url }}"
