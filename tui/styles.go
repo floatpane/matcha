@@ -22,7 +22,7 @@ var (
 	DialogBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#25A065")).
-			Padding(1, 0).
+			Padding(1, 2).
 			BorderTop(true).
 			BorderLeft(true).
 			BorderRight(true).

@@ -14,7 +14,7 @@ func RebuildStyles() {
 	DialogBoxStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(t.AccentDark).
-		Padding(1, 0).
+		Padding(1, 2).
 		BorderTop(true).
 		BorderLeft(true).
 		BorderRight(true).
