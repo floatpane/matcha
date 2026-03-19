@@ -562,7 +562,7 @@ func (m *Settings) viewSMIMEConfig() string {
 	var b strings.Builder
 
 	account := m.cfg.Accounts[m.editingAccountIdx]
-	b.WriteString(titleStyle.Render(fmt.Sprintf("S/MIME Configuration for %s", account.Email)))
+	b.WriteString(titleStyle.Render(fmt.Sprintf("S/MIME Configuration for %s", account.FetchEmail)))
 	b.WriteString("\n\n")
 
 	if m.focusIndex == 0 {
