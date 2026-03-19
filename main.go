@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
@@ -1850,7 +1851,13 @@ func runUpdateCLI() error {
 		return fmt.Errorf("could not write asset to disk: %w", err)
 	}
 
-	// If it's a tar.gz, extract and find the `matcha` binary
+	// Determine the expected binary name based on the OS.
+	binaryName := "matcha"
+	if runtime.GOOS == "windows" {
+		binaryName = "matcha.exe"
+	}
+
+	// Extract the binary from the archive.
 	var binPath string
 	if strings.HasSuffix(assetName, ".tar.gz") || strings.HasSuffix(assetName, ".tgz") {
 		f, err := os.Open(assetPath)
@@ -1872,9 +1879,8 @@ func runUpdateCLI() error {
 				return fmt.Errorf("error reading tar: %w", err)
 			}
 			name := filepath.Base(hdr.Name)
-			if name == "matcha" || strings.Contains(strings.ToLower(name), "matcha") && (hdr.Typeflag == tar.TypeReg) {
-				// write out the file
-				binPath = filepath.Join(tmpDir, "matcha")
+			if name == binaryName || strings.Contains(strings.ToLower(name), "matcha") && (hdr.Typeflag == tar.TypeReg) {
+				binPath = filepath.Join(tmpDir, binaryName)
 				out, err := os.Create(binPath)
 				if err != nil {
 					return fmt.Errorf("could not create binary file: %w", err)
@@ -1884,6 +1890,38 @@ func runUpdateCLI() error {
 					return fmt.Errorf("could not extract binary: %w", err)
 				}
 				out.Close()
+				if err := os.Chmod(binPath, 0755); err != nil {
+					return fmt.Errorf("could not make binary executable: %w", err)
+				}
+				break
+			}
+		}
+	} else if strings.HasSuffix(assetName, ".zip") {
+		zr, err := zip.OpenReader(assetPath)
+		if err != nil {
+			return fmt.Errorf("could not open zip archive: %w", err)
+		}
+		defer zr.Close()
+		for _, zf := range zr.File {
+			name := filepath.Base(zf.Name)
+			if name == binaryName || strings.Contains(strings.ToLower(name), "matcha") && !zf.FileInfo().IsDir() {
+				rc, err := zf.Open()
+				if err != nil {
+					return fmt.Errorf("could not open file in zip: %w", err)
+				}
+				binPath = filepath.Join(tmpDir, binaryName)
+				out, err := os.Create(binPath)
+				if err != nil {
+					rc.Close()
+					return fmt.Errorf("could not create binary file: %w", err)
+				}
+				if _, err := io.Copy(out, rc); err != nil {
+					out.Close()
+					rc.Close()
+					return fmt.Errorf("could not extract binary: %w", err)
+				}
+				out.Close()
+				rc.Close()
 				if err := os.Chmod(binPath, 0755); err != nil {
 					return fmt.Errorf("could not make binary executable: %w", err)
 				}
@@ -1929,7 +1967,16 @@ func runUpdateCLI() error {
 	in.Close()
 	out.Close()
 
-	// Attempt to atomically replace
+	// On Windows, a running executable cannot be overwritten directly.
+	// Move the old binary out of the way first, then rename the new one in.
+	if runtime.GOOS == "windows" {
+		oldPath := execPath + ".old"
+		_ = os.Remove(oldPath) // clean up any previous leftover
+		if err := os.Rename(execPath, oldPath); err != nil {
+			return fmt.Errorf("could not move old executable out of the way: %w", err)
+		}
+	}
+
 	if err := os.Rename(tmpNew, execPath); err != nil {
 		return fmt.Errorf("could not replace executable: %w", err)
 	}
