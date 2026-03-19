@@ -31,7 +31,9 @@ You can download pre-compiled binaries from the [Releases page](https://github.c
 3. Move the binary to your path:
    ```bash
    mv matcha /usr/local/bin/
+   chmod +x /usr/local/bin/executable_name
    ```
+  
 4. Run it:
    ```bash
    matcha
@@ -95,7 +97,22 @@ You can download pre-compiled binaries from the [Releases page](https://github.c
 
 ## 🪟 Windows
 
-Currently, there is no native support for Windows. Please see issue [#123](https://github.com/floatpane/matcha/issues/123) for more details.
+### Manual Binary Download
+
+You can download pre-compiled binaries from the [Releases page](https://github.com/floatpane/matcha/releases).
+
+1. Move the executable to a permanent, dedicated location on your computer (e.g., C:\CLI Tools\MyTool\).
+2. Open the System Properties window by searching for "environment variables" in the Windows Start menu and selecting "Edit the system environment variables".
+3. Click the "Environment Variables..." button at the bottom of the System Properties window, under the "Advanced" tab.
+4. Locate the "Path" variable in the "User variables for [Your Username]" section (for access only by your user account) or the "System variables" section (for all users).
+5. Double-click on the "Path" variable to edit it.
+6. Add the path to your executable's folder:
+
+    In the "Edit environment variable" window, click "New".
+    Type or paste the full path to the folder where your executable is located (e.g., C:\CLI Tools\MyTool\).
+    Click "OK" on all open windows to save the changes.
+
+> Matcha will be added to WinGet as soons as possible!
 
 ### WSL
 
