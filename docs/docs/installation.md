@@ -102,6 +102,12 @@ You can download pre-compiled binaries from the [Releases page](https://github.c
 
 ## 🪟 Windows
 
+### Winget is the recommended way to install Matcha on Windows.
+
+```powershell
+winget install --id=floatpane.matcha
+```
+
 ### Manual Binary Download
 
 You can download pre-compiled binaries from the [Releases page](https://github.com/floatpane/matcha/releases).
@@ -116,8 +122,6 @@ You can download pre-compiled binaries from the [Releases page](https://github.c
     In the "Edit environment variable" window, click "New".
     Type or paste the full path to the folder where your executable is located (e.g., C:\CLI Tools\MyTool\).
     Click "OK" on all open windows to save the changes.
-
-> Matcha will be added to WinGet as soons as possible!
 
 ### WSL
 
