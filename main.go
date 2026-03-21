@@ -1743,6 +1743,25 @@ func detectInstalledVersion() string {
 		}
 	}
 
+	// Try WinGet (Windows)
+	if runtime.GOOS == "windows" {
+		if _, err := exec.LookPath("winget"); err == nil {
+			if out, err := exec.Command("winget", "list", "--id", "floatpane.matcha", "--disable-interactivity").Output(); err == nil {
+				lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+				for _, line := range lines {
+					if strings.Contains(strings.ToLower(line), "floatpane.matcha") {
+						fields := strings.Fields(line)
+						for _, f := range fields {
+							if len(f) > 0 && f[0] >= '0' && f[0] <= '9' && strings.Contains(f, ".") {
+								return f
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// Try snap (Linux)
 	if runtime.GOOS == "linux" {
 		if _, err := exec.LookPath("snap"); err == nil {
@@ -1893,6 +1912,23 @@ func runUpdateCLI() error {
 				return nil
 			}
 			fmt.Printf("Flatpak update failed: %v\n", err)
+			// fallthrough
+		}
+	}
+
+	// Detect WinGet
+	if _, err := exec.LookPath("winget"); err == nil {
+		cmdCheck := exec.Command("winget", "list", "--id", "floatpane.matcha", "--disable-interactivity")
+		if err := cmdCheck.Run(); err == nil {
+			fmt.Println("Detected WinGet package — attempting to upgrade.")
+			cmd := exec.Command("winget", "upgrade", "--id", "floatpane.matcha", "--disable-interactivity")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err == nil {
+				fmt.Println("Successfully upgraded via WinGet.")
+				return nil
+			}
+			fmt.Printf("WinGet upgrade failed: %v\n", err)
 			// fallthrough
 		}
 	}
