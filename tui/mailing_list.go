@@ -21,12 +21,16 @@ type MailingListEditor struct {
 
 // NewMailingListEditor creates a new mailing list editor model.
 func NewMailingListEditor() *MailingListEditor {
+	tiStyles := ThemedTextInputStyles()
+
 	name := textinput.New()
 	name.Placeholder = "e.g., Team"
+	name.SetStyles(tiStyles)
 	name.Focus()
 
 	addr := textinput.New()
 	addr.Placeholder = "e.g., alice@example.com, bob@example.com"
+	addr.SetStyles(tiStyles)
 
 	return &MailingListEditor{
 		nameInput: name,

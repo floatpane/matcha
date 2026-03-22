@@ -53,15 +53,19 @@ func NewSettings(cfg *config.Config) *Settings {
 		cfg = &config.Config{}
 	}
 
+	tiStyles := ThemedTextInputStyles()
+
 	certInput := textinput.New()
 	certInput.Placeholder = "/path/to/cert.pem"
 	certInput.Prompt = "> "
 	certInput.CharLimit = 256
+	certInput.SetStyles(tiStyles)
 
 	keyInput := textinput.New()
 	keyInput.Placeholder = "/path/to/private_key.pem"
 	keyInput.Prompt = "> "
 	keyInput.CharLimit = 256
+	keyInput.SetStyles(tiStyles)
 
 	return &Settings{
 		cfg:            cfg,

@@ -35,6 +35,7 @@ func NewFilePicker(startPath string) *FilePicker {
 	pi.Placeholder = "Type a path and press Enter..."
 	pi.Prompt = "Go to: "
 	pi.CharLimit = 512
+	pi.SetStyles(ThemedTextInputStyles())
 
 	fp := &FilePicker{
 		currentPath: startPath,

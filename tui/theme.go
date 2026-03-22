@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/theme"
 )
@@ -117,4 +120,60 @@ func RebuildStyles() {
 	// trash_archive.go
 	mailboxTabStyle = lipgloss.NewStyle().Padding(0, 3)
 	activeMailboxTabStyle = lipgloss.NewStyle().Padding(0, 3).Foreground(t.Accent).Bold(true).Underline(true)
+}
+
+// ThemedTextInputStyles returns textinput.Styles using the active theme colors.
+func ThemedTextInputStyles() textinput.Styles {
+	t := theme.ActiveTheme
+	return textinput.Styles{
+		Focused: textinput.StyleState{
+			Placeholder: lipgloss.NewStyle().Foreground(t.DimText),
+			Suggestion:  lipgloss.NewStyle().Foreground(t.DimText),
+			Prompt:      lipgloss.NewStyle().Foreground(t.AccentText),
+			Text:        lipgloss.NewStyle(),
+		},
+		Blurred: textinput.StyleState{
+			Placeholder: lipgloss.NewStyle().Foreground(t.DimText),
+			Suggestion:  lipgloss.NewStyle().Foreground(t.DimText),
+			Prompt:      lipgloss.NewStyle().Foreground(t.MutedText),
+			Text:        lipgloss.NewStyle().Foreground(t.DimText),
+		},
+		Cursor: textinput.CursorStyle{
+			Color: t.AccentText,
+			Shape: tea.CursorBlock,
+			Blink: true,
+		},
+	}
+}
+
+// ThemedTextAreaStyles returns textarea.Styles using the active theme colors.
+func ThemedTextAreaStyles() textarea.Styles {
+	t := theme.ActiveTheme
+	return textarea.Styles{
+		Focused: textarea.StyleState{
+			Base:             lipgloss.NewStyle(),
+			CursorLine:       lipgloss.NewStyle(),
+			CursorLineNumber: lipgloss.NewStyle().Foreground(t.MutedText),
+			EndOfBuffer:      lipgloss.NewStyle().Foreground(t.Secondary),
+			LineNumber:       lipgloss.NewStyle().Foreground(t.MutedText),
+			Placeholder:      lipgloss.NewStyle().Foreground(t.DimText),
+			Prompt:           lipgloss.NewStyle().Foreground(t.AccentText),
+			Text:             lipgloss.NewStyle(),
+		},
+		Blurred: textarea.StyleState{
+			Base:             lipgloss.NewStyle(),
+			CursorLine:       lipgloss.NewStyle().Foreground(t.DimText),
+			CursorLineNumber: lipgloss.NewStyle().Foreground(t.MutedText),
+			EndOfBuffer:      lipgloss.NewStyle().Foreground(t.Secondary),
+			LineNumber:       lipgloss.NewStyle().Foreground(t.MutedText),
+			Placeholder:      lipgloss.NewStyle().Foreground(t.DimText),
+			Prompt:           lipgloss.NewStyle().Foreground(t.MutedText),
+			Text:             lipgloss.NewStyle().Foreground(t.DimText),
+		},
+		Cursor: textarea.CursorStyle{
+			Color: t.AccentText,
+			Shape: tea.CursorBlock,
+			Blink: true,
+		},
+	}
 }

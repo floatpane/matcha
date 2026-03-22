@@ -19,6 +19,7 @@ func NewSignatureEditor() *SignatureEditor {
 	ta := textarea.New()
 	ta.Placeholder = "Enter your email signature...\n\nExample:\nBest regards,\nDrew"
 	ta.SetHeight(10)
+	ta.SetStyles(ThemedTextAreaStyles())
 	ta.Focus()
 
 	// Load existing signature

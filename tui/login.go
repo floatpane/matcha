@@ -40,10 +40,12 @@ func NewLogin(hideTips bool) *Login {
 		hideTips: hideTips,
 	}
 
+	tiStyles := ThemedTextInputStyles()
 	var t textinput.Model
 	for i := range m.inputs {
 		t = textinput.New()
 		t.CharLimit = 128
+		t.SetStyles(tiStyles)
 
 		switch i {
 		case inputProvider:

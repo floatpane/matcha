@@ -91,38 +91,47 @@ func NewComposer(from, to, subject, body string, hideTips bool) *Composer {
 		hideTips: hideTips,
 	}
 
+	tiStyles := ThemedTextInputStyles()
+	taStyles := ThemedTextAreaStyles()
+
 	m.toInput = textinput.New()
 	m.toInput.Placeholder = "To"
 	m.toInput.SetValue(to)
 	m.toInput.Prompt = "> "
 	m.toInput.CharLimit = 256
+	m.toInput.SetStyles(tiStyles)
 
 	m.ccInput = textinput.New()
 	m.ccInput.Placeholder = "Cc"
 	m.ccInput.Prompt = "> "
 	m.ccInput.CharLimit = 256
+	m.ccInput.SetStyles(tiStyles)
 
 	m.bccInput = textinput.New()
 	m.bccInput.Placeholder = "Bcc"
 	m.bccInput.Prompt = "> "
 	m.bccInput.CharLimit = 256
+	m.bccInput.SetStyles(tiStyles)
 
 	m.subjectInput = textinput.New()
 	m.subjectInput.Placeholder = "Subject"
 	m.subjectInput.SetValue(subject)
 	m.subjectInput.Prompt = "> "
 	m.subjectInput.CharLimit = 256
+	m.subjectInput.SetStyles(tiStyles)
 
 	m.bodyInput = textarea.New()
 	m.bodyInput.Placeholder = "Body (Markdown supported)..."
 	m.bodyInput.SetValue(body)
 	m.bodyInput.Prompt = "> "
 	m.bodyInput.SetHeight(10)
+	m.bodyInput.SetStyles(taStyles)
 
 	m.signatureInput = textarea.New()
 	m.signatureInput.Placeholder = "Signature (optional)..."
 	m.signatureInput.Prompt = "> "
 	m.signatureInput.SetHeight(3)
+	m.signatureInput.SetStyles(taStyles)
 	// Load default signature
 	if sig, err := config.LoadSignature(); err == nil && sig != "" {
 		m.signatureInput.SetValue(sig)
