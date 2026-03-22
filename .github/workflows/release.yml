@@ -10,19 +10,20 @@ permissions:
 
 jobs:
   goreleaser:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          # This is required to allow GoReleaser to fetch all tags
-          # to determine the next version number.
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26.1" # Match the Go version in go.mod
+          go-version: "1.26.1"
+
+      - name: Set up Zig
+        uses: goto-bus-stop/setup-zig@v2
 
       - name: Bump version and push tag
         id: tag_version
@@ -34,6 +35,35 @@ jobs:
         run: git fetch --tags
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get macOS SDK path
+        id: macos_sdk
+        run: echo "path=$(xcrun --show-sdk-path)" >> $GITHUB_OUTPUT
+
+      - name: Run GoReleaser
+        if: steps.tag_version.outputs.new_tag
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: latest
+          args: release --clean
+        env:
+          SDK_PATH: ${{ steps.macos_sdk.outputs.path }}
+          GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+  snapcraft:
+    runs-on: ubuntu-latest
+    needs: goreleaser
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.1"
 
       - name: Install Snapcraft
         run: sudo snap install snapcraft --classic
@@ -47,13 +77,9 @@ jobs:
           mkdir -p /home/runner/.cache/snapcraft/stage-packages
           chmod -R 755 /home/runner/.cache/snapcraft
 
-      - name: Run GoReleaser
-        if: steps.tag_version.outputs.new_tag
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          version: latest
-          args: release --clean
+      - name: Build and publish snap
         env:
-          GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: |
+          snapcraft
+          snapcraft upload --release=stable *.snap

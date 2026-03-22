@@ -10,29 +10,44 @@ before:
     - go mod tidy
 
 # 'builds' defines the matrix of binaries to create.
+# cgo is enabled for C-accelerated image processing and base64 wrapping (clib/).
+# Cross-compilation uses zig cc for Linux/Windows and native clang for macOS.
+# The release workflow runs on macos-latest (see .github/workflows/release.yml).
 builds:
-  - # The main build configuration for your CLI.
-    # The binary name will be 'matcha'.
-    id: "matcha"
-    # The main entrypoint of your application.
+  - id: matcha
     main: .
-    # The Go compiler to use.
     goos:
       - linux
-      - darwin # macOS
+      - darwin
       - windows
     goarch:
-      - amd64 # Intel
-      - arm64 # Apple Silicon
-    # Environment variables to pass to the Go compiler.
-    env:
-      - CGO_ENABLED=0
-    # Build flags for smaller binaries and reproducible builds.
+      - amd64
+      - arm64
     flags:
       - -trimpath
-    # Linker flags to strip debug information and reduce binary size.
     ldflags:
       - -s -w -buildid= -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+    env:
+      - CGO_ENABLED=1
+      - >-
+        {{- if eq .Os "darwin" }}SDKROOT={{ .Env.SDK_PATH }}{{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}MACOSX_DEPLOYMENT_TARGET=11.0{{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}CGO_CFLAGS=-isysroot {{ .Env.SDK_PATH }} -mmacosx-version-min=11.0{{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}CGO_LDFLAGS=-isysroot {{ .Env.SDK_PATH }}{{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}
+          {{- if eq .Arch "amd64"}}CC=clang -arch x86_64 -isysroot {{ .Env.SDK_PATH }}{{- end }}
+          {{- if eq .Arch "arm64"}}CC=clang -arch arm64 -isysroot {{ .Env.SDK_PATH }}{{- end }}
+        {{- else if eq .Os "linux" }}
+          {{- if eq .Arch "amd64" }}CC=zig cc -target x86_64-linux-musl -lc{{- end }}
+          {{- if eq .Arch "arm64"}}CC=zig cc -target aarch64-linux-musl -lc{{- end }}
+        {{- else if eq .Os "windows" }}
+          {{- if eq .Arch "amd64" }}CC=zig cc -target x86_64-windows-gnu -lc{{- end }}
+          {{- if eq .Arch "arm64"}}CC=zig cc -target aarch64-windows-gnu -lc{{- end }}
+        {{- end }}
 
 # 'archives' defines how to package the built binaries.
 # 'archives' defines how to package the built binaries.
@@ -162,15 +177,5 @@ winget:
       name: goreleaserbot
       email: bot@goreleaser.com
 
-# 'snapcrafts' configures the Snapcraft integration.
-snapcrafts:
-  - # The configuration for your Snapcraft package.
-    name: matcha
-    publish: true
-    summary: "A beautiful and functional email client for your terminal."
-    description: |
-      A beautiful and functional email client for your terminal, built with Go and the charming Bubble Tea TUI library.
-      Never leave your command line to check your inbox or send an email again!
-    grade: stable
-    confinement: strict
-    license: MIT
+# Snapcraft is handled separately in the release workflow (requires Ubuntu).
+# See .github/workflows/release.yml
