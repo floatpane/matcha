@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
-	"image"
-	"image/png"
 	"io"
 	"mime/quotedprintable"
 	"net/http"
@@ -15,11 +13,9 @@ import (
 	"sync"
 	"time"
 
-	_ "image/gif"
-	_ "image/jpeg"
-
 	"charm.land/lipgloss/v2"
 	"github.com/PuerkitoBio/goquery"
+	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/theme"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/renderer/html"
@@ -323,19 +319,13 @@ func fetchRemoteBase64(url string) string {
 		return ""
 	}
 
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		debugImageProtocol("remote decode failed url=%s err=%v", url, err)
+	result, ok := clib.DecodeToPNG(data)
+	if !ok {
+		debugImageProtocol("remote decode failed url=%s", url)
 		return ""
 	}
 
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		debugImageProtocol("remote png encode failed url=%s err=%v", url, err)
-		return ""
-	}
-
-	encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
+	encoded := base64.StdEncoding.EncodeToString(result.PNGData)
 	debugImageProtocol("remote fetch ok url=%s len=%d", url, len(encoded))
 	remoteImageCache.Store(url, encoded)
 	return encoded
@@ -369,9 +359,8 @@ func kittyInlineImage(payload string) string {
 	// Calculate how many terminal rows the image occupies to advance text after it.
 	rows := 1
 	if data, err := base64.StdEncoding.DecodeString(payload); err == nil {
-		if img, _, err := image.Decode(bytes.NewReader(data)); err == nil {
+		if _, h, ok := clib.ImageDimensions(data); ok {
 			cellHeight := getTerminalCellSize()
-			h := img.Bounds().Dy()
 			rows = (h + cellHeight - 1) / cellHeight
 			if rows < 1 {
 				rows = 1
@@ -416,9 +405,8 @@ func iterm2InlineImage(payload string) string {
 	// Calculate rows for cursor positioning
 	rows := 1
 	if data, err := base64.StdEncoding.DecodeString(payload); err == nil {
-		if img, _, err := image.Decode(bytes.NewReader(data)); err == nil {
+		if _, h, ok := clib.ImageDimensions(data); ok {
 			cellHeight := getTerminalCellSize()
-			h := img.Bounds().Dy()
 			rows = (h + cellHeight - 1) / cellHeight
 			if rows < 1 {
 				rows = 1
@@ -457,9 +445,8 @@ func renderInlineImage(payload string) string {
 func imageRows(payload string) int {
 	rows := 1
 	if data, err := base64.StdEncoding.DecodeString(payload); err == nil {
-		if img, _, err := image.Decode(bytes.NewReader(data)); err == nil {
+		if _, h, ok := clib.ImageDimensions(data); ok {
 			cellHeight := getTerminalCellSize()
-			h := img.Bounds().Dy()
 			rows = (h + cellHeight - 1) / cellHeight
 			if rows < 1 {
 				rows = 1
