@@ -1,3 +1,5 @@
+//go:build cgo
+
 package clib
 
 /*
@@ -7,13 +9,6 @@ package clib
 */
 import "C"
 import "unsafe"
-
-// ImageConvertResult holds the output of DecodeToPNG.
-type ImageConvertResult struct {
-	PNGData []byte
-	Width   int
-	Height  int
-}
 
 // DecodeToPNG takes raw image bytes (JPEG, PNG, BMP, GIF, etc.) and returns
 // PNG-encoded bytes along with image dimensions. Uses stb_image for decoding
