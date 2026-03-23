@@ -23,6 +23,7 @@ import (
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
+	"github.com/floatpane/matcha/plugin"
 	"github.com/floatpane/matcha/sender"
 	"github.com/floatpane/matcha/theme"
 	"github.com/floatpane/matcha/tui"
@@ -62,6 +63,7 @@ type mainModel struct {
 	current       tea.Model
 	previousModel tea.Model
 	config        *config.Config
+	plugins       *plugin.Manager
 	// Folder-based email storage
 	folderEmails map[string][]fetcher.Email // key: folderName
 	folderInbox  *tui.FolderInbox
@@ -102,6 +104,14 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	m.current, cmd = m.current.Update(msg)
 	cmds = append(cmds, cmd)
+
+	// Fire composer_updated hook on key presses when the composer is active
+	if _, isKey := msg.(tea.KeyPressMsg); isKey {
+		if composer, ok := m.current.(*tui.Composer); ok && m.plugins != nil {
+			m.plugins.CallComposerHook(plugin.HookComposerUpdated, composer.GetBody(), composer.GetSubject(), composer.GetTo())
+			m.syncPluginStatus()
+		}
+	}
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -289,6 +299,10 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.config == nil {
 			return m, nil
 		}
+		if m.plugins != nil {
+			m.plugins.CallFolderHook(plugin.HookFolderChanged, msg.FolderName)
+			m.syncPluginStatus()
+		}
 		// Use in-memory cache if available
 		if cached, ok := m.folderEmails[msg.FolderName]; ok {
 			m.emails = cached
@@ -301,7 +315,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.folderInbox.GetInbox().SetFolderName(msg.FolderName)
 				m.folderInbox.SetLoadingEmails(false)
 			}
-			return m, nil
+			return m, m.pluginNotifyCmd()
 		}
 		// Fall back to disk cache for instant display, then fetch fresh in background
 		if diskCached := loadFolderEmailsFromCache(msg.FolderName); len(diskCached) > 0 {
@@ -317,16 +331,34 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.folderInbox.SetLoadingEmails(false)
 			}
 			// Still fetch fresh emails in background
-			return m, fetchFolderEmailsCmd(m.config, msg.FolderName)
+			return m, tea.Batch(fetchFolderEmailsCmd(m.config, msg.FolderName), m.pluginNotifyCmd())
 		}
 		if m.folderInbox != nil {
 			m.folderInbox.SetLoadingEmails(true)
 		}
-		return m, fetchFolderEmailsCmd(m.config, msg.FolderName)
+		return m, tea.Batch(fetchFolderEmailsCmd(m.config, msg.FolderName), m.pluginNotifyCmd())
+
+	case tui.PluginNotifyMsg:
+		m.previousModel = m.current
+		m.current = tui.NewStatus(msg.Message)
+		dur := time.Duration(msg.Duration * float64(time.Second))
+		if dur <= 0 {
+			dur = 2 * time.Second
+		}
+		return m, tea.Tick(dur, func(t time.Time) tea.Msg {
+			return tui.RestoreViewMsg{}
+		})
 
 	case tui.FolderEmailsFetchedMsg:
 		if m.folderInbox == nil {
 			return m, nil
+		}
+		// Call plugin hooks for received emails
+		if m.plugins != nil {
+			for _, email := range msg.Emails {
+				t := m.plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, msg.FolderName)
+				m.plugins.CallHook(plugin.HookEmailReceived, t)
+			}
 		}
 		// Always cache in memory and to disk
 		m.folderEmails[msg.FolderName] = msg.Emails
@@ -343,7 +375,8 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.folderInbox.SetEmails(msg.Emails, m.config.Accounts)
 		m.folderInbox.GetInbox().SetFolderName(msg.FolderName)
 		m.folderInbox.SetLoadingEmails(false)
-		return m, nil
+		m.syncPluginStatus()
+		return m, m.pluginNotifyCmd()
 
 	case tui.FetchFolderMoreEmailsMsg:
 		if msg.AccountID == "" || m.config == nil {
@@ -647,15 +680,20 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.current.Init()
 
 	case tui.ViewEmailMsg:
-		if m.getEmailByUIDAndAccount(msg.UID, msg.AccountID, msg.Mailbox) == nil {
+		email := m.getEmailByUIDAndAccount(msg.UID, msg.AccountID, msg.Mailbox)
+		if email == nil {
 			return m, nil
 		}
 		folderName := "INBOX"
 		if m.folderInbox != nil {
 			folderName = m.folderInbox.GetCurrentFolder()
 		}
+		if m.plugins != nil {
+			t := m.plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, folderName)
+			m.plugins.CallHook(plugin.HookEmailViewed, t)
+		}
 		m.current = tui.NewStatus("Fetching email content...")
-		return m, tea.Batch(m.current.Init(), fetchFolderEmailBodyCmd(m.config, msg.UID, msg.AccountID, folderName, msg.Mailbox))
+		return m, tea.Batch(m.current.Init(), fetchFolderEmailBodyCmd(m.config, msg.UID, msg.AccountID, folderName, msg.Mailbox), m.pluginNotifyCmd())
 
 	case tui.EmailBodyFetchedMsg:
 		if msg.Err != nil {
@@ -696,6 +734,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		emailIndex := m.getEmailIndex(msg.UID, msg.AccountID, msg.Mailbox)
 		emailView := tui.NewEmailView(*email, emailIndex, m.width, m.height, msg.Mailbox, m.config.DisableImages)
 		m.current = emailView
+		m.syncPluginStatus()
 		cmds := []tea.Cmd{m.current.Init()}
 		if markReadCmd != nil {
 			cmds = append(cmds, markReadCmd)
@@ -788,6 +827,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 	case tui.SendEmailMsg:
+		if m.plugins != nil {
+			m.plugins.CallSendHook(plugin.HookEmailSendBefore, msg.To, msg.Cc, msg.Subject, msg.AccountID)
+		}
 		// Get draft ID before clearing composer (if it's a composer)
 		var draftID string
 		if composer, ok := m.current.(*tui.Composer); ok {
@@ -839,6 +881,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 				return tui.RestoreViewMsg{}
 			})
+		}
+		if m.plugins != nil {
+			m.plugins.CallHook(plugin.HookEmailSendAfter)
 		}
 		m.current = tui.NewChoice()
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
@@ -968,6 +1013,10 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if cmd := m.pluginNotifyCmd(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
 	return m, tea.Batch(cmds...)
 }
 
@@ -1069,6 +1118,34 @@ func (m *mainModel) removeEmailFromStores(uid uint32, accountID string) {
 			}
 		}
 		m.emailsByAcct[accountID] = filteredAcct
+	}
+}
+
+// pluginNotifyCmd checks for a pending plugin notification and returns a command if one exists.
+func (m *mainModel) pluginNotifyCmd() tea.Cmd {
+	if m.plugins == nil {
+		return nil
+	}
+	if n, ok := m.plugins.TakePendingNotification(); ok {
+		return func() tea.Msg {
+			return tui.PluginNotifyMsg{Message: n.Message, Duration: n.Duration}
+		}
+	}
+	return nil
+}
+
+func (m *mainModel) syncPluginStatus() {
+	if m.plugins == nil {
+		return
+	}
+	if m.folderInbox != nil {
+		m.folderInbox.GetInbox().SetPluginStatus(m.plugins.StatusText(plugin.StatusInbox))
+	}
+	switch v := m.current.(type) {
+	case *tui.Composer:
+		v.SetPluginStatus(m.plugins.StatusText(plugin.StatusComposer))
+	case *tui.EmailView:
+		v.SetPluginStatus(m.plugins.StatusText(plugin.StatusEmailView))
 	}
 }
 
@@ -2132,10 +2209,20 @@ func main() {
 		initialModel = newInitialModel(cfg)
 	}
 
+	// Initialize plugin system
+	plugins := plugin.NewManager()
+	plugins.LoadPlugins()
+	initialModel.plugins = plugins
+	plugins.CallHook(plugin.HookStartup)
+
 	p := tea.NewProgram(initialModel)
 
 	if _, err := p.Run(); err != nil {
+		plugins.Close()
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)
 	}
+
+	plugins.CallHook(plugin.HookShutdown)
+	plugins.Close()
 }

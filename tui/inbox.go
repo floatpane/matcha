@@ -217,6 +217,7 @@ type Inbox struct {
 	folderName         string          // Custom folder name override for title
 	noMoreByAccount    map[string]bool // Per-account: true when pagination returns 0 results
 	extraShortHelpKeys []key.Binding
+	pluginStatus       string // Persistent status text set by plugins
 }
 
 func NewInbox(emails []fetcher.Email, accounts []config.Account) *Inbox {
@@ -399,6 +400,9 @@ func (m *Inbox) getTitle() string {
 	}
 	if m.isFetching {
 		title += " (loading more...)"
+	}
+	if m.pluginStatus != "" {
+		title += " (" + m.pluginStatus + ")"
 	}
 	return title
 }
@@ -758,6 +762,12 @@ func (m *Inbox) SetSize(width, height int) {
 // SetFolderName sets a custom folder name for the inbox title.
 func (m *Inbox) SetFolderName(name string) {
 	m.folderName = name
+	m.list.Title = m.getTitle()
+}
+
+// SetPluginStatus sets a persistent status string from plugins, shown in the title.
+func (m *Inbox) SetPluginStatus(status string) {
+	m.pluginStatus = status
 	m.list.Title = m.getTitle()
 }
 

@@ -390,3 +390,11 @@ type FetchFolderMoreEmailsMsg struct {
 	FolderName string
 	Limit      uint32
 }
+
+// --- Plugin Messages ---
+
+// PluginNotifyMsg signals that a plugin wants to show a notification.
+type PluginNotifyMsg struct {
+	Message  string
+	Duration float64 // Duration in seconds (default 2)
+}

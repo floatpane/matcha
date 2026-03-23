@@ -82,6 +82,9 @@ type Composer struct {
 
 	// Hidden quoted text (appended to body when sending, but not shown in editor)
 	quotedText string
+
+	// Plugin status text shown in the help bar
+	pluginStatus string
 }
 
 // NewComposer initializes a new composer model.
@@ -595,7 +598,11 @@ func (m *Composer) View() tea.View {
 	}
 
 	mainContent := lipgloss.JoinVertical(lipgloss.Left, composerViewElements...)
-	helpView := helpStyle.Render("Markdown/HTML • tab/shift+tab: navigate • esc: save draft & exit")
+	helpText := "Markdown/HTML • tab/shift+tab: navigate • esc: save draft & exit"
+	if m.pluginStatus != "" {
+		helpText += " • " + m.pluginStatus
+	}
+	helpView := helpStyle.Render(helpText)
 
 	if m.height > 0 {
 		currentHeight := lipgloss.Height(mainContent) + lipgloss.Height(helpView)
@@ -733,6 +740,11 @@ func (m *Composer) GetInReplyTo() string {
 // GetReferences returns the References header values.
 func (m *Composer) GetReferences() []string {
 	return m.references
+}
+
+// SetPluginStatus sets a persistent status string from plugins, shown in the help bar.
+func (m *Composer) SetPluginStatus(status string) {
+	m.pluginStatus = status
 }
 
 // ToDraft converts the composer state to a Draft for saving.

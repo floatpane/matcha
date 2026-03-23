@@ -40,6 +40,7 @@ type EmailView struct {
 	smimeTrusted       bool
 	isEncrypted        bool
 	imagePlacements    []view.ImagePlacement
+	pluginStatus       string
 }
 
 func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox MailboxKind, disableImages bool) *EmailView {
@@ -258,11 +259,18 @@ func (m *EmailView) View() tea.View {
 
 	var help string
 	if m.focusOnAttachments {
-		help = helpStyle.Render("↑/↓: navigate • enter: download • esc/tab: back to email body")
+		helpText := "↑/↓: navigate • enter: download • esc/tab: back to email body"
+		if m.pluginStatus != "" {
+			helpText += " • " + m.pluginStatus
+		}
+		help = helpStyle.Render(helpText)
 	} else {
 		shortcuts := "\uf112 r: reply • \uf064 f: forward • \uea81 d: delete • \uea98 a: archive • \uf435 tab: focus attachments • \ueb06 esc: back to inbox"
 		if view.ImageProtocolSupported() {
 			shortcuts = shortcuts + "• \uf03e i: toggle images"
+		}
+		if m.pluginStatus != "" {
+			shortcuts += " • " + m.pluginStatus
 		}
 		help = helpStyle.Render(shortcuts)
 	}
@@ -312,6 +320,11 @@ func (m *EmailView) View() tea.View {
 // GetAccountID returns the account ID for this email
 func (m *EmailView) GetAccountID() string {
 	return m.accountID
+}
+
+// SetPluginStatus sets a persistent status string from plugins, shown in the help bar.
+func (m *EmailView) SetPluginStatus(status string) {
+	m.pluginStatus = status
 }
 
 func inlineImagesFromAttachments(atts []fetcher.Attachment) []view.InlineImage {
