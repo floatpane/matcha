@@ -10,6 +10,7 @@ enum {
     HELEM_LINK       = 3,
     HELEM_IMAGE      = 4,
     HELEM_BLOCKQUOTE = 5,
+    HELEM_TABLE      = 6,
 };
 
 typedef struct {

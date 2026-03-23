@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdio.h>
 
 // --- Dynamic buffer ---
 
@@ -48,6 +49,21 @@ static void buf_free(Buffer* b) {
     b->data = NULL;
     b->len = 0;
     b->cap = 0;
+}
+
+// Append a text character with HTML whitespace collapsing.
+// In non-pre mode, collapses runs of whitespace to a single space.
+static void buf_append_html_char(Buffer* b, char c, int in_pre) {
+    if (in_pre) {
+        buf_append_char(b, c);
+        return;
+    }
+    if (c == '\n' || c == '\r' || c == '\t') c = ' ';
+    if (c == ' ') {
+        // Skip if buffer already ends with space or is empty
+        if (b->len == 0 || b->data[b->len - 1] == ' ' || b->data[b->len - 1] == '\n') return;
+    }
+    buf_append_char(b, c);
 }
 
 // --- Result helpers ---
@@ -291,6 +307,17 @@ typedef struct {
     char bq_cite[2048];
     Buffer bq_prev;    // Text before blockquote (for "On...wrote:" detection)
     int last_was_block; // Last element was a block (for spacing)
+    // Table state
+    int table_depth;    // Table nesting depth (0 = not in any table)
+    int capture_depth;  // Depth at which we're capturing data table (-1 = not capturing)
+    int in_thead;       // Inside <thead> (at capture depth)
+    int in_tr;          // Inside <tr> (at capture depth, capturing mode)
+    int in_td;          // Inside <td>/<th> (at capture depth, capturing mode)
+    int cell_index;     // Cell index within current row
+    int row_index;      // Row index within current table
+    int header_rows;    // Number of header rows (rows inside <thead>)
+    Buffer cell_text;   // Current cell text accumulator
+    Buffer table_data;  // Accumulated table data (cells tab-separated, rows newline-separated)
 } ParseState;
 
 HTMLConvertResult html_to_elements(const char* html, size_t len) {
@@ -304,10 +331,13 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
 
     ParseState state;
     memset(&state, 0, sizeof(state));
+    state.capture_depth = -1;  // Not capturing
     buf_init(&state.a_text);
     buf_init(&state.h_text);
     buf_init(&state.bq_text);
     buf_init(&state.bq_prev);
+    buf_init(&state.cell_text);
+    buf_init(&state.table_data);
 
     Buffer text_buf;
     buf_init(&text_buf);
@@ -357,7 +387,9 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
 
             // <br> -> newline
             if (tag_eq(tag.name, tag.name_len, "br")) {
-                if (state.in_a) {
+                if (state.in_td) {
+                    buf_append_char(&state.cell_text, ' ');
+                } else if (state.in_a) {
                     buf_append_char(&state.a_text, '\n');
                 } else if (state.in_h1 || state.in_h2) {
                     buf_append_char(&state.h_text, ' ');
@@ -509,14 +541,77 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
                 continue;
             }
 
-            // Block elements: add spacing
-            if (tag_eq(tag.name, tag.name_len, "p") ||
-                tag_eq(tag.name, tag.name_len, "div") ||
-                tag_eq(tag.name, tag.name_len, "li") ||
-                tag_eq(tag.name, tag.name_len, "tr") ||
-                tag_eq(tag.name, tag.name_len, "table") ||
-                tag_eq(tag.name, tag.name_len, "hr")) {
-                if (tag.is_closing || tag_eq(tag.name, tag.name_len, "hr")) {
+            // <table>
+            if (tag_eq(tag.name, tag.name_len, "table")) {
+                if (!tag.is_closing) {
+                    state.table_depth++;
+                } else if (state.table_depth > 0) {
+                    if (state.table_depth == state.capture_depth) {
+                        // Closing the data table we're capturing
+                        if (state.table_data.len > 0) {
+                            flush_text(&result, &text_buf);
+                            HTMLElement* e = result_add(&result);
+                            e->type = HELEM_TABLE;
+                            e->text = buf_finish(&state.table_data);
+                            buf_init(&state.table_data);
+                            char hdr_buf[16];
+                            snprintf(hdr_buf, sizeof(hdr_buf), "%d", state.header_rows);
+                            e->attr1 = strdup(hdr_buf);
+                        } else {
+                            buf_free(&state.table_data);
+                            buf_init(&state.table_data);
+                        }
+                        state.capture_depth = -1;
+                        state.in_td = 0;
+                        state.in_tr = 0;
+                    } else {
+                        // Layout or nested table: block spacing
+                        if (state.bq_depth > 0) {
+                            buf_append(&state.bq_text, "\n\n", 2);
+                        } else {
+                            buf_append(&text_buf, "\n\n", 2);
+                        }
+                        state.last_was_block = 1;
+                    }
+                    state.table_depth--;
+                }
+                p = after;
+                continue;
+            }
+
+            // <thead>
+            if (tag_eq(tag.name, tag.name_len, "thead")) {
+                if (state.table_depth == state.capture_depth) {
+                    state.in_thead = !tag.is_closing;
+                }
+                p = after;
+                continue;
+            }
+
+            // <tbody>, <tfoot> - skip tag
+            if (tag_eq(tag.name, tag.name_len, "tbody") ||
+                tag_eq(tag.name, tag.name_len, "tfoot")) {
+                p = after;
+                continue;
+            }
+
+            // <tr>
+            if (tag_eq(tag.name, tag.name_len, "tr")) {
+                if (state.table_depth == state.capture_depth) {
+                    // Data table row
+                    if (!tag.is_closing) {
+                        if (state.row_index > 0) {
+                            buf_append_char(&state.table_data, '\n');
+                        }
+                        state.in_tr = 1;
+                        state.cell_index = 0;
+                    } else {
+                        state.in_tr = 0;
+                        if (state.in_thead) state.header_rows++;
+                        state.row_index++;
+                    }
+                } else if (tag.is_closing) {
+                    // Layout table: block spacing
                     if (state.bq_depth > 0) {
                         buf_append(&state.bq_text, "\n\n", 2);
                     } else {
@@ -528,7 +623,68 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
                 continue;
             }
 
-            // <ul>, <ol>, <dl>, <thead>, <tbody>, etc. - skip tag but process children
+            // <td>, <th>
+            if (tag_eq(tag.name, tag.name_len, "td") ||
+                tag_eq(tag.name, tag.name_len, "th")) {
+                // <th> enables capture mode for the current table depth
+                if (tag_eq(tag.name, tag.name_len, "th") && !tag.is_closing &&
+                    state.capture_depth < 0 && state.table_depth > 0) {
+                    state.capture_depth = state.table_depth;
+                    // Start tracking the current row
+                    state.in_tr = 1;
+                    state.cell_index = 0;
+                    state.row_index = 0;
+                    state.header_rows = 0;
+                    state.in_thead = 1; // <th> implies header
+                    buf_free(&state.table_data);
+                    buf_init(&state.table_data);
+                }
+
+                if (state.table_depth == state.capture_depth && state.in_tr) {
+                    if (!tag.is_closing) {
+                        state.in_td = 1;
+                        buf_free(&state.cell_text);
+                        buf_init(&state.cell_text);
+                    } else if (state.in_td) {
+                        state.in_td = 0;
+                        // Append cell to row (tab-separated)
+                        if (state.cell_index > 0) {
+                            buf_append_char(&state.table_data, '\t');
+                        }
+                        if (state.cell_text.len > 0) {
+                            buf_append(&state.table_data, state.cell_text.data, state.cell_text.len);
+                        }
+                        buf_free(&state.cell_text);
+                        buf_init(&state.cell_text);
+                        state.cell_index++;
+                    }
+                }
+                // For layout tables (not capturing at this depth): td/th tags are
+                // ignored, text content flows through to text_buf naturally
+                p = after;
+                continue;
+            }
+
+            // Block elements: add spacing
+            if (tag_eq(tag.name, tag.name_len, "p") ||
+                tag_eq(tag.name, tag.name_len, "div") ||
+                tag_eq(tag.name, tag.name_len, "li") ||
+                tag_eq(tag.name, tag.name_len, "hr")) {
+                if (tag.is_closing || tag_eq(tag.name, tag.name_len, "hr")) {
+                    if (state.bq_depth > 0) {
+                        buf_append(&state.bq_text, "\n\n", 2);
+                    } else if (state.in_td) {
+                        buf_append_char(&state.cell_text, ' ');
+                    } else {
+                        buf_append(&text_buf, "\n\n", 2);
+                    }
+                    state.last_was_block = 1;
+                }
+                p = after;
+                continue;
+            }
+
+            // <ul>, <ol>, <dl>, etc. - skip tag but process children
             p = after;
             continue;
         }
@@ -542,7 +698,8 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
         // Handle entities
         if (*p == '&') {
             Buffer* target;
-            if (state.in_a) target = &state.a_text;
+            if (state.in_td) target = &state.cell_text;
+            else if (state.in_a) target = &state.a_text;
             else if (state.in_h1 || state.in_h2) target = &state.h_text;
             else if (state.bq_depth > 0) target = &state.bq_text;
             else target = &text_buf;
@@ -552,16 +709,18 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
             continue;
         }
 
-        // Regular character
+        // Regular character — collapse whitespace like HTML (unless in <pre>)
         char c = *p++;
-        if (state.in_a) {
-            buf_append_char(&state.a_text, c);
+        if (state.in_td) {
+            buf_append_html_char(&state.cell_text, c, state.in_pre);
+        } else if (state.in_a) {
+            buf_append_html_char(&state.a_text, c, state.in_pre);
         } else if (state.in_h1 || state.in_h2) {
-            buf_append_char(&state.h_text, c);
+            buf_append_html_char(&state.h_text, c, state.in_pre);
         } else if (state.bq_depth > 0) {
-            buf_append_char(&state.bq_text, c);
+            buf_append_html_char(&state.bq_text, c, state.in_pre);
         } else {
-            buf_append_char(&text_buf, c);
+            buf_append_html_char(&text_buf, c, state.in_pre);
         }
     }
 
@@ -597,6 +756,19 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
         buf_free(&state.bq_text);
         buf_free(&state.bq_prev);
     }
+
+    // Flush unclosed table
+    if (state.capture_depth > 0 && state.table_data.len > 0) {
+        HTMLElement* e = result_add(&result);
+        e->type = HELEM_TABLE;
+        e->text = buf_finish(&state.table_data);
+        char hdr_buf[16];
+        snprintf(hdr_buf, sizeof(hdr_buf), "%d", state.header_rows);
+        e->attr1 = strdup(hdr_buf);
+    } else {
+        buf_free(&state.table_data);
+    }
+    buf_free(&state.cell_text);
 
     result.ok = 1;
     return result;

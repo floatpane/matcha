@@ -663,6 +663,15 @@ func processBody(rawBody string, inline map[string]string, h1Style, h2Style, bod
 				text.WriteString(fmt.Sprintf("\n %s \n", linkStyle().Render(fmt.Sprintf("[Image: %s, %s]", alt, src))))
 			}
 
+		case clib.HElemTable:
+			headerRows := 0
+			if elem.Attr1 != "" {
+				fmt.Sscanf(elem.Attr1, "%d", &headerRows)
+			}
+			text.WriteString("\n")
+			text.WriteString(renderTable(elem.Text, headerRows))
+			text.WriteString("\n")
+
 		case clib.HElemBlockquote:
 			var from, date string
 			prevText := elem.Attr2
@@ -719,6 +728,110 @@ func processBody(rawBody string, inline map[string]string, h1Style, h2Style, bod
 	result = styleQuotedReplies(result)
 
 	return bodyStyle.Render(result), placements, nil
+}
+
+func tableHeaderStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Bold(true).Foreground(theme.ActiveTheme.Accent)
+}
+
+func tableBorderStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(theme.ActiveTheme.Secondary)
+}
+
+// renderTable renders table data as a Unicode box-drawing table.
+// data is tab-separated cells, newline-separated rows.
+// headerRows is the number of header rows.
+func renderTable(data string, headerRows int) string {
+	rows := strings.Split(data, "\n")
+	if len(rows) == 0 {
+		return ""
+	}
+
+	// Parse into 2D grid and trim cell whitespace
+	var grid [][]string
+	maxCols := 0
+	for _, row := range rows {
+		cells := strings.Split(row, "\t")
+		trimmed := make([]string, len(cells))
+		for i, c := range cells {
+			trimmed[i] = strings.TrimSpace(c)
+		}
+		grid = append(grid, trimmed)
+		if len(trimmed) > maxCols {
+			maxCols = len(trimmed)
+		}
+	}
+
+	// Normalize: ensure all rows have the same number of columns
+	for i := range grid {
+		for len(grid[i]) < maxCols {
+			grid[i] = append(grid[i], "")
+		}
+	}
+
+	// Calculate column widths
+	colWidths := make([]int, maxCols)
+	for _, row := range grid {
+		for j, cell := range row {
+			if len(cell) > colWidths[j] {
+				colWidths[j] = len(cell)
+			}
+		}
+	}
+
+	// Minimum width per column
+	for i := range colWidths {
+		if colWidths[i] < 3 {
+			colWidths[i] = 3
+		}
+	}
+
+	bs := tableBorderStyle()
+	hs := tableHeaderStyle()
+
+	// Build horizontal borders
+	buildBorder := func(left, mid, right, fill string) string {
+		var b strings.Builder
+		b.WriteString(bs.Render(left))
+		for j, w := range colWidths {
+			b.WriteString(bs.Render(strings.Repeat(fill, w+2)))
+			if j < len(colWidths)-1 {
+				b.WriteString(bs.Render(mid))
+			}
+		}
+		b.WriteString(bs.Render(right))
+		return b.String()
+	}
+
+	topBorder := buildBorder("┌", "┬", "┐", "─")
+	midBorder := buildBorder("├", "┼", "┤", "─")
+	botBorder := buildBorder("└", "┴", "┘", "─")
+
+	var out strings.Builder
+	out.WriteString(topBorder)
+	out.WriteString("\n")
+
+	for i, row := range grid {
+		out.WriteString(bs.Render("│"))
+		for j, cell := range row {
+			padded := cell + strings.Repeat(" ", colWidths[j]-len(cell))
+			if i < headerRows {
+				out.WriteString(" " + hs.Render(padded) + " ")
+			} else {
+				out.WriteString(" " + padded + " ")
+			}
+			out.WriteString(bs.Render("│"))
+		}
+		out.WriteString("\n")
+
+		if i < headerRows && (i+1 == headerRows || i+1 == len(grid)) {
+			out.WriteString(midBorder)
+			out.WriteString("\n")
+		}
+	}
+
+	out.WriteString(botBorder)
+	return out.String()
 }
 
 func quoteBoxStyle() lipgloss.Style {
