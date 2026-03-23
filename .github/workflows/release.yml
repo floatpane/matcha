@@ -65,21 +65,16 @@ jobs:
         with:
           go-version: "1.26.1"
 
-      - name: Install Snapcraft
-        run: sudo snap install snapcraft --classic
-
-      - name: Clean Snapcraft cache
+      - name: Install Snapcraft and LXD
         run: |
-          sudo rm -rf /home/runner/.cache/snapcraft || true
-          sudo rm -rf /root/.cache/snapcraft || true
-          sudo rm -rf ~/.cache/snapcraft || true
-          mkdir -p /home/runner/.cache/snapcraft/download
-          mkdir -p /home/runner/.cache/snapcraft/stage-packages
-          chmod -R 755 /home/runner/.cache/snapcraft
+          sudo snap install snapcraft --classic
+          sudo snap install lxd
+          sudo lxd init --auto
+          sudo usermod -aG lxd $USER
 
       - name: Build and publish snap
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         run: |
-          snapcraft pack --destructive-mode
+          sg lxd -c 'snapcraft pack'
           snapcraft upload --release=stable *.snap
