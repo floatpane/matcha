@@ -52,18 +52,20 @@ jobs:
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
 
   snapcraft:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     needs: goreleaser
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: "1.26.1"
 
       - name: Install Snapcraft and LXD
         run: |
@@ -73,9 +75,10 @@ jobs:
           sudo iptables -P FORWARD ACCEPT
           sudo usermod -aG lxd $USER
 
-      - name: Build and publish snap
+      - name: Build snap
+        run: sg lxd -c 'snapcraft pack --use-lxd --build-for=${{ matrix.arch }}'
+
+      - name: Upload snap
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-        run: |
-          sg lxd -c 'snapcraft pack'
-          snapcraft upload --release=stable *.snap
+        run: snapcraft upload --release=stable *.snap

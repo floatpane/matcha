@@ -1,20 +1,25 @@
 name: matcha
-base: core22 # The base snap for a modern Ubuntu LTS
-version: "0.1" # This will be replaced by GoReleaser or can be set manually
+base: core22
+adopt-info: matcha
 summary: A beautiful and functional email client for your terminal.
 description: |
   A beautiful and functional email client for your terminal, built with Go and the charming Bubble Tea TUI library.
   Never leave your command line to check your inbox or send an email again!
 
-grade: stable # must be 'stable' to release into candidate, stable channels
-confinement: strict # use 'strict' confinement for security
+grade: stable
+confinement: strict
+architectures:
+  - build-on: [amd64]
+    build-for: [amd64]
+  - build-on: [arm64]
+    build-for: [arm64]
 
 apps:
   matcha:
     command: bin/matcha
     plugs:
-      - network # Required for network access
-      - home # To access the user's home directory for config files
+      - network
+      - home
 
 parts:
   matcha:
@@ -22,3 +27,12 @@ parts:
     source: .
     build-snaps:
       - go/1.26/stable
+    build-packages:
+      - gcc
+      - libc6-dev
+    build-environment:
+      - CGO_ENABLED: "1"
+    override-pull: |
+      craftctl default
+      version="$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo 0.1)"
+      craftctl set version="$version"
