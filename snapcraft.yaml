@@ -20,4 +20,3 @@ parts:
   matcha:
     plugin: go
     source: .
-    go-importpath: github.com/floatpane/matcha
