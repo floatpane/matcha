@@ -1,6 +1,7 @@
 # GoReleaser configuration for nightly builds.
 # This is a stripped-down version of .goreleaser.yml that skips
 # Homebrew, WinGet, and Snapcraft publishing.
+# Used with --snapshot mode (no semver tag required).
 version: 2
 
 before:
@@ -56,14 +57,5 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
-changelog:
-  use: github-native
-
-release:
-  draft: false
-  prerelease: true
-  name_template: "Nightly Build ({{ .ShortCommit }})"
-  footer: |
-    ---
-    This is an automated nightly build from the latest `master` commit.
-    It may be unstable — use stable releases for production.
+snapshot:
+  version_template: "nightly-{{ .ShortCommit }}"

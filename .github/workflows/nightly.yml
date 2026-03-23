@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - master
-    workflow_dispatch:
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -26,26 +26,30 @@ jobs:
       - name: Set up Zig
         uses: goto-bus-stop/setup-zig@v2
 
-      - name: Delete existing nightly release and tag
+      - name: Get macOS SDK path
+        id: macos_sdk
+        run: echo "path=$(xcrun --show-sdk-path)" >> $GITHUB_OUTPUT
+
+      - name: Build with GoReleaser (snapshot)
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: latest
+          args: release --snapshot --clean --config .goreleaser.nightly.yml
+        env:
+          SDK_PATH: ${{ steps.macos_sdk.outputs.path }}
+
+      - name: Delete existing nightly release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete nightly --yes --cleanup-tag || true
 
-      - name: Create nightly tag
-        run: |
-          git tag -f nightly
-          git push -f origin nightly
-
-      - name: Get macOS SDK path
-        id: macos_sdk
-        run: echo "path=$(xcrun --show-sdk-path)" >> $GITHUB_OUTPUT
-
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          version: latest
-          args: release --clean --config .goreleaser.nightly.yml
+      - name: Create nightly release
         env:
-          SDK_PATH: ${{ steps.macos_sdk.outputs.path }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create nightly dist/*.tar.gz dist/*.zip dist/checksums.txt \
+            --title "Nightly Build ($(git rev-parse --short HEAD))" \
+            --notes "This is an automated nightly build from the latest \`master\` commit ($(git rev-parse --short HEAD)).\nIt may be unstable — use stable releases for production." \
+            --prerelease \
+            --target master
