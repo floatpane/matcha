@@ -20,3 +20,5 @@ parts:
   matcha:
     plugin: go
     source: .
+    build-snaps:
+      - go/1.26/stable
