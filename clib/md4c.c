@@ -1,28 +1,3 @@
-/*
- * MD4C: Markdown parser for C
- * (http://github.com/mity/md4c)
- *
- * Copyright (c) 2016-2024 Martin Mitáš
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- */
-
 #include "md4c.h"
 
 #include <limits.h>
@@ -31,13 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-
-/*****************************
- ***  Miscellaneous Stuff  ***
- *****************************/
-
 #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199409L
-    /* C89/90 or old compilers in general may not understand "inline". */
+
     #if defined __GNUC__
         #define inline __inline__
     #elif defined _MSC_VER
@@ -47,12 +17,10 @@
     #endif
 #endif
 
-/* Make the UTF-8 support the default. */
 #if !defined MD4C_USE_ASCII && !defined MD4C_USE_UTF8 && !defined MD4C_USE_UTF16
     #define MD4C_USE_UTF8
 #endif
 
-/* Magic for making wide literals with MD4C_USE_UTF16. */
 #ifdef _T
     #undef _T
 #endif
@@ -62,7 +30,6 @@
     #define _T(x)           x
 #endif
 
-/* Misc. macros. */
 #define SIZEOF_ARRAY(a)     (sizeof(a) / sizeof(a[0]))
 
 #define STRINGIZE_(x)       #x
@@ -106,7 +73,6 @@
     #endif
 #endif
 
-/* For falling through case labels in switch statements. */
 #if defined __clang__ && __clang_major__ >= 12
     #define MD_FALLTHROUGH()        __attribute__((fallthrough))
 #elif defined __GNUC__ && __GNUC__ >= 7
@@ -115,31 +81,12 @@
     #define MD_FALLTHROUGH()        ((void)0)
 #endif
 
-/* Suppress "unused parameter" warnings. */
 #define MD_UNUSED(x)                ((void)x)
 
-
-/******************************
- ***  Some internal limits  ***
- ******************************/
-
-/* We limit code span marks to lower than 32 backticks. This solves the
- * pathologic case of too many openers, each of different length: Their
- * resolving would be then O(n^2). */
 #define CODESPAN_MARK_MAXLEN    32
 
-/* We limit column count of tables to prevent quadratic explosion of output
- * from pathological input of a table thousands of columns and thousands
- * of rows where rows are requested with as little as single character
- * per-line, relying on us to "helpfully" fill all the missing "<td></td>". */
 #define TABLE_MAXCOLCOUNT       128
 
-
-/************************
- ***  Internal Types  ***
- ************************/
-
-/* These are omnipresent so lets save some typing. */
 #define CHAR    MD_CHAR
 #define SZ      MD_SIZE
 #define OFF     MD_OFFSET
@@ -152,33 +99,24 @@ typedef struct MD_BLOCK_tag MD_BLOCK;
 typedef struct MD_CONTAINER_tag MD_CONTAINER;
 typedef struct MD_REF_DEF_tag MD_REF_DEF;
 
-
-/* During analyzes of inline marks, we need to manage stacks of unresolved
- * openers of the given type.
- * The stack connects the marks via MD_MARK::next;
- */
 typedef struct MD_MARKSTACK_tag MD_MARKSTACK;
 struct MD_MARKSTACK_tag {
-    int top;        /* -1 if empty. */
+    int top;
 };
 
-/* Context propagated through all the parsing. */
 typedef struct MD_CTX_tag MD_CTX;
 struct MD_CTX_tag {
-    /* Immutable stuff (parameters of md_parse()). */
+
     const CHAR* text;
     SZ size;
     MD_PARSER parser;
     void* userdata;
 
-    /* When this is true, it allows some optimizations. */
     int doc_ends_with_newline;
 
-    /* Helper temporary growing buffer. */
     CHAR* buffer;
     unsigned alloc_buffer;
 
-    /* Reference definitions. */
     MD_REF_DEF* ref_defs;
     int n_ref_defs;
     int alloc_ref_defs;
@@ -186,10 +124,6 @@ struct MD_CTX_tag {
     int ref_def_hashtable_size;
     SZ max_ref_def_output;
 
-    /* Stack of inline/span markers.
-     * This is only used for parsing a single block contents but by storing it
-     * here we may reuse the stack for subsequent blocks; i.e. we have fewer
-     * (re)allocations. */
     MD_MARK* marks;
     int n_marks;
     int alloc_marks;
@@ -200,18 +134,17 @@ struct MD_CTX_tag {
     char mark_char_map[256];
 #endif
 
-    /* For resolving of inline spans. */
     MD_MARKSTACK opener_stacks[16];
-#define ASTERISK_OPENERS_oo_mod3_0      (ctx->opener_stacks[0])     /* Opener-only */
+#define ASTERISK_OPENERS_oo_mod3_0      (ctx->opener_stacks[0])
 #define ASTERISK_OPENERS_oo_mod3_1      (ctx->opener_stacks[1])
 #define ASTERISK_OPENERS_oo_mod3_2      (ctx->opener_stacks[2])
-#define ASTERISK_OPENERS_oc_mod3_0      (ctx->opener_stacks[3])     /* Both opener and closer candidate */
+#define ASTERISK_OPENERS_oc_mod3_0      (ctx->opener_stacks[3])
 #define ASTERISK_OPENERS_oc_mod3_1      (ctx->opener_stacks[4])
 #define ASTERISK_OPENERS_oc_mod3_2      (ctx->opener_stacks[5])
-#define UNDERSCORE_OPENERS_oo_mod3_0    (ctx->opener_stacks[6])     /* Opener-only */
+#define UNDERSCORE_OPENERS_oo_mod3_0    (ctx->opener_stacks[6])
 #define UNDERSCORE_OPENERS_oo_mod3_1    (ctx->opener_stacks[7])
 #define UNDERSCORE_OPENERS_oo_mod3_2    (ctx->opener_stacks[8])
-#define UNDERSCORE_OPENERS_oc_mod3_0    (ctx->opener_stacks[9])     /* Both opener and closer candidate */
+#define UNDERSCORE_OPENERS_oc_mod3_0    (ctx->opener_stacks[9])
 #define UNDERSCORE_OPENERS_oc_mod3_1    (ctx->opener_stacks[10])
 #define UNDERSCORE_OPENERS_oc_mod3_2    (ctx->opener_stacks[11])
 #define TILDE_OPENERS_1                 (ctx->opener_stacks[12])
@@ -219,49 +152,33 @@ struct MD_CTX_tag {
 #define BRACKET_OPENERS                 (ctx->opener_stacks[14])
 #define DOLLAR_OPENERS                  (ctx->opener_stacks[15])
 
-    /* Stack of dummies which need to call free() for pointers stored in them.
-     * These are constructed during inline parsing and freed after all the block
-     * is processed (i.e. all callbacks referring those strings are called). */
     MD_MARKSTACK ptr_stack;
 
-    /* For resolving table rows. */
     int n_table_cell_boundaries;
     int table_cell_boundaries_head;
     int table_cell_boundaries_tail;
 
-    /* For resolving links. */
     int unresolved_link_head;
     int unresolved_link_tail;
 
-    /* For resolving raw HTML. */
     OFF html_comment_horizon;
     OFF html_proc_instr_horizon;
     OFF html_decl_horizon;
     OFF html_cdata_horizon;
 
-    /* For block analysis.
-     * Notes:
-     *   -- It holds MD_BLOCK as well as MD_LINE structures. After each
-     *      MD_BLOCK, its (multiple) MD_LINE(s) follow.
-     *   -- For MD_BLOCK_HTML and MD_BLOCK_CODE, MD_VERBATIMLINE(s) are used
-     *      instead of MD_LINE(s).
-     */
     void* block_bytes;
     MD_BLOCK* current_block;
     int n_block_bytes;
     int alloc_block_bytes;
 
-    /* For container block analysis. */
     MD_CONTAINER* containers;
     int n_containers;
     int alloc_containers;
 
-    /* Minimal indentation to call the block "indented code block". */
     unsigned code_indent_offset;
 
-    /* Contextual info for line analysis. */
-    SZ code_fence_length;   /* For checking closing fence length. */
-    int html_block_type;    /* For checking closing raw HTML condition. */
+    SZ code_fence_length;
+    int html_block_type;
     int last_line_has_list_loosening_effect;
     int last_list_item_starts_with_two_blank_lines;
 };
@@ -288,7 +205,7 @@ struct MD_LINE_ANALYSIS_tag {
     int enforce_new_block;
     OFF beg;
     OFF end;
-    unsigned indent;        /* Indentation level. */
+    unsigned indent;
 };
 
 typedef struct MD_LINE_tag MD_LINE;
@@ -304,17 +221,9 @@ struct MD_VERBATIMLINE_tag {
     OFF indent;
 };
 
-
-/*****************
- ***  Helpers  ***
- *****************/
-
-/* Character accessors. */
 #define CH(off)                 (ctx->text[(off)])
 #define STR(off)                (ctx->text + (off))
 
-/* Character classification.
- * Note we assume ASCII compatibility of code points < 128 here. */
 #define ISIN_(ch, ch_min, ch_max)       ((ch_min) <= (unsigned)(ch) && (unsigned)(ch) <= (ch_max))
 #define ISANYOF_(ch, palette)           ((ch) != _T('\0')  &&  md_strchr((palette), (ch)) != NULL)
 #define ISANYOF2_(ch, ch1, ch2)         ((ch) == (ch1) || (ch) == (ch2))
@@ -348,15 +257,12 @@ struct MD_VERBATIMLINE_tag {
 #define ISXDIGIT(off)                   ISXDIGIT_(CH(off))
 #define ISALNUM(off)                    ISALNUM_(CH(off))
 
-
 #if defined MD4C_USE_UTF16
     #define md_strchr wcschr
 #else
     #define md_strchr strchr
 #endif
 
-
-/* Case insensitive check of string equality. */
 static inline int
 md_ascii_case_eq(const CHAR* s1, const CHAR* s2, SZ n)
 {
@@ -411,14 +317,12 @@ md_text_with_null_replacement(MD_CTX* ctx, MD_TEXTTYPE type, const CHAR* str, SZ
     }
 }
 
-
 #define MD_CHECK(func)                                                      \
     do {                                                                    \
         ret = (func);                                                       \
         if(ret < 0)                                                         \
             goto abort;                                                     \
     } while(0)
-
 
 #define MD_TEMP_BUFFER(sz)                                                  \
     do {                                                                    \
@@ -437,7 +341,6 @@ md_text_with_null_replacement(MD_CTX* ctx, MD_TEXTTYPE type, const CHAR* str, SZ
             ctx->alloc_buffer = new_size;                                   \
         }                                                                   \
     } while(0)
-
 
 #define MD_ENTER_BLOCK(type, arg)                                           \
     do {                                                                    \
@@ -497,9 +400,6 @@ md_text_with_null_replacement(MD_CTX* ctx, MD_TEXTTYPE type, const CHAR* str, SZ
         }                                                                   \
     } while(0)
 
-
-/* If the offset falls into a gap between line, we return the following
- * line. */
 static const MD_LINE*
 md_lookup_line(OFF off, const MD_LINE* lines, MD_SIZE n_lines, MD_SIZE* p_line_index)
 {
@@ -532,25 +432,14 @@ md_lookup_line(OFF off, const MD_LINE* lines, MD_SIZE n_lines, MD_SIZE* p_line_i
     return NULL;
 }
 
-
-/*************************
- ***  Unicode Support  ***
- *************************/
-
 typedef struct MD_UNICODE_FOLD_INFO_tag MD_UNICODE_FOLD_INFO;
 struct MD_UNICODE_FOLD_INFO_tag {
     unsigned codepoints[3];
     unsigned n_codepoints;
 };
 
-
 #if defined MD4C_USE_UTF16 || defined MD4C_USE_UTF8
-    /* Binary search over sorted "map" of codepoints. Consecutive sequences
-     * of codepoints may be encoded in the map by just using the
-     * (MIN_CODEPOINT | 0x40000000) and (MAX_CODEPOINT | 0x80000000).
-     *
-     * Returns index of the found record in the map (in the case of ranges,
-     * the minimal value is used); or -1 on failure. */
+
     static int
     md_unicode_bsearch__(unsigned codepoint, const unsigned* map, size_t map_size)
     {
@@ -560,7 +449,7 @@ struct MD_UNICODE_FOLD_INFO_tag {
         beg = 0;
         end = (int) map_size-1;
         while(beg <= end) {
-            /* Pivot may be a range, not just a single value. */
+
             pivot_beg = pivot_end = (beg + end) / 2;
             if(map[pivot_end] & 0x40000000)
                 pivot_end++;
@@ -583,16 +472,13 @@ struct MD_UNICODE_FOLD_INFO_tag {
     {
 #define R(cp_min, cp_max)   ((cp_min) | 0x40000000), ((cp_max) | 0x80000000)
 #define S(cp)               (cp)
-        /* Unicode "Zs" category.
-         * (generated by scripts/build_whitespace_map.py) */
+
         static const unsigned WHITESPACE_MAP[] = {
             S(0x0020), S(0x00a0), S(0x1680), R(0x2000,0x200a), S(0x202f), S(0x205f), S(0x3000)
         };
 #undef R
 #undef S
 
-        /* The ASCII ones are the most frequently used ones, also CommonMark
-         * specification requests few more in this range. */
         if(codepoint <= 0x7f)
             return ISWHITESPACE_(codepoint);
 
@@ -604,8 +490,7 @@ struct MD_UNICODE_FOLD_INFO_tag {
     {
 #define R(cp_min, cp_max)   ((cp_min) | 0x40000000), ((cp_max) | 0x80000000)
 #define S(cp)               (cp)
-        /* Unicode general "P" and "S" categories.
-         * (generated by scripts/build_punct_map.py) */
+
         static const unsigned PUNCT_MAP[] = {
             R(0x0021,0x002f), R(0x003a,0x0040), R(0x005b,0x0060), R(0x007b,0x007e), R(0x00a1,0x00a9),
             R(0x00ab,0x00ac), R(0x00ae,0x00b1), S(0x00b4), R(0x00b6,0x00b8), S(0x00bb), S(0x00bf), S(0x00d7),
@@ -669,8 +554,6 @@ struct MD_UNICODE_FOLD_INFO_tag {
 #undef R
 #undef S
 
-        /* The ASCII ones are the most frequently used ones, also CommonMark
-         * specification requests few more in this range. */
         if(codepoint <= 0x7f)
             return ISPUNCT_(codepoint);
 
@@ -682,8 +565,7 @@ struct MD_UNICODE_FOLD_INFO_tag {
     {
 #define R(cp_min, cp_max)   ((cp_min) | 0x40000000), ((cp_max) | 0x80000000)
 #define S(cp)               (cp)
-        /* Unicode "Pc", "Pd", "Pe", "Pf", "Pi", "Po", "Ps" categories.
-         * (generated by scripts/build_folding_map.py) */
+
         static const unsigned FOLD_MAP_1[] = {
             R(0x0041,0x005a), S(0x00b5), R(0x00c0,0x00d6), R(0x00d8,0x00de), R(0x0100,0x012e), R(0x0132,0x0136),
             R(0x0139,0x0147), R(0x014a,0x0176), S(0x0178), R(0x0179,0x017d), S(0x017f), S(0x0181), S(0x0182),
@@ -782,7 +664,6 @@ struct MD_UNICODE_FOLD_INFO_tag {
 
         int i;
 
-        /* Fast path for ASCII characters. */
         if(codepoint <= 0x7f) {
             info->codepoints[0] = codepoint;
             if(ISUPPER_(codepoint))
@@ -791,13 +672,12 @@ struct MD_UNICODE_FOLD_INFO_tag {
             return;
         }
 
-        /* Try to locate the codepoint in any of the maps. */
         for(i = 0; i < (int) SIZEOF_ARRAY(FOLD_MAP_LIST); i++) {
             int index;
 
             index = md_unicode_bsearch__(codepoint, FOLD_MAP_LIST[i].map, FOLD_MAP_LIST[i].map_size);
             if(index >= 0) {
-                /* Found the mapping. */
+
                 unsigned n_codepoints = FOLD_MAP_LIST[i].n_codepoints;
                 const unsigned* map = FOLD_MAP_LIST[i].map;
                 const unsigned* codepoints = FOLD_MAP_LIST[i].data + (index * n_codepoints);
@@ -806,13 +686,12 @@ struct MD_UNICODE_FOLD_INFO_tag {
                 info->n_codepoints = n_codepoints;
 
                 if(FOLD_MAP_LIST[i].map[index] != codepoint) {
-                    /* The found mapping maps whole range of codepoints,
-                     * i.e. we have to offset info->codepoints[0] accordingly. */
+
                     if((map[index] & 0x00ffffff)+1 == codepoints[0]) {
-                        /* Alternating type of the range. */
+
                         info->codepoints[0] = codepoint + ((codepoint & 0x1) == (map[index] & 0x1) ? 1 : 0);
                     } else {
-                        /* Range to range kind of mapping. */
+
                         info->codepoints[0] += (codepoint - (map[index] & 0x00ffffff));
                     }
                 }
@@ -821,12 +700,10 @@ struct MD_UNICODE_FOLD_INFO_tag {
             }
         }
 
-        /* No mapping found. Map the codepoint to itself. */
         info->codepoints[0] = codepoint;
         info->n_codepoints = 1;
     }
 #endif
-
 
 #if defined MD4C_USE_UTF16
     #define IS_UTF16_SURROGATE_HI(word)     (((WORD)(word) & 0xfc00) == 0xd800)
@@ -858,7 +735,6 @@ struct MD_UNICODE_FOLD_INFO_tag {
         return CH(off);
     }
 
-    /* No whitespace uses surrogates, so no decoding needed here. */
     #define ISUNICODEWHITESPACE_(codepoint) md_is_unicode_whitespace__(codepoint)
     #define ISUNICODEWHITESPACE(off)        md_is_unicode_whitespace__(CH(off))
     #define ISUNICODEWHITESPACEBEFORE(off)  md_is_unicode_whitespace__(CH((off)-1))
@@ -977,18 +853,6 @@ struct MD_UNICODE_FOLD_INFO_tag {
     }
 #endif
 
-
-/*************************************
- ***  Helper string manipulations  ***
- *************************************/
-
-/* Fill buffer with copy of the string between 'beg' and 'end' but replace any
- * line breaks with given replacement character.
- *
- * NOTE: Caller is responsible to make sure the buffer is large enough.
- * (Given the output is always shorter than input, (end - beg) is good idea
- * what the caller should allocate.)
- */
 static void
 md_merge_lines(MD_CTX* ctx, OFF beg, OFF end, const MD_LINE* lines, MD_SIZE n_lines,
                CHAR line_break_replacement_char, CHAR* buffer, SZ* p_size)
@@ -1024,8 +888,6 @@ md_merge_lines(MD_CTX* ctx, OFF beg, OFF end, const MD_LINE* lines, MD_SIZE n_li
     }
 }
 
-/* Wrapper of md_merge_lines() which allocates new buffer for the output string.
- */
 static int
 md_merge_lines_alloc(MD_CTX* ctx, OFF beg, OFF end, const MD_LINE* lines, MD_SIZE n_lines,
                     CHAR line_break_replacement_char, CHAR** p_str, SZ* p_size)
@@ -1061,18 +923,6 @@ md_skip_unicode_whitespace(const CHAR* label, OFF off, SZ size)
     return off;
 }
 
-
-/******************************
- ***  Recognizing raw HTML  ***
- ******************************/
-
-/* md_is_html_tag() may be called when processing inlines (inline raw HTML)
- * or when breaking document to blocks (checking for start of HTML block type 7).
- *
- * When breaking document to blocks, we do not yet know line boundaries, but
- * in that case the whole tag has to live on a single line. We distinguish this
- * by n_lines == 0.
- */
 static int
 md_is_html_tag(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg, OFF max_end, OFF* p_end)
 {
@@ -1087,39 +937,26 @@ md_is_html_tag(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg, OFF 
         return FALSE;
     off++;
 
-    /* For parsing attributes, we need a little state automaton below.
-     * State -1: no attributes are allowed.
-     * State 0: attribute could follow after some whitespace.
-     * State 1: after a whitespace (attribute name may follow).
-     * State 2: after attribute name ('=' MAY follow).
-     * State 3: after '=' (value specification MUST follow).
-     * State 41: in middle of unquoted attribute value.
-     * State 42: in middle of single-quoted attribute value.
-     * State 43: in middle of double-quoted attribute value.
-     */
     attr_state = 0;
 
     if(CH(off) == _T('/')) {
-        /* Closer tag "</ ... >". No attributes may be present. */
+
         attr_state = -1;
         off++;
     }
 
-    /* Tag name */
     if(off >= line_end  ||  !ISALPHA(off))
         return FALSE;
     off++;
     while(off < line_end  &&  (ISALNUM(off)  ||  CH(off) == _T('-')))
         off++;
 
-    /* (Optional) attributes (if not closer), (optional) '/' (if not closer)
-     * and final '>'. */
     while(1) {
         while(off < line_end  &&  !ISNEWLINE(off)) {
             if(attr_state > 40) {
                 if(attr_state == 41 && (ISBLANK(off) || ISANYOF(off, _T("\"'=<>`")))) {
                     attr_state = 0;
-                    off--;  /* Put the char back for re-inspection in the new state. */
+                    off--;
                 } else if(attr_state == 42 && CH(off) == _T('\'')) {
                     attr_state = 0;
                 } else if(attr_state == 43 && CH(off) == _T('"')) {
@@ -1131,24 +968,24 @@ md_is_html_tag(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg, OFF 
                     attr_state = 1;
                 off++;
             } else if(attr_state <= 2 && CH(off) == _T('>')) {
-                /* End. */
+
                 goto done;
             } else if(attr_state <= 2 && CH(off) == _T('/') && off+1 < line_end && CH(off+1) == _T('>')) {
-                /* End with digraph '/>' */
+
                 off++;
                 goto done;
             } else if((attr_state == 1 || attr_state == 2) && (ISALPHA(off) || CH(off) == _T('_') || CH(off) == _T(':'))) {
                 off++;
-                /* Attribute name */
+
                 while(off < line_end && (ISALNUM(off) || ISANYOF(off, _T("_.:-"))))
                     off++;
                 attr_state = 2;
             } else if(attr_state == 2 && CH(off) == _T('=')) {
-                /* Attribute assignment sign */
+
                 off++;
                 attr_state = 3;
             } else if(attr_state == 3) {
-                /* Expecting start of attribute value. */
+
                 if(CH(off) == _T('"'))
                     attr_state = 43;
                 else if(CH(off) == _T('\''))
@@ -1159,13 +996,11 @@ md_is_html_tag(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg, OFF 
                     return FALSE;
                 off++;
             } else {
-                /* Anything unexpected. */
+
                 return FALSE;
             }
         }
 
-        /* We have to be on a single line. See definition of start condition
-         * of HTML block, type 7. */
         if(n_lines == 0)
             return FALSE;
 
@@ -1201,15 +1036,14 @@ md_scan_for_html_closer(MD_CTX* ctx, const MD_CHAR* str, MD_SIZE len,
     MD_SIZE line_index = 0;
 
     if(off < *p_scan_horizon  &&  *p_scan_horizon >= max_end - len) {
-        /* We have already scanned the range up to the max_end so we know
-         * there is nothing to see. */
+
         return FALSE;
     }
 
     while(TRUE) {
         while(off + len <= lines[line_index].end  &&  off + len <= max_end) {
             if(md_ascii_eq(STR(off), str, len)) {
-                /* Success. */
+
                 *p_end = off + len;
                 return TRUE;
             }
@@ -1218,7 +1052,7 @@ md_scan_for_html_closer(MD_CTX* ctx, const MD_CHAR* str, MD_SIZE len,
 
         line_index++;
         if(off >= max_end  ||  line_index >= n_lines) {
-            /* Failure. */
+
             *p_scan_horizon = off;
             return FALSE;
         }
@@ -1239,10 +1073,8 @@ md_is_html_comment(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg, 
     if(CH(off+1) != _T('!')  ||  CH(off+2) != _T('-')  ||  CH(off+3) != _T('-'))
         return FALSE;
 
-    /* Skip only "<!" so that we accept also "<!-->" or "<!--->" */
     off += 2;
 
-    /* Scan for ordinary comment closer "-->". */
     return md_scan_for_html_closer(ctx, _T("-->"), 3,
                 lines, n_lines, off, max_end, p_end, &ctx->html_comment_horizon);
 }
@@ -1273,7 +1105,6 @@ md_is_html_declaration(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF b
         return FALSE;
     off += 2;
 
-    /* Declaration name. */
     if(off >= lines[0].end  ||  !ISALPHA(off))
         return FALSE;
     off++;
@@ -1312,11 +1143,6 @@ md_is_html_any(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg, OFF 
             md_is_html_declaration(ctx, lines, n_lines, beg, max_end, p_end)  ||
             md_is_html_cdata(ctx, lines, n_lines, beg, max_end, p_end));
 }
-
-
-/****************************
- ***  Recognizing Entity  ***
- ****************************/
 
 static int
 md_is_hex_entity_contents(MD_CTX* ctx, const CHAR* text, OFF beg, OFF max_end, OFF* p_end)
@@ -1404,11 +1230,6 @@ md_is_entity(MD_CTX* ctx, OFF beg, OFF max_end, OFF* p_end)
     return md_is_entity_str(ctx, ctx->text, beg, max_end, p_end);
 }
 
-
-/******************************
- ***  Attribute Management  ***
- ******************************/
-
 typedef struct MD_ATTRIBUTE_BUILD_tag MD_ATTRIBUTE_BUILD;
 struct MD_ATTRIBUTE_BUILD_tag {
     CHAR* text;
@@ -1419,7 +1240,6 @@ struct MD_ATTRIBUTE_BUILD_tag {
     MD_TEXTTYPE trivial_types[1];
     OFF trivial_offsets[2];
 };
-
 
 #define MD_BUILD_ATTR_NO_ESCAPES    0x0001
 
@@ -1440,7 +1260,7 @@ md_build_attr_append_substr(MD_CTX* ctx, MD_ATTRIBUTE_BUILD* build,
             MD_LOG("realloc() failed.");
             return -1;
         }
-        /* Note +1 to reserve space for final offset (== raw_size). */
+
         new_substr_offsets = (OFF*) realloc(build->substr_offsets,
                                     (build->substr_alloc+1) * sizeof(OFF));
         if(new_substr_offsets == NULL) {
@@ -1481,8 +1301,6 @@ md_build_attribute(MD_CTX* ctx, const CHAR* raw_text, SZ raw_size,
 
     memset(build, 0, sizeof(MD_ATTRIBUTE_BUILD));
 
-    /* If there is no backslash and no ampersand, build trivial attribute
-     * without any malloc(). */
     is_trivial = TRUE;
     for(raw_off = 0; raw_off < raw_size; raw_off++) {
         if(ISANYOF3_(raw_text[raw_off], _T('\\'), _T('&'), _T('\0'))) {
@@ -1556,11 +1374,6 @@ abort:
     return -1;
 }
 
-
-/*********************************************
- ***  Dictionary of Reference Definitions  ***
- *********************************************/
-
 #define MD_FNV1A_BASE       2166136261U
 #define MD_FNV1A_PRIME      16777619U
 
@@ -1579,7 +1392,6 @@ md_fnv1a(unsigned base, const void* data, size_t n)
     return hash;
 }
 
-
 struct MD_REF_DEF_tag {
     CHAR* label;
     CHAR* title;
@@ -1591,10 +1403,6 @@ struct MD_REF_DEF_tag {
     unsigned char label_needs_free : 1;
     unsigned char title_needs_free : 1;
 };
-
-/* Label equivalence is quite complicated with regards to whitespace and case
- * folding. This complicates computing a hash of it as well as direct comparison
- * of two labels. */
 
 static unsigned
 md_link_label_hash(const CHAR* label, SZ size)
@@ -1635,18 +1443,17 @@ md_link_label_cmp_load_fold_info(const CHAR* label, OFF off, SZ size,
     SZ char_size;
 
     if(off >= size) {
-        /* Treat end of a link label as a whitespace. */
+
         goto whitespace;
     }
 
     codepoint = md_decode_unicode(label, off, size, &char_size);
     off += char_size;
     if(ISUNICODEWHITESPACE_(codepoint)) {
-        /* Treat all whitespace as equivalent */
+
         goto whitespace;
     }
 
-    /* Get real folding info. */
     md_get_unicode_fold_info(codepoint, fold_info);
     return off;
 
@@ -1672,7 +1479,7 @@ md_link_label_cmp(const CHAR* a_label, SZ a_size, const CHAR* b_label, SZ b_size
     while(a_off < a_size || a_fi_off < a_fi.n_codepoints ||
           b_off < b_size || b_fi_off < b_fi.n_codepoints)
     {
-        /* If needed, load fold info for next char. */
+
         if(a_fi_off >= a_fi.n_codepoints) {
             a_fi_off = 0;
             a_off = md_link_label_cmp_load_fold_info(a_label, a_off, a_size, &a_fi);
@@ -1697,7 +1504,7 @@ typedef struct MD_REF_DEF_LIST_tag MD_REF_DEF_LIST;
 struct MD_REF_DEF_LIST_tag {
     int n_ref_defs;
     int alloc_ref_defs;
-    MD_REF_DEF* ref_defs[];  /* Valid items always  point into ctx->ref_defs[] */
+    MD_REF_DEF* ref_defs[];
 };
 
 static int
@@ -1721,7 +1528,6 @@ md_ref_def_cmp_for_sort(const void* a, const void* b)
 
     cmp = md_ref_def_cmp(a, b);
 
-    /* Ensure stability of the sorting. */
     if(cmp == 0) {
         const MD_REF_DEF* a_ref = *(const MD_REF_DEF**)a;
         const MD_REF_DEF* b_ref = *(const MD_REF_DEF**)b;
@@ -1753,12 +1559,6 @@ md_build_ref_def_hashtable(MD_CTX* ctx)
     }
     memset(ctx->ref_def_hashtable, 0, ctx->ref_def_hashtable_size * sizeof(void*));
 
-    /* Each member of ctx->ref_def_hashtable[] can be:
-     *  -- NULL,
-     *  -- pointer to the MD_REF_DEF in ctx->ref_defs[], or
-     *  -- pointer to a MD_REF_DEF_LIST, which holds multiple pointers to
-     *     such MD_REF_DEFs.
-     */
     for(i = 0; i < ctx->n_ref_defs; i++) {
         MD_REF_DEF* def = &ctx->ref_defs[i];
         void* bucket;
@@ -1768,23 +1568,20 @@ md_build_ref_def_hashtable(MD_CTX* ctx)
         bucket = ctx->ref_def_hashtable[def->hash % ctx->ref_def_hashtable_size];
 
         if(bucket == NULL) {
-            /* The bucket is empty. Make it just point to the def. */
+
             ctx->ref_def_hashtable[def->hash % ctx->ref_def_hashtable_size] = def;
             continue;
         }
 
         if(ctx->ref_defs <= (MD_REF_DEF*) bucket  &&  (MD_REF_DEF*) bucket < ctx->ref_defs + ctx->n_ref_defs) {
-            /* The bucket already contains one ref. def. Lets see whether it
-             * is the same label (ref. def. duplicate) or different one
-             * (hash conflict). */
+
             MD_REF_DEF* old_def = (MD_REF_DEF*) bucket;
 
             if(md_link_label_cmp(def->label, def->label_size, old_def->label, old_def->label_size) == 0) {
-                /* Duplicate label: Ignore this ref. def. */
+
                 continue;
             }
 
-            /* Make the bucket complex, i.e. able to hold more ref. defs. */
             list = (MD_REF_DEF_LIST*) malloc(sizeof(MD_REF_DEF_LIST) + 2 * sizeof(MD_REF_DEF*));
             if(list == NULL) {
                 MD_LOG("malloc() failed.");
@@ -1798,12 +1595,6 @@ md_build_ref_def_hashtable(MD_CTX* ctx)
             continue;
         }
 
-        /* Append the def to the complex bucket list.
-         *
-         * Note in this case we ignore potential duplicates to avoid expensive
-         * iterating over the complex bucket. Below, we revisit all the complex
-         * buckets and handle it more cheaply after the complex bucket contents
-         * is sorted. */
         list = (MD_REF_DEF_LIST*) bucket;
         if(list->n_ref_defs >= list->alloc_ref_defs) {
             int alloc_ref_defs = list->alloc_ref_defs + list->alloc_ref_defs / 2;
@@ -1822,7 +1613,6 @@ md_build_ref_def_hashtable(MD_CTX* ctx)
         list->n_ref_defs++;
     }
 
-    /* Sort the complex buckets so we can use bsearch() with them. */
     for(i = 0; i < ctx->ref_def_hashtable_size; i++) {
         void* bucket = ctx->ref_def_hashtable[i];
         MD_REF_DEF_LIST* list;
@@ -1835,10 +1625,6 @@ md_build_ref_def_hashtable(MD_CTX* ctx)
         list = (MD_REF_DEF_LIST*) bucket;
         qsort(list->ref_defs, list->n_ref_defs, sizeof(MD_REF_DEF*), md_ref_def_cmp_for_sort);
 
-        /* Disable all duplicates in the complex bucket by forcing all such
-         * records to point to the 1st such ref. def. I.e. no matter which
-         * record is found during the lookup, it will always point to the right
-         * ref. def. in ctx->ref_defs[]. */
         for(j = 1; j < list->n_ref_defs; j++) {
             if(md_ref_def_cmp(&list->ref_defs[j-1], &list->ref_defs[j]) == 0)
                 list->ref_defs[j] = list->ref_defs[j-1];
@@ -1910,15 +1696,6 @@ md_lookup_ref_def(MD_CTX* ctx, const CHAR* label, SZ label_size)
     }
 }
 
-
-/***************************
- ***  Recognizing Links  ***
- ***************************/
-
-/* Note this code is partially shared between processing inlines and blocks
- * as reference definitions and links share some helper parser functions.
- */
-
 typedef struct MD_LINK_ATTR_tag MD_LINK_ATTR;
 struct MD_LINK_ATTR_tag {
     OFF dest_beg;
@@ -1928,7 +1705,6 @@ struct MD_LINK_ATTR_tag {
     SZ title_size;
     int title_needs_free;
 };
-
 
 static int
 md_is_link_label(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg,
@@ -1962,14 +1738,14 @@ md_is_link_label(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg,
                 return FALSE;
             } else if(CH(off) == _T(']')) {
                 if(contents_beg < contents_end) {
-                    /* Success. */
+
                     *p_contents_beg = contents_beg;
                     *p_contents_end = contents_end;
                     *p_end = off+1;
                     *p_end_line_index = line_index;
                     return TRUE;
                 } else {
-                    /* Link label must have some non-whitespace contents. */
+
                     return FALSE;
                 }
             } else {
@@ -2024,7 +1800,7 @@ md_is_link_destination_A(MD_CTX* ctx, OFF beg, OFF max_end, OFF* p_end,
             return FALSE;
 
         if(CH(off) == _T('>')) {
-            /* Success. */
+
             *p_contents_beg = beg+1;
             *p_contents_end = off;
             *p_end = off+1;
@@ -2053,9 +1829,6 @@ md_is_link_destination_B(MD_CTX* ctx, OFF beg, OFF max_end, OFF* p_end,
         if(ISWHITESPACE(off) || ISCNTRL(off))
             break;
 
-        /* Link destination may include balanced pairs of unescaped '(' ')'.
-         * Note we limit the maximal nesting level by 32 to protect us from
-         * https://github.com/jgm/cmark/issues/214 */
         if(CH(off) == _T('(')) {
             parenthesis_level++;
             if(parenthesis_level > 32)
@@ -2072,7 +1845,6 @@ md_is_link_destination_B(MD_CTX* ctx, OFF beg, OFF max_end, OFF* p_end,
     if(parenthesis_level != 0  ||  off == beg)
         return FALSE;
 
-    /* Success. */
     *p_contents_beg = beg;
     *p_contents_end = off;
     *p_end = off;
@@ -2098,7 +1870,6 @@ md_is_link_title(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg,
     CHAR closer_char;
     MD_SIZE line_index = 0;
 
-    /* White space with up to one line break. */
     while(off < lines[line_index].end  &&  ISWHITESPACE(off))
         off++;
     if(off >= lines[line_index].end) {
@@ -2112,7 +1883,6 @@ md_is_link_title(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg,
 
     *p_beg_line_index = line_index;
 
-    /* First char determines how to detect end of it. */
     switch(CH(off)) {
         case _T('"'):   closer_char = _T('"'); break;
         case _T('\''):  closer_char = _T('\''); break;
@@ -2130,13 +1900,13 @@ md_is_link_title(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg,
             if(CH(off) == _T('\\')  &&  off+1 < ctx->size  &&  (ISPUNCT(off+1) || ISNEWLINE(off+1))) {
                 off++;
             } else if(CH(off) == closer_char) {
-                /* Success. */
+
                 *p_contents_end = off;
                 *p_end = off+1;
                 *p_end_line_index = line_index;
                 return TRUE;
             } else if(closer_char == _T(')')  &&  CH(off) == _T('(')) {
-                /* ()-style title cannot contain (unescaped '(')) */
+
                 return FALSE;
             }
 
@@ -2149,14 +1919,6 @@ md_is_link_title(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg,
     return FALSE;
 }
 
-/* Returns 0 if it is not a reference definition.
- *
- * Returns N > 0 if it is a reference definition. N then corresponds to the
- * number of lines forming it). In this case the definition is stored for
- * resolving any links referring to it.
- *
- * Returns -1 in case of an error (out of memory).
- */
 static int
 md_is_link_reference_definition(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
 {
@@ -2176,19 +1938,16 @@ md_is_link_reference_definition(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lin
     MD_REF_DEF* def = NULL;
     int ret = 0;
 
-    /* Link label. */
     if(!md_is_link_label(ctx, lines, n_lines, lines[0].beg,
                 &off, &label_contents_line_index, &line_index,
                 &label_contents_beg, &label_contents_end))
         return FALSE;
     label_is_multiline = (label_contents_line_index != line_index);
 
-    /* Colon. */
     if(off >= lines[line_index].end  ||  CH(off) != _T(':'))
         return FALSE;
     off++;
 
-    /* Optional white space with up to one line break. */
     while(off < lines[line_index].end  &&  ISWHITESPACE(off))
         off++;
     if(off >= lines[line_index].end) {
@@ -2198,13 +1957,10 @@ md_is_link_reference_definition(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lin
         off = lines[line_index].beg;
     }
 
-    /* Link destination. */
     if(!md_is_link_destination(ctx, off, lines[line_index].end,
                 &off, &dest_contents_beg, &dest_contents_end))
         return FALSE;
 
-    /* (Optional) title. Note we interpret it as an title only if nothing
-     * more follows on its last line. */
     if(md_is_link_title(ctx, lines + line_index, n_lines - line_index, off,
                 &off, &title_contents_line_index, &tmp_line_index,
                 &title_contents_beg, &title_contents_end)
@@ -2214,18 +1970,16 @@ md_is_link_reference_definition(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lin
         title_contents_line_index += line_index;
         line_index += tmp_line_index;
     } else {
-        /* Not a title. */
+
         title_is_multiline = FALSE;
         title_contents_beg = off;
         title_contents_end = off;
         title_contents_line_index = 0;
     }
 
-    /* Nothing more can follow on the last line. */
     if(off < lines[line_index].end)
         return FALSE;
 
-    /* So, it _is_ a reference definition. Remember it. */
     if(ctx->n_ref_defs >= ctx->alloc_ref_defs) {
         MD_REF_DEF* new_defs;
 
@@ -2266,12 +2020,11 @@ md_is_link_reference_definition(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lin
     def->dest_beg = dest_contents_beg;
     def->dest_end = dest_contents_end;
 
-    /* Success. */
     ctx->n_ref_defs++;
     return line_index + 1;
 
 abort:
-    /* Failure. */
+
     if(def != NULL  &&  def->label_needs_free)
         free(def->label);
     if(def != NULL  &&  def->title_needs_free)
@@ -2299,7 +2052,6 @@ md_is_link_reference(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
     beg += (CH(beg) == _T('!') ? 2 : 1);
     end--;
 
-    /* Find lines corresponding to the beg and end positions. */
     beg_line = md_lookup_line(beg, lines, n_lines, NULL);
     is_multiline = (end > beg_line->end);
 
@@ -2324,7 +2076,7 @@ md_is_link_reference(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
         free(label);
 
     if(def != NULL) {
-        /* See https://github.com/mity/md4c/issues/238 */
+
         MD_SIZE output_size_estimation = def->label_size + def->title_size + def->dest_end - def->dest_beg;
         if(output_size_estimation < ctx->max_ref_def_output) {
             ctx->max_ref_def_output -= output_size_estimation;
@@ -2357,7 +2109,6 @@ md_is_inline_link_spec(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
     MD_ASSERT(CH(off) == _T('('));
     off++;
 
-    /* Optional white space with up to one line break. */
     while(off < lines[line_index].end  &&  ISWHITESPACE(off))
         off++;
     if(off >= lines[line_index].end  &&  (off >= ctx->size  ||  ISNEWLINE(off))) {
@@ -2367,7 +2118,6 @@ md_is_inline_link_spec(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
         off = lines[line_index].beg;
     }
 
-    /* Link destination may be omitted, but only when not also having a title. */
     if(off < ctx->size  &&  CH(off) == _T(')')) {
         attr->dest_beg = off;
         attr->dest_end = off;
@@ -2379,12 +2129,10 @@ md_is_inline_link_spec(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
         return TRUE;
     }
 
-    /* Link destination. */
     if(!md_is_link_destination(ctx, off, lines[line_index].end,
                         &off, &attr->dest_beg, &attr->dest_end))
         return FALSE;
 
-    /* (Optional) title. */
     if(md_is_link_title(ctx, lines + line_index, n_lines - line_index, off,
                 &off, &title_contents_line_index, &tmp_line_index,
                 &title_contents_beg, &title_contents_end))
@@ -2393,14 +2141,13 @@ md_is_inline_link_spec(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
         title_contents_line_index += line_index;
         line_index += tmp_line_index;
     } else {
-        /* Not a title. */
+
         title_is_multiline = FALSE;
         title_contents_beg = off;
         title_contents_end = off;
         title_contents_line_index = 0;
     }
 
-    /* Optional whitespace followed with final ')'. */
     while(off < lines[line_index].end  &&  ISWHITESPACE(off))
         off++;
     if(off >= lines[line_index].end) {
@@ -2452,106 +2199,31 @@ md_free_ref_defs(MD_CTX* ctx)
     free(ctx->ref_defs);
 }
 
-
-/******************************************
- ***  Processing Inlines (a.k.a Spans)  ***
- ******************************************/
-
-/* We process inlines in few phases:
- *
- * (1) We go through the block text and collect all significant characters
- *     which may start/end a span or some other significant position into
- *     ctx->marks[]. Core of this is what md_collect_marks() does.
- *
- *     We also do some very brief preliminary context-less analysis, whether
- *     it might be opener or closer (e.g. of an emphasis span).
- *
- *     This speeds the other steps as we do not need to re-iterate over all
- *     characters anymore.
- *
- * (2) We analyze each potential mark types, in order by their precedence.
- *
- *     In each md_analyze_XXX() function, we re-iterate list of the marks,
- *     skipping already resolved regions (in preceding precedences) and try to
- *     resolve them.
- *
- * (2.1) For trivial marks, which are single (e.g. HTML entity), we just mark
- *       them as resolved.
- *
- * (2.2) For range-type marks, we analyze whether the mark could be closer
- *       and, if yes, whether there is some preceding opener it could satisfy.
- *
- *       If not we check whether it could be really an opener and if yes, we
- *       remember it so subsequent closers may resolve it.
- *
- * (3) Finally, when all marks were analyzed, we render the block contents
- *     by calling MD_RENDERER::text() callback, interrupting by ::enter_span()
- *     or ::close_span() whenever we reach a resolved mark.
- */
-
-
-/* The mark structure.
- *
- * '\\': Maybe escape sequence.
- * '\0': NULL char.
- *  '*': Maybe (strong) emphasis start/end.
- *  '_': Maybe (strong) emphasis start/end.
- *  '~': Maybe strikethrough start/end (needs MD_FLAG_STRIKETHROUGH).
- *  '`': Maybe code span start/end.
- *  '&': Maybe start of entity.
- *  ';': Maybe end of entity.
- *  '<': Maybe start of raw HTML or autolink.
- *  '>': Maybe end of raw HTML or autolink.
- *  '[': Maybe start of link label or link text.
- *  '!': Equivalent of '[' for image.
- *  ']': Maybe end of link label or link text.
- *  '@': Maybe permissive e-mail auto-link (needs MD_FLAG_PERMISSIVEEMAILAUTOLINKS).
- *  ':': Maybe permissive URL auto-link (needs MD_FLAG_PERMISSIVEURLAUTOLINKS).
- *  '.': Maybe permissive WWW auto-link (needs MD_FLAG_PERMISSIVEWWWAUTOLINKS).
- *  'D': Dummy mark, it reserves a space for splitting a previous mark
- *       (e.g. emphasis) or to make more space for storing some special data
- *       related to the preceding mark (e.g. link).
- *
- * Note that not all instances of these chars in the text imply creation of the
- * structure. Only those which have (or may have, after we see more context)
- * the special meaning.
- *
- * (Keep this struct as small as possible to fit as much of them into CPU
- * cache line.)
- */
 struct MD_MARK_tag {
     OFF beg;
     OFF end;
 
-    /* For unresolved openers, 'next' may be used to form a stack of
-     * unresolved open openers.
-     *
-     * When resolved with MD_MARK_OPENER/CLOSER flag, next/prev is index of the
-     * respective closer/opener.
-     */
     int prev;
     int next;
     CHAR ch;
     unsigned char flags;
 };
 
-/* Mark flags (these apply to ALL mark types). */
-#define MD_MARK_POTENTIAL_OPENER            0x01  /* Maybe opener. */
-#define MD_MARK_POTENTIAL_CLOSER            0x02  /* Maybe closer. */
-#define MD_MARK_OPENER                      0x04  /* Definitely opener. */
-#define MD_MARK_CLOSER                      0x08  /* Definitely closer. */
-#define MD_MARK_RESOLVED                    0x10  /* Resolved in any definite way. */
+#define MD_MARK_POTENTIAL_OPENER            0x01
+#define MD_MARK_POTENTIAL_CLOSER            0x02
+#define MD_MARK_OPENER                      0x04
+#define MD_MARK_CLOSER                      0x08
+#define MD_MARK_RESOLVED                    0x10
 
-/* Mark flags specific for various mark types (so they can share bits). */
-#define MD_MARK_EMPH_OC                     0x20  /* Opener/closer mixed candidate. Helper for the "rule of 3". */
+#define MD_MARK_EMPH_OC                     0x20
 #define MD_MARK_EMPH_MOD3_0                 0x40
 #define MD_MARK_EMPH_MOD3_1                 0x80
 #define MD_MARK_EMPH_MOD3_2                 (0x40 | 0x80)
 #define MD_MARK_EMPH_MOD3_MASK              (0x40 | 0x80)
-#define MD_MARK_AUTOLINK                    0x20  /* Distinguisher for '<', '>'. */
+#define MD_MARK_AUTOLINK                    0x20
 #define MD_MARK_AUTOLINK_MISSING_MAILTO     0x40
-#define MD_MARK_VALIDPERMISSIVEAUTOLINK     0x20  /* For permissive autolinks. */
-#define MD_MARK_HASNESTEDBRACKETS           0x20  /* For '[' to rule out invalid link labels early */
+#define MD_MARK_VALIDPERMISSIVEAUTOLINK     0x20
+#define MD_MARK_HASNESTEDBRACKETS           0x20
 
 static MD_MARKSTACK*
 md_emph_stack(MD_CTX* ctx, MD_CHAR ch, unsigned flags)
@@ -2636,7 +2308,6 @@ md_add_mark(MD_CTX* ctx)
             mark->flags = (flags_);                                     \
         } while(0)
 
-
 static inline void
 md_mark_stack_push(MD_CTX* ctx, MD_MARKSTACK* stack, int mark_index)
 {
@@ -2653,16 +2324,12 @@ md_mark_stack_pop(MD_CTX* ctx, MD_MARKSTACK* stack)
     return top;
 }
 
-/* Sometimes, we need to store a pointer into the mark. It is quite rare
- * so we do not bother to make MD_MARK use union, and it can only happen
- * for dummy marks. */
 static inline void
 md_mark_store_ptr(MD_CTX* ctx, int mark_index, void* ptr)
 {
     MD_MARK* mark = &ctx->marks[mark_index];
     MD_ASSERT(mark->ch == 'D');
 
-    /* Check only members beg and end are misused for this. */
     MD_ASSERT(sizeof(void*) <= 2 * sizeof(OFF));
     memcpy(mark, &ptr, sizeof(void*));
 }
@@ -2683,7 +2350,6 @@ md_resolve_range(MD_CTX* ctx, int opener_index, int closer_index)
     MD_MARK* opener = &ctx->marks[opener_index];
     MD_MARK* closer = &ctx->marks[closer_index];
 
-    /* Interconnect opener and closer and mark both as resolved. */
     opener->next = closer_index;
     closer->prev = opener_index;
 
@@ -2691,23 +2357,9 @@ md_resolve_range(MD_CTX* ctx, int opener_index, int closer_index)
     closer->flags |= MD_MARK_CLOSER | MD_MARK_RESOLVED;
 }
 
-
 #define MD_ROLLBACK_CROSSING    0
 #define MD_ROLLBACK_ALL         1
 
-/* In the range ctx->marks[opener_index] ... [closer_index], undo some or all
- * resolvings accordingly to these rules:
- *
- * (1) All stacks of openers are cut so that any pending potential openers
- *     are discarded from future consideration.
- *
- * (2) If 'how' is MD_ROLLBACK_ALL, then ALL resolved marks inside the range
- *     are thrown away and turned into dummy marks ('D').
- *
- * WARNING: Do not call for arbitrary range of opener and closer.
- * This must form (potentially) valid range not crossing nesting boundaries
- * of already resolved ranges.
- */
 static void
 md_rollback(MD_CTX* ctx, int opener_index, int closer_index, int how)
 {
@@ -2799,15 +2451,12 @@ md_is_code_span(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg,
     has_space_after_opener = (opener_end < line_end && CH(opener_end) == _T(' '));
     has_eol_after_opener = (opener_end == line_end);
 
-    /* The caller needs to know end of the opening mark even if we fail. */
     opener->end = opener_end;
 
     mark_len = opener_end - opener_beg;
     if(mark_len > CODESPAN_MARK_MAXLEN)
         return FALSE;
 
-    /* Check whether we already know there is no closer of this length.
-     * If so, re-scan does no sense. This fixes issue #59. */
     if(last_potential_closers[mark_len-1] >= lines[n_lines-1].end  ||
        (*p_reached_paragraph_end  &&  last_potential_closers[mark_len-1] < opener_end))
         return FALSE;
@@ -2815,7 +2464,6 @@ md_is_code_span(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg,
     closer_beg = opener_end;
     closer_end = opener_end;
 
-    /* Find closer mark. */
     while(TRUE) {
         while(closer_beg < line_end  &&  CH(closer_beg) != _T('`')) {
             if(CH(closer_beg) != _T(' '))
@@ -2827,19 +2475,16 @@ md_is_code_span(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg,
             closer_end++;
 
         if(closer_end - closer_beg == mark_len) {
-            /* Success. */
+
             has_space_before_closer = (closer_beg > lines[line_index].beg && CH(closer_beg-1) == _T(' '));
             has_eol_before_closer = (closer_beg == lines[line_index].beg);
             break;
         }
 
         if(closer_end - closer_beg > 0) {
-            /* We have found a back-tick which is not part of the closer. */
+
             has_only_space = FALSE;
 
-            /* But if we eventually fail, remember it as a potential closer
-             * of its own length for future attempts. This mitigates needs for
-             * rescans. */
             if(closer_end - closer_beg < CODESPAN_MARK_MAXLEN) {
                 if(closer_beg > last_potential_closers[closer_end - closer_beg - 1])
                     last_potential_closers[closer_end - closer_beg - 1] = closer_beg;
@@ -2849,11 +2494,11 @@ md_is_code_span(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg,
         if(closer_end >= line_end) {
             line_index++;
             if(line_index >= n_lines) {
-                /* Reached end of the paragraph and still nothing. */
+
                 *p_reached_paragraph_end = TRUE;
                 return FALSE;
             }
-            /* Try on the next line. */
+
             line_end = lines[line_index].end;
             closer_beg = lines[line_index].beg;
         } else {
@@ -2861,9 +2506,6 @@ md_is_code_span(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg,
         }
     }
 
-    /* If there is a space or a new line both after and before the opener
-     * (and if the code span is not made of spaces only), consume one initial
-     * and one trailing space as part of the marks. */
     if(!has_only_space  &&
        (has_space_after_opener || has_eol_after_opener)  &&
        (has_space_before_closer || has_eol_before_closer))
@@ -2876,9 +2518,9 @@ md_is_code_span(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, OFF beg,
         if(has_space_before_closer)
             closer_beg--;
         else {
-            /* Go back to the end of prev line */
+
             closer_beg = lines[line_index-1].end;
-            /* But restore any trailing whitespace */
+
             while(closer_beg < ctx->size  &&  ISBLANK(closer_beg))
                 closer_beg++;
         }
@@ -2902,7 +2544,6 @@ md_is_autolink_uri(MD_CTX* ctx, OFF beg, OFF max_end, OFF* p_end)
 
     MD_ASSERT(CH(beg) == _T('<'));
 
-    /* Check for scheme. */
     if(off >= max_end  ||  !ISASCII(off))
         return FALSE;
     off++;
@@ -2918,7 +2559,6 @@ md_is_autolink_uri(MD_CTX* ctx, OFF beg, OFF max_end, OFF* p_end)
         off++;
     }
 
-    /* Check the path after the scheme. */
     while(off < max_end  &&  CH(off) != _T('>')) {
         if(ISWHITESPACE(off) || ISCNTRL(off) || CH(off) == _T('<'))
             return FALSE;
@@ -2941,25 +2581,15 @@ md_is_autolink_email(MD_CTX* ctx, OFF beg, OFF max_end, OFF* p_end)
 
     MD_ASSERT(CH(beg) == _T('<'));
 
-    /* The code should correspond to this regexp:
-            /^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+
-            @[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?
-            (?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
-     */
-
-    /* Username (before '@'). */
     while(off < max_end  &&  (ISALNUM(off) || ISANYOF(off, _T(".!#$%&'*+/=?^_`{|}~-"))))
         off++;
     if(off <= beg+1)
         return FALSE;
 
-    /* '@' */
     if(off >= max_end  ||  CH(off) != _T('@'))
         return FALSE;
     off++;
 
-    /* Labels delimited with '.'; each label is sequence of 1 - 63 alnum
-     * characters or '-', but '-' is not allowed as first or last char. */
     label_len = 0;
     while(off < max_end) {
         if(ISALNUM(off))
@@ -3017,15 +2647,14 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
             CHAR ch;
 
 #ifdef MD4C_USE_UTF16
-    /* For UTF-16, mark_char_map[] covers only ASCII. */
+
     #define IS_MARK_CHAR(off)   ((CH(off) < SIZEOF_ARRAY(ctx->mark_char_map))  &&  \
                                 (ctx->mark_char_map[(unsigned char) CH(off)]))
 #else
-    /* For 8-bit encodings, mark_char_map[] covers all 256 elements. */
+
     #define IS_MARK_CHAR(off)   (ctx->mark_char_map[(unsigned char) CH(off)])
 #endif
 
-            /* Optimization: Use some loop unrolling. */
             while(off + 3 < line->end  &&  !IS_MARK_CHAR(off+0)  &&  !IS_MARK_CHAR(off+1)
                                        &&  !IS_MARK_CHAR(off+2)  &&  !IS_MARK_CHAR(off+3))
                 off += 4;
@@ -3037,22 +2666,18 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
 
             ch = CH(off);
 
-            /* A backslash escape.
-             * It can go beyond line->end as it may involve escaped new
-             * line to form a hard break. */
             if(ch == _T('\\')  &&  off+1 < ctx->size  &&  (ISPUNCT(off+1) || ISNEWLINE(off+1))) {
-                /* Hard-break cannot be on the last line of the block. */
+
                 if(!ISNEWLINE(off+1)  ||  line_index+1 < n_lines)
                     ADD_MARK(ch, off, off+2, MD_MARK_RESOLVED);
                 off += 2;
                 continue;
             }
 
-            /* A potential (string) emphasis start/end. */
             if(ch == _T('*')  ||  ch == _T('_')) {
                 OFF tmp = off+1;
-                int left_level;     /* What precedes: 0 = whitespace; 1 = punctuation; 2 = other char. */
-                int right_level;    /* What follows: 0 = whitespace; 1 = punctuation; 2 = other char. */
+                int left_level;
+                int right_level;
 
                 while(tmp < line->end  &&  CH(tmp) == ch)
                     tmp++;
@@ -3071,7 +2696,6 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                 else
                     right_level = 2;
 
-                /* Intra-word underscore doesn't have special meaning. */
                 if(ch == _T('_')  &&  left_level == 2  &&  right_level == 2) {
                     left_level = 0;
                     right_level = 0;
@@ -3087,10 +2711,6 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                     if(flags == (MD_MARK_POTENTIAL_OPENER | MD_MARK_POTENTIAL_CLOSER))
                         flags |= MD_MARK_EMPH_OC;
 
-                    /* For "the rule of three" we need to remember the original
-                     * size of the mark (modulo three), before we potentially
-                     * split the mark when being later resolved partially by some
-                     * shorter closer. */
                     switch((tmp - off) % 3) {
                         case 0: flags |= MD_MARK_EMPH_MOD3_0; break;
                         case 1: flags |= MD_MARK_EMPH_MOD3_1; break;
@@ -3099,10 +2719,6 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
 
                     ADD_MARK(ch, off, tmp, flags);
 
-                    /* During resolving, multiple asterisks may have to be
-                     * split into independent span start/ends. Consider e.g.
-                     * "**foo* bar*". Therefore we push also some empty dummy
-                     * marks to have enough space for that. */
                     off++;
                     while(off < tmp) {
                         ADD_MARK('D', off, off, 0);
@@ -3115,7 +2731,6 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                 continue;
             }
 
-            /* A potential code span start/end. */
             if(ch == _T('`')) {
                 MD_MARK opener;
                 MD_MARK closer;
@@ -3130,7 +2745,6 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                     md_resolve_range(ctx, ctx->n_marks-2, ctx->n_marks-1);
                     off = closer.end;
 
-                    /* Advance the current line accordingly. */
                     if(off > line->end)
                         line = md_lookup_line(off, lines, n_lines, &line_index);
                     continue;
@@ -3140,16 +2754,14 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                 continue;
             }
 
-            /* A potential entity start. */
             if(ch == _T('&')) {
                 ADD_MARK(ch, off, off+1, MD_MARK_POTENTIAL_OPENER);
                 off++;
                 continue;
             }
 
-            /* A potential entity end. */
             if(ch == _T(';')) {
-                /* We surely cannot be entity unless the previous mark is '&'. */
+
                 if(ctx->n_marks > 0  &&  ctx->marks[ctx->n_marks-1].ch == _T('&'))
                     ADD_MARK(ch, off, off+1, MD_MARK_POTENTIAL_CLOSER);
 
@@ -3157,7 +2769,6 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                 continue;
             }
 
-            /* A potential autolink or raw HTML start/end. */
             if(ch == _T('<')) {
                 int is_autolink;
                 OFF autolink_end;
@@ -3167,9 +2778,6 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                     int is_html;
                     OFF html_end;
 
-                    /* Given the nature of the raw HTML, we have to recognize
-                     * it here. Doing so later in md_analyze_lt_gt() could
-                     * open can of worms of quadratic complexity. */
                     is_html = md_is_html_any(ctx, line, n_lines - line_index, off,
                                     lines[n_lines-1].end, &html_end);
                     if(is_html) {
@@ -3179,7 +2787,6 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                         ctx->marks[ctx->n_marks-1].prev = ctx->n_marks-2;
                         off = html_end;
 
-                        /* Advance the current line accordingly. */
                         if(off > line->end)
                             line = md_lookup_line(off, lines, n_lines, &line_index);
                         continue;
@@ -3205,13 +2812,11 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                 continue;
             }
 
-            /* A potential link or its part. */
             if(ch == _T('[')  ||  (ch == _T('!') && off+1 < line->end && CH(off+1) == _T('['))) {
                 OFF tmp = (ch == _T('[') ? off+1 : off+2);
                 ADD_MARK(ch, off, tmp, MD_MARK_POTENTIAL_OPENER);
                 off = tmp;
-                /* Two dummies to make enough place for data we need if it is
-                 * a link. */
+
                 ADD_MARK('D', off, off, 0);
                 ADD_MARK('D', off, off, 0);
                 continue;
@@ -3222,13 +2827,12 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                 continue;
             }
 
-            /* A potential permissive e-mail autolink. */
             if(ch == _T('@')) {
                 if(line->beg + 1 <= off  &&  ISALNUM(off-1)  &&
                     off + 3 < line->end  &&  ISALNUM(off+1))
                 {
                     ADD_MARK(ch, off, off+1, MD_MARK_POTENTIAL_OPENER);
-                    /* Push a dummy as a reserve for a closer. */
+
                     ADD_MARK('D', line->beg, line->end, 0);
                 }
 
@@ -3236,7 +2840,6 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                 continue;
             }
 
-            /* A potential permissive URL autolink. */
             if(ch == _T(':')) {
                 static struct {
                     const CHAR* scheme;
@@ -3244,7 +2847,7 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                     const CHAR* suffix;
                     SZ suffix_size;
                 } scheme_map[] = {
-                    /* In the order from the most frequently used, arguably. */
+
                     { _T("http"), 4,    _T("//"), 2 },
                     { _T("https"), 5,   _T("//"), 2 },
                     { _T("ftp"), 3,     _T("//"), 2 }
@@ -3261,7 +2864,7 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                         off + 1 + suffix_size < line->end  &&  md_ascii_eq(STR(off+1), suffix, suffix_size))
                     {
                         ADD_MARK(ch, off-scheme_size, off+1+suffix_size, MD_MARK_POTENTIAL_OPENER);
-                        /* Push a dummy as a reserve for a closer. */
+
                         ADD_MARK('D', line->beg, line->end, 0);
                         off += 1 + suffix_size;
                         break;
@@ -3272,13 +2875,12 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                 continue;
             }
 
-            /* A potential permissive WWW autolink. */
             if(ch == _T('.')) {
                 if(line->beg + 3 <= off  &&  md_ascii_eq(STR(off-3), _T("www"), 3)  &&
                    (off-3 == line->beg || ISUNICODEWHITESPACEBEFORE(off-3) || ISUNICODEPUNCTBEFORE(off-3)))
                 {
                     ADD_MARK(ch, off-3, off+1, MD_MARK_POTENTIAL_OPENER);
-                    /* Push a dummy as a reserve for a closer. */
+
                     ADD_MARK('D', line->beg, line->end, 0);
                     off++;
                     continue;
@@ -3288,14 +2890,12 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                 continue;
             }
 
-            /* A potential table cell boundary or wiki link label delimiter. */
             if((table_mode || ctx->parser.flags & MD_FLAG_WIKILINKS) && ch == _T('|')) {
                 ADD_MARK(ch, off, off+1, 0);
                 off++;
                 continue;
             }
 
-            /* A potential strikethrough/equation start/end. */
             if(ch == _T('$') || ch == _T('~')) {
                 OFF tmp = off+1;
 
@@ -3317,7 +2917,6 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                 continue;
             }
 
-            /* Turn non-trivial whitespace into single space. */
             if(ISWHITESPACE_(ch)) {
                 OFF tmp = off+1;
 
@@ -3331,7 +2930,6 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
                 continue;
             }
 
-            /* NULL character. */
             if(ch == _T('\0')) {
                 ADD_MARK(ch, off, off+1, MD_MARK_RESOLVED);
                 off++;
@@ -3342,8 +2940,6 @@ md_collect_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_m
         }
     }
 
-    /* Add a dummy mark at the end of the mark vector to simplify
-     * process_inlines(). */
     ADD_MARK(127, ctx->size, ctx->size, MD_MARK_RESOLVED);
 
 abort:
@@ -3353,18 +2949,6 @@ abort:
 static void
 md_analyze_bracket(MD_CTX* ctx, int mark_index)
 {
-    /* We cannot really resolve links here as for that we would need
-     * more context. E.g. a following pair of brackets (reference link),
-     * or enclosing pair of brackets (if the inner is the link, the outer
-     * one cannot be.)
-     *
-     * Therefore we here only construct a list of '[' ']' pairs ordered by
-     * position of the closer. This allows us to analyze what is or is not
-     * link in the right order, from inside to outside in case of nested
-     * brackets.
-     *
-     * The resolving itself is deferred to md_resolve_links().
-     */
 
     MD_MARK* mark = &ctx->marks[mark_index];
 
@@ -3380,13 +2964,9 @@ md_analyze_bracket(MD_CTX* ctx, int mark_index)
         int opener_index = md_mark_stack_pop(ctx, &BRACKET_OPENERS);
         MD_MARK* opener = &ctx->marks[opener_index];
 
-        /* Interconnect the opener and closer. */
         opener->next = mark_index;
         mark->prev = opener_index;
 
-        /* Add the pair into a list of potential links for md_resolve_links().
-         * Note we misuse opener->prev for this as opener->next points to its
-         * closer. */
         if(ctx->unresolved_link_tail >= 0)
             ctx->marks[ctx->unresolved_link_tail].prev = opener_index;
         else
@@ -3396,7 +2976,6 @@ md_analyze_bracket(MD_CTX* ctx, int mark_index)
     }
 }
 
-/* Forward declaration. */
 static void md_analyze_link_contents(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
                                      int mark_beg, int mark_end);
 
@@ -3427,13 +3006,6 @@ md_resolve_links(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
             next_closer = NULL;
         }
 
-        /* If nested ("[ [ ] ]"), we need to make sure that:
-         *   - The outer does not end inside of (...) belonging to the inner.
-         *   - The outer cannot be link if the inner is link (i.e. not image).
-         *
-         * (Note we here analyze from inner to outer as the marks are ordered
-         * by closer->beg.)
-         */
         if((opener->beg < last_link_beg  &&  closer->end < last_link_end)  ||
            (opener->beg < last_img_beg  &&  closer->end < last_img_end)  ||
            (opener->beg < last_link_end  &&  opener->ch == '['))
@@ -3442,16 +3014,13 @@ md_resolve_links(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
             continue;
         }
 
-        /* Recognize and resolve wiki links.
-         * Wiki-links maybe '[[destination]]' or '[[destination|label]]'.
-         */
         if ((ctx->parser.flags & MD_FLAG_WIKILINKS) &&
-            (opener->end - opener->beg == 1) &&         /* not image */
-            next_opener != NULL &&                      /* double '[' opener */
+            (opener->end - opener->beg == 1) &&
+            next_opener != NULL &&
             next_opener->ch == '[' &&
             (next_opener->beg == opener->beg - 1) &&
             (next_opener->end - next_opener->beg == 1) &&
-            next_closer != NULL &&                      /* double ']' closer */
+            next_closer != NULL &&
             next_closer->ch == ']' &&
             (next_closer->beg == closer->beg + 1) &&
             (next_closer->end - next_closer->beg == 1))
@@ -3462,9 +3031,6 @@ md_resolve_links(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
 
             is_link = TRUE;
 
-            /* We don't allow destination to be longer than 100 characters.
-             * Lets scan to see whether there is '|'. (If not then the whole
-             * wiki-link has to be below the 100 characters.) */
             delim_index = opener_index + 1;
             while(delim_index < closer_index) {
                 MD_MARK* m = &ctx->marks[delim_index];
@@ -3486,7 +3052,6 @@ md_resolve_links(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
             if(dest_end - dest_beg == 0 || dest_end - dest_beg > 100)
                 is_link = FALSE;
 
-            /* There may not be any new line in the destination. */
             if(is_link) {
                 OFF off;
                 for(off = dest_beg; off < dest_end; off++) {
@@ -3505,7 +3070,7 @@ md_resolve_links(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                         delim->flags |= MD_MARK_RESOLVED;
                         opener->end = delim->beg;
                     } else {
-                        /* The pipe is just before the closer: [[foo|]] */
+
                         md_rollback(ctx, opener_index, closer_index, MD_ROLLBACK_ALL);
                         closer->beg = delim->beg;
                         delim = NULL;
@@ -3533,11 +3098,11 @@ md_resolve_links(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
 
         if(next_opener != NULL  &&  next_opener->beg == closer->end) {
             if(next_closer->beg > closer->end + 1) {
-                /* Might be full reference link. */
+
                 if(!(next_opener->flags & MD_MARK_HASNESTEDBRACKETS))
                     is_link = md_is_link_reference(ctx, lines, n_lines, next_opener->beg, next_closer->end, &attr);
             } else {
-                /* Might be shortcut reference link. */
+
                 if(!(opener->flags & MD_MARK_HASNESTEDBRACKETS))
                     is_link = md_is_link_reference(ctx, lines, n_lines, opener->beg, closer->end, &attr);
             }
@@ -3546,24 +3111,20 @@ md_resolve_links(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                 return -1;
 
             if(is_link) {
-                /* Eat the 2nd "[...]". */
+
                 closer->end = next_closer->end;
 
-                /* Do not analyze the label as a standalone link in the next
-                 * iteration. */
                 next_index = ctx->marks[next_index].prev;
             }
         } else {
             if(closer->end < ctx->size  &&  CH(closer->end) == _T('(')) {
-                /* Might be inline link. */
+
                 OFF inline_link_end = UINT_MAX;
 
                 is_link = md_is_inline_link_spec(ctx, lines, n_lines, closer->end, &inline_link_end, &attr);
                 if(is_link < 0)
                     return -1;
 
-                /* Check the closing ')' is not inside an already resolved range
-                 * (i.e. a range with a higher priority), e.g. a code span. */
                 if(is_link) {
                     int i = closer_index + 1;
 
@@ -3574,7 +3135,7 @@ md_resolve_links(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                             break;
                         if((mark->flags & (MD_MARK_OPENER | MD_MARK_RESOLVED)) == (MD_MARK_OPENER | MD_MARK_RESOLVED)) {
                             if(ctx->marks[mark->next].beg >= inline_link_end) {
-                                /* Cancel the link status. */
+
                                 if(attr.title_needs_free)
                                     free(attr.title);
                                 is_link = FALSE;
@@ -3589,13 +3150,13 @@ md_resolve_links(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                 }
 
                 if(is_link) {
-                    /* Eat the "(...)" */
+
                     closer->end = inline_link_end;
                 }
             }
 
             if(!is_link) {
-                /* Might be collapsed reference link. */
+
                 if(!(opener->flags & MD_MARK_HASNESTEDBRACKETS))
                     is_link = md_is_link_reference(ctx, lines, n_lines, opener->beg, closer->end, &attr);
                 if(is_link < 0)
@@ -3604,19 +3165,17 @@ md_resolve_links(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
         }
 
         if(is_link) {
-            /* Resolve the brackets as a link. */
+
             opener->flags |= MD_MARK_OPENER | MD_MARK_RESOLVED;
             closer->flags |= MD_MARK_CLOSER | MD_MARK_RESOLVED;
 
-            /* If it is a link, we store the destination and title in the two
-             * dummy marks after the opener. */
             MD_ASSERT(ctx->marks[opener_index+1].ch == 'D');
             ctx->marks[opener_index+1].beg = attr.dest_beg;
             ctx->marks[opener_index+1].end = attr.dest_end;
 
             MD_ASSERT(ctx->marks[opener_index+2].ch == 'D');
             md_mark_store_ptr(ctx, opener_index+2, attr.title);
-            /* The title might or might not have been allocated for us. */
+
             if(attr.title_needs_free)
                 md_mark_stack_push(ctx, &ctx->ptr_stack, opener_index+2);
             ctx->marks[opener_index+2].prev = attr.title_size;
@@ -3631,9 +3190,6 @@ md_resolve_links(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
 
             md_analyze_link_contents(ctx, lines, n_lines, opener_index+1, closer_index);
 
-            /* If the link text is formed by nothing but permissive autolink,
-             * suppress the autolink.
-             * See https://github.com/mity/md4c/issues/152 for more info. */
             if(ctx->parser.flags & MD_FLAG_PERMISSIVEAUTOLINKS) {
                 MD_MARK* first_nested;
                 MD_MARK* last_nested;
@@ -3666,8 +3222,6 @@ md_resolve_links(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
     return 0;
 }
 
-/* Analyze whether the mark '&' starts a HTML entity.
- * If so, update its flags as well as flags of corresponding closer ';'. */
 static void
 md_analyze_entity(MD_CTX* ctx, int mark_index)
 {
@@ -3675,13 +3229,6 @@ md_analyze_entity(MD_CTX* ctx, int mark_index)
     MD_MARK* closer;
     OFF off;
 
-    /* Cannot be entity if there is no closer as the next mark.
-     * (Any other mark between would mean strange character which cannot be
-     * part of the entity.
-     *
-     * So we can do all the work on '&' and do not call this later for the
-     * closing mark ';'.
-     */
     if(mark_index + 1 >= ctx->n_marks)
         return;
     closer = &ctx->marks[mark_index+1];
@@ -3711,10 +3258,6 @@ md_analyze_table_cell_boundary(MD_CTX* ctx, int mark_index)
     ctx->n_table_cell_boundaries++;
 }
 
-/* Split a longer mark into two. The new mark takes the given count of
- * characters. May only be called if an adequate number of dummy 'D' marks
- * follows.
- */
 static int
 md_split_emph_mark(MD_CTX* ctx, int mark_index, SZ n)
 {
@@ -3737,7 +3280,6 @@ md_analyze_emph(MD_CTX* ctx, int mark_index)
 {
     MD_MARK* mark = &ctx->marks[mark_index];
 
-    /* If we can be a closer, try to resolve with the preceding opener. */
     if(mark->flags & MD_MARK_POTENTIAL_CLOSER) {
         MD_MARK* opener = NULL;
         int opener_index = 0;
@@ -3747,7 +3289,6 @@ md_analyze_emph(MD_CTX* ctx, int mark_index)
 
         n_opener_stacks = 0;
 
-        /* Apply the rule of 3 */
         opener_stacks[n_opener_stacks++] = md_emph_stack(ctx, mark->ch, MD_MARK_EMPH_MOD3_0 | MD_MARK_EMPH_OC);
         if((flags & MD_MARK_EMPH_MOD3_MASK) != MD_MARK_EMPH_MOD3_2)
             opener_stacks[n_opener_stacks++] = md_emph_stack(ctx, mark->ch, MD_MARK_EMPH_MOD3_1 | MD_MARK_EMPH_OC);
@@ -3759,7 +3300,6 @@ md_analyze_emph(MD_CTX* ctx, int mark_index)
         if(!(flags & MD_MARK_EMPH_OC)  ||  (flags & MD_MARK_EMPH_MOD3_MASK) != MD_MARK_EMPH_MOD3_1)
             opener_stacks[n_opener_stacks++] = md_emph_stack(ctx, mark->ch, MD_MARK_EMPH_MOD3_2);
 
-        /* Opener is the most recent mark from the allowed stacks. */
         for(i = 0; i < n_opener_stacks; i++) {
             if(opener_stacks[i]->top >= 0) {
                 int m_index = opener_stacks[i]->top;
@@ -3772,7 +3312,6 @@ md_analyze_emph(MD_CTX* ctx, int mark_index)
             }
         }
 
-        /* Resolve, if we have found matching opener. */
         if(opener != NULL) {
             SZ opener_size = opener->end - opener->beg;
             SZ closer_size = mark->end - mark->beg;
@@ -3785,7 +3324,6 @@ md_analyze_emph(MD_CTX* ctx, int mark_index)
                 md_split_emph_mark(ctx, mark_index, closer_size - opener_size);
             }
 
-            /* Above we were only peeking. */
             md_mark_stack_pop(ctx, stack);
 
             md_rollback(ctx, opener_index, mark_index, MD_ROLLBACK_CROSSING);
@@ -3794,7 +3332,6 @@ md_analyze_emph(MD_CTX* ctx, int mark_index)
         }
     }
 
-    /* If we could not resolve as closer, we may be yet be an opener. */
     if(mark->flags & MD_MARK_POTENTIAL_OPENER)
         md_mark_stack_push(ctx, md_emph_stack(ctx, mark->ch, mark->flags), mark_index);
 }
@@ -3804,10 +3341,6 @@ md_analyze_tilde(MD_CTX* ctx, int mark_index)
 {
     MD_MARK* mark = &ctx->marks[mark_index];
     MD_MARKSTACK* stack = md_opener_stack(ctx, mark_index);
-
-    /* We attempt to be Github Flavored Markdown compatible here. GFM accepts
-     * only tildes sequences of length 1 and 2, and the length of the opener
-     * and closer has to match. */
 
     if((mark->flags & MD_MARK_POTENTIAL_CLOSER)  &&  stack->top >= 0) {
         int opener_index = stack->top;
@@ -3828,20 +3361,18 @@ md_analyze_dollar(MD_CTX* ctx, int mark_index)
     MD_MARK* mark = &ctx->marks[mark_index];
 
     if((mark->flags & MD_MARK_POTENTIAL_CLOSER)  &&  DOLLAR_OPENERS.top >= 0) {
-        /* If the potential closer has a non-matching number of $, discard */
+
         MD_MARK* opener = &ctx->marks[DOLLAR_OPENERS.top];
         int opener_index = DOLLAR_OPENERS.top;
         MD_MARK* closer = mark;
         int closer_index = mark_index;
 
         if(opener->end - opener->beg == closer->end - closer->beg) {
-            /* We are the matching closer */
+
             md_mark_stack_pop(ctx, &DOLLAR_OPENERS);
             md_rollback(ctx, opener_index, closer_index, MD_ROLLBACK_ALL);
             md_resolve_range(ctx, opener_index, closer_index);
 
-            /* Discard all pending openers: Latex math span do not allow
-             * nesting. */
             DOLLAR_OPENERS.top = -1;
             return;
         }
@@ -3905,16 +3436,16 @@ md_analyze_permissive_autolink(MD_CTX* ctx, int mark_index)
         int min_components;
         const MD_CHAR optional_end_char;
     } URL_MAP[] = {
-        { _T('\0'), _T('.'),  _T(".-_"),      2, _T('\0') },    /* host, mandatory */
-        { _T('/'),  _T('/'),  _T("/.-_"),     0, _T('/') },     /* path */
-        { _T('?'),  _T('&'),  _T("&.-+_=()"), 1, _T('\0') },    /* query */
-        { _T('#'),  _T('\0'), _T(".-+_") ,    1, _T('\0') }     /* fragment */
+        { _T('\0'), _T('.'),  _T(".-_"),      2, _T('\0') },
+        { _T('/'),  _T('/'),  _T("/.-_"),     0, _T('/') },
+        { _T('?'),  _T('&'),  _T("&.-+_=()"), 1, _T('\0') },
+        { _T('#'),  _T('\0'), _T(".-+_") ,    1, _T('\0') }
     };
 
     MD_MARK* opener = &ctx->marks[mark_index];
-    MD_MARK* closer = &ctx->marks[mark_index + 1];  /* The dummy. */
-    OFF line_beg = closer->beg;     /* md_collect_mark() set this for us */
-    OFF line_end = closer->end;     /* ditto */
+    MD_MARK* closer = &ctx->marks[mark_index + 1];
+    OFF line_beg = closer->beg;
+    OFF line_end = closer->end;
     OFF beg = opener->beg;
     OFF end = opener->end;
     MD_MARK* left_cursor = opener;
@@ -3928,7 +3459,6 @@ md_analyze_permissive_autolink(MD_CTX* ctx, int mark_index)
     if(opener->ch == '@') {
         MD_ASSERT(CH(opener->beg) == _T('@'));
 
-        /* Scan backwards for the user name (before '@'). */
         while(beg > line_beg) {
             if(ISALNUM(beg-1))
                 beg--;
@@ -3940,12 +3470,10 @@ md_analyze_permissive_autolink(MD_CTX* ctx, int mark_index)
             else
                 break;
         }
-        if(beg == opener->beg)      /* empty user name */
+        if(beg == opener->beg)
             return;
     }
 
-    /* Verify there's line boundary, whitespace, allowed punctuation or
-     * resolved emphasis mark just before the suspected autolink. */
     if(beg == line_beg  ||  ISUNICODEWHITESPACEBEFORE(beg)  ||  ISANYOF(beg-1, _T("({["))) {
         left_boundary_ok = TRUE;
     } else if(ISANYOF(beg-1, _T("*_~"))) {
@@ -3984,7 +3512,6 @@ md_analyze_permissive_autolink(MD_CTX* ctx, int mark_index)
                 if(CH(end) == URL_MAP[i].delim_char)
                     n_components++;
 
-                /* brackets have to be balanced. */
                 if(CH(end) == _T('(')) {
                     n_open_brackets++;
                 } else if(CH(end) == _T(')')) {
@@ -4006,12 +3533,10 @@ md_analyze_permissive_autolink(MD_CTX* ctx, int mark_index)
         if(n_components < URL_MAP[i].min_components  ||  n_open_brackets != 0)
             return;
 
-        if(opener->ch == '@')   /* E-mail autolinks wants only the host. */
+        if(opener->ch == '@')
             break;
     }
 
-    /* Verify there's line boundary, whitespace, allowed punctuation or
-     * resolved emphasis mark just after the suspected autolink. */
     if(end == line_end  ||  ISUNICODEWHITESPACE(end)  ||  ISANYOF(end, _T(")}].!?,;"))) {
         right_boundary_ok = TRUE;
     } else {
@@ -4024,7 +3549,6 @@ md_analyze_permissive_autolink(MD_CTX* ctx, int mark_index)
     if(!right_boundary_ok)
         return;
 
-    /* Success, we are an autolink. */
     opener->beg = beg;
     opener->end = beg;
     closer->beg = end;
@@ -4048,7 +3572,6 @@ md_analyze_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
     while(i < mark_end) {
         MD_MARK* mark = &ctx->marks[i];
 
-        /* Skip resolved spans. */
         if(mark->flags & MD_MARK_RESOLVED) {
             if((mark->flags & MD_MARK_OPENER)  &&
                !((flags & MD_ANALYZE_NOSKIP_EMPH) && ISANYOF_(mark->ch, "*_~")))
@@ -4061,31 +3584,28 @@ md_analyze_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
             continue;
         }
 
-        /* Skip marks we do not want to deal with. */
         if(!ISANYOF_(mark->ch, mark_chars)) {
             i++;
             continue;
         }
 
-        /* The resolving in previous step could have expanded a mark. */
         if(mark->beg < last_end) {
             i++;
             continue;
         }
 
-        /* Analyze the mark. */
         switch(mark->ch) {
-            case '[':   /* Pass through. */
-            case '!':   /* Pass through. */
+            case '[':
+            case '!':
             case ']':   md_analyze_bracket(ctx, i); break;
             case '&':   md_analyze_entity(ctx, i); break;
             case '|':   md_analyze_table_cell_boundary(ctx, i); break;
-            case '_':   /* Pass through. */
+            case '_':
             case '*':   md_analyze_emph(ctx, i); break;
             case '~':   md_analyze_tilde(ctx, i); break;
             case '$':   md_analyze_dollar(ctx, i); break;
-            case '.':   /* Pass through. */
-            case ':':   /* Pass through. */
+            case '.':
+            case ':':
             case '@':   md_analyze_permissive_autolink(ctx, i); break;
         }
 
@@ -4100,19 +3620,15 @@ md_analyze_marks(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
     }
 }
 
-/* Analyze marks (build ctx->marks). */
 static int
 md_analyze_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table_mode)
 {
     int ret;
 
-    /* Reset the previously collected stack of marks. */
     ctx->n_marks = 0;
 
-    /* Collect all marks. */
     MD_CHECK(md_collect_marks(ctx, lines, n_lines, table_mode));
 
-    /* (1) Links. */
     md_analyze_marks(ctx, lines, n_lines, 0, ctx->n_marks, _T("[]!"), 0);
     MD_CHECK(md_resolve_links(ctx, lines, n_lines));
     BRACKET_OPENERS.top = -1;
@@ -4120,14 +3636,13 @@ md_analyze_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines, int table
     ctx->unresolved_link_tail = -1;
 
     if(table_mode) {
-        /* (2) Analyze table cell boundaries. */
+
         MD_ASSERT(n_lines == 1);
         ctx->n_table_cell_boundaries = 0;
         md_analyze_marks(ctx, lines, n_lines, 0, ctx->n_marks, _T("|"), 0);
         return ret;
     }
 
-    /* (3) Emphasis and strong emphasis; permissive autolinks. */
     md_analyze_link_contents(ctx, lines, n_lines, 0, ctx->n_marks);
 
 abort:
@@ -4144,9 +3659,7 @@ md_analyze_link_contents(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines,
     md_analyze_marks(ctx, lines, n_lines, mark_beg, mark_end, _T("*_~$"), 0);
 
     if((ctx->parser.flags & MD_FLAG_PERMISSIVEAUTOLINKS) != 0) {
-        /* These have to be processed last, as they may be greedy and expand
-         * from their original mark. Also their implementation must be careful
-         * not to cross any (previously) resolved marks when doing so. */
+
         md_analyze_marks(ctx, lines, n_lines, mark_beg, mark_end, _T("@:."), MD_ANALYZE_NOSKIP_EMPH);
     }
 
@@ -4164,8 +3677,6 @@ md_enter_leave_span_a(MD_CTX* ctx, int enter, MD_SPANTYPE type,
     MD_SPAN_A_DETAIL det;
     int ret = 0;
 
-    /* Note we here rely on fact that MD_SPAN_A_DETAIL and
-     * MD_SPAN_IMG_DETAIL are binary-compatible. */
     memset(&det, 0, sizeof(MD_SPAN_A_DETAIL));
     MD_CHECK(md_build_attribute(ctx, dest, dest_size,
                     (is_autolink ? MD_BUILD_ATTR_NO_ESCAPES : 0),
@@ -4203,8 +3714,6 @@ abort:
     return ret;
 }
 
-
-/* Render the output, accordingly to the analyzed ctx->marks. */
 static int
 md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
 {
@@ -4218,10 +3727,6 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
     int enforce_hardbreak = 0;
     int ret = 0;
 
-    /* Find first resolved mark. Note there is always at least one resolved
-     * mark,  the dummy last one after the end of the latest line we actually
-     * never really reach. This saves us of a lot of special checks and cases
-     * in this function. */
     mark = ctx->marks;
     while(!(mark->flags & MD_MARK_RESOLVED))
         mark++;
@@ -4229,28 +3734,27 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
     text_type = MD_TEXT_NORMAL;
 
     while(1) {
-        /* Process the text up to the next mark or end-of-line. */
+
         tmp = (line->end < mark->beg ? line->end : mark->beg);
         if(tmp > off) {
             MD_TEXT(text_type, STR(off), tmp - off);
             off = tmp;
         }
 
-        /* If reached the mark, process it and move to next one. */
         if(off >= mark->beg) {
             switch(mark->ch) {
-                case '\\':      /* Backslash escape. */
+                case '\\':
                     if(ISNEWLINE(mark->beg+1))
                         enforce_hardbreak = 1;
                     else
                         MD_TEXT(text_type, STR(mark->beg+1), 1);
                     break;
 
-                case ' ':       /* Non-trivial space. */
+                case ' ':
                     MD_TEXT(text_type, _T(" "), 1);
                     break;
 
-                case '`':       /* Code span. */
+                case '`':
                     if(mark->flags & MD_MARK_OPENER) {
                         MD_ENTER_SPAN(MD_SPAN_CODE, NULL);
                         text_type = MD_TEXT_CODE;
@@ -4260,7 +3764,7 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                     }
                     break;
 
-                case '_':       /* Underline (or emphasis if we fall through). */
+                case '_':
                     if(ctx->parser.flags & MD_FLAG_UNDERLINE) {
                         if(mark->flags & MD_MARK_OPENER) {
                             while(off < mark->end) {
@@ -4277,7 +3781,7 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                     }
                     MD_FALLTHROUGH();
 
-                case '*':       /* Emphasis, strong emphasis. */
+                case '*':
                     if(mark->flags & MD_MARK_OPENER) {
                         if((mark->end - off) % 2) {
                             MD_ENTER_SPAN(MD_SPAN_EM, NULL);
@@ -4316,7 +3820,7 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                     }
                     break;
 
-                case '[':       /* Link, wiki link, image. */
+                case '[':
                 case '!':
                 case ']':
                 {
@@ -4355,7 +3859,6 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                                 md_mark_get_ptr(ctx, (int)(title_mark - ctx->marks)),
 								title_mark->prev));
 
-                    /* link/image closer may span multiple lines. */
                     if(mark->ch == ']') {
                         while(mark->end > line->end)
                             line++;
@@ -4365,33 +3868,27 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                 }
 
                 case '<':
-                case '>':       /* Autolink or raw HTML. */
+                case '>':
                     if(!(mark->flags & MD_MARK_AUTOLINK)) {
-                        /* Raw HTML. */
+
                         if(mark->flags & MD_MARK_OPENER)
                             text_type = MD_TEXT_HTML;
                         else
                             text_type = MD_TEXT_NORMAL;
                         break;
                     }
-                    /* Pass through, if auto-link. */
+
                     MD_FALLTHROUGH();
 
-                case '@':       /* Permissive e-mail autolink. */
-                case ':':       /* Permissive URL autolink. */
-                case '.':       /* Permissive WWW autolink. */
+                case '@':
+                case ':':
+                case '.':
                 {
                     MD_MARK* opener = ((mark->flags & MD_MARK_OPENER) ? mark : &ctx->marks[mark->prev]);
                     MD_MARK* closer = &ctx->marks[opener->next];
                     const CHAR* dest = STR(opener->end);
                     SZ dest_size = closer->beg - opener->end;
 
-                    /* For permissive auto-links we do not know closer mark
-                     * position at the time of md_collect_marks(), therefore
-                     * it can be out-of-order in ctx->marks[].
-                     *
-                     * With this flag, we make sure that we output the closer
-                     * only if we processed the opener. */
                     if(mark->flags & MD_MARK_OPENER)
                         closer->flags |= MD_MARK_VALIDPERMISSIVEAUTOLINK;
 
@@ -4413,7 +3910,7 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                     break;
                 }
 
-                case '&':       /* Entity. */
+                case '&':
                     MD_TEXT(MD_TEXT_ENTITY, STR(mark->beg), mark->end - mark->beg);
                     break;
 
@@ -4427,16 +3924,14 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
 
             off = mark->end;
 
-            /* Move to next resolved mark. */
             prev_mark = mark;
             mark++;
             while(!(mark->flags & MD_MARK_RESOLVED)  ||  mark->beg < off)
                 mark++;
         }
 
-        /* If reached end of line, move to next one. */
         if(off >= line->end) {
-            /* If it is the last line, we are done. */
+
             if(off >= end)
                 break;
 
@@ -4445,20 +3940,16 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                 MD_ASSERT(ISANYOF2_(prev_mark->ch, '`', '$')  &&  (prev_mark->flags & MD_MARK_OPENER));
                 MD_ASSERT(ISANYOF2_(mark->ch, '`', '$')  &&  (mark->flags & MD_MARK_CLOSER));
 
-                /* Inside a code span, trailing line whitespace has to be
-                 * outputted. */
                 tmp = off;
                 while(off < ctx->size  &&  ISBLANK(off))
                     off++;
                 if(off > tmp)
                     MD_TEXT(text_type, STR(tmp), off-tmp);
 
-                /* and new lines are transformed into single spaces. */
                 if(off == line->end)
                     MD_TEXT(text_type, _T(" "), 1);
             } else if(text_type == MD_TEXT_HTML) {
-                /* Inside raw HTML, we output the new line verbatim, including
-                 * any trailing spaces. */
+
                 tmp = off;
                 while(tmp < end  &&  ISBLANK(tmp))
                     tmp++;
@@ -4466,7 +3957,7 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                     MD_TEXT(MD_TEXT_HTML, STR(off), tmp - off);
                 MD_TEXT(MD_TEXT_HTML, _T("\n"), 1);
             } else {
-                /* Output soft or hard line break. */
+
                 MD_TEXTTYPE break_type = MD_TEXT_SOFTBR;
 
                 if(text_type == MD_TEXT_NORMAL) {
@@ -4483,7 +3974,6 @@ md_process_inlines(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
                 MD_TEXT(break_type, _T("\n"), 1);
             }
 
-            /* Move to the next line. */
             line++;
             off = line->beg;
 
@@ -4495,11 +3985,6 @@ abort:
     return ret;
 }
 
-
-/***************************
- ***  Processing Tables  ***
- ***************************/
-
 static void
 md_analyze_table_alignment(MD_CTX* ctx, OFF beg, OFF end, MD_ALIGN* align, int n_align)
 {
@@ -4507,7 +3992,7 @@ md_analyze_table_alignment(MD_CTX* ctx, OFF beg, OFF end, MD_ALIGN* align, int n
     OFF off = beg;
 
     while(n_align > 0) {
-        int index = 0;  /* index into align_map[] */
+        int index = 0;
 
         while(CH(off) != _T('-'))
             off++;
@@ -4525,7 +4010,6 @@ md_analyze_table_alignment(MD_CTX* ctx, OFF beg, OFF end, MD_ALIGN* align, int n
 
 }
 
-/* Forward declaration. */
 static int md_process_normal_block_contents(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines);
 
 static int
@@ -4564,12 +4048,8 @@ md_process_table_row(MD_CTX* ctx, MD_BLOCKTYPE cell_type, OFF beg, OFF end,
     line.beg = beg;
     line.end = end;
 
-    /* Break the line into table cells by identifying pipe characters who
-     * form the cell boundary. */
     MD_CHECK(md_analyze_inlines(ctx, &line, 1, TRUE));
 
-    /* We have to remember the cell boundaries in local buffer because
-     * ctx->marks[] shall be reused during cell contents processing. */
     n = ctx->n_table_cell_boundaries + 2;
     pipe_offs = (OFF*) malloc(n * sizeof(OFF));
     if(pipe_offs == NULL) {
@@ -4585,15 +4065,13 @@ md_process_table_row(MD_CTX* ctx, MD_BLOCKTYPE cell_type, OFF beg, OFF end,
     }
     pipe_offs[j++] = end+1;
 
-    /* Process cells. */
     MD_ENTER_BLOCK(MD_BLOCK_TR, NULL);
     k = 0;
     for(i = 0; i < j-1  &&  k < col_count; i++) {
         if(pipe_offs[i] < pipe_offs[i+1]-1)
             MD_CHECK(md_process_table_cell(ctx, cell_type, align[k++], pipe_offs[i], pipe_offs[i+1]-1));
     }
-    /* Make sure we call enough table cells even if the current table contains
-     * too few of them. */
+
     while(k < col_count)
         MD_CHECK(md_process_table_cell(ctx, cell_type, align[k++], 0, 0));
     MD_LEAVE_BLOCK(MD_BLOCK_TR, NULL);
@@ -4614,8 +4092,6 @@ md_process_table_block_contents(MD_CTX* ctx, int col_count, const MD_LINE* lines
     MD_SIZE line_index;
     int ret = 0;
 
-    /* At least two lines have to be present: The column headers and the line
-     * with the underlines. */
     MD_ASSERT(n_lines >= 2);
 
     align = malloc(col_count * sizeof(MD_ALIGN));
@@ -4646,11 +4122,6 @@ abort:
     return ret;
 }
 
-
-/**************************
- ***  Processing Block  ***
- **************************/
-
 #define MD_BLOCK_CONTAINER_OPENER   0x01
 #define MD_BLOCK_CONTAINER_CLOSER   0x02
 #define MD_BLOCK_CONTAINER          (MD_BLOCK_CONTAINER_OPENER | MD_BLOCK_CONTAINER_CLOSER)
@@ -4661,17 +4132,8 @@ struct MD_BLOCK_tag {
     MD_BLOCKTYPE type  :  8;
     unsigned flags     :  8;
 
-    /* MD_BLOCK_H:      Header level (1 - 6)
-     * MD_BLOCK_CODE:   Non-zero if fenced, zero if indented.
-     * MD_BLOCK_LI:     Task mark character (0 if not task list item, 'x', 'X' or ' ').
-     * MD_BLOCK_TABLE:  Column count (as determined by the table underline).
-     */
     unsigned data      : 16;
 
-    /* Leaf blocks:     Count of lines (MD_LINE or MD_VERBATIMLINE) on the block.
-     * MD_BLOCK_LI:     Task mark offset in the input doc.
-     * MD_BLOCK_OL:     Start item number.
-     */
     MD_SIZE n_lines;
 };
 
@@ -4686,7 +4148,6 @@ struct MD_CONTAINER_tag {
     OFF task_mark_off;
 };
 
-
 static int
 md_process_normal_block_contents(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_lines)
 {
@@ -4697,7 +4158,7 @@ md_process_normal_block_contents(MD_CTX* ctx, const MD_LINE* lines, MD_SIZE n_li
     MD_CHECK(md_process_inlines(ctx, lines, n_lines));
 
 abort:
-    /* Free any temporary memory blocks stored within some dummy marks. */
+
     for(i = ctx->ptr_stack.top; i >= 0; i = ctx->marks[i].next)
         free(md_mark_get_ptr(ctx, i));
     ctx->ptr_stack.top = -1;
@@ -4720,7 +4181,6 @@ md_process_verbatim_block_contents(MD_CTX* ctx, MD_TEXTTYPE text_type, const MD_
 
         MD_ASSERT(indent >= 0);
 
-        /* Output code indentation. */
         while(indent > (int) indent_chunk_size) {
             MD_TEXT(text_type, indent_chunk_str, indent_chunk_size);
             indent -= indent_chunk_size;
@@ -4728,10 +4188,8 @@ md_process_verbatim_block_contents(MD_CTX* ctx, MD_TEXTTYPE text_type, const MD_
         if(indent > 0)
             MD_TEXT(text_type, indent_chunk_str, indent);
 
-        /* Output the code line itself. */
         MD_TEXT_INSECURE(text_type, STR(line->beg), line->end - line->beg);
 
-        /* Enforce end-of-line. */
         MD_TEXT(text_type, _T("\n"), 1);
     }
 
@@ -4743,12 +4201,11 @@ static int
 md_process_code_block_contents(MD_CTX* ctx, int is_fenced, const MD_VERBATIMLINE* lines, MD_SIZE n_lines)
 {
     if(is_fenced) {
-        /* Skip the first line in case of fenced code: It is the fence.
-         * (Only the starting fence is present due to logic in md_analyze_line().) */
+
         lines++;
         n_lines--;
     } else {
-        /* Ignore blank lines at start/end of indented code block. */
+
         while(n_lines > 0  &&  lines[0].beg == lines[0].end) {
             lines++;
             n_lines--;
@@ -4775,21 +4232,17 @@ md_setup_fenced_code_detail(MD_CTX* ctx, const MD_BLOCK* block, MD_BLOCK_CODE_DE
     CHAR fence_ch = CH(fence_line->beg);
     int ret = 0;
 
-    /* Skip the fence itself. */
     while(beg < ctx->size  &&  CH(beg) == fence_ch)
         beg++;
-    /* Trim initial spaces. */
+
     while(beg < ctx->size  &&  CH(beg) == _T(' '))
         beg++;
 
-    /* Trim trailing spaces. */
     while(end > beg  &&  CH(end-1) == _T(' '))
         end--;
 
-    /* Build info string attribute. */
     MD_CHECK(md_build_attribute(ctx, STR(beg), end - beg, 0, &det->info, info_build));
 
-    /* Build info string attribute. */
     lang_end = beg;
     while(lang_end < end  &&  !ISWHITESPACE(lang_end))
         lang_end++;
@@ -4828,7 +4281,7 @@ md_process_leaf_block(MD_CTX* ctx, const MD_BLOCK* block)
             break;
 
         case MD_BLOCK_CODE:
-            /* For fenced code block, we may need to set the info string. */
+
             if(block->data != 0) {
                 memset(&det.code, 0, sizeof(MD_BLOCK_CODE_DETAIL));
                 clean_fence_code_detail = TRUE;
@@ -4843,17 +4296,16 @@ md_process_leaf_block(MD_CTX* ctx, const MD_BLOCK* block)
             break;
 
         default:
-            /* Noop. */
+
             break;
     }
 
     if(!is_in_tight_list  ||  block->type != MD_BLOCK_P)
         MD_ENTER_BLOCK(block->type, (void*) &det);
 
-    /* Process the block contents accordingly to is type. */
     switch(block->type) {
         case MD_BLOCK_HR:
-            /* noop */
+
             break;
 
         case MD_BLOCK_CODE:
@@ -4894,10 +4346,6 @@ md_process_all_blocks(MD_CTX* ctx)
     int byte_off = 0;
     int ret = 0;
 
-    /* ctx->containers now is not needed for detection of lists and list items
-     * so we reuse it for tracking what lists are loose or tight. We rely
-     * on the fact the vector is large enough to hold the deepest nesting
-     * level of lists. */
     ctx->n_containers = 0;
 
     while(byte_off < ctx->n_block_bytes) {
@@ -4927,7 +4375,7 @@ md_process_all_blocks(MD_CTX* ctx)
                 break;
 
             default:
-                /* noop */
+
                 break;
         }
 
@@ -4946,9 +4394,7 @@ md_process_all_blocks(MD_CTX* ctx)
                     ctx->containers[ctx->n_containers].is_loose = (block->flags & MD_BLOCK_LOOSE_LIST);
                     ctx->n_containers++;
                 } else if(block->type == MD_BLOCK_QUOTE) {
-                    /* This causes that any text in a block quote, even if
-                     * nested inside a tight list item, is wrapped with
-                     * <p>...</p>. */
+
                     ctx->containers[ctx->n_containers].is_loose = TRUE;
                     ctx->n_containers++;
                 }
@@ -4971,11 +4417,6 @@ abort:
     return ret;
 }
 
-
-/************************************
- ***  Grouping Lines into Blocks  ***
- ************************************/
-
 static void*
 md_push_block_bytes(MD_CTX* ctx, int n_bytes)
 {
@@ -4993,7 +4434,6 @@ md_push_block_bytes(MD_CTX* ctx, int n_bytes)
             return NULL;
         }
 
-        /* Fix the ->current_block after the reallocation. */
         if(ctx->current_block != NULL) {
             OFF off_current_block = (OFF) ((char*) ctx->current_block - (char*) ctx->block_bytes);
             ctx->current_block = (MD_BLOCK*) ((char*) new_block_bytes + off_current_block);
@@ -5057,12 +4497,6 @@ md_start_new_block(MD_CTX* ctx, const MD_LINE_ANALYSIS* line)
     return 0;
 }
 
-/* Eat from start of current (textual) block any reference definitions and
- * remember them so we can resolve any links referring to them.
- *
- * (Reference definitions can only be at start of it as they cannot break
- * a paragraph.)
- */
 static int
 md_consume_link_reference_definitions(MD_CTX* ctx)
 {
@@ -5070,35 +4504,29 @@ md_consume_link_reference_definitions(MD_CTX* ctx)
     MD_SIZE n_lines = ctx->current_block->n_lines;
     MD_SIZE n = 0;
 
-    /* Compute how many lines at the start of the block form one or more
-     * reference definitions. */
     while(n < n_lines) {
         int n_link_ref_lines;
 
         n_link_ref_lines = md_is_link_reference_definition(ctx,
                                     lines + n, n_lines - n);
-        /* Not a reference definition? */
+
         if(n_link_ref_lines == 0)
             break;
 
-        /* We fail if it is the ref. def. but it could not be stored due
-         * a memory allocation error. */
         if(n_link_ref_lines < 0)
             return -1;
 
         n += n_link_ref_lines;
     }
 
-    /* If there was at least one reference definition, we need to remove
-     * its lines from the block, or perhaps even the whole block. */
     if(n > 0) {
         if(n == n_lines) {
-            /* Remove complete block. */
+
             ctx->n_block_bytes -= n * sizeof(MD_LINE);
             ctx->n_block_bytes -= sizeof(MD_BLOCK);
             ctx->current_block = NULL;
         } else {
-            /* Remove just some initial lines from the block. */
+
             memmove(lines, lines + n, (n_lines - n) * sizeof(MD_LINE));
             ctx->current_block->n_lines -= n;
             ctx->n_block_bytes -= n * sizeof(MD_LINE);
@@ -5116,9 +4544,6 @@ md_end_current_block(MD_CTX* ctx)
     if(ctx->current_block == NULL)
         return ret;
 
-    /* Check whether there is a reference definition. (We do this here instead
-     * of in md_analyze_line() because reference definition can take multiple
-     * lines.) */
     if(ctx->current_block->type == MD_BLOCK_P  ||
        (ctx->current_block->type == MD_BLOCK_H  &&  (ctx->current_block->flags & MD_BLOCK_SETEXT_HEADER)))
     {
@@ -5134,18 +4559,16 @@ md_end_current_block(MD_CTX* ctx)
         MD_SIZE n_lines = ctx->current_block->n_lines;
 
         if(n_lines > 1) {
-            /* Get rid of the underline. */
+
             ctx->current_block->n_lines--;
             ctx->n_block_bytes -= sizeof(MD_LINE);
         } else {
-            /* Only the underline has left after eating the ref. defs.
-             * Keep the line as beginning of a new ordinary paragraph. */
+
             ctx->current_block->type = MD_BLOCK_P;
             return 0;
         }
     }
 
-    /* Mark we are not building any block anymore. */
     ctx->current_block = NULL;
 
 abort:
@@ -5204,12 +4627,6 @@ abort:
     return ret;
 }
 
-
-
-/***********************
- ***  Line Analysis  ***
- ***********************/
-
 static int
 md_is_hr_line(MD_CTX* ctx, OFF beg, OFF* p_end, OFF* p_killer)
 {
@@ -5227,7 +4644,6 @@ md_is_hr_line(MD_CTX* ctx, OFF beg, OFF* p_end, OFF* p_killer)
         return FALSE;
     }
 
-    /* Nothing else can be present on the line. */
     if(off < ctx->size  &&  !ISNEWLINE(off)) {
         *p_killer = off;
         return FALSE;
@@ -5270,11 +4686,9 @@ md_is_setext_underline(MD_CTX* ctx, OFF beg, OFF* p_end, unsigned* p_level)
     while(off < ctx->size  &&  CH(off) == CH(beg))
         off++;
 
-    /* Optionally, space(s) or tabs can follow. */
     while(off < ctx->size  &&  ISBLANK(off))
         off++;
 
-    /* But nothing more is allowed on the line. */
     if(off < ctx->size  &&  !ISNEWLINE(off))
         return FALSE;
 
@@ -5300,7 +4714,6 @@ md_is_table_underline(MD_CTX* ctx, OFF beg, OFF* p_end, unsigned* p_col_count)
     while(1) {
         int delimited = FALSE;
 
-        /* Cell underline ("-----", ":----", "----:" or ":----:") */
         if(off < ctx->size  &&  CH(off) == _T(':'))
             off++;
         if(off >= ctx->size  ||  CH(off) != _T('-'))
@@ -5316,7 +4729,6 @@ md_is_table_underline(MD_CTX* ctx, OFF beg, OFF* p_end, unsigned* p_col_count)
             return FALSE;
         }
 
-        /* Pipe delimiter (optional at the end of line). */
         while(off < ctx->size  &&  ISWHITESPACE(off))
             off++;
         if(off < ctx->size  &&  CH(off) == _T('|')) {
@@ -5327,7 +4739,6 @@ md_is_table_underline(MD_CTX* ctx, OFF beg, OFF* p_end, unsigned* p_col_count)
                 off++;
         }
 
-        /* Success, if we reach end of line. */
         if(off >= ctx->size  ||  ISNEWLINE(off))
             break;
 
@@ -5351,19 +4762,16 @@ md_is_opening_code_fence(MD_CTX* ctx, OFF beg, OFF* p_end)
     while(off < ctx->size && CH(off) == CH(beg))
         off++;
 
-    /* Fence must have at least three characters. */
     if(off - beg < 3)
         return FALSE;
 
     ctx->code_fence_length = off - beg;
 
-    /* Optionally, space(s) can follow. */
     while(off < ctx->size  &&  CH(off) == _T(' '))
         off++;
 
-    /* Optionally, an info string can follow. */
     while(off < ctx->size  &&  !ISNEWLINE(off)) {
-        /* Backtick-based fence must not contain '`' in the info string. */
+
         if(CH(beg) == _T('`')  &&  CH(off) == _T('`'))
             return FALSE;
         off++;
@@ -5379,33 +4787,25 @@ md_is_closing_code_fence(MD_CTX* ctx, CHAR ch, OFF beg, OFF* p_end)
     OFF off = beg;
     int ret = FALSE;
 
-    /* Closing fence must have at least the same length and use same char as
-     * opening one. */
     while(off < ctx->size  &&  CH(off) == ch)
         off++;
     if(off - beg < ctx->code_fence_length)
         goto out;
 
-    /* Optionally, space(s) can follow */
     while(off < ctx->size  &&  CH(off) == _T(' '))
         off++;
 
-    /* But nothing more is allowed on the line. */
     if(off < ctx->size  &&  !ISNEWLINE(off))
         goto out;
 
     ret = TRUE;
 
 out:
-    /* Note we set *p_end even on failure: If we are not closing fence, caller
-     * would eat the line anyway without any parsing. */
+
     *p_end = off;
     return ret;
 }
 
-
-/* Helper data for md_is_html_block_start_condition() and
- * md_is_html_block_end_condition() */
 typedef struct TAG_tag TAG;
 struct TAG_tag {
     const CHAR* name;
@@ -5444,14 +4844,10 @@ static const TAG xx[] = { Xend };
 #undef X
 #undef Xend
 
-/* Returns type of the raw HTML block, or FALSE if it is not HTML block.
- * (Refer to CommonMark specification for details about the types.)
- */
 static int
 md_is_html_block_start_condition(MD_CTX* ctx, OFF beg)
 {
-    /* Type 6 is started by a long list of allowed tags. We use two-level
-     * tree to speed-up the search. */
+
     static const TAG* map6[26] = {
         a6, b6, c6, d6, xx, f6, xx, h6, i6, xx, xx, l6, m6,
         n6, o6, p6, xx, xx, s6, t6, u6, xx, xx, xx, xx, xx
@@ -5459,7 +4855,6 @@ md_is_html_block_start_condition(MD_CTX* ctx, OFF beg)
     OFF off = beg + 1;
     int i;
 
-    /* Check for type 1: <script, <pre, or <style */
     for(i = 0; t1[i].name != NULL; i++) {
         if(off + t1[i].len <= ctx->size) {
             if(md_ascii_case_eq(STR(off), t1[i].name, t1[i].len))
@@ -5467,28 +4862,23 @@ md_is_html_block_start_condition(MD_CTX* ctx, OFF beg)
         }
     }
 
-    /* Check for type 2: <!-- */
     if(off + 3 < ctx->size  &&  CH(off) == _T('!')  &&  CH(off+1) == _T('-')  &&  CH(off+2) == _T('-'))
         return 2;
 
-    /* Check for type 3: <? */
     if(off < ctx->size  &&  CH(off) == _T('?'))
         return 3;
 
-    /* Check for type 4 or 5: <! */
     if(off < ctx->size  &&  CH(off) == _T('!')) {
-        /* Check for type 4: <! followed by uppercase letter. */
+
         if(off + 1 < ctx->size  &&  ISASCII(off+1))
             return 4;
 
-        /* Check for type 5: <![CDATA[ */
         if(off + 8 < ctx->size) {
             if(md_ascii_eq(STR(off), _T("![CDATA["), 8))
                 return 5;
         }
     }
 
-    /* Check for type 6: Many possible starting tags listed above. */
     if(off + 1 < ctx->size  &&  (ISALPHA(off) || (CH(off) == _T('/') && ISALPHA(off+1)))) {
         int slot;
         const TAG* tags;
@@ -5515,12 +4905,11 @@ md_is_html_block_start_condition(MD_CTX* ctx, OFF beg)
         }
     }
 
-    /* Check for type 7: any COMPLETE other opening or closing tag. */
     if(off + 1 < ctx->size) {
         OFF end;
 
         if(md_is_html_tag(ctx, NULL, 0, beg, ctx->size, &end)) {
-            /* Only optional whitespace and new line may follow. */
+
             while(end < ctx->size  &&  ISWHITESPACE(end))
                 end++;
             if(end >= ctx->size  ||  ISNEWLINE(end))
@@ -5531,8 +4920,6 @@ md_is_html_block_start_condition(MD_CTX* ctx, OFF beg)
     return FALSE;
 }
 
-/* Case sensitive check whether there is a substring 'what' between 'beg'
- * and end of line. */
 static int
 md_line_contains(MD_CTX* ctx, OFF beg, const CHAR* what, SZ what_len, OFF* p_end)
 {
@@ -5550,11 +4937,6 @@ md_line_contains(MD_CTX* ctx, OFF beg, const CHAR* what, SZ what_len, OFF* p_end
     return FALSE;
 }
 
-/* Returns type of HTML block end condition or FALSE if not an end condition.
- *
- * Note it fills p_end even when it is not end condition as the caller
- * does not need to analyze contents of a raw HTML block.
- */
 static int
 md_is_html_block_end_condition(MD_CTX* ctx, OFF beg, OFF* p_end)
 {
@@ -5595,10 +4977,10 @@ md_is_html_block_end_condition(MD_CTX* ctx, OFF beg, OFF* p_end)
         case 5:
             return (md_line_contains(ctx, beg, _T("]]>"), 3, p_end) ? 5 : FALSE);
 
-        case 6:     /* Pass through */
+        case 6:
         case 7:
             if(beg >= ctx->size  ||  ISNEWLINE(beg)) {
-                /* Blank line ends types 6 and 7. */
+
                 *p_end = beg;
                 return ctx->html_block_type;
             }
@@ -5610,11 +4992,10 @@ md_is_html_block_end_condition(MD_CTX* ctx, OFF beg, OFF* p_end)
     return FALSE;
 }
 
-
 static int
 md_is_container_compatible(const MD_CONTAINER* pivot, const MD_CONTAINER* container)
 {
-    /* Block quote has no "items" like lists. */
+
     if(container->ch == _T('>'))
         return FALSE;
 
@@ -5667,8 +5048,7 @@ md_enter_child_containers(MD_CTX* ctx, int n_children)
             case _T('-'):
             case _T('+'):
             case _T('*'):
-                /* Remember offset in ctx->block_bytes so we can revisit the
-                 * block if we detect it is a loose list. */
+
                 md_end_current_block(ctx);
                 c->block_byte_off = ctx->n_block_bytes;
 
@@ -5747,7 +5127,6 @@ md_is_container_mark(MD_CTX* ctx, unsigned indent, OFF beg, OFF* p_end, MD_CONTA
     if(off >= ctx->size  ||  indent >= ctx->code_indent_offset)
         return FALSE;
 
-    /* Check for block quote mark. */
     if(CH(off) == _T('>')) {
         off++;
         p_container->ch = _T('>');
@@ -5759,7 +5138,6 @@ md_is_container_mark(MD_CTX* ctx, unsigned indent, OFF beg, OFF* p_end, MD_CONTA
         return TRUE;
     }
 
-    /* Check for list item bullet mark. */
     if(ISANYOF(off, _T("-+*"))  &&  (off+1 >= ctx->size || ISBLANK(off+1) || ISNEWLINE(off+1))) {
         p_container->ch = CH(off);
         p_container->is_loose = FALSE;
@@ -5770,7 +5148,6 @@ md_is_container_mark(MD_CTX* ctx, unsigned indent, OFF beg, OFF* p_end, MD_CONTA
         return TRUE;
     }
 
-    /* Check for ordered list item marks. */
     max_end = off + 9;
     if(max_end > ctx->size)
         max_end = ctx->size;
@@ -5816,8 +5193,6 @@ md_line_indentation(MD_CTX* ctx, unsigned total_indent, OFF beg, OFF* p_end)
 
 static const MD_LINE_ANALYSIS md_dummy_blank_line = { MD_LINE_BLANK, 0, 0, 0, 0, 0 };
 
-/* Analyze type of the line and find some its properties. This serves as a
- * main input for determining type and boundaries of a block. */
 static int
 md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
                 const MD_LINE_ANALYSIS* pivot_line, MD_LINE_ANALYSIS* line)
@@ -5837,28 +5212,25 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
     line->beg = off;
     line->enforce_new_block = FALSE;
 
-    /* Given the indentation and block quote marks '>', determine how many of
-     * the current containers are our parents. */
     while(n_parents < ctx->n_containers) {
         MD_CONTAINER* c = &ctx->containers[n_parents];
 
         if(c->ch == _T('>')  &&  line->indent < ctx->code_indent_offset  &&
             off < ctx->size  &&  CH(off) == _T('>'))
         {
-            /* Block quote mark. */
+
             off++;
             total_indent++;
             line->indent = md_line_indentation(ctx, total_indent, off, &off);
             total_indent += line->indent;
 
-            /* The optional 1st space after '>' is part of the block quote mark. */
             if(line->indent > 0)
                 line->indent--;
 
             line->beg = off;
 
         } else if(c->ch != _T('>')  &&  line->indent >= c->contents_indent) {
-            /* List. */
+
             line->indent -= c->contents_indent;
         } else {
             break;
@@ -5868,8 +5240,7 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
     }
 
     if(off >= ctx->size  ||  ISNEWLINE(off)) {
-        /* Blank line does not need any real indentation to be nested inside
-         * a list. */
+
         if(n_brothers + n_children == 0) {
             while(n_parents < ctx->n_containers  &&  ctx->containers[n_parents].ch != _T('>'))
                 n_parents++;
@@ -5877,12 +5248,10 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
     }
 
     while(TRUE) {
-        /* Check whether we are fenced code continuation. */
+
         if(pivot_line->type == MD_LINE_FENCEDCODE) {
             line->beg = off;
 
-            /* We are another MD_LINE_FENCEDCODE unless we are closing fence
-             * which we transform into MD_LINE_BLANK. */
             if(line->indent < ctx->code_indent_offset) {
                 if(md_is_closing_code_fence(ctx, CH(pivot_line->beg), off, &off)) {
                     line->type = MD_LINE_BLANK;
@@ -5891,7 +5260,6 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
                 }
             }
 
-            /* Change indentation accordingly to the initial code fence. */
             if(n_parents == ctx->n_containers) {
                 if(line->indent > pivot_line->indent)
                     line->indent -= pivot_line->indent;
@@ -5903,11 +5271,9 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             }
         }
 
-        /* Check whether we are HTML block continuation. */
         if(pivot_line->type == MD_LINE_HTML  &&  ctx->html_block_type > 0) {
             if(n_parents < ctx->n_containers) {
-                /* HTML block is implicitly ended if the enclosing container
-                 * block ends. */
+
                 ctx->html_block_type = 0;
             } else {
                 int html_block_type;
@@ -5916,10 +5282,8 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
                 if(html_block_type > 0) {
                     MD_ASSERT(html_block_type == ctx->html_block_type);
 
-                    /* Make sure this is the last line of the block. */
                     ctx->html_block_type = 0;
 
-                    /* Some end conditions serve as blank lines at the same time. */
                     if(html_block_type == 6 || html_block_type == 7) {
                         line->type = MD_LINE_BLANK;
                         line->indent = 0;
@@ -5933,7 +5297,6 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             }
         }
 
-        /* Check for blank line. */
         if(off >= ctx->size  ||  ISNEWLINE(off)) {
             if(pivot_line->type == MD_LINE_INDENTEDCODE  &&  n_parents == ctx->n_containers) {
                 line->type = MD_LINE_INDENTEDCODE;
@@ -5949,17 +5312,7 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
                         ctx->containers[n_parents-1].ch != _T('>'));
 
     #if 1
-                /* See https://github.com/mity/md4c/issues/6
-                 *
-                 * This ugly checking tests we are in (yet empty) list item but
-                 * not its very first line (i.e. not the line with the list
-                 * item mark).
-                 *
-                 * If we are such a blank line, then any following non-blank
-                 * line which would be part of the list item actually has to
-                 * end the list because according to the specification, "a list
-                 * item can begin with at most one blank line."
-                 */
+
                 if(n_parents > 0  &&  ctx->containers[n_parents-1].ch != _T('>')  &&
                    n_brothers + n_children == 0  &&  ctx->current_block == NULL  &&
                    ctx->n_block_bytes > (int) sizeof(MD_BLOCK))
@@ -5973,10 +5326,7 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             break;
         } else {
     #if 1
-            /* This is the 2nd half of the hack. If the flag is set (i.e. there
-             * was a 2nd blank line at the beginning of the list item) and if
-             * we would otherwise still belong to the list item, we enforce
-             * the end of the list. */
+
             if(ctx->last_list_item_starts_with_two_blank_lines) {
                 if(n_parents > 0  &&  n_parents == ctx->n_containers  &&
                    ctx->containers[n_parents-1].ch != _T('>')  &&
@@ -5999,7 +5349,6 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             ctx->last_line_has_list_loosening_effect = FALSE;
         }
 
-        /* Check whether we are Setext underline. */
         if(line->indent < ctx->code_indent_offset  &&  pivot_line->type == MD_LINE_TEXT
             &&  off < ctx->size  &&  ISANYOF2(off, _T('='), _T('-'))
             &&  (n_parents == ctx->n_containers))
@@ -6013,7 +5362,6 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             }
         }
 
-        /* Check for thematic break line. */
         if(line->indent < ctx->code_indent_offset
             &&  off < ctx->size  &&  off >= hr_killer
             &&  ISANYOF(off, _T("-_*")))
@@ -6024,8 +5372,6 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             }
         }
 
-        /* Check for "brother" container. I.e. whether we are another list item
-         * in already started list. */
         if(n_parents < ctx->n_containers  &&  n_brothers + n_children == 0) {
             OFF tmp;
 
@@ -6041,7 +5387,6 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
                 total_indent += line->indent;
                 line->beg = off;
 
-                /* Some of the following whitespace actually still belongs to the mark. */
                 if(off >= ctx->size || ISNEWLINE(off)) {
                     container.contents_indent++;
                 } else if(line->indent <= ctx->code_indent_offset) {
@@ -6060,8 +5405,6 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             }
         }
 
-        /* Check for indented code.
-         * Note indented code block cannot interrupt a paragraph. */
         if(line->indent >= ctx->code_indent_offset  &&  (pivot_line->type != MD_LINE_TEXT)) {
             line->type = MD_LINE_INDENTEDCODE;
             line->indent -= ctx->code_indent_offset;
@@ -6069,18 +5412,17 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             break;
         }
 
-        /* Check for start of a new container block. */
         if(line->indent < ctx->code_indent_offset  &&
            md_is_container_mark(ctx, line->indent, off, &off, &container))
         {
             if(pivot_line->type == MD_LINE_TEXT  &&  n_parents == ctx->n_containers  &&
                         (off >= ctx->size || ISNEWLINE(off))  &&  container.ch != _T('>'))
             {
-                /* Noop. List mark followed by a blank line cannot interrupt a paragraph. */
+
             } else if(pivot_line->type == MD_LINE_TEXT  &&  n_parents == ctx->n_containers  &&
                         ISANYOF2_(container.ch, _T('.'), _T(')'))  &&  container.start != 1)
             {
-                /* Noop. Ordered list cannot interrupt a paragraph unless the start index is 1. */
+
             } else {
                 total_indent += container.contents_indent - container.mark_indent;
                 line->indent = md_line_indentation(ctx, total_indent, off, &off);
@@ -6089,7 +5431,6 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
                 line->beg = off;
                 line->data = container.ch;
 
-                /* Some of the following whitespace actually still belongs to the mark. */
                 if(off >= ctx->size || ISNEWLINE(off)) {
                     container.contents_indent++;
                 } else if(line->indent <= ctx->code_indent_offset) {
@@ -6112,13 +5453,11 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             }
         }
 
-        /* Check whether we are table continuation. */
         if(pivot_line->type == MD_LINE_TABLE  &&  n_parents == ctx->n_containers) {
             line->type = MD_LINE_TABLE;
             break;
         }
 
-        /* Check for ATX header. */
         if(line->indent < ctx->code_indent_offset  &&
                 off < ctx->size  &&  CH(off) == _T('#'))
         {
@@ -6131,7 +5470,6 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             }
         }
 
-        /* Check whether we are starting code fence. */
         if(line->indent < ctx->code_indent_offset  &&
                 off < ctx->size  &&  ISANYOF2(off, _T('`'), _T('~')))
         {
@@ -6143,20 +5481,18 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             }
         }
 
-        /* Check for start of raw HTML block. */
         if(off < ctx->size  &&  CH(off) == _T('<')
             &&  !(ctx->parser.flags & MD_FLAG_NOHTMLBLOCKS))
         {
             ctx->html_block_type = md_is_html_block_start_condition(ctx, off);
 
-            /* HTML block type 7 cannot interrupt paragraph. */
             if(ctx->html_block_type == 7  &&  pivot_line->type == MD_LINE_TEXT)
                 ctx->html_block_type = 0;
 
             if(ctx->html_block_type > 0) {
-                /* The line itself also may immediately close the block. */
+
                 if(md_is_html_block_end_condition(ctx, off, &off) == ctx->html_block_type) {
-                    /* Make sure this is the last line of the block. */
+
                     ctx->html_block_type = 0;
                 }
 
@@ -6166,7 +5502,6 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             }
         }
 
-        /* Check for table underline. */
         if((ctx->parser.flags & MD_FLAG_TABLES)  &&  pivot_line->type == MD_LINE_TEXT
             &&  off < ctx->size  &&  ISANYOF3(off, _T('|'), _T('-'), _T(':'))
             &&  n_parents == ctx->n_containers)
@@ -6182,14 +5517,12 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             }
         }
 
-        /* By default, we are normal text line. */
         line->type = MD_LINE_TEXT;
         if(pivot_line->type == MD_LINE_TEXT  &&  n_brothers + n_children == 0) {
-            /* Lazy continuation. */
+
             n_parents = ctx->n_containers;
         }
 
-        /* Check for task mark. */
         if((ctx->parser.flags & MD_FLAG_TASKLISTS)  &&  n_brothers + n_children > 0  &&
            ISANYOF_(ctx->containers[ctx->n_containers-1].ch, _T("-+*.)")))
         {
@@ -6214,20 +5547,12 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
         break;
     }
 
-    /* Scan for end of the line.
-     *
-     * Note this is quite a bottleneck of the parsing as we here iterate almost
-     * over compete document.
-     */
 #if defined __linux__ && !defined MD4C_USE_UTF16
-    /* Recent glibc versions have superbly optimized strcspn(), even using
-     * vectorization if available. */
+
     if(ctx->doc_ends_with_newline  &&  off < ctx->size) {
         while(TRUE) {
             off += (OFF) strcspn(STR(off), "\r\n");
 
-            /* strcspn() can stop on zero terminator; but that can appear
-             * anywhere in the Markfown input... */
             if(CH(off) == _T('\0'))
                 off++;
             else
@@ -6236,7 +5561,7 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
     } else
 #endif
     {
-        /* Optimization: Use some loop unrolling. */
+
         while(off + 3 < ctx->size  &&  !ISNEWLINE(off+0)  &&  !ISNEWLINE(off+1)
                                    &&  !ISNEWLINE(off+2)  &&  !ISNEWLINE(off+3))
             off += 4;
@@ -6244,10 +5569,8 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             off++;
     }
 
-    /* Set end of the line. */
     line->end = off;
 
-    /* But for ATX header, we should exclude the optional trailing mark. */
     if(line->type == MD_LINE_ATXHEADER) {
         OFF tmp = line->end;
         while(tmp > line->beg && ISBLANK(tmp-1))
@@ -6258,13 +5581,11 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
             line->end = tmp;
     }
 
-    /* Trim trailing spaces. */
     if(line->type != MD_LINE_INDENTEDCODE  &&  line->type != MD_LINE_FENCEDCODE  && line->type != MD_LINE_HTML) {
         while(line->end > line->beg && ISBLANK(line->end-1))
             line->end--;
     }
 
-    /* Eat also the new line. */
     if(off < ctx->size && CH(off) == _T('\r'))
         off++;
     if(off < ctx->size && CH(off) == _T('\n'))
@@ -6272,7 +5593,6 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
 
     *p_end = off;
 
-    /* If we belong to a list after seeing a blank line, the list is loose. */
     if(prev_line_has_list_loosening_effect  &&  line->type != MD_LINE_BLANK  &&  n_parents + n_brothers > 0) {
         MD_CONTAINER* c = &ctx->containers[n_parents + n_brothers - 1];
         if(c->ch != _T('>')) {
@@ -6281,11 +5601,9 @@ md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
         }
     }
 
-    /* Leave any containers we are not part of anymore. */
     if(n_children == 0  &&  n_parents + n_brothers < ctx->n_containers)
         MD_CHECK(md_leave_child_containers(ctx, n_parents + n_brothers));
 
-    /* Enter any container we found a mark for. */
     if(n_brothers > 0) {
         MD_ASSERT(n_brothers == 1);
         MD_CHECK(md_push_container_bytes(ctx, MD_BLOCK_LI,
@@ -6313,7 +5631,6 @@ md_process_line(MD_CTX* ctx, const MD_LINE_ANALYSIS** p_pivot_line, MD_LINE_ANAL
     const MD_LINE_ANALYSIS* pivot_line = *p_pivot_line;
     int ret = 0;
 
-    /* Blank line ends current leaf block. */
     if(line->type == MD_LINE_BLANK) {
         MD_CHECK(md_end_current_block(ctx));
         *p_pivot_line = &md_dummy_blank_line;
@@ -6323,11 +5640,9 @@ md_process_line(MD_CTX* ctx, const MD_LINE_ANALYSIS** p_pivot_line, MD_LINE_ANAL
     if(line->enforce_new_block)
         MD_CHECK(md_end_current_block(ctx));
 
-    /* Some line types form block on their own. */
     if(line->type == MD_LINE_HR || line->type == MD_LINE_ATXHEADER) {
         MD_CHECK(md_end_current_block(ctx));
 
-        /* Add our single-line block. */
         MD_CHECK(md_start_new_block(ctx, line));
         MD_CHECK(md_add_line_into_current_block(ctx, line));
         MD_CHECK(md_end_current_block(ctx));
@@ -6335,7 +5650,6 @@ md_process_line(MD_CTX* ctx, const MD_LINE_ANALYSIS** p_pivot_line, MD_LINE_ANAL
         return 0;
     }
 
-    /* MD_LINE_SETEXTUNDERLINE changes meaning of the current block and ends it. */
     if(line->type == MD_LINE_SETEXTUNDERLINE) {
         MD_ASSERT(ctx->current_block != NULL);
         ctx->current_block->type = MD_BLOCK_H;
@@ -6346,15 +5660,13 @@ md_process_line(MD_CTX* ctx, const MD_LINE_ANALYSIS** p_pivot_line, MD_LINE_ANAL
         if(ctx->current_block == NULL) {
             *p_pivot_line = &md_dummy_blank_line;
         } else {
-            /* This happens if we have consumed all the body as link ref. defs.
-             * and downgraded the underline into start of a new paragraph block. */
+
             line->type = MD_LINE_TEXT;
             *p_pivot_line = line;
         }
         return 0;
     }
 
-    /* MD_LINE_TABLEUNDERLINE changes meaning of the current block. */
     if(line->type == MD_LINE_TABLEUNDERLINE) {
         MD_ASSERT(ctx->current_block != NULL);
         MD_ASSERT(ctx->current_block->n_lines == 1);
@@ -6366,17 +5678,14 @@ md_process_line(MD_CTX* ctx, const MD_LINE_ANALYSIS** p_pivot_line, MD_LINE_ANAL
         return 0;
     }
 
-    /* The current block also ends if the line has different type. */
     if(line->type != pivot_line->type)
         MD_CHECK(md_end_current_block(ctx));
 
-    /* The current line may start a new block. */
     if(ctx->current_block == NULL) {
         MD_CHECK(md_start_new_block(ctx, line));
         *p_pivot_line = line;
     }
 
-    /* In all other cases the line is just a continuation of the current block. */
     MD_CHECK(md_add_line_into_current_block(ctx, line));
 
 abort:
@@ -6406,7 +5715,6 @@ md_process_doc(MD_CTX *ctx)
 
     MD_CHECK(md_build_ref_def_hashtable(ctx));
 
-    /* Process all blocks. */
     MD_CHECK(md_leave_child_containers(ctx, 0));
     MD_CHECK(md_process_all_blocks(ctx));
 
@@ -6415,7 +5723,7 @@ md_process_doc(MD_CTX *ctx)
 abort:
 
 #if 0
-    /* Output some memory consumption statistics. */
+
     {
         char buffer[256];
         sprintf(buffer, "Alloced %u bytes for block buffer.",
@@ -6439,11 +5747,6 @@ abort:
     return ret;
 }
 
-
-/********************
- ***  Public API  ***
- ********************/
-
 int
 md_parse(const MD_CHAR* text, MD_SIZE size, const MD_PARSER* parser, void* userdata)
 {
@@ -6457,7 +5760,6 @@ md_parse(const MD_CHAR* text, MD_SIZE size, const MD_PARSER* parser, void* userd
         return -1;
     }
 
-    /* Setup context structure. */
     memset(&ctx, 0, sizeof(MD_CTX));
     ctx.text = text;
     ctx.size = size;
@@ -6468,7 +5770,6 @@ md_parse(const MD_CHAR* text, MD_SIZE size, const MD_PARSER* parser, void* userd
     ctx.doc_ends_with_newline = (size > 0  &&  ISNEWLINE_(text[size-1]));
     ctx.max_ref_def_output = MIN(MIN(16 * (uint64_t)size, (uint64_t)(1024 * 1024)), (uint64_t)SZ_MAX);
 
-    /* Reset all mark stacks and lists. */
     for(i = 0; i < (int) SIZEOF_ARRAY(ctx.opener_stacks); i++)
         ctx.opener_stacks[i].top = -1;
     ctx.ptr_stack.top = -1;
@@ -6477,10 +5778,8 @@ md_parse(const MD_CHAR* text, MD_SIZE size, const MD_PARSER* parser, void* userd
     ctx.table_cell_boundaries_head = -1;
     ctx.table_cell_boundaries_tail = -1;
 
-    /* All the work. */
     ret = md_process_doc(&ctx);
 
-    /* Clean-up. */
     md_free_ref_defs(&ctx);
     md_free_ref_def_hashtable(&ctx);
     free(ctx.buffer);

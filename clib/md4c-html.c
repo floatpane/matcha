@@ -1,37 +1,11 @@
-/*
- * MD4C: Markdown parser for C
- * (http://github.com/mity/md4c)
- *
- * Copyright (c) 2016-2024 Martin Mitáš
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- */
-
 #include <stdio.h>
 #include <string.h>
 
 #include "md4c-html.h"
 #include "entity.h"
 
-
 #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199409L
-    /* C89/90 or old compilers in general may not understand "inline". */
+
     #if defined __GNUC__
         #define inline __inline__
     #elif defined _MSC_VER
@@ -45,8 +19,6 @@
     #define snprintf _snprintf
 #endif
 
-
-
 typedef struct MD_HTML_tag MD_HTML;
 struct MD_HTML_tag {
     void (*process_output)(const MD_CHAR*, MD_SIZE, void*);
@@ -59,16 +31,10 @@ struct MD_HTML_tag {
 #define NEED_HTML_ESC_FLAG   0x1
 #define NEED_URL_ESC_FLAG    0x2
 
-
-/*****************************************
- ***  HTML rendering helper functions  ***
- *****************************************/
-
 #define ISDIGIT(ch)     ('0' <= (ch) && (ch) <= '9')
 #define ISLOWER(ch)     ('a' <= (ch) && (ch) <= 'z')
 #define ISUPPER(ch)     ('A' <= (ch) && (ch) <= 'Z')
 #define ISALNUM(ch)     (ISLOWER(ch) || ISUPPER(ch) || ISDIGIT(ch))
-
 
 static inline void
 render_verbatim(MD_HTML* r, const MD_CHAR* text, MD_SIZE size)
@@ -76,11 +42,8 @@ render_verbatim(MD_HTML* r, const MD_CHAR* text, MD_SIZE size)
     r->process_output(text, size, r->userdata);
 }
 
-/* Keep this as a macro. Most compiler should then be smart enough to replace
- * the strlen() call with a compile-time constant if the string is a C literal. */
 #define RENDER_VERBATIM(r, verbatim)                                    \
         render_verbatim((r), (verbatim), (MD_SIZE) (strlen(verbatim)))
-
 
 static void
 render_html_escaped(MD_HTML* r, const MD_CHAR* data, MD_SIZE size)
@@ -88,11 +51,10 @@ render_html_escaped(MD_HTML* r, const MD_CHAR* data, MD_SIZE size)
     MD_OFFSET beg = 0;
     MD_OFFSET off = 0;
 
-    /* Some characters need to be escaped in normal HTML text. */
     #define NEED_HTML_ESC(ch)   (r->escape_map[(unsigned char)(ch)] & NEED_HTML_ESC_FLAG)
 
     while(1) {
-        /* Optimization: Use some loop unrolling. */
+
         while(off + 3 < size  &&  !NEED_HTML_ESC(data[off+0])  &&  !NEED_HTML_ESC(data[off+1])
                               &&  !NEED_HTML_ESC(data[off+2])  &&  !NEED_HTML_ESC(data[off+3]))
             off += 4;
@@ -124,7 +86,6 @@ render_url_escaped(MD_HTML* r, const MD_CHAR* data, MD_SIZE size)
     MD_OFFSET beg = 0;
     MD_OFFSET off = 0;
 
-    /* Some characters need to be escaped in URL attributes. */
     #define NEED_URL_ESC(ch)    (r->escape_map[(unsigned char)(ch)] & NEED_URL_ESC_FLAG)
 
     while(1) {
@@ -200,8 +161,6 @@ render_utf8_codepoint(MD_HTML* r, unsigned codepoint,
         fn_append(r, utf8_replacement_char, 3);
 }
 
-/* Translate entity to its UTF-8 equivalent, or output the verbatim one
- * if such entity is unknown (or if the translation is disabled). */
 static void
 render_entity(MD_HTML* r, const MD_CHAR* text, MD_SIZE size,
               void (*fn_append)(MD_HTML*, const MD_CHAR*, MD_SIZE))
@@ -211,17 +170,16 @@ render_entity(MD_HTML* r, const MD_CHAR* text, MD_SIZE size,
         return;
     }
 
-    /* We assume UTF-8 output is what is desired. */
     if(size > 3 && text[1] == '#') {
         unsigned codepoint = 0;
 
         if(text[2] == 'x' || text[2] == 'X') {
-            /* Hexadecimal entity (e.g. "&#x1234abcd;")). */
+
             MD_SIZE i;
             for(i = 3; i < size-1; i++)
                 codepoint = 16 * codepoint + hex_val(text[i]);
         } else {
-            /* Decimal entity (e.g. "&1234;") */
+
             MD_SIZE i;
             for(i = 2; i < size-1; i++)
                 codepoint = 10 * codepoint + (text[i] - '0');
@@ -230,7 +188,7 @@ render_entity(MD_HTML* r, const MD_CHAR* text, MD_SIZE size,
         render_utf8_codepoint(r, codepoint, fn_append);
         return;
     } else {
-        /* Named entity (e.g. "&nbsp;"). */
+
         const ENTITY* ent;
 
         ent = entity_lookup(text, size);
@@ -265,7 +223,6 @@ render_attribute(MD_HTML* r, const MD_ATTRIBUTE* attr,
     }
 }
 
-
 static void
 render_open_ol_block(MD_HTML* r, const MD_BLOCK_OL_DETAIL* det)
 {
@@ -299,7 +256,6 @@ render_open_code_block(MD_HTML* r, const MD_BLOCK_CODE_DETAIL* det)
 {
     RENDER_VERBATIM(r, "<pre><code");
 
-    /* If known, output the HTML 5 attribute class="language-LANGNAME". */
     if(det->lang.text != NULL) {
         RENDER_VERBATIM(r, " class=\"language-");
         render_attribute(r, &det->lang, render_html_escaped);
@@ -366,11 +322,6 @@ render_open_wikilink_span(MD_HTML* r, const MD_SPAN_WIKILINK_DETAIL* det)
     RENDER_VERBATIM(r, "\">");
 }
 
-
-/**************************************
- ***  HTML renderer implementation  ***
- **************************************/
-
 static int
 enter_block_callback(MD_BLOCKTYPE type, void* detail, void* userdata)
 {
@@ -378,7 +329,7 @@ enter_block_callback(MD_BLOCKTYPE type, void* detail, void* userdata)
     MD_HTML* r = (MD_HTML*) userdata;
 
     switch(type) {
-        case MD_BLOCK_DOC:      /* noop */ break;
+        case MD_BLOCK_DOC:       break;
         case MD_BLOCK_QUOTE:    RENDER_VERBATIM(r, "<blockquote>\n"); break;
         case MD_BLOCK_UL:       RENDER_VERBATIM(r, "<ul>\n"); break;
         case MD_BLOCK_OL:       render_open_ol_block(r, (const MD_BLOCK_OL_DETAIL*)detail); break;
@@ -386,7 +337,7 @@ enter_block_callback(MD_BLOCKTYPE type, void* detail, void* userdata)
         case MD_BLOCK_HR:       RENDER_VERBATIM(r, (r->flags & MD_HTML_FLAG_XHTML) ? "<hr />\n" : "<hr>\n"); break;
         case MD_BLOCK_H:        RENDER_VERBATIM(r, head[((MD_BLOCK_H_DETAIL*)detail)->level - 1]); break;
         case MD_BLOCK_CODE:     render_open_code_block(r, (const MD_BLOCK_CODE_DETAIL*) detail); break;
-        case MD_BLOCK_HTML:     /* noop */ break;
+        case MD_BLOCK_HTML:      break;
         case MD_BLOCK_P:        RENDER_VERBATIM(r, "<p>"); break;
         case MD_BLOCK_TABLE:    RENDER_VERBATIM(r, "<table>\n"); break;
         case MD_BLOCK_THEAD:    RENDER_VERBATIM(r, "<thead>\n"); break;
@@ -406,15 +357,15 @@ leave_block_callback(MD_BLOCKTYPE type, void* detail, void* userdata)
     MD_HTML* r = (MD_HTML*) userdata;
 
     switch(type) {
-        case MD_BLOCK_DOC:      /*noop*/ break;
+        case MD_BLOCK_DOC:       break;
         case MD_BLOCK_QUOTE:    RENDER_VERBATIM(r, "</blockquote>\n"); break;
         case MD_BLOCK_UL:       RENDER_VERBATIM(r, "</ul>\n"); break;
         case MD_BLOCK_OL:       RENDER_VERBATIM(r, "</ol>\n"); break;
         case MD_BLOCK_LI:       RENDER_VERBATIM(r, "</li>\n"); break;
-        case MD_BLOCK_HR:       /*noop*/ break;
+        case MD_BLOCK_HR:        break;
         case MD_BLOCK_H:        RENDER_VERBATIM(r, head[((MD_BLOCK_H_DETAIL*)detail)->level - 1]); break;
         case MD_BLOCK_CODE:     RENDER_VERBATIM(r, "</code></pre>\n"); break;
-        case MD_BLOCK_HTML:     /* noop */ break;
+        case MD_BLOCK_HTML:      break;
         case MD_BLOCK_P:        RENDER_VERBATIM(r, "</p>\n"); break;
         case MD_BLOCK_TABLE:    RENDER_VERBATIM(r, "</table>\n"); break;
         case MD_BLOCK_THEAD:    RENDER_VERBATIM(r, "</thead>\n"); break;
@@ -433,20 +384,6 @@ enter_span_callback(MD_SPANTYPE type, void* detail, void* userdata)
     MD_HTML* r = (MD_HTML*) userdata;
     int inside_img = (r->image_nesting_level > 0);
 
-    /* We are inside a Markdown image label. Markdown allows to use any emphasis
-     * and other rich contents in that context similarly as in any link label.
-     *
-     * However, unlike in the case of links (where that contents becomescontents
-     * of the <a>...</a> tag), in the case of images the contents is supposed to
-     * fall into the attribute alt: <img alt="...">.
-     *
-     * In that context we naturally cannot output nested HTML tags. So lets
-     * suppress them and only output the plain text (i.e. what falls into text()
-     * callback).
-     *
-     * CommonMark specification declares this a recommended practice for HTML
-     * output.
-     */
     if(type == MD_SPAN_IMG)
         r->image_nesting_level++;
     if(inside_img)
@@ -486,7 +423,7 @@ leave_span_callback(MD_SPANTYPE type, void* detail, void* userdata)
         case MD_SPAN_IMG:               render_close_img_span(r, (MD_SPAN_IMG_DETAIL*) detail); break;
         case MD_SPAN_CODE:              RENDER_VERBATIM(r, "</code>"); break;
         case MD_SPAN_DEL:               RENDER_VERBATIM(r, "</del>"); break;
-        case MD_SPAN_LATEXMATH:         /*fall through*/
+        case MD_SPAN_LATEXMATH:
         case MD_SPAN_LATEXMATH_DISPLAY: RENDER_VERBATIM(r, "</x-equation>"); break;
         case MD_SPAN_WIKILINK:          RENDER_VERBATIM(r, "</x-wikilink>"); break;
     }
@@ -542,7 +479,6 @@ md_html(const MD_CHAR* input, MD_SIZE input_size,
         NULL
     };
 
-    /* Build map of characters which need escaping. */
     for(i = 0; i < 256; i++) {
         unsigned char ch = (unsigned char) i;
 
@@ -553,7 +489,6 @@ md_html(const MD_CHAR* input, MD_SIZE input_size,
             render.escape_map[i] |= NEED_URL_ESC_FLAG;
     }
 
-    /* Consider skipping UTF-8 byte order mark (BOM). */
     if(renderer_flags & MD_HTML_FLAG_SKIP_UTF8_BOM  &&  sizeof(MD_CHAR) == 1) {
         static const MD_CHAR bom[3] = { (char)0xef, (char)0xbb, (char)0xbf };
         if(input_size >= sizeof(bom)  &&  memcmp(input, bom, sizeof(bom)) == 0) {
@@ -564,4 +499,3 @@ md_html(const MD_CHAR* input, MD_SIZE input_size,
 
     return md_parse(input, input_size, &parser, (void*) &render);
 }
-

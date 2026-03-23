@@ -3,25 +3,22 @@
 
 #include <stddef.h>
 
-// Element types found during HTML parsing.
 enum {
-    HELEM_TEXT       = 0,  // Plain text segment
-    HELEM_H1         = 1,  // <h1> text
-    HELEM_H2         = 2,  // <h2> text
-    HELEM_LINK       = 3,  // <a href="...">text</a>
-    HELEM_IMAGE      = 4,  // <img src="..." alt="...">
-    HELEM_BLOCKQUOTE = 5,  // <blockquote> content (with optional cite/prev)
+    HELEM_TEXT       = 0,
+    HELEM_H1         = 1,
+    HELEM_H2         = 2,
+    HELEM_LINK       = 3,
+    HELEM_IMAGE      = 4,
+    HELEM_BLOCKQUOTE = 5,
 };
 
-// HTMLElement represents a parsed element from the HTML document.
 typedef struct {
     int type;
-    char* text;     // Text content (h1/h2 text, link text, blockquote content)
-    char* attr1;    // href for links, src for images, cite for blockquotes
-    char* attr2;    // alt for images, prev_text for blockquotes (On...wrote:)
+    char* text;
+    char* attr1;
+    char* attr2;
 } HTMLElement;
 
-// HTMLConvertResult holds the output of html_to_elements.
 typedef struct {
     HTMLElement* elements;
     int count;
@@ -29,13 +26,8 @@ typedef struct {
     int ok;
 } HTMLConvertResult;
 
-// html_to_elements parses an HTML string and returns an array of structured
-// elements. The caller processes these elements to apply terminal styling.
-// style/script content is stripped. Block elements get proper spacing.
-// Returns a result with ok=1 on success. Caller must free with free_html_result.
 HTMLConvertResult html_to_elements(const char* html, size_t len);
 
-// free_html_result frees all memory in an HTMLConvertResult.
 void free_html_result(HTMLConvertResult* r);
 
 #endif
