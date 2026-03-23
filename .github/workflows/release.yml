@@ -81,5 +81,5 @@ jobs:
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         run: |
-          snapcraft
+          snapcraft pack --destructive-mode
           snapcraft upload --release=stable *.snap
