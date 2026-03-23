@@ -40,13 +40,13 @@ jobs:
 
       - name: Delete existing nightly release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
         run: |
           gh release delete nightly --yes --cleanup-tag || true
 
       - name: Create nightly release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
         run: |
           gh release create nightly dist/*.tar.gz dist/*.zip dist/checksums.txt \
             --title "Nightly Build ($(git rev-parse --short HEAD))" \
