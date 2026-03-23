@@ -3,7 +3,6 @@ package main
 import (
 	"archive/tar"
 	"archive/zip"
-	"bytes"
 	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
@@ -21,14 +20,13 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/sender"
 	"github.com/floatpane/matcha/theme"
 	"github.com/floatpane/matcha/tui"
 	"github.com/google/uuid"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/renderer/html"
 )
 
 const (
@@ -1353,12 +1351,7 @@ func fetchEmailBodyCmd(cfg *config.Config, uid uint32, accountID string, mailbox
 }
 
 func markdownToHTML(md []byte) []byte {
-	var buf bytes.Buffer
-	p := goldmark.New(goldmark.WithRendererOptions(html.WithUnsafe()))
-	if err := p.Convert(md, &buf); err != nil {
-		return md
-	}
-	return buf.Bytes()
+	return clib.MarkdownToHTML(md)
 }
 
 func splitEmails(s string) []string {

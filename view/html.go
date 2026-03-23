@@ -1,7 +1,6 @@
 package view
 
 import (
-	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -14,11 +13,8 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
-	"github.com/PuerkitoBio/goquery"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/theme"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/renderer/html"
 )
 
 func linkStyle() lipgloss.Style {
@@ -118,11 +114,10 @@ func hyperlink(url, text string) string {
 		return fmt.Sprintf("\x1b]8;;%s\x07%s\x1b]8;;\x07", url, linkStyle().Render(text))
 	} else {
 		// Fallback to plain text format for unsupported terminals
-		// Use HTML-encoded angle brackets to prevent HTML parser from treating them as tags
 		if text == url {
-			return fmt.Sprintf("&lt;%s&gt;", linkStyle().Render(url))
+			return fmt.Sprintf("<%s>", linkStyle().Render(url))
 		}
-		return fmt.Sprintf("%s &lt;%s&gt;", linkStyle().Render(text), linkStyle().Render(url))
+		return fmt.Sprintf("%s <%s>", linkStyle().Render(text), linkStyle().Render(url))
 	}
 }
 
@@ -135,18 +130,9 @@ func decodeQuotedPrintable(s string) (string, error) {
 	return string(body), nil
 }
 
-// markdownToHTML converts a Markdown string to an HTML string.
+// markdownToHTML converts a Markdown string to an HTML string using md4c (C).
 func markdownToHTML(md []byte) []byte {
-	var buf bytes.Buffer
-	p := goldmark.New(
-		goldmark.WithRendererOptions(
-			html.WithUnsafe(), // Allow raw HTML in email.
-		),
-	)
-	if err := p.Convert(md, &buf); err != nil {
-		return md // Fallback to original markdown.
-	}
-	return buf.Bytes()
+	return clib.MarkdownToHTML(md)
 }
 
 func kittySupported() bool {
@@ -599,74 +585,14 @@ func processBody(rawBody string, inline map[string]string, h1Style, h2Style, bod
 
 	htmlBody := markdownToHTML([]byte(decodedBody))
 
-	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(htmlBody))
-	if err != nil {
-		return "", nil, fmt.Errorf("could not parse email body: %w", err)
+	// Parse HTML into structured elements using C parser.
+	elements, ok := clib.HTMLToElements(string(htmlBody))
+	if !ok {
+		return "", nil, fmt.Errorf("could not parse email body")
 	}
 
-	doc.Find("style, script").Remove()
-
-	// Style headers by setting their text content.
-	// We use SetText so the h1/h2 tags remain in the document for spacing logic.
-	doc.Find("h1").Each(func(i int, s *goquery.Selection) {
-		s.SetText(h1Style.Render(s.Text()))
-	})
-
-	doc.Find("h2").Each(func(i int, s *goquery.Selection) {
-		s.SetText(h2Style.Render(s.Text()))
-	})
-
-	// Add newlines after block elements for better spacing.
-	doc.Find("p, div, h1, h2").Each(func(i int, s *goquery.Selection) {
-		s.After("\n\n")
-	})
-
-	// Replace <br> tags with newlines
-	doc.Find("br").Each(func(i int, s *goquery.Selection) {
-		s.ReplaceWithHtml("\n")
-	})
-
-	// Handle blockquote elements (quoted replies)
-	// We collect quote data and use placeholders, then render after doc.Text()
-	var quoteData []struct {
-		from, date string
-		content    string
-	}
-	doc.Find("blockquote").Each(func(i int, s *goquery.Selection) {
-		// Try to extract sender info from cite attribute or preceding text
-		cite, _ := s.Attr("cite")
-		quoteText := strings.TrimSpace(s.Text())
-
-		// Look for "On DATE, EMAIL wrote:" pattern in previous sibling or cite
-		var from, date string
-		prevText := ""
-		if prev := s.Prev(); prev.Length() > 0 {
-			prevText = strings.TrimSpace(prev.Text())
-		}
-
-		onWroteRegex := regexp.MustCompile(`On\s+(.+?),\s+(.+?)\s+wrote:`)
-		if matches := onWroteRegex.FindStringSubmatch(prevText); matches != nil {
-			date = parseDateForDisplay(matches[1])
-			from = matches[2]
-			// Remove the "On ... wrote:" from the previous element
-			s.Prev().Remove()
-		} else if matches := onWroteRegex.FindStringSubmatch(cite); matches != nil {
-			date = parseDateForDisplay(matches[1])
-			from = matches[2]
-		}
-
-		// Store quote data and use placeholder
-		quoteData = append(quoteData, struct {
-			from, date string
-			content    string
-		}{from, date, quoteText})
-		placeholder := fmt.Sprintf("\n[[MATCHA_QUOTE:%d]]\n", len(quoteData)-1)
-		s.ReplaceWithHtml(placeholder)
-	})
-
-	// Format links and images.
-	// Collect image placements for out-of-band rendering (bubbletea v2's
-	// ultraviolet renderer cannot pass through graphics protocol sequences).
+	// Process elements: apply styles and collect image placements.
+	var text strings.Builder
 	var imgIndex int
 	var pendingImages []struct {
 		index   int
@@ -674,83 +600,99 @@ func processBody(rawBody string, inline map[string]string, h1Style, h2Style, bod
 		rows    int
 	}
 
-	doc.Find("a").Each(func(i int, s *goquery.Selection) {
-		href, exists := s.Attr("href")
-		if !exists {
-			return
-		}
-		s.ReplaceWithHtml(hyperlink(href, s.Text()))
-	})
+	onWroteRegex := regexp.MustCompile(`On\s+(.+?),\s+(.+?)\s+wrote:`)
 
-	doc.Find("img").Each(func(i int, s *goquery.Selection) {
-		src, exists := s.Attr("src")
-		if !exists {
-			return
-		}
-		alt, _ := s.Attr("alt")
-		if alt == "" {
-			alt = "Does not contain alt text"
-		}
+	for _, elem := range elements {
+		switch elem.Type {
+		case clib.HElemText:
+			text.WriteString(elem.Text)
 
-		if !disableImages && imageProtocolSupported() {
-			var payload string
-			if strings.HasPrefix(src, "data:image/") {
-				payload = dataURIBase64(src)
-			} else if strings.HasPrefix(src, "cid:") {
-				cid := strings.TrimPrefix(src, "cid:")
-				cid = strings.Trim(cid, "<>")
-				if inline != nil {
-					payload = inline[cid]
-					debugImageProtocol("cid lookup for %s found=%t len=%d", cid, payload != "", len(payload))
-				} else {
-					debugImageProtocol("cid lookup skipped inline map nil for %s", cid)
+		case clib.HElemH1:
+			text.WriteString(h1Style.Render(elem.Text))
+			text.WriteString("\n\n")
+
+		case clib.HElemH2:
+			text.WriteString(h2Style.Render(elem.Text))
+			text.WriteString("\n\n")
+
+		case clib.HElemLink:
+			text.WriteString(hyperlink(elem.Attr1, elem.Text))
+
+		case clib.HElemImage:
+			src := elem.Attr1
+			alt := elem.Attr2
+
+			if !disableImages && imageProtocolSupported() {
+				var payload string
+				if strings.HasPrefix(src, "data:image/") {
+					payload = dataURIBase64(src)
+				} else if strings.HasPrefix(src, "cid:") {
+					cid := strings.TrimPrefix(src, "cid:")
+					cid = strings.Trim(cid, "<>")
+					if inline != nil {
+						payload = inline[cid]
+						debugImageProtocol("cid lookup for %s found=%t len=%d", cid, payload != "", len(payload))
+					} else {
+						debugImageProtocol("cid lookup skipped inline map nil for %s", cid)
+					}
+				} else if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
+					payload = fetchRemoteBase64(src)
 				}
-			} else if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
-				payload = fetchRemoteBase64(src)
+
+				if payload != "" {
+					rows := imageRows(payload)
+					debugImageProtocol("collected image placement src=%s rows=%d", src, rows)
+
+					idx := imgIndex
+					imgIndex++
+					pendingImages = append(pendingImages, struct {
+						index   int
+						payload string
+						rows    int
+					}{idx, payload, rows})
+
+					text.WriteString(fmt.Sprintf("\n[[MATCHA_IMG:%d]]", idx))
+					text.WriteString(fmt.Sprintf("\n%s%d%s\n", imageRowPlaceholderPrefix, rows, imageRowPlaceholderSuffix))
+					continue
+				}
+				debugImageProtocol("no payload for src=%s", src)
+			}
+			if hyperlinkSupported() {
+				text.WriteString(hyperlink(src, fmt.Sprintf("\n [Click here to view image: %s] \n", alt)))
+			} else {
+				text.WriteString(fmt.Sprintf("\n %s \n", linkStyle().Render(fmt.Sprintf("[Image: %s, %s]", alt, src))))
 			}
 
-			if payload != "" {
-				rows := imageRows(payload)
-				debugImageProtocol("collected image placement src=%s rows=%d (kitty=%t ghostty=%t iterm2=%t wezterm=%t wayst=%t warp=%t konsole=%t)", src, rows, kittySupported(), ghosttySupported(), iterm2Supported(), weztermSupported(), waystSupported(), warpSupported(), konsoleSupported())
+		case clib.HElemBlockquote:
+			var from, date string
+			prevText := elem.Attr2
+			cite := elem.Attr1
 
-				idx := imgIndex
-				imgIndex++
-				pendingImages = append(pendingImages, struct {
-					index   int
-					payload string
-					rows    int
-				}{idx, payload, rows})
-
-				// Insert a placeholder with blank lines for spacing.
-				// The image placement marker lets us find the line number later.
-				placeholder := fmt.Sprintf("\n%s%d%s\n", imageRowPlaceholderPrefix, rows, imageRowPlaceholderSuffix)
-				s.ReplaceWithHtml(fmt.Sprintf("\n[[MATCHA_IMG:%d]]%s", idx, placeholder))
-				return
+			if matches := onWroteRegex.FindStringSubmatch(prevText); matches != nil {
+				date = parseDateForDisplay(matches[1])
+				from = matches[2]
+			} else if matches := onWroteRegex.FindStringSubmatch(cite); matches != nil {
+				date = parseDateForDisplay(matches[1])
+				from = matches[2]
 			}
-			debugImageProtocol("no payload for src=%s dataURI=%t cid=%t", src, strings.HasPrefix(src, "data:"), strings.HasPrefix(src, "cid:"))
-		} else {
-			debugImageProtocol("image protocol not supported for src=%s (kitty=%t ghostty=%t iterm2=%t wezterm=%t wayst=%t warp=%t konsole=%t)", src, kittySupported(), ghosttySupported(), iterm2Supported(), weztermSupported(), waystSupported(), warpSupported(), konsoleSupported())
-		}
-		if hyperlinkSupported() {
-			s.ReplaceWithHtml(hyperlink(src, fmt.Sprintf("\n [Click here to view image: %s] \n", alt)))
-		} else {
-			s.ReplaceWithHtml(fmt.Sprintf("\n %s \n", linkStyle().Render(fmt.Sprintf("[Image: %s, %s]", alt, src))))
-		}
-	})
 
-	text := doc.Text()
+			text.WriteString(renderQuoteBox(from, date, strings.Split(elem.Text, "\n")))
+		}
+	}
+
+	result := text.String()
 
 	// Collapse excessive newlines, but not the image row placeholders
 	re := regexp.MustCompile(`\n{3,}`)
-	text = re.ReplaceAllString(text, "\n\n")
+	result = re.ReplaceAllString(result, "\n\n")
 
 	// Now expand the image row placeholders to actual newlines
-	text = expandImageRowPlaceholders(text)
+	result = expandImageRowPlaceholders(result)
 
 	// Build image placements by finding the line numbers of image markers.
 	var placements []ImagePlacement
 	if len(pendingImages) > 0 {
-		lines := strings.Split(text, "\n")
+		lines := strings.Split(result, "\n")
 		imgMarkerRegex := regexp.MustCompile(`\[\[MATCHA_IMG:(\d+)\]\]`)
 		for lineNum, line := range lines {
 			if matches := imgMarkerRegex.FindStringSubmatch(line); matches != nil {
@@ -770,26 +712,13 @@ func processBody(rawBody string, inline map[string]string, h1Style, h2Style, bod
 		}
 
 		// Remove the image markers from the text (leave the spacing)
-		text = imgMarkerRegex.ReplaceAllString(text, "")
+		result = imgMarkerRegex.ReplaceAllString(result, "")
 	}
 
-	// Replace quote placeholders with styled quote boxes
-	quoteRegex := regexp.MustCompile(`\[\[MATCHA_QUOTE:(\d+)\]\]`)
-	text = quoteRegex.ReplaceAllStringFunc(text, func(match string) string {
-		idxStr := quoteRegex.FindStringSubmatch(match)[1]
-		var idx int
-		fmt.Sscanf(idxStr, "%d", &idx)
-		if idx >= 0 && idx < len(quoteData) {
-			q := quoteData[idx]
-			return renderQuoteBox(q.from, q.date, strings.Split(q.content, "\n"))
-		}
-		return match
-	})
-
 	// Style quoted reply sections (for plain text > quotes)
-	text = styleQuotedReplies(text)
+	result = styleQuotedReplies(result)
 
-	return bodyStyle.Render(text), placements, nil
+	return bodyStyle.Render(result), placements, nil
 }
 
 func quoteBoxStyle() lipgloss.Style {
