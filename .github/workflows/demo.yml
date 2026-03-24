@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   update-demo:
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
     name: Generate and Update Demo GIF
     runs-on: ubuntu-latest
     steps:
