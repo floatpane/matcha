@@ -1577,7 +1577,9 @@ func openExternalEditor(body string) tea.Cmd {
 	}
 	tmpFile.Close()
 
-	c := exec.Command(editor, tmpPath)
+	parts := strings.Fields(editor)
+	args := append(parts[1:], tmpPath)
+	c := exec.Command(parts[0], args...)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		defer os.Remove(tmpPath)
 		if err != nil {
