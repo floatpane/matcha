@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap/client"
-	idle "github.com/emersion/go-imap-idle"
 	"github.com/floatpane/matcha/config"
 )
 
@@ -78,14 +77,22 @@ func (w *IdleWatcher) StopAll() {
 func (a *accountIdle) run() {
 	defer close(a.done)
 
-	backoff := 5 * time.Second
+	initialBackoff := 5 * time.Second
 	maxBackoff := 2 * time.Minute
+	backoff := initialBackoff
 
 	for {
+		start := time.Now()
 		err := a.idleOnce()
 		if err == nil {
 			// Clean exit (stop was closed)
 			return
+		}
+
+		// Reset backoff if we had a successful IDLE session (ran for
+		// longer than the current backoff period without error).
+		if time.Since(start) > backoff {
+			backoff = initialBackoff
 		}
 
 		// Check if we were told to stop
@@ -133,13 +140,11 @@ func (a *accountIdle) idleOnce() error {
 	updates := make(chan client.Update, 32)
 	c.Updates = updates
 
-	idleClient := idle.NewClient(c)
-
 	// Run IDLE in a goroutine
 	idleDone := make(chan error, 1)
 	idleStop := make(chan struct{})
 	go func() {
-		idleDone <- idleClient.IdleWithFallback(idleStop, 0)
+		idleDone <- c.Idle(idleStop, nil)
 	}()
 
 	for {
