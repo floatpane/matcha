@@ -1619,6 +1619,8 @@ func openExternalEditor(body string) tea.Cmd {
 		}
 		return tui.EditorFinishedMsg{Body: string(content)}
 	})
+}
+
 // --- IDLE command ---
 
 // listenForIdleUpdates blocks until an IDLE update arrives, then returns it as a tea.Msg.
