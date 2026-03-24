@@ -811,6 +811,23 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
 
+	case tui.OpenEditorMsg:
+		composer, ok := m.current.(*tui.Composer)
+		if !ok {
+			return m, nil
+		}
+		return m, openExternalEditor(composer.GetBody())
+
+	case tui.EditorFinishedMsg:
+		if msg.Err != nil {
+			log.Printf("Editor error: %v", msg.Err)
+			return m, nil
+		}
+		if composer, ok := m.current.(*tui.Composer); ok {
+			composer.SetBody(msg.Body)
+		}
+		return m, nil
+
 	case tui.GoToFilePickerMsg:
 		m.previousModel = m.current
 		wd, _ := os.Getwd()
@@ -1529,6 +1546,49 @@ func archiveEmailCmd(account *config.Account, uid uint32, accountID string, mail
 		}
 		return tui.EmailActionDoneMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
 	}
+}
+
+// --- External editor command ---
+
+// openExternalEditor writes the body to a temp file, opens $EDITOR, and reads back the result.
+func openExternalEditor(body string) tea.Cmd {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = os.Getenv("VISUAL")
+	}
+	if editor == "" {
+		editor = "vi"
+	}
+
+	tmpFile, err := os.CreateTemp("", "matcha-*.md")
+	if err != nil {
+		return func() tea.Msg {
+			return tui.EditorFinishedMsg{Err: fmt.Errorf("creating temp file: %w", err)}
+		}
+	}
+	tmpPath := tmpFile.Name()
+
+	if _, err := tmpFile.WriteString(body); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return func() tea.Msg {
+			return tui.EditorFinishedMsg{Err: fmt.Errorf("writing temp file: %w", err)}
+		}
+	}
+	tmpFile.Close()
+
+	c := exec.Command(editor, tmpPath)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		defer os.Remove(tmpPath)
+		if err != nil {
+			return tui.EditorFinishedMsg{Err: err}
+		}
+		content, readErr := os.ReadFile(tmpPath)
+		if readErr != nil {
+			return tui.EditorFinishedMsg{Err: readErr}
+		}
+		return tui.EditorFinishedMsg{Body: string(content)}
+	})
 }
 
 // --- Folder-based command functions ---

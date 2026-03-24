@@ -391,6 +391,17 @@ type FetchFolderMoreEmailsMsg struct {
 	Limit      uint32
 }
 
+// --- External Editor Messages ---
+
+// OpenEditorMsg signals that the composer body should be opened in $EDITOR.
+type OpenEditorMsg struct{}
+
+// EditorFinishedMsg signals that the external editor has closed.
+type EditorFinishedMsg struct {
+	Body string
+	Err  error
+}
+
 // --- Plugin Messages ---
 
 // PluginNotifyMsg signals that a plugin wants to show a notification.

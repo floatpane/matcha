@@ -331,6 +331,8 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
+		case "ctrl+e":
+			return m, func() tea.Msg { return OpenEditorMsg{} }
 		case "esc":
 			m.confirmingExit = true
 			return m, nil
@@ -598,7 +600,7 @@ func (m *Composer) View() tea.View {
 	}
 
 	mainContent := lipgloss.JoinVertical(lipgloss.Left, composerViewElements...)
-	helpText := "Markdown/HTML • tab/shift+tab: navigate • esc: save draft & exit"
+	helpText := "Markdown/HTML • tab/shift+tab: navigate • ctrl+e: $EDITOR • esc: save draft & exit"
 	if m.pluginStatus != "" {
 		helpText += " • " + m.pluginStatus
 	}
@@ -704,6 +706,11 @@ func (m *Composer) GetSubject() string {
 // GetBody returns the current Body field value.
 func (m *Composer) GetBody() string {
 	return m.bodyInput.Value()
+}
+
+// SetBody updates the Body field with new content.
+func (m *Composer) SetBody(body string) {
+	m.bodyInput.SetValue(body)
 }
 
 // GetAttachmentPaths returns the current attachment paths.
