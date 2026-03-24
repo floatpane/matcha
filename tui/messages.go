@@ -400,6 +400,12 @@ type OpenEditorMsg struct{}
 type EditorFinishedMsg struct {
 	Body string
 	Err  error
+// --- IDLE Messages ---
+
+// IdleNewMailMsg signals that IMAP IDLE detected new mail for an account/folder.
+type IdleNewMailMsg struct {
+	AccountID  string
+	FolderName string
 }
 
 // --- Plugin Messages ---

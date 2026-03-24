@@ -10,7 +10,7 @@ require (
 	github.com/emersion/go-imap v1.2.1
 	github.com/emersion/go-message v0.18.2
 	github.com/google/uuid v1.6.0
-	github.com/yuin/goldmark v1.8.0
+	github.com/yuin/goldmark v1.8.1
 	github.com/yuin/gopher-lua v1.1.1
 	github.com/zalando/go-keyring v0.2.8
 	go.mozilla.org/pkcs7 v0.9.0
