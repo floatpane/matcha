@@ -73,12 +73,18 @@ type mainModel struct {
 	width        int
 	height       int
 	err          error
+	// IMAP IDLE
+	idleWatcher *fetcher.IdleWatcher
+	idleUpdates chan fetcher.IdleUpdate
 }
 
 func newInitialModel(cfg *config.Config) *mainModel {
+	idleUpdates := make(chan fetcher.IdleUpdate, 16)
 	initialModel := &mainModel{
 		emailsByAcct: make(map[string][]fetcher.Email),
 		folderEmails: make(map[string][]fetcher.Email),
+		idleUpdates:  idleUpdates,
+		idleWatcher:  fetcher.NewIdleWatcher(idleUpdates),
 	}
 
 	if cfg == nil || !cfg.HasAccounts() {
@@ -121,6 +127,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
+			m.idleWatcher.StopAll()
 			return m, tea.Quit
 		}
 		if msg.String() == "esc" {
@@ -128,6 +135,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case *tui.FilePicker:
 				return m, func() tea.Msg { return tui.CancelFilePickerMsg{} }
 			case *tui.FolderInbox, *tui.Inbox, *tui.Login:
+				m.idleWatcher.StopAll()
 				m.current = tui.NewChoice()
 				m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 				return m, m.current.Init()
@@ -269,11 +277,16 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.current = m.folderInbox
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		// Start IDLE watchers for all accounts on INBOX
+		for i := range m.config.Accounts {
+			m.idleWatcher.Watch(&m.config.Accounts[i], "INBOX")
+		}
 		// Fetch folders and INBOX emails in parallel (background refresh)
 		return m, tea.Batch(
 			m.current.Init(),
 			fetchFoldersCmd(m.config),
 			fetchFolderEmailsCmd(m.config, "INBOX"),
+			listenForIdleUpdates(m.idleUpdates),
 		)
 
 	case tui.FoldersFetchedMsg:
@@ -298,6 +311,10 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tui.SwitchFolderMsg:
 		if m.config == nil {
 			return m, nil
+		}
+		// Update IDLE watchers to monitor the new folder
+		for i := range m.config.Accounts {
+			m.idleWatcher.Watch(&m.config.Accounts[i], msg.FolderName)
 		}
 		if m.plugins != nil {
 			m.plugins.CallFolderHook(plugin.HookFolderChanged, msg.FolderName)
@@ -447,6 +464,17 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, fetchFolderEmailsCmd(m.config, m.folderInbox.GetCurrentFolder())
+
+	case tui.IdleNewMailMsg:
+		// IDLE detected new mail — refetch the folder if we're viewing it
+		if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == msg.FolderName {
+			return m, tea.Batch(
+				fetchFolderEmailsCmd(m.config, msg.FolderName),
+				listenForIdleUpdates(m.idleUpdates),
+			)
+		}
+		// Re-subscribe even if not viewing the affected folder
+		return m, listenForIdleUpdates(m.idleUpdates)
 
 	case tui.RequestRefreshMsg:
 		// Folder-based refresh: clear folder cache and refetch
@@ -1528,6 +1556,22 @@ func archiveEmailCmd(account *config.Account, uid uint32, accountID string, mail
 			err = fetcher.ArchiveEmail(account, uid)
 		}
 		return tui.EmailActionDoneMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
+	}
+}
+
+// --- IDLE command ---
+
+// listenForIdleUpdates blocks until an IDLE update arrives, then returns it as a tea.Msg.
+func listenForIdleUpdates(ch <-chan fetcher.IdleUpdate) tea.Cmd {
+	return func() tea.Msg {
+		update, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return tui.IdleNewMailMsg{
+			AccountID:  update.AccountID,
+			FolderName: update.FolderName,
+		}
 	}
 }
 

@@ -391,6 +391,14 @@ type FetchFolderMoreEmailsMsg struct {
 	Limit      uint32
 }
 
+// --- IDLE Messages ---
+
+// IdleNewMailMsg signals that IMAP IDLE detected new mail for an account/folder.
+type IdleNewMailMsg struct {
+	AccountID  string
+	FolderName string
+}
+
 // --- Plugin Messages ---
 
 // PluginNotifyMsg signals that a plugin wants to show a notification.
