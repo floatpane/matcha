@@ -47,6 +47,18 @@ type Credentials struct {
 	IMAPPort   int
 	SMTPServer string
 	SMTPPort   int
+	AuthMethod string // "password" or "oauth2"
+}
+
+// StartOAuth2Msg is sent when the user requests OAuth2 authorization for a Gmail account.
+type StartOAuth2Msg struct {
+	Email string
+}
+
+// OAuth2CompleteMsg is sent when OAuth2 authorization completes.
+type OAuth2CompleteMsg struct {
+	Email string
+	Err   error
 }
 
 type ChooseServiceMsg struct {

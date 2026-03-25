@@ -168,8 +168,19 @@ func connect(account *config.Account) (*client.Client, error) {
 		}
 	}
 
-	if err := c.Login(account.Email, account.Password); err != nil {
-		return nil, err
+	// Authenticate using OAuth2 (XOAUTH2) or plain password
+	if account.IsOAuth2() {
+		token, err := config.GetOAuth2Token(account.Email)
+		if err != nil {
+			return nil, fmt.Errorf("oauth2: %w", err)
+		}
+		if err := c.Authenticate(newXOAuth2Client(account.Email, token)); err != nil {
+			return nil, fmt.Errorf("XOAUTH2 authentication failed: %w", err)
+		}
+	} else {
+		if err := c.Login(account.Email, account.Password); err != nil {
+			return nil, err
+		}
 	}
 
 	return c, nil

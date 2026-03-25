@@ -24,6 +24,25 @@ import (
 	"go.mozilla.org/pkcs7"
 )
 
+// xoauth2Auth implements the SMTP XOAUTH2 authentication mechanism for OAuth2.
+// See https://developers.google.com/gmail/imap/xoauth2-protocol
+type xoauth2Auth struct {
+	username, token string
+}
+
+func (a *xoauth2Auth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+	resp := fmt.Sprintf("user=%s\x01auth=Bearer %s\x01\x01", a.username, a.token)
+	return "XOAUTH2", []byte(resp), nil
+}
+
+func (a *xoauth2Auth) Next(fromServer []byte, more bool) ([]byte, error) {
+	if more {
+		// Server sent an error challenge; respond with empty to finish.
+		return []byte{}, nil
+	}
+	return nil, nil
+}
+
 // loginAuth implements the SMTP LOGIN authentication mechanism.
 // Some SMTP servers (e.g. Mailo) only support LOGIN and not PLAIN.
 type loginAuth struct {
@@ -397,7 +416,15 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	// c.Extension("AUTH") returns the list of supported mechanisms.
 	if ok, mechs := c.Extension("AUTH"); ok {
 		mechList := strings.ToUpper(mechs)
-		if strings.Contains(mechList, "PLAIN") {
+
+		if account.IsOAuth2() {
+			// Use XOAUTH2 for OAuth2-enabled accounts
+			token, tokenErr := config.GetOAuth2Token(account.Email)
+			if tokenErr != nil {
+				return fmt.Errorf("oauth2: %w", tokenErr)
+			}
+			err = c.Auth(&xoauth2Auth{username: account.Email, token: token})
+		} else if strings.Contains(mechList, "PLAIN") {
 			err = c.Auth(plainAuth)
 		} else if strings.Contains(mechList, "LOGIN") {
 			err = c.Auth(loginAuthFallback)

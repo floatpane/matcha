@@ -33,6 +33,9 @@ type Account struct {
 	SMIMECert          string `json:"smime_cert,omitempty"`            // Path to the public certificate PEM
 	SMIMEKey           string `json:"smime_key,omitempty"`             // Path to the private key PEM
 	SMIMESignByDefault bool   `json:"smime_sign_by_default,omitempty"` // Whether to enable S/MIME signing by default
+
+	// OAuth2 settings
+	AuthMethod string `json:"auth_method,omitempty"` // "password" (default) or "oauth2"
 }
 
 // MailingList represents a named group of email addresses.
@@ -186,6 +189,7 @@ func LoadConfig() (*Config, error) {
 		SMIMECert          string `json:"smime_cert,omitempty"`
 		SMIMEKey           string `json:"smime_key,omitempty"`
 		SMIMESignByDefault bool   `json:"smime_sign_by_default,omitempty"`
+		AuthMethod         string `json:"auth_method,omitempty"`
 	}
 	type diskConfig struct {
 		Accounts      []rawAccount  `json:"accounts"`
@@ -239,6 +243,7 @@ func LoadConfig() (*Config, error) {
 			SMIMECert:          rawAcc.SMIMECert,
 			SMIMEKey:           rawAcc.SMIMEKey,
 			SMIMESignByDefault: rawAcc.SMIMESignByDefault,
+			AuthMethod:         rawAcc.AuthMethod,
 		}
 
 		if rawAcc.Password != "" {

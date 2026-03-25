@@ -13,6 +13,7 @@ type Login struct {
 	focusIndex int
 	inputs     []textinput.Model
 	showCustom bool // Show custom server fields
+	useOAuth2  bool // Use OAuth2 instead of password (for gmail)
 	isEditMode bool // Whether we're editing an existing account
 	accountID  string
 	hideTips   bool
@@ -25,6 +26,7 @@ const (
 	inputName
 	inputEmail
 	inputFetchEmail
+	inputAuthMethod // "password" or "oauth2" (shown for gmail)
 	inputPassword
 	inputIMAPServer
 	inputIMAPPort
@@ -61,6 +63,9 @@ func NewLogin(hideTips bool) *Login {
 		case inputFetchEmail:
 			t.Placeholder = "Email Address"
 			t.Prompt = "📧 > "
+		case inputAuthMethod:
+			t.Placeholder = "Auth Method (password or oauth2)"
+			t.Prompt = "🔐 > "
 		case inputPassword:
 			t.Placeholder = "Password / App Password"
 			t.EchoMode = textinput.EchoPassword
@@ -107,13 +112,14 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			// Check if provider is "custom" to show/hide custom fields
 			provider := m.inputs[inputProvider].Value()
-			if provider == "custom" {
-				m.showCustom = true
-			} else {
-				m.showCustom = false
-			}
+			m.showCustom = provider == "custom"
+			m.useOAuth2 = m.inputs[inputAuthMethod].Value() == "oauth2"
 
 			lastFieldIndex := inputPassword
+			if m.useOAuth2 {
+				// OAuth2: last field before submit is the auth method field
+				lastFieldIndex = inputAuthMethod
+			}
 			if m.showCustom {
 				lastFieldIndex = inputSMTPPort
 			}
@@ -133,6 +139,11 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 
+				authMethod := "password"
+				if m.useOAuth2 {
+					authMethod = "oauth2"
+				}
+
 				return m, func() tea.Msg {
 					return Credentials{
 						Provider:   m.inputs[inputProvider].Value(),
@@ -144,6 +155,7 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						IMAPPort:   imapPort,
 						SMTPServer: m.inputs[inputSMTPServer].Value(),
 						SMTPPort:   smtpPort,
+						AuthMethod: authMethod,
 					}
 				}
 			}
@@ -152,11 +164,15 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab", "shift+tab", "up", "down":
 			s := msg.String()
 
-			// Check provider to update showCustom
+			// Check provider to update showCustom and useOAuth2
 			provider := m.inputs[inputProvider].Value()
 			m.showCustom = provider == "custom"
+			m.useOAuth2 = m.inputs[inputAuthMethod].Value() == "oauth2"
 
 			maxIndex := inputPassword
+			if m.useOAuth2 {
+				maxIndex = inputAuthMethod
+			}
 			if m.showCustom {
 				maxIndex = inputSMTPPort
 			}
@@ -173,10 +189,32 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusIndex = maxIndex
 			}
 
+			// Skip password field when using OAuth2
+			if m.useOAuth2 && m.focusIndex == inputPassword {
+				if s == "up" || s == "shift+tab" {
+					m.focusIndex = inputAuthMethod
+				} else {
+					m.focusIndex = 0
+				}
+			}
+
+			// Skip auth method field when not Gmail (only Gmail supports OAuth2)
+			if provider != "gmail" && m.focusIndex == inputAuthMethod {
+				if s == "up" || s == "shift+tab" {
+					m.focusIndex = inputFetchEmail
+				} else {
+					m.focusIndex = inputPassword
+				}
+			}
+
 			// Skip custom fields if not showing them
 			if !m.showCustom && m.focusIndex > inputPassword {
 				if s == "up" || s == "shift+tab" {
-					m.focusIndex = inputPassword
+					if m.useOAuth2 {
+						m.focusIndex = inputAuthMethod
+					} else {
+						m.focusIndex = inputPassword
+					}
 				} else {
 					m.focusIndex = 0
 				}
@@ -203,6 +241,7 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Check if provider changed
 	provider := m.inputs[inputProvider].Value()
 	m.showCustom = provider == "custom"
+	m.useOAuth2 = m.inputs[inputAuthMethod].Value() == "oauth2"
 
 	return m, tea.Batch(cmds...)
 }
@@ -229,6 +268,8 @@ func (m *Login) View() tea.View {
 		tip = "Your full email address used to log in."
 	case inputFetchEmail:
 		tip = "The email address to fetch messages from (often same as Username)."
+	case inputAuthMethod:
+		tip = "Type 'oauth2' for Gmail OAuth2 or 'password' for app password."
 	case inputPassword:
 		tip = "Your password or an app-specific password if using 2FA."
 	case inputIMAPServer:
@@ -241,6 +282,8 @@ func (m *Login) View() tea.View {
 		tip = "The port for the SMTP server (usually 587 for TLS)."
 	}
 
+	isGmail := m.inputs[inputProvider].Value() == "gmail"
+
 	views := []string{
 		titleStyle.Render(title),
 		"Enter your email account credentials.",
@@ -249,7 +292,18 @@ func (m *Login) View() tea.View {
 		m.inputs[inputName].View(),
 		m.inputs[inputEmail].View(),
 		m.inputs[inputFetchEmail].View(),
-		m.inputs[inputPassword].View(),
+	}
+
+	// Show auth method selector for Gmail
+	if isGmail {
+		views = append(views, m.inputs[inputAuthMethod].View())
+	}
+
+	// Hide password field when using OAuth2
+	if !m.useOAuth2 {
+		views = append(views, m.inputs[inputPassword].View())
+	} else {
+		views = append(views, accountEmailStyle.Render("OAuth2 selected — browser authorization will open after submit"))
 	}
 
 	if m.showCustom {

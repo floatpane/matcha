@@ -176,6 +176,15 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
 
+	case tui.OAuth2CompleteMsg:
+		if msg.Err != nil {
+			log.Printf("OAuth2 authorization failed: %v", msg.Err)
+		}
+		// After OAuth2 flow, go to the choice menu so user can proceed
+		m.current = tui.NewChoice()
+		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		return m, m.current.Init()
+
 	case tui.Credentials:
 		// Add new account or update existing
 		account := config.Account{
@@ -185,6 +194,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Password:        msg.Password,
 			ServiceProvider: msg.Provider,
 			FetchEmail:      msg.FetchEmail,
+			AuthMethod:      msg.AuthMethod,
 		}
 
 		if msg.Provider == "custom" {
@@ -229,6 +239,15 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err := config.SaveConfig(m.config); err != nil {
 			log.Printf("could not save config: %v", err)
 			return m, tea.Quit
+		}
+
+		// If OAuth2, launch the authorization flow after saving the account
+		if account.IsOAuth2() {
+			email := account.Email
+			return m, func() tea.Msg {
+				err := config.RunOAuth2Flow(email, "", "")
+				return tui.OAuth2CompleteMsg{Email: email, Err: err}
+			}
 		}
 
 		if isEdit {
@@ -1984,6 +2003,50 @@ func checkForUpdatesCmd() tea.Cmd {
 // runUpdateCLI implements the CLI entrypoint for `matcha update`.
 // It detects the likely installation method and attempts the appropriate
 // update path (Homebrew, Snap, or GitHub release binary extract).
+// runGmailOAuthCLI handles the "matcha gmail" subcommand for OAuth2 management.
+// Usage:
+//
+//	matcha gmail auth   <email> [--client-id ID --client-secret SECRET]
+//	matcha gmail token  <email>
+//	matcha gmail revoke <email>
+func runGmailOAuthCLI(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: matcha gmail <auth|token|revoke> <email> [flags]")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Commands:")
+		fmt.Fprintln(os.Stderr, "  auth   <email>  Authorize a Gmail account via OAuth2 (opens browser)")
+		fmt.Fprintln(os.Stderr, "  token  <email>  Print a fresh access token (refreshes automatically)")
+		fmt.Fprintln(os.Stderr, "  revoke <email>  Revoke and delete stored OAuth2 tokens")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Before using OAuth2, create ~/.config/matcha/oauth_client.json with:")
+		fmt.Fprintln(os.Stderr, `  {"client_id": "YOUR_ID", "client_secret": "YOUR_SECRET"}`)
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Get credentials at: https://console.cloud.google.com/apis/credentials")
+		os.Exit(1)
+	}
+
+	// Find the Python script and pass through to it
+	script, err := config.OAuthScriptPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	cmdArgs := append([]string{script}, args...)
+	cmd := exec.Command("python3", cmdArgs...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
+		}
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
 func runUpdateCLI() error {
 	const api = "https://api.github.com/repos/floatpane/matcha/releases/latest"
 	resp, err := http.Get(api)
@@ -2299,6 +2362,12 @@ func main() {
 			fmt.Fprintf(os.Stderr, "update failed: %v\n", err)
 			os.Exit(1)
 		}
+		os.Exit(0)
+	}
+
+	// Gmail OAuth2 CLI subcommand: matcha gmail <auth|token|revoke> <email> [flags]
+	if len(os.Args) > 1 && os.Args[1] == "gmail" {
+		runGmailOAuthCLI(os.Args[2:])
 		os.Exit(0)
 	}
 
