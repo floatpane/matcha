@@ -1,6 +1,7 @@
 package config
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,35 +9,35 @@ import (
 	"strings"
 )
 
+//go:embed oauth_script.py
+var embeddedOAuthScript []byte
+
 // IsOAuth2 returns true if the account uses OAuth2 authentication.
 func (a *Account) IsOAuth2() bool {
 	return a.AuthMethod == "oauth2"
 }
 
 // OAuthScriptPath returns the path to the Gmail OAuth2 Python helper script.
-// It checks for the script bundled with the binary first, then falls back to
-// the user's config directory.
+// The script is embedded in the binary and extracted to ~/.config/matcha/oauth/
+// on first use.
 func OAuthScriptPath() (string, error) {
-	// Check next to the running binary
-	exe, err := os.Executable()
-	if err == nil {
-		bundled := filepath.Join(filepath.Dir(exe), "oauth", "gmail_oauth.py")
-		if _, err := os.Stat(bundled); err == nil {
-			return bundled, nil
-		}
-	}
-
-	// Check in the config directory
 	dir, err := configDir()
 	if err != nil {
 		return "", err
 	}
-	configScript := filepath.Join(dir, "oauth", "gmail_oauth.py")
-	if _, err := os.Stat(configScript); err == nil {
-		return configScript, nil
+
+	scriptDir := filepath.Join(dir, "oauth")
+	scriptPath := filepath.Join(scriptDir, "gmail_oauth.py")
+
+	// Always overwrite with the embedded version to stay in sync with the binary
+	if err := os.MkdirAll(scriptDir, 0700); err != nil {
+		return "", fmt.Errorf("could not create oauth directory: %w", err)
+	}
+	if err := os.WriteFile(scriptPath, embeddedOAuthScript, 0700); err != nil {
+		return "", fmt.Errorf("could not extract oauth script: %w", err)
 	}
 
-	return "", fmt.Errorf("gmail_oauth.py not found; install it next to the matcha binary or in ~/.config/matcha/oauth/")
+	return scriptPath, nil
 }
 
 // GetOAuth2Token retrieves a fresh OAuth2 access token for the account by
