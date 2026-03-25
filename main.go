@@ -486,14 +486,16 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, fetchFolderEmailsCmd(m.config, m.folderInbox.GetCurrentFolder())
 
 	case tui.IdleNewMailMsg:
-		// Send desktop notification for new mail
-		accountName := msg.AccountID
-		if m.config != nil {
-			if acc := m.config.GetAccountByID(msg.AccountID); acc != nil {
-				accountName = acc.Email
+		// Send desktop notification for new mail (if enabled)
+		if m.config == nil || !m.config.DisableNotifications {
+			accountName := msg.AccountID
+			if m.config != nil {
+				if acc := m.config.GetAccountByID(msg.AccountID); acc != nil {
+					accountName = acc.Email
+				}
 			}
+			go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", msg.FolderName, accountName))
 		}
-		go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", msg.FolderName, accountName))
 
 		// IDLE detected new mail — refetch the folder if we're viewing it
 		if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == msg.FolderName {

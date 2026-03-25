@@ -46,11 +46,12 @@ type MailingList struct {
 
 // Config stores the user's email configuration with multiple accounts.
 type Config struct {
-	Accounts      []Account     `json:"accounts"`
-	DisableImages bool          `json:"disable_images,omitempty"`
-	HideTips      bool          `json:"hide_tips,omitempty"`
-	Theme         string        `json:"theme,omitempty"`
-	MailingLists  []MailingList `json:"mailing_lists,omitempty"`
+	Accounts             []Account     `json:"accounts"`
+	DisableImages        bool          `json:"disable_images,omitempty"`
+	HideTips             bool          `json:"hide_tips,omitempty"`
+	DisableNotifications bool          `json:"disable_notifications,omitempty"`
+	Theme                string        `json:"theme,omitempty"`
+	MailingLists         []MailingList `json:"mailing_lists,omitempty"`
 }
 
 // GetIMAPServer returns the IMAP server address for the account.
@@ -192,11 +193,12 @@ func LoadConfig() (*Config, error) {
 		AuthMethod         string `json:"auth_method,omitempty"`
 	}
 	type diskConfig struct {
-		Accounts      []rawAccount  `json:"accounts"`
-		DisableImages bool          `json:"disable_images,omitempty"`
-		HideTips      bool          `json:"hide_tips,omitempty"`
-		Theme         string        `json:"theme,omitempty"`
-		MailingLists  []MailingList `json:"mailing_lists,omitempty"`
+		Accounts             []rawAccount  `json:"accounts"`
+		DisableImages        bool          `json:"disable_images,omitempty"`
+		HideTips             bool          `json:"hide_tips,omitempty"`
+		DisableNotifications bool          `json:"disable_notifications,omitempty"`
+		Theme                string        `json:"theme,omitempty"`
+		MailingLists         []MailingList `json:"mailing_lists,omitempty"`
 	}
 
 	var raw diskConfig
@@ -226,6 +228,7 @@ func LoadConfig() (*Config, error) {
 
 	config.DisableImages = raw.DisableImages
 	config.HideTips = raw.HideTips
+	config.DisableNotifications = raw.DisableNotifications
 	config.Theme = raw.Theme
 	config.MailingLists = raw.MailingLists
 	for _, rawAcc := range raw.Accounts {

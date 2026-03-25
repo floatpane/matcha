@@ -128,8 +128,8 @@ func (m *Settings) updateMain(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.cursor--
 		}
 	case "down", "j":
-		// Options: 0: Email Accounts, 1: Theme, 2: Image Display, 3: Edit Signature, 4: Contextual Tips, 5: Mailing Lists
-		if m.cursor < 5 {
+		// Options: 0: Email Accounts, 1: Theme, 2: Image Display, 3: Edit Signature, 4: Contextual Tips, 5: Desktop Notifications, 6: Mailing Lists
+		if m.cursor < 6 {
 			m.cursor++
 		}
 	case "enter":
@@ -160,7 +160,11 @@ func (m *Settings) updateMain(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.cfg.HideTips = !m.cfg.HideTips
 			_ = config.SaveConfig(m.cfg)
 			return m, nil
-		case 5: // Mailing Lists
+		case 5: // Desktop Notifications
+			m.cfg.DisableNotifications = !m.cfg.DisableNotifications
+			_ = config.SaveConfig(m.cfg)
+			return m, nil
+		case 6: // Mailing Lists
 			m.state = SettingsMailingLists
 			m.cursor = 0
 			return m, nil
@@ -443,9 +447,22 @@ func (m *Settings) viewMain() string {
 	}
 	b.WriteString("\n")
 
-	// Option 5: Mailing Lists
-	mailingListsText := "Mailing Lists"
+	// Option 5: Desktop Notifications
+	notifStatus := "ON"
+	if m.cfg.DisableNotifications {
+		notifStatus = "OFF"
+	}
+	notifText := fmt.Sprintf("Desktop Notifications: %s", notifStatus)
 	if m.cursor == 5 {
+		b.WriteString(selectedAccountItemStyle.Render("> " + notifText))
+	} else {
+		b.WriteString(accountItemStyle.Render("  " + notifText))
+	}
+	b.WriteString("\n")
+
+	// Option 6: Mailing Lists
+	mailingListsText := "Mailing Lists"
+	if m.cursor == 6 {
 		b.WriteString(selectedAccountItemStyle.Render("> " + mailingListsText))
 	} else {
 		b.WriteString(accountItemStyle.Render("  " + mailingListsText))
@@ -466,6 +483,8 @@ func (m *Settings) viewMain() string {
 		case 4:
 			tip = "Toggle displaying helpful contextual tips like this one."
 		case 5:
+			tip = "Toggle desktop notifications when new mail arrives."
+		case 6:
 			tip = "Manage groups of email addresses to quickly send to multiple people."
 		}
 		if tip != "" {
