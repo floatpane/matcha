@@ -3,6 +3,10 @@
 # For more information, see: https://goreleaser.com/customization/
 version: 2
 
+git:
+  ignore_tags:
+    - nightly*
+
 # The 'before' hook runs commands before the build process starts.
 before:
   hooks:
