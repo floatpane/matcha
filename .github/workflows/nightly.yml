@@ -107,7 +107,7 @@ jobs:
           cd /tmp/homebrew-matcha
           git config user.name "goreleaserbot"
           git config user.email "bot@goreleaser.com"
-          git add Formula/matcha-nightly.rb
+          git add matcha-nightly.rb
           git diff --cached --quiet || (git commit -m "Update matcha-nightly to $VERSION" && git push)
 
   snapcraft:
