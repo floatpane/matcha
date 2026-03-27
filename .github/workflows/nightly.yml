@@ -50,7 +50,7 @@ jobs:
         run: |
           gh release create nightlyv0 dist/*.tar.gz dist/*.zip dist/checksums.txt \
             --title "Nightly Build ($(git rev-parse --short HEAD))" \
-            --notes "This is an automated nightly build from the latest \`master\` commit ($(git rev-parse --short HEAD)).\nIt may be unstable — use stable releases for production." \
+            --notes "This is an automated nightly build from the latest \`master\` commit ($(git rev-parse --short HEAD)).It may be unstable — use stable releases for production. You can install this version via Homebrew (`brew install floatpane/matcha/matcha-nightly`, or Snapcraft (`snap install matcha --beta`)" \
             --prerelease \
             --target master
 
