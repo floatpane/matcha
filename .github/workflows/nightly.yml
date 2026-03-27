@@ -103,7 +103,7 @@ jobs:
 
           # Clone the tap repo and push the nightly formula
           git clone "https://x-access-token:${GH_TOKEN}@github.com/floatpane/homebrew-matcha.git" /tmp/homebrew-matcha
-          cp /tmp/matcha-nightly.rb /tmp/homebrew-matcha/Formula/matcha-nightly.rb
+          cp /tmp/matcha-nightly.rb /tmp/homebrew-matcha/matcha-nightly.rb
           cd /tmp/homebrew-matcha
           git config user.name "goreleaserbot"
           git config user.email "bot@goreleaser.com"
