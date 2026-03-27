@@ -53,3 +53,91 @@ jobs:
             --notes "This is an automated nightly build from the latest \`master\` commit ($(git rev-parse --short HEAD)).\nIt may be unstable — use stable releases for production." \
             --prerelease \
             --target master
+
+      - name: Update Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          VERSION="nightly-$(git rev-parse --short HEAD)"
+          DARWIN_AMD64_SHA=$(shasum -a 256 dist/matcha_nightly_darwin_amd64.tar.gz | cut -d ' ' -f 1)
+          DARWIN_ARM64_SHA=$(shasum -a 256 dist/matcha_nightly_darwin_arm64.tar.gz | cut -d ' ' -f 1)
+          LINUX_AMD64_SHA=$(shasum -a 256 dist/matcha_nightly_linux_amd64.tar.gz | cut -d ' ' -f 1)
+          LINUX_ARM64_SHA=$(shasum -a 256 dist/matcha_nightly_linux_arm64.tar.gz | cut -d ' ' -f 1)
+          BASE_URL="https://github.com/floatpane/matcha/releases/download/nightlyv0"
+
+          cat > /tmp/matcha-nightly.rb << EOF
+          class MatchaNightly < Formula
+            desc "A beautiful and functional email client for your terminal (nightly)"
+            homepage "https://matcha.floatpane.com"
+            version "$VERSION"
+
+            on_macos do
+              if Hardware::CPU.intel?
+                url "$BASE_URL/matcha_nightly_darwin_amd64.tar.gz"
+                sha256 "$DARWIN_AMD64_SHA"
+              else
+                url "$BASE_URL/matcha_nightly_darwin_arm64.tar.gz"
+                sha256 "$DARWIN_ARM64_SHA"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.intel?
+                url "$BASE_URL/matcha_nightly_linux_amd64.tar.gz"
+                sha256 "$LINUX_AMD64_SHA"
+              else
+                url "$BASE_URL/matcha_nightly_linux_arm64.tar.gz"
+                sha256 "$LINUX_ARM64_SHA"
+              end
+            end
+
+            def install
+              bin.install "matcha"
+            end
+
+            test do
+              system "#{bin}/matcha", "--version"
+            end
+          end
+          EOF
+
+          # Clone the tap repo and push the nightly formula
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/floatpane/homebrew-matcha.git" /tmp/homebrew-matcha
+          cp /tmp/matcha-nightly.rb /tmp/homebrew-matcha/Formula/matcha-nightly.rb
+          cd /tmp/homebrew-matcha
+          git config user.name "goreleaserbot"
+          git config user.email "bot@goreleaser.com"
+          git add Formula/matcha-nightly.rb
+          git diff --cached --quiet || (git commit -m "Update matcha-nightly to $VERSION" && git push)
+
+  snapcraft:
+    runs-on: ${{ matrix.runner }}
+    needs: nightly
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Snapcraft and LXD
+        run: |
+          sudo snap install snapcraft --classic
+          sudo snap install lxd
+          sudo lxd init --auto
+          sudo iptables -P FORWARD ACCEPT
+          sudo usermod -aG lxd $USER
+
+      - name: Build snap
+        run: sg lxd -c 'snapcraft pack --use-lxd --build-for=${{ matrix.arch }}'
+
+      - name: Upload snap
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: snapcraft upload --release=beta *.snap
