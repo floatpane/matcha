@@ -187,27 +187,19 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.current.Init()
 
 	case tui.Credentials:
-		// Add new account or update existing
-		account := config.Account{
-			ID:              uuid.New().String(),
-			Name:            msg.Name,
-			Email:           msg.Host, // login/email used for authentication comes from Host field in the form
-			Password:        msg.Password,
-			ServiceProvider: msg.Provider,
-			FetchEmail:      msg.FetchEmail,
-			AuthMethod:      msg.AuthMethod,
-		}
-
-		if msg.Provider == "custom" {
-			account.IMAPServer = msg.IMAPServer
-			account.IMAPPort = msg.IMAPPort
-			account.SMTPServer = msg.SMTPServer
-			account.SMTPPort = msg.SMTPPort
-		}
-
-		// Ensure FetchEmail defaults to the login Email (Host) if not explicitly set
-		if account.FetchEmail == "" && account.Email != "" {
-			account.FetchEmail = account.Email
+		// Split FetchEmail by commas to support multiple fetch addresses.
+		// Each address creates a separate account sharing the same login credentials.
+		fetchEmails := []string{""}
+		if msg.FetchEmail != "" {
+			fetchEmails = fetchEmails[:0]
+			for _, fe := range strings.Split(msg.FetchEmail, ",") {
+				if trimmed := strings.TrimSpace(fe); trimmed != "" {
+					fetchEmails = append(fetchEmails, trimmed)
+				}
+			}
+			if len(fetchEmails) == 0 {
+				fetchEmails = []string{""}
+			}
 		}
 
 		if m.config == nil {
@@ -216,13 +208,35 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Check if we're editing an existing account
 		isEdit := false
+		var lastAccount config.Account
 		if login, ok := m.current.(*tui.Login); ok && login.IsEditMode() {
 			isEdit = true
-			// Find and update the existing account, preserving S/MIME settings
 			existingID := login.GetAccountID()
+
+			account := config.Account{
+				ID:              existingID,
+				Name:            msg.Name,
+				Email:           msg.Host,
+				Password:        msg.Password,
+				ServiceProvider: msg.Provider,
+				FetchEmail:      fetchEmails[0],
+				AuthMethod:      msg.AuthMethod,
+			}
+
+			if msg.Provider == "custom" {
+				account.IMAPServer = msg.IMAPServer
+				account.IMAPPort = msg.IMAPPort
+				account.SMTPServer = msg.SMTPServer
+				account.SMTPPort = msg.SMTPPort
+			}
+
+			if account.FetchEmail == "" && account.Email != "" {
+				account.FetchEmail = account.Email
+			}
+
+			// Find and update the existing account, preserving S/MIME settings
 			for i, acc := range m.config.Accounts {
 				if acc.ID == existingID {
-					account.ID = existingID
 					account.SMIMECert = acc.SMIMECert
 					account.SMIMEKey = acc.SMIMEKey
 					account.SMIMESignByDefault = acc.SMIMESignByDefault
@@ -233,8 +247,34 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
+			lastAccount = account
 		} else {
-			m.config.AddAccount(account)
+			// New account: create one account per fetch email address
+			for _, fe := range fetchEmails {
+				account := config.Account{
+					ID:              uuid.New().String(),
+					Name:            msg.Name,
+					Email:           msg.Host,
+					Password:        msg.Password,
+					ServiceProvider: msg.Provider,
+					FetchEmail:      fe,
+					AuthMethod:      msg.AuthMethod,
+				}
+
+				if msg.Provider == "custom" {
+					account.IMAPServer = msg.IMAPServer
+					account.IMAPPort = msg.IMAPPort
+					account.SMTPServer = msg.SMTPServer
+					account.SMTPPort = msg.SMTPPort
+				}
+
+				if account.FetchEmail == "" && account.Email != "" {
+					account.FetchEmail = account.Email
+				}
+
+				m.config.AddAccount(account)
+				lastAccount = account
+			}
 		}
 
 		if err := config.SaveConfig(m.config); err != nil {
@@ -243,8 +283,8 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// If OAuth2, launch the authorization flow after saving the account
-		if account.IsOAuth2() {
-			email := account.Email
+		if lastAccount.IsOAuth2() {
+			email := lastAccount.Email
 			return m, func() tea.Msg {
 				err := config.RunOAuth2Flow(email, "", "")
 				return tui.OAuth2CompleteMsg{Email: email, Err: err}

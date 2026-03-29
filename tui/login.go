@@ -61,7 +61,7 @@ func NewLogin(hideTips bool) *Login {
 			t.Placeholder = "Username"
 			t.Prompt = "🏠 > "
 		case inputFetchEmail:
-			t.Placeholder = "Email Address"
+			t.Placeholder = "Email Address (comma-separated for multiple)"
 			t.Prompt = "📧 > "
 		case inputAuthMethod:
 			t.Placeholder = "Auth Method (password or oauth2)"
@@ -267,7 +267,7 @@ func (m *Login) View() tea.View {
 	case inputEmail:
 		tip = "Your full email address used to log in."
 	case inputFetchEmail:
-		tip = "The email address to fetch messages from (often same as Username)."
+		tip = "The email address to fetch messages for (comma-separated for multiple, e.g. me@icloud.com,me@mac.com)."
 	case inputAuthMethod:
 		tip = "Type 'oauth2' for Gmail OAuth2 or 'password' for app password."
 	case inputPassword:
