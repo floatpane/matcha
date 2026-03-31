@@ -23,6 +23,32 @@ Image decoding and PNG re-encoding using [stb_image](https://github.com/nothings
 
 Files: `imgconv.c`, `imgconv.h`, `imgconv.go`, `stb_image.h`, `stb_image_write.h`
 
+### htmlconv
+
+Single-pass HTML-to-structured-elements parser. Takes raw HTML and returns a slice of `HTMLElement` values representing headings, links, images, blockquotes, tables, and text. Used by the email view to render HTML emails in the terminal without a full DOM.
+
+- `HTMLToElements()` — parses HTML into structured elements with type, text, and up to two attributes (e.g., `href`/`src`, `alt`/`cite`).
+
+Files: `htmlconv.c`, `htmlconv.h`, `htmlconv.go`
+
+### markdown
+
+Markdown-to-HTML conversion using [md4c](https://github.com/mity/md4c) (vendored). Supports GitHub-flavored features: tables, strikethrough, task lists, and permissive autolinks.
+
+- `MarkdownToHTML()` — converts Markdown bytes to HTML bytes.
+
+Files: `md4c.c`, `md4c.h`, `md4c-html.c`, `md4c-html.h`, `markdown.go`
+
+## Pure Go fallbacks
+
+Every function has a `_nocgo.go` counterpart (build tag `!cgo`) that provides the same API using pure Go libraries:
+
+| C implementation | Go fallback |
+|-----------------|-------------|
+| `base64wrap.go` | Manual string builder |
+| `imgconv.go` (stb_image) | `image/png`, `image/jpeg`, `image/gif` |
+| `htmlconv.go` | `goquery` DOM parsing |
+| `markdown.go` (md4c) | `goldmark` |
 
 ## Adding new C code
 
