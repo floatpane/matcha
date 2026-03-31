@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -416,6 +417,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Update IDLE watchers to monitor the new folder
 		for i := range m.config.Accounts {
+			// Only start IDLE for accounts that actually have this folder
+			folders := config.GetCachedFolders(m.config.Accounts[i].ID)
+			if !slices.Contains(folders, msg.FolderName) {
+				m.idleWatcher.Stop(m.config.Accounts[i].ID)
+				continue
+			}
 			m.idleWatcher.Watch(&m.config.Accounts[i], msg.FolderName)
 		}
 		if m.plugins != nil {

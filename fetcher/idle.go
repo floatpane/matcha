@@ -47,8 +47,8 @@ func (w *IdleWatcher) Watch(account *config.Account, folder string) {
 	// Stop existing watcher for this account if any
 	if existing, ok := w.watchers[account.ID]; ok {
 		close(existing.stop)
-		<-existing.done
 		delete(w.watchers, account.ID)
+		// Let old connection tear down in the background
 	}
 
 	a := &accountIdle{
@@ -62,6 +62,18 @@ func (w *IdleWatcher) Watch(account *config.Account, folder string) {
 	go a.run()
 }
 
+// Stop stops the IDLE watcher for a specific account.
+func (w *IdleWatcher) Stop(accountID string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if a, ok := w.watchers[accountID]; ok {
+		close(a.stop)
+		delete(w.watchers, accountID)
+		// Let old connection tear down in the background
+	}
+}
+
 // StopAll stops all IDLE watchers.
 func (w *IdleWatcher) StopAll() {
 	w.mu.Lock()
@@ -69,8 +81,23 @@ func (w *IdleWatcher) StopAll() {
 
 	for id, a := range w.watchers {
 		close(a.stop)
-		<-a.done
 		delete(w.watchers, id)
+	}
+}
+
+// StopAllAndWait stops all IDLE watchers and waits for them to finish.
+func (w *IdleWatcher) StopAllAndWait() {
+	w.mu.Lock()
+	var pending []chan struct{}
+	for id, a := range w.watchers {
+		close(a.stop)
+		pending = append(pending, a.done)
+		delete(w.watchers, id)
+	}
+	w.mu.Unlock()
+
+	for _, done := range pending {
+		<-done
 	}
 }
 
