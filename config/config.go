@@ -36,6 +36,12 @@ type Account struct {
 
 	// OAuth2 settings
 	AuthMethod string `json:"auth_method,omitempty"` // "password" (default) or "oauth2"
+
+	// Multi-protocol settings
+	Protocol     string `json:"protocol,omitempty"`      // "imap" (default), "jmap", or "pop3"
+	JMAPEndpoint string `json:"jmap_endpoint,omitempty"` // JMAP session URL (for protocol=jmap)
+	POP3Server   string `json:"pop3_server,omitempty"`   // POP3 server hostname (for protocol=pop3)
+	POP3Port     int    `json:"pop3_port,omitempty"`     // POP3 server port (for protocol=pop3)
 }
 
 // MailingList represents a named group of email addresses.
@@ -110,6 +116,22 @@ func (a *Account) GetSMTPPort() int {
 	default:
 		return 587
 	}
+}
+
+// GetPOP3Server returns the POP3 server address for the account.
+func (a *Account) GetPOP3Server() string {
+	if a.POP3Server != "" {
+		return a.POP3Server
+	}
+	return ""
+}
+
+// GetPOP3Port returns the POP3 port for the account.
+func (a *Account) GetPOP3Port() int {
+	if a.POP3Port != 0 {
+		return a.POP3Port
+	}
+	return 995 // Default POP3 SSL port
 }
 
 // GetConfigDir returns the path to the configuration directory (exported).
@@ -191,6 +213,10 @@ func LoadConfig() (*Config, error) {
 		SMIMEKey           string `json:"smime_key,omitempty"`
 		SMIMESignByDefault bool   `json:"smime_sign_by_default,omitempty"`
 		AuthMethod         string `json:"auth_method,omitempty"`
+		Protocol           string `json:"protocol,omitempty"`
+		JMAPEndpoint       string `json:"jmap_endpoint,omitempty"`
+		POP3Server         string `json:"pop3_server,omitempty"`
+		POP3Port           int    `json:"pop3_port,omitempty"`
 	}
 	type diskConfig struct {
 		Accounts             []rawAccount  `json:"accounts"`
@@ -247,6 +273,10 @@ func LoadConfig() (*Config, error) {
 			SMIMEKey:           rawAcc.SMIMEKey,
 			SMIMESignByDefault: rawAcc.SMIMESignByDefault,
 			AuthMethod:         rawAcc.AuthMethod,
+			Protocol:           rawAcc.Protocol,
+			JMAPEndpoint:       rawAcc.JMAPEndpoint,
+			POP3Server:         rawAcc.POP3Server,
+			POP3Port:           rawAcc.POP3Port,
 		}
 
 		if rawAcc.Password != "" {

@@ -214,15 +214,19 @@ func (m *Settings) updateAccounts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			acc := m.cfg.Accounts[m.cursor]
 			return m, func() tea.Msg {
 				return GoToEditAccountMsg{
-					AccountID:  acc.ID,
-					Provider:   acc.ServiceProvider,
-					Name:       acc.Name,
-					Email:      acc.Email,
-					FetchEmail: acc.FetchEmail,
-					IMAPServer: acc.IMAPServer,
-					IMAPPort:   acc.IMAPPort,
-					SMTPServer: acc.SMTPServer,
-					SMTPPort:   acc.SMTPPort,
+					AccountID:    acc.ID,
+					Provider:     acc.ServiceProvider,
+					Name:         acc.Name,
+					Email:        acc.Email,
+					FetchEmail:   acc.FetchEmail,
+					IMAPServer:   acc.IMAPServer,
+					IMAPPort:     acc.IMAPPort,
+					SMTPServer:   acc.SMTPServer,
+					SMTPPort:     acc.SMTPPort,
+					Protocol:     acc.Protocol,
+					JMAPEndpoint: acc.JMAPEndpoint,
+					POP3Server:   acc.POP3Server,
+					POP3Port:     acc.POP3Port,
 				}
 			}
 		}

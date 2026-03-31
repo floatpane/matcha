@@ -20,6 +20,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/floatpane/matcha/backend"
+	_ "github.com/floatpane/matcha/backend/imap"
+	_ "github.com/floatpane/matcha/backend/jmap"
+	_ "github.com/floatpane/matcha/backend/pop3"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
@@ -77,6 +81,8 @@ type mainModel struct {
 	// IMAP IDLE
 	idleWatcher *fetcher.IdleWatcher
 	idleUpdates chan fetcher.IdleUpdate
+	// Multi-protocol backend providers (keyed by account ID)
+	providers map[string]backend.Provider
 }
 
 func newInitialModel(cfg *config.Config) *mainModel {
@@ -86,6 +92,7 @@ func newInitialModel(cfg *config.Config) *mainModel {
 		folderEmails: make(map[string][]fetcher.Email),
 		idleUpdates:  idleUpdates,
 		idleWatcher:  fetcher.NewIdleWatcher(idleUpdates),
+		providers:    make(map[string]backend.Provider),
 	}
 
 	if cfg == nil || !cfg.HasAccounts() {
@@ -99,6 +106,32 @@ func newInitialModel(cfg *config.Config) *mainModel {
 		initialModel.config = cfg
 	}
 	return initialModel
+}
+
+// ensureProviders creates backend providers for all configured accounts.
+func (m *mainModel) ensureProviders() {
+	if m.config == nil {
+		return
+	}
+	for _, acct := range m.config.Accounts {
+		if _, ok := m.providers[acct.ID]; ok {
+			continue
+		}
+		p, err := backend.New(&acct)
+		if err != nil {
+			log.Printf("backend: failed to create provider for %s: %v", acct.Email, err)
+			continue
+		}
+		m.providers[acct.ID] = p
+	}
+}
+
+// getProvider returns the backend provider for the given account.
+func (m *mainModel) getProvider(acct *config.Account) backend.Provider {
+	if acct == nil {
+		return nil
+	}
+	return m.providers[acct.ID]
 }
 
 func (m *mainModel) Init() tea.Cmd {
@@ -221,9 +254,13 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ServiceProvider: msg.Provider,
 				FetchEmail:      fetchEmails[0],
 				AuthMethod:      msg.AuthMethod,
+				Protocol:        msg.Protocol,
+				JMAPEndpoint:    msg.JMAPEndpoint,
+				POP3Server:      msg.POP3Server,
+				POP3Port:        msg.POP3Port,
 			}
 
-			if msg.Provider == "custom" {
+			if msg.Provider == "custom" || msg.Protocol == "pop3" {
 				account.IMAPServer = msg.IMAPServer
 				account.IMAPPort = msg.IMAPPort
 				account.SMTPServer = msg.SMTPServer
@@ -259,9 +296,13 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					ServiceProvider: msg.Provider,
 					FetchEmail:      fe,
 					AuthMethod:      msg.AuthMethod,
+					Protocol:        msg.Protocol,
+					JMAPEndpoint:    msg.JMAPEndpoint,
+					POP3Server:      msg.POP3Server,
+					POP3Port:        msg.POP3Port,
 				}
 
-				if msg.Provider == "custom" {
+				if msg.Provider == "custom" || msg.Protocol == "pop3" {
 					account.IMAPServer = msg.IMAPServer
 					account.IMAPPort = msg.IMAPPort
 					account.SMTPServer = msg.SMTPServer
@@ -308,6 +349,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.current = tui.NewLogin(hideTips)
 			return m, m.current.Init()
 		}
+		m.ensureProviders()
 		// Load cached folders from all accounts, merge unique names
 		seen := make(map[string]bool)
 		var cachedFolders []string
@@ -705,7 +747,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			hideTips = m.config.HideTips
 		}
 		login := tui.NewLogin(hideTips)
-		login.SetEditMode(msg.AccountID, msg.Provider, msg.Name, msg.Email, msg.FetchEmail, msg.IMAPServer, msg.IMAPPort, msg.SMTPServer, msg.SMTPPort)
+		login.SetEditMode(msg.AccountID, msg.Protocol, msg.Provider, msg.Name, msg.Email, msg.FetchEmail, msg.IMAPServer, msg.IMAPPort, msg.SMTPServer, msg.SMTPPort, msg.JMAPEndpoint, msg.POP3Server, msg.POP3Port)
 		m.current = login
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()

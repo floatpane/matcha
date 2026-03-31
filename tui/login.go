@@ -22,7 +22,8 @@ type Login struct {
 }
 
 const (
-	inputProvider = iota
+	inputProtocol = iota // "imap", "jmap", or "pop3"
+	inputProvider        // "gmail", "icloud", or "custom"
 	inputName
 	inputEmail
 	inputFetchEmail
@@ -32,6 +33,9 @@ const (
 	inputIMAPPort
 	inputSMTPServer
 	inputSMTPPort
+	inputJMAPEndpoint // JMAP session URL
+	inputPOP3Server
+	inputPOP3Port
 	inputCount
 )
 
@@ -50,9 +54,12 @@ func NewLogin(hideTips bool) *Login {
 		t.SetStyles(tiStyles)
 
 		switch i {
+		case inputProtocol:
+			t.Placeholder = "Protocol (imap, jmap, or pop3)"
+			t.Focus()
+			t.Prompt = "🌐 > "
 		case inputProvider:
 			t.Placeholder = "Provider (gmail, icloud, or custom)"
-			t.Focus()
 			t.Prompt = "🏢 > "
 		case inputName:
 			t.Placeholder = "Display Name"
@@ -82,6 +89,15 @@ func NewLogin(hideTips bool) *Login {
 		case inputSMTPPort:
 			t.Placeholder = "SMTP Port (default: 587)"
 			t.Prompt = "🔢 > "
+		case inputJMAPEndpoint:
+			t.Placeholder = "JMAP Session URL (e.g., https://api.fastmail.com/jmap/session)"
+			t.Prompt = "🔗 > "
+		case inputPOP3Server:
+			t.Placeholder = "POP3 Server (e.g., pop.example.com)"
+			t.Prompt = "📥 > "
+		case inputPOP3Port:
+			t.Placeholder = "POP3 Port (default: 995)"
+			t.Prompt = "🔢 > "
 		}
 		m.inputs[i] = t
 	}
@@ -92,6 +108,49 @@ func NewLogin(hideTips bool) *Login {
 // Init initializes the login model.
 func (m *Login) Init() tea.Cmd {
 	return textinput.Blink
+}
+
+// protocol returns the currently selected protocol (defaults to "imap").
+func (m *Login) protocol() string {
+	p := m.inputs[inputProtocol].Value()
+	if p == "" {
+		return "imap"
+	}
+	return p
+}
+
+// visibleFields returns the ordered list of input indices the user should see
+// for the current protocol/provider/auth combination.
+func (m *Login) visibleFields() []int {
+	proto := m.protocol()
+	provider := m.inputs[inputProvider].Value()
+	isGmail := provider == "gmail"
+
+	fields := []int{inputProtocol}
+
+	switch proto {
+	case "jmap":
+		// JMAP: no provider selector, just endpoint + common fields
+		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputPassword, inputJMAPEndpoint)
+	case "pop3":
+		// POP3: custom server fields + SMTP for sending
+		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputPassword,
+			inputPOP3Server, inputPOP3Port, inputSMTPServer, inputSMTPPort)
+	default:
+		// IMAP (default): existing flow
+		fields = append(fields, inputProvider, inputName, inputEmail, inputFetchEmail)
+		if isGmail {
+			fields = append(fields, inputAuthMethod)
+		}
+		if !m.useOAuth2 {
+			fields = append(fields, inputPassword)
+		}
+		if m.showCustom {
+			fields = append(fields, inputIMAPServer, inputIMAPPort, inputSMTPServer, inputSMTPPort)
+		}
+	}
+
+	return fields
 }
 
 // Update handles messages for the login model.
@@ -110,115 +169,42 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
 
 		case "enter":
-			// Check if provider is "custom" to show/hide custom fields
-			provider := m.inputs[inputProvider].Value()
-			m.showCustom = provider == "custom"
-			m.useOAuth2 = m.inputs[inputAuthMethod].Value() == "oauth2"
+			m.updateFlags()
+			visible := m.visibleFields()
+			lastField := visible[len(visible)-1]
 
-			lastFieldIndex := inputPassword
-			if m.useOAuth2 {
-				// OAuth2: last field before submit is the auth method field
-				lastFieldIndex = inputAuthMethod
-			}
-			if m.showCustom {
-				lastFieldIndex = inputSMTPPort
-			}
-
-			if m.focusIndex == lastFieldIndex {
-				// Submit the form
-				imapPort := 993
-				smtpPort := 587
-				if m.inputs[inputIMAPPort].Value() != "" {
-					if p, err := strconv.Atoi(m.inputs[inputIMAPPort].Value()); err == nil {
-						imapPort = p
-					}
-				}
-				if m.inputs[inputSMTPPort].Value() != "" {
-					if p, err := strconv.Atoi(m.inputs[inputSMTPPort].Value()); err == nil {
-						smtpPort = p
-					}
-				}
-
-				authMethod := "password"
-				if m.useOAuth2 {
-					authMethod = "oauth2"
-				}
-
-				return m, func() tea.Msg {
-					return Credentials{
-						Provider:   m.inputs[inputProvider].Value(),
-						Name:       m.inputs[inputName].Value(),
-						Host:       m.inputs[inputEmail].Value(),
-						FetchEmail: m.inputs[inputFetchEmail].Value(),
-						Password:   m.inputs[inputPassword].Value(),
-						IMAPServer: m.inputs[inputIMAPServer].Value(),
-						IMAPPort:   imapPort,
-						SMTPServer: m.inputs[inputSMTPServer].Value(),
-						SMTPPort:   smtpPort,
-						AuthMethod: authMethod,
-					}
-				}
+			if m.focusIndex == lastField {
+				return m, m.submitForm()
 			}
 			fallthrough
 
 		case "tab", "shift+tab", "up", "down":
 			s := msg.String()
+			m.updateFlags()
+			visible := m.visibleFields()
 
-			// Check provider to update showCustom and useOAuth2
-			provider := m.inputs[inputProvider].Value()
-			m.showCustom = provider == "custom"
-			m.useOAuth2 = m.inputs[inputAuthMethod].Value() == "oauth2"
-
-			maxIndex := inputPassword
-			if m.useOAuth2 {
-				maxIndex = inputAuthMethod
-			}
-			if m.showCustom {
-				maxIndex = inputSMTPPort
+			// Find current position in visible fields
+			curPos := 0
+			for i, f := range visible {
+				if f == m.focusIndex {
+					curPos = i
+					break
+				}
 			}
 
 			if s == "up" || s == "shift+tab" {
-				m.focusIndex--
+				curPos--
 			} else {
-				m.focusIndex++
+				curPos++
 			}
 
-			if m.focusIndex > maxIndex {
-				m.focusIndex = 0
-			} else if m.focusIndex < 0 {
-				m.focusIndex = maxIndex
+			if curPos >= len(visible) {
+				curPos = 0
+			} else if curPos < 0 {
+				curPos = len(visible) - 1
 			}
 
-			// Skip password field when using OAuth2
-			if m.useOAuth2 && m.focusIndex == inputPassword {
-				if s == "up" || s == "shift+tab" {
-					m.focusIndex = inputAuthMethod
-				} else {
-					m.focusIndex = 0
-				}
-			}
-
-			// Skip auth method field when not Gmail (only Gmail supports OAuth2)
-			if provider != "gmail" && m.focusIndex == inputAuthMethod {
-				if s == "up" || s == "shift+tab" {
-					m.focusIndex = inputFetchEmail
-				} else {
-					m.focusIndex = inputPassword
-				}
-			}
-
-			// Skip custom fields if not showing them
-			if !m.showCustom && m.focusIndex > inputPassword {
-				if s == "up" || s == "shift+tab" {
-					if m.useOAuth2 {
-						m.focusIndex = inputAuthMethod
-					} else {
-						m.focusIndex = inputPassword
-					}
-				} else {
-					m.focusIndex = 0
-				}
-			}
+			m.focusIndex = visible[curPos]
 
 			cmds := make([]tea.Cmd, len(m.inputs))
 			for i := 0; i < len(m.inputs); i++ {
@@ -238,12 +224,64 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.inputs[i], cmds[i] = m.inputs[i].Update(msg)
 	}
 
-	// Check if provider changed
+	m.updateFlags()
+
+	return m, tea.Batch(cmds...)
+}
+
+// updateFlags recalculates showCustom and useOAuth2 from current inputs.
+func (m *Login) updateFlags() {
 	provider := m.inputs[inputProvider].Value()
 	m.showCustom = provider == "custom"
 	m.useOAuth2 = m.inputs[inputAuthMethod].Value() == "oauth2"
+}
 
-	return m, tea.Batch(cmds...)
+// submitForm builds and returns a Credentials message from the current inputs.
+func (m *Login) submitForm() func() tea.Msg {
+	imapPort := 993
+	smtpPort := 587
+	pop3Port := 995
+	if m.inputs[inputIMAPPort].Value() != "" {
+		if p, err := strconv.Atoi(m.inputs[inputIMAPPort].Value()); err == nil {
+			imapPort = p
+		}
+	}
+	if m.inputs[inputSMTPPort].Value() != "" {
+		if p, err := strconv.Atoi(m.inputs[inputSMTPPort].Value()); err == nil {
+			smtpPort = p
+		}
+	}
+	if m.inputs[inputPOP3Port].Value() != "" {
+		if p, err := strconv.Atoi(m.inputs[inputPOP3Port].Value()); err == nil {
+			pop3Port = p
+		}
+	}
+
+	authMethod := "password"
+	if m.useOAuth2 {
+		authMethod = "oauth2"
+	}
+
+	proto := m.protocol()
+
+	return func() tea.Msg {
+		return Credentials{
+			Protocol:     proto,
+			Provider:     m.inputs[inputProvider].Value(),
+			Name:         m.inputs[inputName].Value(),
+			Host:         m.inputs[inputEmail].Value(),
+			FetchEmail:   m.inputs[inputFetchEmail].Value(),
+			Password:     m.inputs[inputPassword].Value(),
+			IMAPServer:   m.inputs[inputIMAPServer].Value(),
+			IMAPPort:     imapPort,
+			SMTPServer:   m.inputs[inputSMTPServer].Value(),
+			SMTPPort:     smtpPort,
+			AuthMethod:   authMethod,
+			JMAPEndpoint: m.inputs[inputJMAPEndpoint].Value(),
+			POP3Server:   m.inputs[inputPOP3Server].Value(),
+			POP3Port:     pop3Port,
+		}
+	}
 }
 
 // View renders the login form.
@@ -253,13 +291,12 @@ func (m *Login) View() tea.View {
 		title = "Edit Account"
 	}
 
-	customHint := ""
-	if m.inputs[inputProvider].Value() == "custom" || m.showCustom {
-		customHint = "\n" + accountEmailStyle.Render("Custom provider selected - configure server settings below")
-	}
+	proto := m.protocol()
 
 	tip := ""
 	switch m.focusIndex {
+	case inputProtocol:
+		tip = "Choose the protocol: imap (default), jmap, or pop3."
 	case inputProvider:
 		tip = "Enter your email provider (e.g., gmail, icloud) or 'custom'."
 	case inputName:
@@ -280,41 +317,78 @@ func (m *Login) View() tea.View {
 		tip = "The server address for sending emails."
 	case inputSMTPPort:
 		tip = "The port for the SMTP server (usually 587 for TLS)."
+	case inputJMAPEndpoint:
+		tip = "The JMAP session resource URL (e.g., https://api.fastmail.com/jmap/session)."
+	case inputPOP3Server:
+		tip = "The POP3 server address for receiving emails."
+	case inputPOP3Port:
+		tip = "The port for the POP3 server (usually 995 for SSL)."
 	}
-
-	isGmail := m.inputs[inputProvider].Value() == "gmail"
 
 	views := []string{
 		titleStyle.Render(title),
 		"Enter your email account credentials.",
-		customHint,
-		m.inputs[inputProvider].View(),
-		m.inputs[inputName].View(),
-		m.inputs[inputEmail].View(),
-		m.inputs[inputFetchEmail].View(),
+		"",
+		m.inputs[inputProtocol].View(),
 	}
 
-	// Show auth method selector for Gmail
-	if isGmail {
-		views = append(views, m.inputs[inputAuthMethod].View())
-	}
-
-	// Hide password field when using OAuth2
-	if !m.useOAuth2 {
-		views = append(views, m.inputs[inputPassword].View())
-	} else {
-		views = append(views, accountEmailStyle.Render("OAuth2 selected — browser authorization will open after submit"))
-	}
-
-	if m.showCustom {
+	switch proto {
+	case "jmap":
 		views = append(views,
+			m.inputs[inputName].View(),
+			m.inputs[inputEmail].View(),
+			m.inputs[inputFetchEmail].View(),
+			m.inputs[inputPassword].View(),
 			"",
-			listHeader.Render("Custom Server Settings:"),
-			m.inputs[inputIMAPServer].View(),
-			m.inputs[inputIMAPPort].View(),
+			listHeader.Render("JMAP Settings:"),
+			m.inputs[inputJMAPEndpoint].View(),
+		)
+	case "pop3":
+		views = append(views,
+			m.inputs[inputName].View(),
+			m.inputs[inputEmail].View(),
+			m.inputs[inputFetchEmail].View(),
+			m.inputs[inputPassword].View(),
+			"",
+			listHeader.Render("POP3 Server Settings:"),
+			m.inputs[inputPOP3Server].View(),
+			m.inputs[inputPOP3Port].View(),
+			"",
+			listHeader.Render("SMTP Settings (for sending):"),
 			m.inputs[inputSMTPServer].View(),
 			m.inputs[inputSMTPPort].View(),
 		)
+	default:
+		// IMAP flow
+		isGmail := m.inputs[inputProvider].Value() == "gmail"
+		views = append(views,
+			m.inputs[inputProvider].View(),
+			m.inputs[inputName].View(),
+			m.inputs[inputEmail].View(),
+			m.inputs[inputFetchEmail].View(),
+		)
+
+		if isGmail {
+			views = append(views, m.inputs[inputAuthMethod].View())
+		}
+
+		if !m.useOAuth2 {
+			views = append(views, m.inputs[inputPassword].View())
+		} else {
+			views = append(views, accountEmailStyle.Render("OAuth2 selected — browser authorization will open after submit"))
+		}
+
+		if m.showCustom {
+			customHint := accountEmailStyle.Render("Custom provider selected - configure server settings below")
+			views = append(views,
+				"",
+				customHint,
+				m.inputs[inputIMAPServer].View(),
+				m.inputs[inputIMAPPort].View(),
+				m.inputs[inputSMTPServer].View(),
+				m.inputs[inputSMTPPort].View(),
+			)
+		}
 	}
 
 	views = append(views, "")
@@ -327,9 +401,14 @@ func (m *Login) View() tea.View {
 }
 
 // SetEditMode sets the login form to edit an existing account.
-func (m *Login) SetEditMode(accountID, provider, name, email, fetchEmail, imapServer string, imapPort int, smtpServer string, smtpPort int) {
+func (m *Login) SetEditMode(accountID, protocol, provider, name, email, fetchEmail, imapServer string, imapPort int, smtpServer string, smtpPort int, jmapEndpoint, pop3Server string, pop3Port int) {
 	m.isEditMode = true
 	m.accountID = accountID
+
+	if protocol == "" {
+		protocol = "imap"
+	}
+	m.inputs[inputProtocol].SetValue(protocol)
 	m.inputs[inputProvider].SetValue(provider)
 	m.inputs[inputName].SetValue(name)
 	m.inputs[inputEmail].SetValue(email)
@@ -341,6 +420,23 @@ func (m *Login) SetEditMode(accountID, provider, name, email, fetchEmail, imapSe
 		if imapPort != 0 {
 			m.inputs[inputIMAPPort].SetValue(strconv.Itoa(imapPort))
 		}
+		m.inputs[inputSMTPServer].SetValue(smtpServer)
+		if smtpPort != 0 {
+			m.inputs[inputSMTPPort].SetValue(strconv.Itoa(smtpPort))
+		}
+	}
+
+	if jmapEndpoint != "" {
+		m.inputs[inputJMAPEndpoint].SetValue(jmapEndpoint)
+	}
+	if pop3Server != "" {
+		m.inputs[inputPOP3Server].SetValue(pop3Server)
+	}
+	if pop3Port != 0 {
+		m.inputs[inputPOP3Port].SetValue(strconv.Itoa(pop3Port))
+	}
+	// Also set SMTP for POP3
+	if protocol == "pop3" {
 		m.inputs[inputSMTPServer].SetValue(smtpServer)
 		if smtpPort != 0 {
 			m.inputs[inputSMTPPort].SetValue(strconv.Itoa(smtpPort))
