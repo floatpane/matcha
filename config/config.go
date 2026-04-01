@@ -37,6 +37,8 @@ type Account struct {
 	// PGP settings
 	PGPPublicKey        string `json:"pgp_public_key,omitempty"`         // Path to public key (.asc or .gpg)
 	PGPPrivateKey       string `json:"pgp_private_key,omitempty"`        // Path to private key (.asc or .gpg)
+	PGPKeySource        string `json:"pgp_key_source,omitempty"`         // "file" (default) or "yubikey" for hardware key
+	PGPPIN              string `json:"-"`                                // YubiKey PIN (stored in keyring, not JSON)
 	PGPSignByDefault    bool   `json:"pgp_sign_by_default,omitempty"`    // Auto-sign outgoing emails
 	PGPEncryptByDefault bool   `json:"pgp_encrypt_by_default,omitempty"` // Auto-encrypt when recipient keys available
 
@@ -165,12 +167,16 @@ func configFile() (string, error) {
 
 // SaveConfig saves the given configuration to the config file and passwords to the keyring.
 func SaveConfig(config *Config) error {
-	// Save passwords to the OS keyring before writing the JSON file
+	// Save passwords and PGP PINs to the OS keyring before writing the JSON file
 	for _, acc := range config.Accounts {
 		if acc.Password != "" {
 			// We ignore the error here because some environments (like headless CI)
 			// might not have a keyring service, but we still want to save the rest of the config.
 			_ = keyring.Set(keyringServiceName, acc.Email, acc.Password)
+		}
+		// Save YubiKey PIN if present
+		if acc.PGPPIN != "" && acc.PGPKeySource == "yubikey" {
+			_ = keyring.Set(keyringServiceName, acc.Email+":pgp-pin", acc.PGPPIN)
 		}
 	}
 
@@ -220,6 +226,7 @@ func LoadConfig() (*Config, error) {
 		SMIMESignByDefault  bool   `json:"smime_sign_by_default,omitempty"`
 		PGPPublicKey        string `json:"pgp_public_key,omitempty"`
 		PGPPrivateKey       string `json:"pgp_private_key,omitempty"`
+		PGPKeySource        string `json:"pgp_key_source,omitempty"`
 		PGPSignByDefault    bool   `json:"pgp_sign_by_default,omitempty"`
 		PGPEncryptByDefault bool   `json:"pgp_encrypt_by_default,omitempty"`
 		AuthMethod          string `json:"auth_method,omitempty"`
@@ -284,6 +291,7 @@ func LoadConfig() (*Config, error) {
 			SMIMESignByDefault:  rawAcc.SMIMESignByDefault,
 			PGPPublicKey:        rawAcc.PGPPublicKey,
 			PGPPrivateKey:       rawAcc.PGPPrivateKey,
+			PGPKeySource:        rawAcc.PGPKeySource,
 			PGPSignByDefault:    rawAcc.PGPSignByDefault,
 			PGPEncryptByDefault: rawAcc.PGPEncryptByDefault,
 			AuthMethod:          rawAcc.AuthMethod,
@@ -302,6 +310,13 @@ func LoadConfig() (*Config, error) {
 			// No plaintext password in JSON, fetch from Keyring as normal.
 			if pwd, err := keyring.Get(keyringServiceName, acc.Email); err == nil {
 				acc.Password = pwd
+			}
+		}
+
+		// Load YubiKey PIN from keyring if using YubiKey
+		if acc.PGPKeySource == "yubikey" {
+			if pin, err := keyring.Get(keyringServiceName, acc.Email+":pgp-pin"); err == nil {
+				acc.PGPPIN = pin
 			}
 		}
 
@@ -343,6 +358,8 @@ func (c *Config) RemoveAccount(id string) bool {
 		if acc.ID == id {
 			// Delete password from OS Keyring when account is removed
 			_ = keyring.Delete(keyringServiceName, acc.Email)
+			// Delete PGP PIN from OS Keyring if present
+			_ = keyring.Delete(keyringServiceName, acc.Email+":pgp-pin")
 
 			c.Accounts = append(c.Accounts[:i], c.Accounts[i+1:]...)
 			return true

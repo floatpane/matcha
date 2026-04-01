@@ -24,6 +24,7 @@ import (
 	"github.com/emersion/go-pgpmail"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/config"
+	"github.com/floatpane/matcha/pgp"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/text"
@@ -720,7 +721,14 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 }
 
 // signEmailPGP signs the message payload with PGP and returns a multipart/signed message.
+// Supports both file-based keys and YubiKey hardware tokens.
 func signEmailPGP(payload []byte, account *config.Account) ([]byte, error) {
+	// Check if using YubiKey
+	if account.PGPKeySource == "yubikey" {
+		return signEmailPGPWithYubiKey(payload, account)
+	}
+
+	// Default to file-based signing
 	if account.PGPPrivateKey == "" {
 		return nil, errors.New("PGP private key path is missing")
 	}
@@ -766,6 +774,22 @@ func signEmailPGP(payload []byte, account *config.Account) ([]byte, error) {
 	}
 
 	return signed.Bytes(), nil
+}
+
+// signEmailPGPWithYubiKey signs the message payload using a YubiKey hardware token.
+func signEmailPGPWithYubiKey(payload []byte, account *config.Account) ([]byte, error) {
+	// Get PIN from account (loaded from keyring)
+	pin := account.PGPPIN
+	if pin == "" {
+		return nil, fmt.Errorf("YubiKey PIN not configured - please set it in account settings")
+	}
+
+	// Use the pgp package to sign with YubiKey
+	signed, err := pgp.BuildPGPSignedMessage(payload, pin)
+	if err != nil {
+		return nil, fmt.Errorf("YubiKey signing failed: %w", err)
+	}
+	return signed, nil
 }
 
 // encryptEmailPGP encrypts the message payload with PGP and returns a multipart/encrypted message.

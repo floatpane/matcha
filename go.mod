@@ -19,6 +19,8 @@ require (
 )
 
 require (
+	cunicu.li/go-iso7816 v0.8.8 // indirect
+	cunicu.li/go-openpgp-card v0.3.11 // indirect
 	git.sr.ht/~rockorager/go-jmap v0.5.3 // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20230923063757-afb1ddc0824c // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
