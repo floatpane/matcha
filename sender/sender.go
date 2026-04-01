@@ -19,6 +19,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ProtonMail/go-crypto/openpgp"
+	messagetextproto "github.com/emersion/go-message/textproto"
+	"github.com/emersion/go-pgpmail"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/config"
 	"github.com/yuin/goldmark"
@@ -151,7 +154,7 @@ func detectPlaintextOnly(body string, images, attachments map[string][]byte) boo
 }
 
 // SendEmail constructs a multipart message with plain text, HTML, embedded images, and attachments.
-func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody, htmlBody string, images map[string][]byte, attachments map[string][]byte, inReplyTo string, references []string, signSMIME bool, encryptSMIME bool) error {
+func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody, htmlBody string, images map[string][]byte, attachments map[string][]byte, inReplyTo string, references []string, signSMIME bool, encryptSMIME bool, signPGP bool, encryptPGP bool) error {
 	smtpServer := account.GetSMTPServer()
 	smtpPort := account.GetSMTPPort()
 
@@ -561,6 +564,61 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		msg.WriteString(clib.WrapBase64(base64.StdEncoding.EncodeToString(encryptedDer)))
 	}
 
+	// Handle PGP Signing (if enabled and not already signed with S/MIME)
+	var pgpPayload []byte
+	if signPGP && !signSMIME {
+		// Determine what to sign
+		var toSign []byte
+		if len(payloadToEncrypt) > 0 {
+			// We have content prepared for encryption
+			toSign = payloadToEncrypt
+		} else {
+			// Use what we've built so far
+			toSign = msg.Bytes()
+		}
+
+		signed, err := signEmailPGP(toSign, account)
+		if err != nil {
+			return fmt.Errorf("PGP signing failed: %w", err)
+		}
+
+		if encryptPGP {
+			// Will encrypt the signed message
+			pgpPayload = signed
+		} else {
+			// Not encrypting, so write signed message now
+			msg.Reset()
+			msg.Write(signed)
+		}
+	}
+
+	// Handle PGP Encryption (if enabled and not already encrypted with S/MIME)
+	if encryptPGP && !encryptSMIME {
+		allRecipients := append([]string{}, to...)
+		allRecipients = append(allRecipients, cc...)
+		allRecipients = append(allRecipients, bcc...)
+
+		var toEncrypt []byte
+		if len(pgpPayload) > 0 {
+			// Encrypt the signed message
+			toEncrypt = pgpPayload
+		} else if len(payloadToEncrypt) > 0 {
+			// Encrypt pre-prepared payload
+			toEncrypt = payloadToEncrypt
+		} else {
+			// Encrypt what we've built so far
+			toEncrypt = msg.Bytes()
+		}
+
+		encrypted, err := encryptEmailPGP(toEncrypt, allRecipients, account)
+		if err != nil {
+			return fmt.Errorf("PGP encryption failed: %w", err)
+		}
+
+		msg.Reset()
+		msg.Write(encrypted)
+	}
+
 	// Combine all recipients for the envelope
 	allRecipients := append([]string{}, to...)
 	allRecipients = append(allRecipients, cc...)
@@ -659,4 +717,141 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	}
 
 	return c.Quit()
+}
+
+// signEmailPGP signs the message payload with PGP and returns a multipart/signed message.
+func signEmailPGP(payload []byte, account *config.Account) ([]byte, error) {
+	if account.PGPPrivateKey == "" {
+		return nil, errors.New("PGP private key path is missing")
+	}
+
+	// Load private key
+	keyFile, err := os.ReadFile(account.PGPPrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read PGP private key: %w", err)
+	}
+
+	// Try to parse as armored keyring first
+	entityList, err := openpgp.ReadArmoredKeyRing(bytes.NewReader(keyFile))
+	if err != nil {
+		// Try binary format
+		entityList, err = openpgp.ReadKeyRing(bytes.NewReader(keyFile))
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse PGP key: %w", err)
+		}
+	}
+
+	if len(entityList) == 0 {
+		return nil, errors.New("no PGP keys found in keyring")
+	}
+
+	// Create multipart/signed message using go-pgpmail
+	var signed bytes.Buffer
+
+	// Create a minimal header for the signed content
+	var header messagetextproto.Header
+
+	mw, err := pgpmail.Sign(&signed, header, entityList[0], nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PGP signer: %w", err)
+	}
+
+	// Write original message to be signed
+	if _, err := mw.Write(payload); err != nil {
+		return nil, fmt.Errorf("failed to write message for signing: %w", err)
+	}
+
+	if err := mw.Close(); err != nil {
+		return nil, fmt.Errorf("failed to finalize PGP signature: %w", err)
+	}
+
+	return signed.Bytes(), nil
+}
+
+// encryptEmailPGP encrypts the message payload with PGP and returns a multipart/encrypted message.
+func encryptEmailPGP(payload []byte, recipients []string, account *config.Account) ([]byte, error) {
+	var entityList openpgp.EntityList
+
+	cfgDir, err := config.GetConfigDir()
+	if err != nil {
+		return nil, err
+	}
+	pgpDir := filepath.Join(cfgDir, "pgp")
+
+	// Add recipient keys
+	for _, recipient := range recipients {
+		// Extract email address from "Name <email>" format
+		email := strings.TrimSpace(recipient)
+		if strings.Contains(email, "<") {
+			parts := strings.Split(email, "<")
+			if len(parts) == 2 {
+				email = strings.TrimSuffix(parts[1], ">")
+			}
+		}
+
+		// Try .asc (armored) first, then .gpg (binary)
+		var keyData []byte
+		keyPath := filepath.Join(pgpDir, email+".asc")
+		keyData, err = os.ReadFile(keyPath)
+		if err != nil {
+			keyPath = filepath.Join(pgpDir, email+".gpg")
+			keyData, err = os.ReadFile(keyPath)
+			if err != nil {
+				return nil, fmt.Errorf("missing PGP key for %s (tried .asc and .gpg): %w", email, err)
+			}
+		}
+
+		// Try armored format first
+		entities, err := openpgp.ReadArmoredKeyRing(bytes.NewReader(keyData))
+		if err != nil {
+			// Try binary format
+			entities, err = openpgp.ReadKeyRing(bytes.NewReader(keyData))
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse PGP key for %s: %w", email, err)
+			}
+		}
+
+		if len(entities) > 0 {
+			entityList = append(entityList, entities[0])
+		}
+	}
+
+	// Add sender's own key (to read in Sent folder)
+	if account.PGPPublicKey != "" {
+		senderKey, err := os.ReadFile(account.PGPPublicKey)
+		if err == nil {
+			entities, _ := openpgp.ReadArmoredKeyRing(bytes.NewReader(senderKey))
+			if entities == nil {
+				entities, _ = openpgp.ReadKeyRing(bytes.NewReader(senderKey))
+			}
+			if entities != nil && len(entities) > 0 {
+				entityList = append(entityList, entities[0])
+			}
+		}
+	}
+
+	if len(entityList) == 0 {
+		return nil, errors.New("cannot encrypt: no valid PGP public keys found for recipients")
+	}
+
+	// Encrypt using go-pgpmail
+	var encrypted bytes.Buffer
+
+	// Create a minimal header for the encrypted content
+	var header messagetextproto.Header
+
+	mw, err := pgpmail.Encrypt(&encrypted, header, entityList, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PGP encryptor: %w", err)
+	}
+
+	if _, err := mw.Write(payload); err != nil {
+		return nil, fmt.Errorf("failed to write message for encryption: %w", err)
+	}
+
+	if err := mw.Close(); err != nil {
+		return nil, fmt.Errorf("failed to finalize PGP encryption: %w", err)
+	}
+
+	return encrypted.Bytes(), nil
 }

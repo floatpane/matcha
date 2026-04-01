@@ -1658,7 +1658,7 @@ func sendEmail(account *config.Account, msg tui.SendEmailMsg) tea.Cmd {
 			attachments[filename] = fileData
 		}
 
-		err := sender.SendEmail(account, recipients, cc, bcc, msg.Subject, body, string(htmlBody), images, attachments, msg.InReplyTo, msg.References, msg.SignSMIME, msg.EncryptSMIME)
+		err := sender.SendEmail(account, recipients, cc, bcc, msg.Subject, body, string(htmlBody), images, attachments, msg.InReplyTo, msg.References, msg.SignSMIME, msg.EncryptSMIME, msg.SignPGP, msg.EncryptPGP)
 		if err != nil {
 			log.Printf("Failed to send email: %v", err)
 			return tui.EmailResultMsg{Err: err}
@@ -2513,6 +2513,9 @@ func main() {
 		theme.SetTheme(cfg.Theme)
 	}
 	tui.RebuildStyles()
+
+	// Ensure PGP keys directory exists
+	_ = config.EnsurePGPDir()
 
 	var initialModel *mainModel
 	if err != nil {

@@ -35,6 +35,8 @@ type SendEmailMsg struct {
 	Signature       string // Signature to append to email body
 	SignSMIME       bool   // Whether to sign the email using S/MIME
 	EncryptSMIME    bool   // Whether to encrypt the email using S/MIME
+	SignPGP         bool   // Whether to sign the email using PGP
+	EncryptPGP      bool   // Whether to encrypt the email using PGP
 }
 
 type Credentials struct {

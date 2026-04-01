@@ -45,6 +45,10 @@ type Settings struct {
 	focusIndex        int
 	smimeCertInput    textinput.Model
 	smimeKeyInput     textinput.Model
+
+	// PGP Config fields
+	pgpPublicKeyInput  textinput.Model
+	pgpPrivateKeyInput textinput.Model
 }
 
 // NewSettings creates a new settings model.
@@ -67,12 +71,26 @@ func NewSettings(cfg *config.Config) *Settings {
 	keyInput.CharLimit = 256
 	keyInput.SetStyles(tiStyles)
 
+	pgpPubInput := textinput.New()
+	pgpPubInput.Placeholder = "/path/to/public_key.asc"
+	pgpPubInput.Prompt = "> "
+	pgpPubInput.CharLimit = 256
+	pgpPubInput.SetStyles(tiStyles)
+
+	pgpPrivInput := textinput.New()
+	pgpPrivInput.Placeholder = "/path/to/private_key.asc"
+	pgpPrivInput.Prompt = "> "
+	pgpPrivInput.CharLimit = 256
+	pgpPrivInput.SetStyles(tiStyles)
+
 	return &Settings{
-		cfg:            cfg,
-		state:          SettingsMain,
-		cursor:         0,
-		smimeCertInput: certInput,
-		smimeKeyInput:  keyInput,
+		cfg:                cfg,
+		state:              SettingsMain,
+		cursor:             0,
+		smimeCertInput:     certInput,
+		smimeKeyInput:      keyInput,
+		pgpPublicKeyInput:  pgpPubInput,
+		pgpPrivateKeyInput: pgpPrivInput,
 	}
 }
 
@@ -92,6 +110,8 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.smimeCertInput.SetWidth(m.width - 6)
 		m.smimeKeyInput.SetWidth(m.width - 6)
+		m.pgpPublicKeyInput.SetWidth(m.width - 6)
+		m.pgpPrivateKeyInput.SetWidth(m.width - 6)
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -115,6 +135,10 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.smimeCertInput, cmd = m.smimeCertInput.Update(msg)
 		cmds = append(cmds, cmd)
 		m.smimeKeyInput, cmd = m.smimeKeyInput.Update(msg)
+		cmds = append(cmds, cmd)
+		m.pgpPublicKeyInput, cmd = m.pgpPublicKeyInput.Update(msg)
+		cmds = append(cmds, cmd)
+		m.pgpPrivateKeyInput, cmd = m.pgpPrivateKeyInput.Update(msg)
 		cmds = append(cmds, cmd)
 	}
 
@@ -239,9 +263,13 @@ func (m *Settings) updateAccounts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.state = SettingsSMIMEConfig
 			m.smimeCertInput.SetValue(m.cfg.Accounts[m.cursor].SMIMECert)
 			m.smimeKeyInput.SetValue(m.cfg.Accounts[m.cursor].SMIMEKey)
+			m.pgpPublicKeyInput.SetValue(m.cfg.Accounts[m.cursor].PGPPublicKey)
+			m.pgpPrivateKeyInput.SetValue(m.cfg.Accounts[m.cursor].PGPPrivateKey)
 			m.focusIndex = 0
 			m.smimeCertInput.Focus()
 			m.smimeKeyInput.Blur()
+			m.pgpPublicKeyInput.Blur()
+			m.pgpPrivateKeyInput.Blur()
 			return m, textinput.Blink
 		}
 	case "esc":
@@ -251,6 +279,18 @@ func (m *Settings) updateAccounts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+// Focus indices for the crypto config screen:
+// 0: S/MIME Certificate Path
+// 1: S/MIME Private Key Path
+// 2: S/MIME Sign By Default toggle
+// 3: PGP Public Key Path
+// 4: PGP Private Key Path
+// 5: PGP Sign By Default toggle
+// 6: PGP Encrypt By Default toggle
+// 7: Save button
+// 8: Cancel button
+const cryptoConfigMaxFocus = 8
 
 func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -264,56 +304,104 @@ func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 		if msg.String() == "shift+tab" || msg.String() == "up" {
 			m.focusIndex--
 			if m.focusIndex < 0 {
-				m.focusIndex = 4
+				m.focusIndex = cryptoConfigMaxFocus
 			}
 		} else {
 			m.focusIndex++
-			if m.focusIndex > 4 {
+			if m.focusIndex > cryptoConfigMaxFocus {
 				m.focusIndex = 0
 			}
 		}
 
 		m.smimeCertInput.Blur()
 		m.smimeKeyInput.Blur()
+		m.pgpPublicKeyInput.Blur()
+		m.pgpPrivateKeyInput.Blur()
 
-		if m.focusIndex == 0 {
+		switch m.focusIndex {
+		case 0:
 			cmds = append(cmds, m.smimeCertInput.Focus())
-		} else if m.focusIndex == 1 {
+		case 1:
 			cmds = append(cmds, m.smimeKeyInput.Focus())
+		case 3:
+			cmds = append(cmds, m.pgpPublicKeyInput.Focus())
+		case 4:
+			cmds = append(cmds, m.pgpPrivateKeyInput.Focus())
 		}
 		return m, tea.Batch(cmds...)
 	case "enter", " ":
-		if m.focusIndex == 0 && msg.String() == "enter" {
-			m.focusIndex = 1
-			m.smimeCertInput.Blur()
-			cmds = append(cmds, m.smimeKeyInput.Focus())
-			return m, tea.Batch(cmds...)
-		} else if m.focusIndex == 1 && msg.String() == "enter" {
-			m.focusIndex = 2
-			m.smimeKeyInput.Blur()
-			return m, nil
-		} else if m.focusIndex == 2 {
+		switch m.focusIndex {
+		case 0: // S/MIME cert - enter advances to next field
+			if msg.String() == "enter" {
+				m.focusIndex = 1
+				m.smimeCertInput.Blur()
+				cmds = append(cmds, m.smimeKeyInput.Focus())
+				return m, tea.Batch(cmds...)
+			}
+		case 1: // S/MIME key - enter advances
+			if msg.String() == "enter" {
+				m.focusIndex = 2
+				m.smimeKeyInput.Blur()
+				return m, nil
+			}
+		case 2: // S/MIME sign toggle
 			if msg.String() == "enter" || msg.String() == " " {
 				m.cfg.Accounts[m.editingAccountIdx].SMIMESignByDefault = !m.cfg.Accounts[m.editingAccountIdx].SMIMESignByDefault
 			}
 			return m, nil
-		} else if m.focusIndex == 3 && msg.String() == "enter" {
-			m.cfg.Accounts[m.editingAccountIdx].SMIMECert = m.smimeCertInput.Value()
-			m.cfg.Accounts[m.editingAccountIdx].SMIMEKey = m.smimeKeyInput.Value()
-			_ = config.SaveConfig(m.cfg)
-			m.state = SettingsAccounts
+		case 3: // PGP public key - enter advances
+			if msg.String() == "enter" {
+				m.focusIndex = 4
+				m.pgpPublicKeyInput.Blur()
+				cmds = append(cmds, m.pgpPrivateKeyInput.Focus())
+				return m, tea.Batch(cmds...)
+			}
+		case 4: // PGP private key - enter advances
+			if msg.String() == "enter" {
+				m.focusIndex = 5
+				m.pgpPrivateKeyInput.Blur()
+				return m, nil
+			}
+		case 5: // PGP sign toggle
+			if msg.String() == "enter" || msg.String() == " " {
+				m.cfg.Accounts[m.editingAccountIdx].PGPSignByDefault = !m.cfg.Accounts[m.editingAccountIdx].PGPSignByDefault
+			}
 			return m, nil
-		} else if m.focusIndex == 4 && msg.String() == "enter" {
-			m.state = SettingsAccounts
+		case 6: // PGP encrypt toggle
+			if msg.String() == "enter" || msg.String() == " " {
+				m.cfg.Accounts[m.editingAccountIdx].PGPEncryptByDefault = !m.cfg.Accounts[m.editingAccountIdx].PGPEncryptByDefault
+			}
 			return m, nil
+		case 7: // Save
+			if msg.String() == "enter" {
+				m.cfg.Accounts[m.editingAccountIdx].SMIMECert = m.smimeCertInput.Value()
+				m.cfg.Accounts[m.editingAccountIdx].SMIMEKey = m.smimeKeyInput.Value()
+				m.cfg.Accounts[m.editingAccountIdx].PGPPublicKey = m.pgpPublicKeyInput.Value()
+				m.cfg.Accounts[m.editingAccountIdx].PGPPrivateKey = m.pgpPrivateKeyInput.Value()
+				_ = config.SaveConfig(m.cfg)
+				m.state = SettingsAccounts
+				return m, nil
+			}
+		case 8: // Cancel
+			if msg.String() == "enter" {
+				m.state = SettingsAccounts
+				return m, nil
+			}
 		}
 	}
 
-	if m.focusIndex == 0 {
+	switch m.focusIndex {
+	case 0:
 		m.smimeCertInput, cmd = m.smimeCertInput.Update(msg)
 		cmds = append(cmds, cmd)
-	} else if m.focusIndex == 1 {
+	case 1:
 		m.smimeKeyInput, cmd = m.smimeKeyInput.Update(msg)
+		cmds = append(cmds, cmd)
+	case 3:
+		m.pgpPublicKeyInput, cmd = m.pgpPublicKeyInput.Update(msg)
+		cmds = append(cmds, cmd)
+	case 4:
+		m.pgpPrivateKeyInput, cmd = m.pgpPrivateKeyInput.Update(msg)
 		cmds = append(cmds, cmd)
 	}
 
@@ -537,6 +625,9 @@ func (m *Settings) viewAccounts() string {
 		if account.SMIMECert != "" && account.SMIMEKey != "" {
 			providerInfo += " [S/MIME Configured]"
 		}
+		if account.PGPPublicKey != "" && account.PGPPrivateKey != "" {
+			providerInfo += " [PGP Configured]"
+		}
 
 		line := fmt.Sprintf("%s - %s", displayName, accountEmailStyle.Render(providerInfo))
 
@@ -589,8 +680,11 @@ func (m *Settings) viewSMIMEConfig() string {
 	var b strings.Builder
 
 	account := m.cfg.Accounts[m.editingAccountIdx]
-	b.WriteString(titleStyle.Render(fmt.Sprintf("S/MIME Configuration for %s", account.FetchEmail)))
+	b.WriteString(titleStyle.Render(fmt.Sprintf("Crypto Configuration for %s", account.FetchEmail)))
 	b.WriteString("\n\n")
+
+	// --- S/MIME Section ---
+	b.WriteString(settingsFocusedStyle.Render("S/MIME") + "\n")
 
 	if m.focusIndex == 0 {
 		b.WriteString(settingsFocusedStyle.Render("Certificate (PEM) Path:\n"))
@@ -606,26 +700,64 @@ func (m *Settings) viewSMIMEConfig() string {
 	}
 	b.WriteString(m.smimeKeyInput.View() + "\n\n")
 
-	signStatus := "OFF"
+	smimeSignStatus := "OFF"
 	if account.SMIMESignByDefault {
-		signStatus = "ON"
+		smimeSignStatus = "ON"
 	}
 	if m.focusIndex == 2 {
-		b.WriteString(settingsFocusedStyle.Render(fmt.Sprintf("> Sign By Default: %s\n\n", signStatus)))
+		b.WriteString(settingsFocusedStyle.Render(fmt.Sprintf("> Sign By Default: %s\n\n", smimeSignStatus)))
 	} else {
-		b.WriteString(settingsBlurredStyle.Render(fmt.Sprintf("  Sign By Default: %s\n\n", signStatus)))
+		b.WriteString(settingsBlurredStyle.Render(fmt.Sprintf("  Sign By Default: %s\n\n", smimeSignStatus)))
 	}
 
+	// --- PGP Section ---
+	b.WriteString(settingsFocusedStyle.Render("PGP") + "\n")
+
+	if m.focusIndex == 3 {
+		b.WriteString(settingsFocusedStyle.Render("Public Key Path:\n"))
+	} else {
+		b.WriteString(settingsBlurredStyle.Render("Public Key Path:\n"))
+	}
+	b.WriteString(m.pgpPublicKeyInput.View() + "\n\n")
+
+	if m.focusIndex == 4 {
+		b.WriteString(settingsFocusedStyle.Render("Private Key Path:\n"))
+	} else {
+		b.WriteString(settingsBlurredStyle.Render("Private Key Path:\n"))
+	}
+	b.WriteString(m.pgpPrivateKeyInput.View() + "\n\n")
+
+	pgpSignStatus := "OFF"
+	if account.PGPSignByDefault {
+		pgpSignStatus = "ON"
+	}
+	if m.focusIndex == 5 {
+		b.WriteString(settingsFocusedStyle.Render(fmt.Sprintf("> Sign By Default: %s\n\n", pgpSignStatus)))
+	} else {
+		b.WriteString(settingsBlurredStyle.Render(fmt.Sprintf("  Sign By Default: %s\n\n", pgpSignStatus)))
+	}
+
+	pgpEncryptStatus := "OFF"
+	if account.PGPEncryptByDefault {
+		pgpEncryptStatus = "ON"
+	}
+	if m.focusIndex == 6 {
+		b.WriteString(settingsFocusedStyle.Render(fmt.Sprintf("> Encrypt By Default: %s\n\n", pgpEncryptStatus)))
+	} else {
+		b.WriteString(settingsBlurredStyle.Render(fmt.Sprintf("  Encrypt By Default: %s\n\n", pgpEncryptStatus)))
+	}
+
+	// --- Buttons ---
 	saveBtn := "[ Save ]"
 	cancelBtn := "[ Cancel ]"
 
-	if m.focusIndex == 3 {
+	if m.focusIndex == 7 {
 		saveBtn = settingsFocusedStyle.Render(saveBtn)
 	} else {
 		saveBtn = settingsBlurredStyle.Render(saveBtn)
 	}
 
-	if m.focusIndex == 4 {
+	if m.focusIndex == 8 {
 		cancelBtn = settingsFocusedStyle.Render(cancelBtn)
 	} else {
 		cancelBtn = settingsBlurredStyle.Render(cancelBtn)
@@ -634,7 +766,7 @@ func (m *Settings) viewSMIMEConfig() string {
 	b.WriteString(saveBtn + "  " + cancelBtn + "\n\n")
 
 	mainContent := b.String()
-	helpView := helpStyle.Render("tab/shift+tab: navigate • enter: save/next • esc: back")
+	helpView := helpStyle.Render("tab/shift+tab: navigate • enter: save/next • space: toggle • esc: back")
 
 	if m.height > 0 {
 		currentHeight := lipgloss.Height(docStyle.Render(mainContent + helpView))

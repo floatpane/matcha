@@ -82,6 +82,9 @@ type Attachment struct {
 	IsSMIMESignature bool
 	SMIMEVerified    bool
 	IsSMIMEEncrypted bool
+	IsPGPSignature   bool
+	PGPVerified      bool
+	IsPGPEncrypted   bool
 }
 
 // Folder represents a mailbox/folder.
@@ -105,6 +108,8 @@ type OutgoingEmail struct {
 	References   []string
 	SignSMIME    bool
 	EncryptSMIME bool
+	SignPGP      bool
+	EncryptPGP   bool
 }
 
 // NotifyType indicates the kind of notification event.

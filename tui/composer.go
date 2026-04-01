@@ -43,6 +43,7 @@ const (
 	focusSignature
 	focusAttachment
 	focusEncryptSMIME
+	focusEncryptPGP
 	focusSend
 )
 
@@ -57,6 +58,7 @@ type Composer struct {
 	signatureInput  textarea.Model
 	attachmentPaths []string
 	encryptSMIME    bool
+	encryptPGP      bool
 	width           int
 	height          int
 	confirmingExit  bool
@@ -402,6 +404,11 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.encryptSMIME = !m.encryptSMIME
 				}
 				return m, nil
+			case focusEncryptPGP:
+				if msg.String() == "enter" || msg.String() == " " {
+					m.encryptPGP = !m.encryptPGP
+				}
+				return m, nil
 			case focusSend:
 				if msg.String() == "enter" {
 					acc := m.getSelectedAccount()
@@ -424,6 +431,8 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							Signature:       m.signatureInput.Value(),
 							SignSMIME:       acc != nil && acc.SMIMESignByDefault,
 							EncryptSMIME:    m.encryptSMIME,
+							SignPGP:         acc != nil && acc.PGPSignByDefault,
+							EncryptPGP:      m.encryptPGP,
 						}
 					}
 				}
@@ -529,6 +538,15 @@ func (m *Composer) View() tea.View {
 		encField = focusedStyle.Render(fmt.Sprintf("> Encrypt Email (S/MIME): %s", encToggle))
 	}
 
+	pgpEncToggle := "[ ]"
+	if m.encryptPGP {
+		pgpEncToggle = "[x]"
+	}
+	pgpEncField := blurredStyle.Render(fmt.Sprintf("  Encrypt Email (PGP): %s", pgpEncToggle))
+	if m.focusIndex == focusEncryptPGP {
+		pgpEncField = focusedStyle.Render(fmt.Sprintf("> Encrypt Email (PGP): %s", pgpEncToggle))
+	}
+
 	// Build To field with suggestions
 	toFieldView := m.toInput.View()
 	if m.showSuggestions && len(m.suggestions) > 0 {
@@ -575,6 +593,8 @@ func (m *Composer) View() tea.View {
 		tip = "Enter: add file • backspace/d: remove last attachment"
 	case focusEncryptSMIME:
 		tip = "Press Space or Enter to toggle S/MIME encryption on or off."
+	case focusEncryptPGP:
+		tip = "Press Space or Enter to toggle PGP encryption on or off."
 	case focusSend:
 		tip = "Press Enter to send the email."
 	}
@@ -591,6 +611,7 @@ func (m *Composer) View() tea.View {
 		m.signatureInput.View(),
 		attachmentStyle.Render(attachmentField),
 		smimeToggleStyle.Render(encField),
+		smimeToggleStyle.Render(pgpEncField),
 		button,
 		"",
 	}

@@ -39,6 +39,9 @@ type EmailView struct {
 	isSMIME            bool
 	smimeTrusted       bool
 	isEncrypted        bool
+	isPGP              bool
+	pgpTrusted         bool
+	isPGPEncrypted     bool
 	imagePlacements    []view.ImagePlacement
 	pluginStatus       string
 }
@@ -47,6 +50,9 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 	isSMIME := false
 	smimeTrusted := false
 	isEncrypted := false
+	isPGP := false
+	pgpTrusted := false
+	isPGPEncrypted := false
 	var filteredAtts []fetcher.Attachment
 
 	for _, att := range email.Attachments {
@@ -59,6 +65,17 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 			if att.IsSMIMESignature && !isSMIME {
 				isSMIME = true
 				smimeTrusted = att.SMIMEVerified
+			}
+			// Skip UI rendering
+		} else if att.Filename == "pgp-status.internal" {
+			isPGP = att.IsPGPSignature || att.IsPGPEncrypted
+			pgpTrusted = att.PGPVerified
+			isPGPEncrypted = att.IsPGPEncrypted
+		} else if att.IsPGPSignature || att.Filename == "signature.asc" || att.MIMEType == "application/pgp-signature" || att.MIMEType == "application/pgp-encrypted" {
+			// Extract PGP status from detached signature attachments
+			if att.IsPGPSignature && !isPGP {
+				isPGP = true
+				pgpTrusted = att.PGPVerified
 			}
 			// Skip UI rendering
 		} else {
@@ -105,6 +122,9 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 		isSMIME:         isSMIME,
 		smimeTrusted:    smimeTrusted,
 		isEncrypted:     isEncrypted,
+		isPGP:           isPGP,
+		pgpTrusted:      pgpTrusted,
+		isPGPEncrypted:  isPGPEncrypted,
 		imagePlacements: placements,
 	}
 }
@@ -243,18 +263,27 @@ func (m *EmailView) View() tea.View {
 	os.Stdout.WriteString("\x1b_Ga=d,d=a\x1b\\")
 	os.Stdout.Sync()
 
-	smimeStatus := ""
+	cryptoStatus := ""
 	if m.isEncrypted {
-		smimeStatus = lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [S/MIME: 🔒 Encrypted]")
+		cryptoStatus = lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [S/MIME: 🔒 Encrypted]")
 	} else if m.isSMIME {
 		if m.smimeTrusted {
-			smimeStatus = lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [S/MIME: ✅ Trusted]")
+			cryptoStatus = lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [S/MIME: ✅ Trusted]")
 		} else {
-			smimeStatus = lipgloss.NewStyle().Foreground(theme.ActiveTheme.Danger).Render(" [S/MIME: ❌ Untrusted]")
+			cryptoStatus = lipgloss.NewStyle().Foreground(theme.ActiveTheme.Danger).Render(" [S/MIME: ❌ Untrusted]")
+		}
+	}
+	if m.isPGPEncrypted {
+		cryptoStatus += lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [PGP: 🔒 Encrypted]")
+	} else if m.isPGP {
+		if m.pgpTrusted {
+			cryptoStatus += lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [PGP: ✅ Verified]")
+		} else {
+			cryptoStatus += lipgloss.NewStyle().Foreground(theme.ActiveTheme.Danger).Render(" [PGP: ⚠️ Unverified]")
 		}
 	}
 
-	header := fmt.Sprintf("To: %s | From: %s | Subject: %s%s", strings.Join(m.email.To, ", "), m.email.From, m.email.Subject, smimeStatus)
+	header := fmt.Sprintf("To: %s | From: %s | Subject: %s%s", strings.Join(m.email.To, ", "), m.email.From, m.email.Subject, cryptoStatus)
 	styledHeader := emailHeaderStyle.Width(m.viewport.Width()).Render(header)
 
 	var help string

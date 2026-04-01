@@ -70,6 +70,7 @@ func (p *Provider) SendEmail(_ context.Context, msg *backend.OutgoingEmail) erro
 		msg.Images, msg.Attachments,
 		msg.InReplyTo, msg.References,
 		msg.SignSMIME, msg.EncryptSMIME,
+		msg.SignPGP, msg.EncryptPGP,
 	)
 }
 
