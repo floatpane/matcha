@@ -4,7 +4,7 @@ on:
   push:
   issues:
     types: [opened, edited, deleted, closed, reopened]
-  pull_request:
+  pull_request_target:
     types: [opened, edited, closed, reopened]
   issue_comment:
     types: [created, deleted]
