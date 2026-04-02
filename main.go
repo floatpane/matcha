@@ -1000,8 +1000,6 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if composer, ok := m.current.(*tui.Composer); ok {
 			draftID = composer.GetDraftID()
 		}
-		m.current = tui.NewStatus("Sending email...")
-
 		// Get the account to send from
 		var account *config.Account
 		if msg.AccountID != "" && m.config != nil {
@@ -1010,6 +1008,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if account == nil && m.config != nil {
 			account = m.config.GetFirstAccount()
 		}
+
+		statusText := "Sending email..."
+		if msg.SignPGP && account != nil && account.PGPKeySource == "yubikey" {
+			statusText = "Touch your YubiKey to sign..."
+		}
+		m.current = tui.NewStatus(statusText)
 
 		// Save contact and delete draft in background
 		go func() {

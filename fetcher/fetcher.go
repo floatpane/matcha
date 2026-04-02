@@ -842,7 +842,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 								signedData := rawEmail[startIdx:endIdx]
 
 								// Verify PGP signature
-								verified := verifyPGPSignature(signedData, data)
+								verified := verifyPGPSignature(signedData, data, account)
 								att.PGPVerified = verified
 							}
 						}
@@ -1503,29 +1503,81 @@ func decryptPGPMessage(encryptedData []byte, account *config.Account) ([]byte, e
 	return decrypted.Bytes(), nil
 }
 
+// loadPGPKeyring builds an openpgp.EntityList from the account's public key
+// and any keys stored in the pgp/ config directory.
+func loadPGPKeyring(account *config.Account) openpgp.EntityList {
+	var keyring openpgp.EntityList
+
+	readKeys := func(path string) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return
+		}
+		entities, err := openpgp.ReadArmoredKeyRing(bytes.NewReader(data))
+		if err != nil {
+			entities, err = openpgp.ReadKeyRing(bytes.NewReader(data))
+			if err != nil {
+				return
+			}
+		}
+		keyring = append(keyring, entities...)
+	}
+
+	// Load account's own public key
+	if account.PGPPublicKey != "" {
+		readKeys(account.PGPPublicKey)
+	}
+
+	// Load all keys from the pgp/ config directory
+	cfgDir, err := config.GetConfigDir()
+	if err == nil {
+		pgpDir := cfgDir + "/pgp"
+		entries, err := os.ReadDir(pgpDir)
+		if err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					continue
+				}
+				name := entry.Name()
+				if strings.HasSuffix(name, ".asc") || strings.HasSuffix(name, ".gpg") {
+					readKeys(pgpDir + "/" + name)
+				}
+			}
+		}
+	}
+
+	return keyring
+}
+
 // verifyPGPSignature verifies a PGP detached signature against signed content.
-func verifyPGPSignature(signedContent, signatureData []byte) bool {
-	// Combine signed content and signature for verification
-	// go-pgpmail expects a complete multipart/signed message
+func verifyPGPSignature(signedContent, signatureData []byte, account *config.Account) bool {
+	keyring := loadPGPKeyring(account)
+	if len(keyring) == 0 {
+		return false
+	}
+
+	// Build a complete multipart/signed message for go-pgpmail
+	boundary := "pgp-verify-boundary"
 	var msg bytes.Buffer
-
-	// Write a minimal MIME header
-	msg.WriteString("Content-Type: multipart/signed; protocol=\"application/pgp-signature\"\r\n\r\n")
+	msg.WriteString("Content-Type: multipart/signed; boundary=\"" + boundary + "\"; micalg=pgp-sha256; protocol=\"application/pgp-signature\"\r\n\r\n")
+	msg.WriteString("--" + boundary + "\r\n")
 	msg.Write(signedContent)
-	msg.WriteString("\r\n")
+	msg.WriteString("\r\n--" + boundary + "\r\n")
+	msg.WriteString("Content-Type: application/pgp-signature\r\n\r\n")
 	msg.Write(signatureData)
+	msg.WriteString("\r\n--" + boundary + "--\r\n")
 
-	// Try to verify using go-pgpmail
-	mr, err := pgpmail.Read(&msg, nil, nil, nil)
+	mr, err := pgpmail.Read(&msg, keyring, nil, nil)
 	if err != nil {
 		return false
 	}
 
-	// Check if signature is valid
-	if mr.MessageDetails != nil {
-		// If SignatureError is nil, the signature is valid
-		return mr.MessageDetails.SignatureError == nil
+	if mr.MessageDetails == nil {
+		return false
 	}
 
-	return false
+	// Must read UnverifiedBody to EOF to trigger signature verification
+	_, _ = io.ReadAll(mr.MessageDetails.UnverifiedBody)
+
+	return mr.MessageDetails.SignatureError == nil
 }
