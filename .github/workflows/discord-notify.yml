@@ -1,0 +1,26 @@
+name: Discord Release Notification
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  notify-discord:
+    name: Notify Discord Channel
+    runs-on: ubuntu-latest
+    if: github.event.release.tag_name != 'nightlyv0'
+
+    steps:
+      - name: Send Discord Message
+        env:
+          # Pulls the secure webhook URL from your repository secrets
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -H "Content-Type: application/json" \
+          -X POST \
+          -d '{
+            "username": "GitHub Releases",
+            "avatar_url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+            "content": "🚀 **A new Matcha release has been published!**\n\n**Release:** ${{ github.event.release.name }}\n\nCheck it out here: ${{ github.event.release.html_url }}"
+          }' \
+          $DISCORD_WEBHOOK_URL
