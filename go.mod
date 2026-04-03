@@ -9,7 +9,7 @@ require (
 	cunicu.li/go-iso7816 v0.8.8
 	cunicu.li/go-openpgp-card v0.3.11
 	git.sr.ht/~rockorager/go-jmap v0.5.3
-	github.com/ProtonMail/go-crypto v0.0.0-20230923063757-afb1ddc0824c
+	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/ebfe/scard v0.0.0-20241214075232-7af069cabc25
 	github.com/emersion/go-imap v1.2.1
@@ -37,7 +37,7 @@ require (
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/cloudflare/circl v1.3.7 // indirect
+	github.com/cloudflare/circl v1.6.2 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
