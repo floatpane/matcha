@@ -753,19 +753,65 @@ func signEmailPGP(payload []byte, account *config.Account) ([]byte, error) {
 		return nil, errors.New("no PGP keys found in keyring")
 	}
 
+	// Decrypt the private key if it's encrypted
+	entity := entityList[0]
+	if entity.PrivateKey != nil && entity.PrivateKey.Encrypted {
+		passphrase := []byte(account.PGPPIN) // reuse PIN field for passphrase
+		if err := entity.DecryptPrivateKeys(passphrase); err != nil {
+			return nil, fmt.Errorf("failed to decrypt PGP private key: %w", err)
+		}
+	}
+
+	// Split payload into transport headers (From, To, Subject, etc.) and body.
+	// pgpmail.Sign needs the transport headers in its header param so they
+	// appear at the top level of the output, not inside the signed part.
+	// Content headers (Content-Type, etc.) stay with the body as the signed part.
+	var header messagetextproto.Header
+	var bodyPayload []byte
+	if idx := bytes.Index(payload, []byte("\r\n\r\n")); idx >= 0 {
+		headerBytes := payload[:idx]
+		rawBody := payload[idx+4:]
+
+		var contentHeaders bytes.Buffer
+		for _, line := range bytes.Split(headerBytes, []byte("\r\n")) {
+			if len(line) == 0 {
+				continue
+			}
+			parts := bytes.SplitN(line, []byte(": "), 2)
+			if len(parts) != 2 {
+				continue
+			}
+			key := string(parts[0])
+			val := string(parts[1])
+			upper := strings.ToUpper(key)
+			if strings.HasPrefix(upper, "CONTENT-") || upper == "MIME-VERSION" {
+				// Keep content headers with the body for the signed part
+				contentHeaders.Write(line)
+				contentHeaders.WriteString("\r\n")
+			} else {
+				// Transport headers go to the top-level message
+				header.Set(key, val)
+			}
+		}
+
+		// Reconstruct body payload: content headers + blank line + body
+		contentHeaders.WriteString("\r\n")
+		contentHeaders.Write(rawBody)
+		bodyPayload = contentHeaders.Bytes()
+	} else {
+		bodyPayload = payload
+	}
+
 	// Create multipart/signed message using go-pgpmail
 	var signed bytes.Buffer
 
-	// Create a minimal header for the signed content
-	var header messagetextproto.Header
-
-	mw, err := pgpmail.Sign(&signed, header, entityList[0], nil)
+	mw, err := pgpmail.Sign(&signed, header, entity, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create PGP signer: %w", err)
 	}
 
-	// Write original message to be signed
-	if _, err := mw.Write(payload); err != nil {
+	// Write the body (content headers + body) to be signed
+	if _, err := mw.Write(bodyPayload); err != nil {
 		return nil, fmt.Errorf("failed to write message for signing: %w", err)
 	}
 
@@ -784,8 +830,12 @@ func signEmailPGPWithYubiKey(payload []byte, account *config.Account) ([]byte, e
 		return nil, fmt.Errorf("YubiKey PIN not configured - please set it in account settings")
 	}
 
+	if account.PGPPublicKey == "" {
+		return nil, fmt.Errorf("PGP public key path is required for YubiKey signing")
+	}
+
 	// Use the pgp package to sign with YubiKey
-	signed, err := pgp.BuildPGPSignedMessage(payload, pin)
+	signed, err := pgp.BuildPGPSignedMessage(payload, pin, account.PGPPublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("YubiKey signing failed: %w", err)
 	}
