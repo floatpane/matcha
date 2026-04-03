@@ -9,7 +9,7 @@
 ---
 
 [![Go Version](https://img.shields.io/github/go-mod/go-version/floatpane/matcha)](https://golang.org)
-[![Go Report Card](https://goreportcard.com/badge/github.com/floatpane/matcha)](https://goreportcard.com/report/github.com/floatpane/matcha)
+[![Discord](https://img.shields.io/discord/1489296626827661323?logo=discord)](https://discord.gg/jVnYTeSPV8)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/floatpane/matcha)](https://github.com/floatpane/matcha/releases)
 [![Go Reference](https://pkg.go.dev/badge/github.com/floatpane/matcha.svg)](https://pkg.go.dev/github.com/floatpane/matcha)
 [![Awesome](https://awesome.re/badge.svg)](https://github.com/rothgar/awesome-tuis#messaging)
@@ -56,5 +56,3 @@ This project is distributed under the MIT License. See the `LICENSE` file for mo
 **[Report Bug](https://github.com/floatpane/matcha/issues/new?template=bug_report.md)** · **[Request Feature](https://github.com/floatpane/matcha/issues/new?template=feature_request.md)** · **[Contributing Guidelines](https://github.com/floatpane/matcha/blob/master/CONTRIBUTING.md)**
 
 </div>
-
-
