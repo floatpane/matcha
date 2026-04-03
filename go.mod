@@ -6,10 +6,15 @@ require (
 	charm.land/bubbles/v2 v2.1.0
 	charm.land/bubbletea/v2 v2.0.2
 	charm.land/lipgloss/v2 v2.0.2
+	cunicu.li/go-iso7816 v0.8.8
+	cunicu.li/go-openpgp-card v0.3.11
 	git.sr.ht/~rockorager/go-jmap v0.5.3
+	github.com/ProtonMail/go-crypto v0.0.0-20230923063757-afb1ddc0824c
 	github.com/PuerkitoBio/goquery v1.12.0
+	github.com/ebfe/scard v0.0.0-20241214075232-7af069cabc25
 	github.com/emersion/go-imap v1.2.1
 	github.com/emersion/go-message v0.18.2
+	github.com/emersion/go-pgpmail v0.2.2
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 	github.com/google/uuid v1.6.0
 	github.com/knadh/go-pop3 v1.0.2
@@ -22,10 +27,6 @@ require (
 )
 
 require (
-	cunicu.li/go-iso7816 v0.8.8 // indirect
-	cunicu.li/go-openpgp-card v0.3.11 // indirect
-	git.sr.ht/~rockorager/go-jmap v0.5.3 // indirect
-	github.com/ProtonMail/go-crypto v0.0.0-20230923063757-afb1ddc0824c // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/charmbracelet/colorprofile v0.4.2 // indirect
@@ -38,9 +39,6 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudflare/circl v1.3.7 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
-	github.com/ebfe/scard v0.0.0-20241214075232-7af069cabc25 // indirect
-	github.com/emersion/go-pgpmail v0.2.2 // indirect
-	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
