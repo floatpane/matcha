@@ -36,7 +36,6 @@ type SendEmailMsg struct {
 	SignSMIME       bool   // Whether to sign the email using S/MIME
 	EncryptSMIME    bool   // Whether to encrypt the email using S/MIME
 	SignPGP         bool   // Whether to sign the email using PGP
-	EncryptPGP      bool   // Whether to encrypt the email using PGP
 }
 
 type Credentials struct {

@@ -71,18 +71,11 @@ func TestComposerUpdate(t *testing.T) {
 			t.Errorf("After seven Tabs, focusIndex should be %d (focusEncryptSMIME), got %d", focusEncryptSMIME, composer.focusIndex)
 		}
 
-		// Simulate pressing Tab again to move to the 'EncryptPGP' toggle.
-		model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-		composer = model.(*Composer)
-		if composer.focusIndex != focusEncryptPGP {
-			t.Errorf("After eight Tabs, focusIndex should be %d (focusEncryptPGP), got %d", focusEncryptPGP, composer.focusIndex)
-		}
-
 		// Simulate pressing Tab again to move to the 'Send' button.
 		model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		composer = model.(*Composer)
 		if composer.focusIndex != focusSend {
-			t.Errorf("After nine Tabs, focusIndex should be %d (focusSend), got %d", focusSend, composer.focusIndex)
+			t.Errorf("After eight Tabs, focusIndex should be %d (focusSend), got %d", focusSend, composer.focusIndex)
 		}
 
 		// Simulate one more Tab to wrap around.
@@ -90,7 +83,7 @@ func TestComposerUpdate(t *testing.T) {
 		model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		composer = model.(*Composer)
 		if composer.focusIndex != focusTo {
-			t.Errorf("After ten Tabs, focusIndex should wrap to %d (focusTo) since single account skips From, got %d", focusTo, composer.focusIndex)
+			t.Errorf("After nine Tabs, focusIndex should wrap to %d (focusTo) since single account skips From, got %d", focusTo, composer.focusIndex)
 		}
 	})
 
@@ -218,9 +211,7 @@ func TestComposerUpdate(t *testing.T) {
 		multiComposer = model.(*Composer)
 		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // Attachment -> EncryptSMIME
 		multiComposer = model.(*Composer)
-		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // EncryptSMIME -> EncryptPGP
-		multiComposer = model.(*Composer)
-		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // EncryptPGP -> Send
+		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // EncryptSMIME -> Send
 		multiComposer = model.(*Composer)
 		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // Send -> From (wrap)
 		multiComposer = model.(*Composer)

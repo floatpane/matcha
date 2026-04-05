@@ -312,10 +312,9 @@ func (m *Settings) updateAccounts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // 5: PGP Key Source toggle (file/yubikey)
 // 6: PGP PIN input (only shown if yubikey)
 // 7: PGP Sign By Default toggle
-// 8: PGP Encrypt By Default toggle
-// 9: Save button
-// 10: Cancel button
-const cryptoConfigMaxFocus = 10
+// 8: Save button
+// 9: Cancel button
+const cryptoConfigMaxFocus = 9
 
 func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -410,12 +409,7 @@ func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 				m.cfg.Accounts[m.editingAccountIdx].PGPSignByDefault = !m.cfg.Accounts[m.editingAccountIdx].PGPSignByDefault
 			}
 			return m, nil
-		case 8: // PGP encrypt toggle
-			if msg.String() == "enter" || msg.String() == " " {
-				m.cfg.Accounts[m.editingAccountIdx].PGPEncryptByDefault = !m.cfg.Accounts[m.editingAccountIdx].PGPEncryptByDefault
-			}
-			return m, nil
-		case 9: // Save
+		case 8: // Save
 			if msg.String() == "enter" {
 				m.cfg.Accounts[m.editingAccountIdx].SMIMECert = m.smimeCertInput.Value()
 				m.cfg.Accounts[m.editingAccountIdx].SMIMEKey = m.smimeKeyInput.Value()
@@ -427,7 +421,7 @@ func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 				m.state = SettingsAccounts
 				return m, nil
 			}
-		case 10: // Cancel
+		case 9: // Cancel
 			if msg.String() == "enter" {
 				m.state = SettingsAccounts
 				return m, nil
@@ -806,27 +800,17 @@ func (m *Settings) viewSMIMEConfig() string {
 		b.WriteString(settingsBlurredStyle.Render(fmt.Sprintf("  Sign By Default: %s\n\n", pgpSignStatus)))
 	}
 
-	pgpEncryptStatus := "OFF"
-	if account.PGPEncryptByDefault {
-		pgpEncryptStatus = "ON"
-	}
-	if m.focusIndex == 8 {
-		b.WriteString(settingsFocusedStyle.Render(fmt.Sprintf("> Encrypt By Default: %s\n\n", pgpEncryptStatus)))
-	} else {
-		b.WriteString(settingsBlurredStyle.Render(fmt.Sprintf("  Encrypt By Default: %s\n\n", pgpEncryptStatus)))
-	}
-
 	// --- Buttons ---
 	saveBtn := "[ Save ]"
 	cancelBtn := "[ Cancel ]"
 
-	if m.focusIndex == 9 {
+	if m.focusIndex == 8 {
 		saveBtn = settingsFocusedStyle.Render(saveBtn)
 	} else {
 		saveBtn = settingsBlurredStyle.Render(saveBtn)
 	}
 
-	if m.focusIndex == 10 {
+	if m.focusIndex == 9 {
 		cancelBtn = settingsFocusedStyle.Render(cancelBtn)
 	} else {
 		cancelBtn = settingsBlurredStyle.Render(cancelBtn)
