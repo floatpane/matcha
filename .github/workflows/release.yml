@@ -36,6 +36,27 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up libpcsclite for Linux cross-compilation
+        run: |
+          PCSC_DIR="$RUNNER_TEMP/pcsclite"
+          mkdir -p "$PCSC_DIR/include" "$PCSC_DIR/lib/pkgconfig"
+
+          # Download pcsc-lite headers from upstream
+          for header in winscard.h pcsclite.h wintypes.h; do
+            curl -fsSL "https://raw.githubusercontent.com/LudovicRousseau/PCSC/master/src/PCSC/$header" \
+              -o "$PCSC_DIR/include/$header"
+          done
+
+          # Create pkg-config file (headers-only, no library needed for cross-compilation)
+          cat > "$PCSC_DIR/lib/pkgconfig/libpcsclite.pc" << EOF
+          Name: libpcsclite
+          Description: PC/SC Lite
+          Version: 1.9.0
+          Cflags: -I$PCSC_DIR/include
+          EOF
+
+          echo "PKG_CONFIG_PATH=$PCSC_DIR/lib/pkgconfig" >> $GITHUB_ENV
+
       - name: Get macOS SDK path
         id: macos_sdk
         run: echo "path=$(xcrun --show-sdk-path)" >> $GITHUB_OUTPUT

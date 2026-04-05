@@ -26,6 +26,27 @@ jobs:
       - name: Set up Zig
         uses: goto-bus-stop/setup-zig@v2
 
+      - name: Set up libpcsclite for Linux cross-compilation
+        run: |
+          PCSC_DIR="$RUNNER_TEMP/pcsclite"
+          mkdir -p "$PCSC_DIR/include" "$PCSC_DIR/lib/pkgconfig"
+
+          # Download pcsc-lite headers from upstream
+          for header in winscard.h pcsclite.h wintypes.h; do
+            curl -fsSL "https://raw.githubusercontent.com/LudovicRousseau/PCSC/master/src/PCSC/$header" \
+              -o "$PCSC_DIR/include/$header"
+          done
+
+          # Create pkg-config file (headers-only, no library needed for cross-compilation)
+          cat > "$PCSC_DIR/lib/pkgconfig/libpcsclite.pc" << EOF
+          Name: libpcsclite
+          Description: PC/SC Lite
+          Version: 1.9.0
+          Cflags: -I$PCSC_DIR/include
+          EOF
+
+          echo "PKG_CONFIG_PATH=$PCSC_DIR/lib/pkgconfig" >> $GITHUB_ENV
+
       - name: Get macOS SDK path
         id: macos_sdk
         run: echo "path=$(xcrun --show-sdk-path)" >> $GITHUB_OUTPUT
@@ -44,13 +65,42 @@ jobs:
         run: |
           gh release delete nightlyv0 --yes --cleanup-tag || true
 
+      - name: Generate release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          LATEST_TAG="$(git describe --tags --abbrev=0 --exclude='nightlyv*' 2>/dev/null || echo '')"
+
+          {
+            echo 'BODY<<EOF'
+            echo "> [!WARNING]"
+            echo "> This is an automated nightly build from the latest \`master\` commit (\`$SHORT_SHA\`). It may be unstable — use stable releases for production."
+            echo ""
+            echo "### Install"
+            echo ""
+            echo "- **Homebrew:** \`brew install floatpane/matcha/matcha-nightly\`"
+            echo "- **Snapcraft:** \`snap install matcha --beta\`"
+
+            if [ -n "$LATEST_TAG" ]; then
+              echo ""
+              echo "### Changes since $LATEST_TAG"
+              echo ""
+              git log --pretty=format:"- %s (%h)" "$LATEST_TAG..HEAD"
+              echo ""
+            fi
+
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create nightly release
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
         run: |
           gh release create nightlyv0 dist/*.tar.gz dist/*.zip dist/checksums.txt \
             --title "Nightly Build ($(git rev-parse --short HEAD))" \
-            --notes "This is an automated nightly build from the latest \`master\` commit ($(git rev-parse --short HEAD)).It may be unstable — use stable releases for production. You can install this version via Homebrew (`brew install floatpane/matcha/matcha-nightly`, or Snapcraft (`snap install matcha --beta`)" \
+            --notes "${{ steps.notes.outputs.BODY }}" \
             --prerelease \
             --target master
 

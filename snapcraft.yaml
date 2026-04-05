@@ -30,6 +30,8 @@ parts:
     build-packages:
       - gcc
       - libc6-dev
+      - libpcsclite-dev
+      - pkg-config
     build-environment:
       - CGO_ENABLED: "1"
     override-pull: |
