@@ -32,10 +32,13 @@ jobs:
           mkdir -p "$PCSC_DIR/include" "$PCSC_DIR/lib/pkgconfig"
 
           # Download pcsc-lite headers from upstream
-          for header in winscard.h pcsclite.h wintypes.h; do
-            curl -fsSL "https://raw.githubusercontent.com/LudovicRousseau/PCSC/master/src/PCSC/$header" \
-              -o "$PCSC_DIR/include/$header"
+          PCSC_URL="https://raw.githubusercontent.com/LudovicRousseau/PCSC/master/src/PCSC"
+          for header in winscard.h wintypes.h; do
+            curl -fsSL "$PCSC_URL/$header" -o "$PCSC_DIR/include/$header"
           done
+          # pcsclite.h is generated from pcsclite.h.in — download and substitute the version placeholder
+          curl -fsSL "$PCSC_URL/pcsclite.h.in" -o "$PCSC_DIR/include/pcsclite.h"
+          sed -i '' 's/@VERSION@/1.9.0/' "$PCSC_DIR/include/pcsclite.h"
 
           # Create pkg-config file (headers-only, no library needed for cross-compilation)
           cat > "$PCSC_DIR/lib/pkgconfig/libpcsclite.pc" << EOF
