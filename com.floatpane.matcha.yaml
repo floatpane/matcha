@@ -13,6 +13,34 @@ finish-args:
   - --filesystem=home
 
 modules:
+  - name: libpcsclite
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 winscard.h /app/include/winscard.h
+      - install -Dm644 wintypes.h /app/include/wintypes.h
+      - sed 's/@VERSION@/2.4.1/' pcsclite.h.in > pcsclite.h
+      - install -Dm644 pcsclite.h /app/include/pcsclite.h
+      - install -Dm644 libpcsclite.pc /app/lib/pkgconfig/libpcsclite.pc
+    sources:
+      - type: file
+        url: https://raw.githubusercontent.com/LudovicRousseau/PCSC/2.4.1/src/PCSC/winscard.h
+        sha256: be88c31d0c7d5823fa2eb13d81e892301817f3597f891d476a970652aacb7b1c
+      - type: file
+        url: https://raw.githubusercontent.com/LudovicRousseau/PCSC/2.4.1/src/PCSC/wintypes.h
+        sha256: 5eed57487b860295feafdc0d37d62f2ec63b5f790e0a80ed67500337e2b42cb4
+      - type: file
+        url: https://raw.githubusercontent.com/LudovicRousseau/PCSC/2.4.1/src/PCSC/pcsclite.h.in
+        sha256: 4dedcdfd21e54161b7120c328091ab37270611d32dc36527baeeb5aea70085d3
+      - type: inline
+        dest-filename: libpcsclite.pc
+        contents: |
+          prefix=/app
+          includedir=${prefix}/include
+          Name: libpcsclite
+          Description: PC/SC Lite (headers only for build)
+          Version: 2.4.1
+          Cflags: -I${includedir}
+
   - name: matcha
     buildsystem: simple
     build-options:
