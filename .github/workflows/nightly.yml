@@ -113,23 +113,22 @@ jobs:
         run: |
           gh release delete nightlyv0 --yes --cleanup-tag || true
 
-      - name: Generate release notes
-        id: notes
+      - name: Create nightly release
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
         run: |
           SHORT_SHA="$(git rev-parse --short HEAD)"
           LATEST_TAG="$(git describe --tags --abbrev=0 --exclude='nightlyv*' 2>/dev/null || echo '')"
 
+          NOTES_FILE="$RUNNER_TEMP/release_notes.md"
           {
-            echo 'BODY<<EOF'
             echo "> [!WARNING]"
             echo "> This is an automated nightly build from the latest \`master\` commit (\`$SHORT_SHA\`). It may be unstable — use stable releases for production."
             echo ""
             echo "### Install"
             echo ""
-            echo "- **Homebrew:** \`brew install floatpane/matcha/matcha-nightly\`"
-            echo "- **Snapcraft:** \`snap install matcha --beta\`"
+            echo '- **Homebrew:** `brew install floatpane/matcha/matcha-nightly`'
+            echo '- **Snapcraft:** `snap install matcha --beta`'
 
             if [ -n "$LATEST_TAG" ]; then
               echo ""
@@ -138,17 +137,11 @@ jobs:
               git log --pretty=format:"- %s (%h)" "$LATEST_TAG..HEAD"
               echo ""
             fi
+          } > "$NOTES_FILE"
 
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Create nightly release
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-        run: |
           gh release create nightlyv0 dist/*.tar.gz dist/*.zip dist/checksums.txt \
-            --title "Nightly Build ($(git rev-parse --short HEAD))" \
-            --notes "${{ steps.notes.outputs.BODY }}" \
+            --title "Nightly Build ($SHORT_SHA)" \
+            --notes-file "$NOTES_FILE" \
             --prerelease \
             --target master
 
