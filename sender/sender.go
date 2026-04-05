@@ -694,7 +694,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	}
 
 	// Send Envelope
-	if err = c.Mail(account.Email); err != nil {
+	if err = c.Mail(account.FetchEmail); err != nil {
 		return err
 	}
 	for _, r := range allRecipients {
