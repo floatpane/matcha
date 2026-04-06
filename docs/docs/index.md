@@ -31,6 +31,9 @@ Matcha is packed with features to make email management in the terminal a breeze
 - [**Drafts**](./Features/DRAFTS.md) - Save unfinished emails and pick them up later.
 - [**UI**](./Features/UI.md) - A responsive, tabbed interface with color-coding and clear focus management.
 - [**Advanced**](./Features/ADVANCED.md) - Automatic updates, smart image rendering, and performance optimization.
+- [**CLI**](./Features/CLI.md) - Send emails and manage accounts from the command line.
+- [**AI Agents**](./Features/AI_AGENTS.md) - Let AI coding agents send emails through Matcha.
+- [**Plugins**](./Features/Plugins.md) - Extend Matcha with Lua plugins.
 
 ### Image & Hyperlink Support
 

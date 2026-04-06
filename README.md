@@ -22,11 +22,17 @@
 
 **A powerful, feature-rich email client for your terminal.** Built with Go and the Bubble Tea TUI framework, Matcha brings a beautiful, modern email experience to the command line with support for rich content, multiple accounts, and advanced terminal features.
 
-
-
-
-
 ![Demo GIF](public/assets/demo.gif)
+
+### AI Agent Support
+
+Matcha can be used by autonomous AI agents to send emails on your behalf. The `matcha send` CLI command provides a non-interactive interface for composing and sending emails.
+
+```bash
+matcha send --to alice@example.com --subject "Hello" --body "Sent by my AI agent"
+```
+
+[Learn more](https://docs.matcha.floatpane.com/Features/AI_AGENTS)
 
 ## Documentation
 
