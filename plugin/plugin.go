@@ -9,6 +9,14 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
+// KeyBinding represents a plugin-registered keyboard shortcut.
+type KeyBinding struct {
+	Key         string
+	Area        string // "inbox", "email_view", or "composer"
+	Description string
+	Fn          *lua.LFunction
+}
+
 // Manager manages the Lua VM and loaded plugins.
 type Manager struct {
 	state   *lua.LState
@@ -21,6 +29,8 @@ type Manager struct {
 	pendingDuration     float64 // seconds, 0 means default (2s)
 	// pendingFields holds compose field updates set by matcha.set_compose_field().
 	pendingFields map[string]string
+	// bindings holds plugin-registered keyboard shortcuts.
+	bindings []KeyBinding
 }
 
 // NewManager creates a new plugin manager with a Lua VM.
@@ -131,9 +141,25 @@ func (m *Manager) TakePendingFields() map[string]string {
 	return fields
 }
 
+// Bindings returns all plugin-registered key bindings for the given view area.
+func (m *Manager) Bindings(area string) []KeyBinding {
+	var result []KeyBinding
+	for _, b := range m.bindings {
+		if b.Area == area {
+			result = append(result, b)
+		}
+	}
+	return result
+}
+
 // StatusText returns the plugin status string for the given view area.
 func (m *Manager) StatusText(area string) string {
 	return m.statuses[area]
+}
+
+// LuaState returns the Lua VM state for building tables.
+func (m *Manager) LuaState() *lua.LState {
+	return m.state
 }
 
 // Close shuts down the Lua VM.

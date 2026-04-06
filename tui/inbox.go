@@ -218,6 +218,7 @@ type Inbox struct {
 	noMoreByAccount    map[string]bool // Per-account: true when pagination returns 0 results
 	extraShortHelpKeys []key.Binding
 	pluginStatus       string // Persistent status text set by plugins
+	pluginKeyBindings  []PluginKeyBinding
 }
 
 func NewInbox(emails []fetcher.Email, accounts []config.Account) *Inbox {
@@ -350,6 +351,9 @@ func (m *Inbox) updateList() {
 			)
 		}
 		bindings = append(bindings, m.extraShortHelpKeys...)
+		for _, pk := range m.pluginKeyBindings {
+			bindings = append(bindings, key.NewBinding(key.WithKeys(pk.Key), key.WithHelp(pk.Key, pk.Description)))
+		}
 		return bindings
 	}
 
@@ -707,6 +711,15 @@ func (m *Inbox) GetMailbox() MailboxKind {
 	return m.mailbox
 }
 
+// GetSelectedEmail returns the currently selected email, or nil if none is selected.
+func (m *Inbox) GetSelectedEmail() *fetcher.Email {
+	selectedItem, ok := m.list.SelectedItem().(item)
+	if !ok {
+		return nil
+	}
+	return m.GetEmailAtIndex(selectedItem.originalIndex)
+}
+
 // MarkEmailAsRead marks an email as read by UID and account ID, updating it in all stores.
 func (m *Inbox) MarkEmailAsRead(uid uint32, accountID string) {
 	for i := range m.allEmails {
@@ -769,6 +782,11 @@ func (m *Inbox) SetFolderName(name string) {
 func (m *Inbox) SetPluginStatus(status string) {
 	m.pluginStatus = status
 	m.list.Title = m.getTitle()
+}
+
+// SetPluginKeyBindings sets the plugin-registered key bindings for display in the help bar.
+func (m *Inbox) SetPluginKeyBindings(bindings []PluginKeyBinding) {
+	m.pluginKeyBindings = bindings
 }
 
 // SetEmails updates all emails (used after fetch)

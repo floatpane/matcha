@@ -438,3 +438,9 @@ type PluginNotifyMsg struct {
 	Message  string
 	Duration float64 // Duration in seconds (default 2)
 }
+
+// PluginKeyBinding describes a plugin-registered keyboard shortcut for display in the help bar.
+type PluginKeyBinding struct {
+	Key         string
+	Description string
+}

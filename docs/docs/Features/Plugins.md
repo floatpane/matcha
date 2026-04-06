@@ -102,6 +102,38 @@ matcha.on("composer_updated", function(state)
 end)
 ```
 
+### matcha.bind_key(key, area, description, callback)
+
+Register a custom keyboard shortcut. The shortcut is scoped to a specific view area and shows up in the help bar. The callback receives a context table when the key is pressed.
+
+**Parameters:**
+
+| Parameter     | Type     | Description                                                    |
+| ------------- | -------- | -------------------------------------------------------------- |
+| `key`         | string   | Key string (e.g. `"ctrl+k"`, `"g"`, `"ctrl+shift+a"`)         |
+| `area`        | string   | View area: `"inbox"`, `"email_view"`, or `"composer"`          |
+| `description` | string   | Short text shown in the help bar                               |
+| `callback`    | function | Called when the key is pressed; receives a context table        |
+
+**Context tables by area:**
+
+- **inbox / email_view**: Same email table as `email_viewed` (`uid`, `from`, `to`, `subject`, `date`, `is_read`, `account_id`, `folder`)
+- **composer**: Same state table as `composer_updated` (`body`, `body_len`, `subject`, `to`, `cc`, `bcc`)
+
+```lua
+-- Add a shortcut to show email subject in inbox
+matcha.bind_key("ctrl+i", "inbox", "info", function(email)
+  if email then
+    matcha.notify("Subject: " .. email.subject, 3)
+  end
+end)
+
+-- Add a shortcut to insert a greeting in the composer
+matcha.bind_key("ctrl+g", "composer", "greeting", function(state)
+  matcha.set_compose_field("body", "Hi there,\n\n" .. state.body)
+end)
+```
+
 ### matcha.notify(message [, seconds])
 
 Show a temporary notification in the Matcha UI. The optional second argument sets how long the notification is displayed (default 2 seconds).

@@ -119,6 +119,17 @@ func (m *Manager) CallComposerHook(event string, body, subject, to, cc, bcc stri
 	}
 }
 
+// CallKeyBinding invokes a plugin key binding callback with the given arguments.
+func (m *Manager) CallKeyBinding(binding KeyBinding, args ...lua.LValue) {
+	if err := m.state.CallByParam(lua.P{
+		Fn:      binding.Fn,
+		NRet:    0,
+		Protect: true,
+	}, args...); err != nil {
+		log.Printf("plugin keybinding %q error: %v", binding.Key, err)
+	}
+}
+
 // EmailToTable converts email fields into a Lua table.
 func (m *Manager) EmailToTable(uid uint32, from string, to []string, subject string, date time.Time, isRead bool, accountID string, folder string) *lua.LTable {
 	L := m.state

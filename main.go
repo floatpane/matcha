@@ -34,6 +34,7 @@ import (
 	"github.com/floatpane/matcha/theme"
 	"github.com/floatpane/matcha/tui"
 	"github.com/google/uuid"
+	lua "github.com/yuin/gopher-lua"
 )
 
 const (
@@ -147,11 +148,16 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, cmd)
 
 	// Fire composer_updated hook on key presses when the composer is active
-	if _, isKey := msg.(tea.KeyPressMsg); isKey {
+	if keyMsg, isKey := msg.(tea.KeyPressMsg); isKey {
 		if composer, ok := m.current.(*tui.Composer); ok && m.plugins != nil {
 			m.plugins.CallComposerHook(plugin.HookComposerUpdated, composer.GetBody(), composer.GetSubject(), composer.GetTo(), composer.GetCc(), composer.GetBcc())
 			m.syncPluginStatus()
 			m.applyPluginFields(composer)
+		}
+
+		// Check plugin key bindings for the current view
+		if m.plugins != nil {
+			m.handlePluginKeyBinding(keyMsg)
 		}
 	}
 
@@ -429,6 +435,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.plugins != nil {
 			m.plugins.CallFolderHook(plugin.HookFolderChanged, msg.FolderName)
 			m.syncPluginStatus()
+			m.syncPluginKeyBindings()
 		}
 		// Use in-memory cache if available
 		if cached, ok := m.folderEmails[msg.FolderName]; ok {
@@ -503,6 +510,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.folderInbox.GetInbox().SetFolderName(msg.FolderName)
 		m.folderInbox.SetLoadingEmails(false)
 		m.syncPluginStatus()
+		m.syncPluginKeyBindings()
 		return m, m.pluginNotifyCmd()
 
 	case tui.FetchFolderMoreEmailsMsg:
@@ -700,6 +708,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.current = tui.NewComposer("", msg.To, msg.Subject, msg.Body, hideTips)
 		}
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.syncPluginKeyBindings()
 		return m, m.current.Init()
 
 	case tui.GoToDraftsMsg:
@@ -718,6 +727,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		composer := tui.NewComposerFromDraft(msg.Draft, accounts, hideTips)
 		m.current = composer
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.syncPluginKeyBindings()
 		return m, m.current.Init()
 
 	case tui.DeleteSavedDraftMsg:
@@ -884,6 +894,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		emailView := tui.NewEmailView(*email, emailIndex, m.width, m.height, msg.Mailbox, m.config.DisableImages)
 		m.current = emailView
 		m.syncPluginStatus()
+		m.syncPluginKeyBindings()
 		cmds := []tea.Cmd{m.current.Init()}
 		if markReadCmd != nil {
 			cmds = append(cmds, markReadCmd)
@@ -923,6 +934,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.current = composer
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.syncPluginKeyBindings()
 		return m, m.current.Init()
 
 	case tui.ForwardEmailMsg:
@@ -958,6 +970,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.current = composer
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.syncPluginKeyBindings()
 		return m, m.current.Init()
 
 	case tui.OpenEditorMsg:
@@ -1316,6 +1329,91 @@ func (m *mainModel) syncPluginStatus() {
 		v.SetPluginStatus(m.plugins.StatusText(plugin.StatusComposer))
 	case *tui.EmailView:
 		v.SetPluginStatus(m.plugins.StatusText(plugin.StatusEmailView))
+	}
+}
+
+func (m *mainModel) handlePluginKeyBinding(msg tea.KeyPressMsg) {
+	keyStr := msg.String()
+
+	var area string
+	switch m.current.(type) {
+	case *tui.Inbox:
+		area = plugin.StatusInbox
+	case *tui.FolderInbox:
+		area = plugin.StatusInbox
+	case *tui.EmailView:
+		area = plugin.StatusEmailView
+	case *tui.Composer:
+		area = plugin.StatusComposer
+	default:
+		return
+	}
+
+	bindings := m.plugins.Bindings(area)
+	for _, binding := range bindings {
+		if binding.Key != keyStr {
+			continue
+		}
+
+		// Build context table based on the current view
+		switch v := m.current.(type) {
+		case *tui.Inbox:
+			if email := v.GetSelectedEmail(); email != nil {
+				t := m.plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, "")
+				m.plugins.CallKeyBinding(binding, t)
+			} else {
+				m.plugins.CallKeyBinding(binding)
+			}
+		case *tui.FolderInbox:
+			if email := v.GetInbox().GetSelectedEmail(); email != nil {
+				t := m.plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, v.GetCurrentFolder())
+				m.plugins.CallKeyBinding(binding, t)
+			} else {
+				m.plugins.CallKeyBinding(binding)
+			}
+		case *tui.EmailView:
+			email := v.GetEmail()
+			t := m.plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, "")
+			m.plugins.CallKeyBinding(binding, t)
+		case *tui.Composer:
+			L := m.plugins.LuaState()
+			t := L.NewTable()
+			t.RawSetString("body", lua.LString(v.GetBody()))
+			t.RawSetString("body_len", lua.LNumber(len(v.GetBody())))
+			t.RawSetString("subject", lua.LString(v.GetSubject()))
+			t.RawSetString("to", lua.LString(v.GetTo()))
+			t.RawSetString("cc", lua.LString(v.GetCc()))
+			t.RawSetString("bcc", lua.LString(v.GetBcc()))
+			m.plugins.CallKeyBinding(binding, t)
+			m.applyPluginFields(v)
+		}
+
+		m.syncPluginStatus()
+		return
+	}
+}
+
+func (m *mainModel) syncPluginKeyBindings() {
+	if m.plugins == nil {
+		return
+	}
+
+	toPluginKeyBindings := func(bindings []plugin.KeyBinding) []tui.PluginKeyBinding {
+		result := make([]tui.PluginKeyBinding, len(bindings))
+		for i, b := range bindings {
+			result[i] = tui.PluginKeyBinding{Key: b.Key, Description: b.Description}
+		}
+		return result
+	}
+
+	if m.folderInbox != nil {
+		m.folderInbox.GetInbox().SetPluginKeyBindings(toPluginKeyBindings(m.plugins.Bindings(plugin.StatusInbox)))
+	}
+	switch v := m.current.(type) {
+	case *tui.Composer:
+		v.SetPluginKeyBindings(toPluginKeyBindings(m.plugins.Bindings(plugin.StatusComposer)))
+	case *tui.EmailView:
+		v.SetPluginKeyBindings(toPluginKeyBindings(m.plugins.Bindings(plugin.StatusEmailView)))
 	}
 }
 

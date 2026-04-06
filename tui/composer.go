@@ -84,7 +84,8 @@ type Composer struct {
 	quotedText string
 
 	// Plugin status text shown in the help bar
-	pluginStatus string
+	pluginStatus      string
+	pluginKeyBindings []PluginKeyBinding
 }
 
 // NewComposer initializes a new composer model.
@@ -603,6 +604,9 @@ func (m *Composer) View() tea.View {
 
 	mainContent := lipgloss.JoinVertical(lipgloss.Left, composerViewElements...)
 	helpText := "Markdown/HTML • tab/shift+tab: navigate • ctrl+e: $EDITOR • esc: save draft & exit"
+	for _, pk := range m.pluginKeyBindings {
+		helpText += " • " + pk.Key + ": " + pk.Description
+	}
 	if m.pluginStatus != "" {
 		helpText += " • " + m.pluginStatus
 	}
@@ -784,6 +788,11 @@ func (m *Composer) GetReferences() []string {
 // SetPluginStatus sets a persistent status string from plugins, shown in the help bar.
 func (m *Composer) SetPluginStatus(status string) {
 	m.pluginStatus = status
+}
+
+// SetPluginKeyBindings sets the plugin-registered key bindings for display in the help bar.
+func (m *Composer) SetPluginKeyBindings(bindings []PluginKeyBinding) {
+	m.pluginKeyBindings = bindings
 }
 
 // ToDraft converts the composer state to a Draft for saving.

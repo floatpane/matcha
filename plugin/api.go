@@ -16,6 +16,7 @@ func (m *Manager) registerAPI() {
 		"notify":            m.luaNotify,
 		"set_status":        m.luaSetStatus,
 		"set_compose_field": m.luaSetComposeField,
+		"bind_key":          m.luaBindKey,
 	})
 
 	L.SetField(mod, "_VERSION", lua.LString("0.1.0"))
@@ -50,6 +51,28 @@ func (m *Manager) luaSetStatus(L *lua.LState) int {
 func (m *Manager) luaNotify(L *lua.LState) int {
 	m.pendingNotification = L.CheckString(1)
 	m.pendingDuration = float64(L.OptNumber(2, 2))
+	return 0
+}
+
+// matcha.bind_key(key, area, description, callback) — register a custom keyboard shortcut.
+// Valid areas: "inbox", "email_view", "composer".
+func (m *Manager) luaBindKey(L *lua.LState) int {
+	key := L.CheckString(1)
+	area := L.CheckString(2)
+	description := L.CheckString(3)
+	fn := L.CheckFunction(4)
+
+	switch area {
+	case "inbox", "email_view", "composer":
+		m.bindings = append(m.bindings, KeyBinding{
+			Key:         key,
+			Area:        area,
+			Description: description,
+			Fn:          fn,
+		})
+	default:
+		L.ArgError(2, "invalid area: must be \"inbox\", \"email_view\", or \"composer\"")
+	}
 	return 0
 }
 

@@ -44,6 +44,7 @@ type EmailView struct {
 	isPGPEncrypted     bool
 	imagePlacements    []view.ImagePlacement
 	pluginStatus       string
+	pluginKeyBindings  []PluginKeyBinding
 }
 
 func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox MailboxKind, disableImages bool) *EmailView {
@@ -298,6 +299,9 @@ func (m *EmailView) View() tea.View {
 		if view.ImageProtocolSupported() {
 			shortcuts = shortcuts + "• \uf03e i: toggle images"
 		}
+		for _, pk := range m.pluginKeyBindings {
+			shortcuts += " • " + pk.Key + ": " + pk.Description
+		}
 		if m.pluginStatus != "" {
 			shortcuts += " • " + m.pluginStatus
 		}
@@ -354,6 +358,11 @@ func (m *EmailView) GetAccountID() string {
 // SetPluginStatus sets a persistent status string from plugins, shown in the help bar.
 func (m *EmailView) SetPluginStatus(status string) {
 	m.pluginStatus = status
+}
+
+// SetPluginKeyBindings sets the plugin-registered key bindings for display in the help bar.
+func (m *EmailView) SetPluginKeyBindings(bindings []PluginKeyBinding) {
+	m.pluginKeyBindings = bindings
 }
 
 func inlineImagesFromAttachments(atts []fetcher.Attachment) []view.InlineImage {
