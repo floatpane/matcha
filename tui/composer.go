@@ -700,9 +700,39 @@ func (m *Composer) GetTo() string {
 	return m.toInput.Value()
 }
 
+// SetTo updates the To field with new content.
+func (m *Composer) SetTo(to string) {
+	m.toInput.SetValue(to)
+}
+
+// GetCc returns the current Cc field value.
+func (m *Composer) GetCc() string {
+	return m.ccInput.Value()
+}
+
+// SetCc updates the Cc field with new content.
+func (m *Composer) SetCc(cc string) {
+	m.ccInput.SetValue(cc)
+}
+
+// GetBcc returns the current Bcc field value.
+func (m *Composer) GetBcc() string {
+	return m.bccInput.Value()
+}
+
+// SetBcc updates the Bcc field with new content.
+func (m *Composer) SetBcc(bcc string) {
+	m.bccInput.SetValue(bcc)
+}
+
 // GetSubject returns the current Subject field value.
 func (m *Composer) GetSubject() string {
 	return m.subjectInput.Value()
+}
+
+// SetSubject updates the Subject field with new content.
+func (m *Composer) SetSubject(subject string) {
+	m.subjectInput.SetValue(subject)
 }
 
 // GetBody returns the current Body field value.

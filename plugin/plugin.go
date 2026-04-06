@@ -19,13 +19,16 @@ type Manager struct {
 	// pendingNotification is set by matcha.notify() and consumed by the orchestrator.
 	pendingNotification string
 	pendingDuration     float64 // seconds, 0 means default (2s)
+	// pendingFields holds compose field updates set by matcha.set_compose_field().
+	pendingFields map[string]string
 }
 
 // NewManager creates a new plugin manager with a Lua VM.
 func NewManager() *Manager {
 	m := &Manager{
-		hooks:    make(map[string][]*lua.LFunction),
-		statuses: make(map[string]string),
+		hooks:         make(map[string][]*lua.LFunction),
+		statuses:      make(map[string]string),
+		pendingFields: make(map[string]string),
 	}
 
 	L := lua.NewState(lua.Options{
@@ -116,6 +119,16 @@ func (m *Manager) TakePendingNotification() (PendingNotification, bool) {
 	m.pendingNotification = ""
 	m.pendingDuration = 0
 	return n, true
+}
+
+// TakePendingFields returns and clears any pending compose field updates.
+func (m *Manager) TakePendingFields() map[string]string {
+	if len(m.pendingFields) == 0 {
+		return nil
+	}
+	fields := m.pendingFields
+	m.pendingFields = make(map[string]string)
+	return fields
 }
 
 // StatusText returns the plugin status string for the given view area.

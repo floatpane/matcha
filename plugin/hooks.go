@@ -93,7 +93,7 @@ func (m *Manager) CallFolderHook(event string, folderName string) {
 }
 
 // CallComposerHook calls a hook with composer state info.
-func (m *Manager) CallComposerHook(event string, body, subject, to string) {
+func (m *Manager) CallComposerHook(event string, body, subject, to, cc, bcc string) {
 	callbacks, ok := m.hooks[event]
 	if !ok {
 		return
@@ -105,6 +105,8 @@ func (m *Manager) CallComposerHook(event string, body, subject, to string) {
 	t.RawSetString("body", lua.LString(body))
 	t.RawSetString("subject", lua.LString(subject))
 	t.RawSetString("to", lua.LString(to))
+	t.RawSetString("cc", lua.LString(cc))
+	t.RawSetString("bcc", lua.LString(bcc))
 
 	for _, fn := range callbacks {
 		if err := L.CallByParam(lua.P{

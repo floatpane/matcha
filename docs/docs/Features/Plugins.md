@@ -79,6 +79,29 @@ matcha.set_status("composer", "420 chars")  -- shows in composer help bar
 matcha.set_status("inbox", "")              -- clears the inbox status
 ```
 
+### matcha.set_compose_field(field, value)
+
+Set a compose field value from a plugin. Only works when the composer is active (e.g. inside a `composer_updated` callback). The change is applied after the hook returns.
+
+**Available fields:**
+
+| Field       | Description              |
+| ----------- | ------------------------ |
+| `"to"`      | Recipient(s)             |
+| `"cc"`      | CC recipient(s)          |
+| `"bcc"`     | BCC recipient(s)         |
+| `"subject"` | Subject line             |
+| `"body"`    | Email body               |
+
+```lua
+-- Auto-add a BCC on every new email
+matcha.on("composer_updated", function(state)
+  if state.bcc == "" then
+    matcha.set_compose_field("bcc", "archive@example.com")
+  end
+end)
+```
+
 ### matcha.notify(message [, seconds])
 
 Show a temporary notification in the Matcha UI. The optional second argument sets how long the notification is displayed (default 2 seconds).
@@ -201,6 +224,8 @@ end)
 | `body_len` | number | Length of the body in bytes           |
 | `subject`  | string | Current subject line                 |
 | `to`       | string | Current recipient(s)                 |
+| `cc`       | string | Current CC recipient(s)              |
+| `bcc`      | string | Current BCC recipient(s)             |
 
 ## Example Plugins
 

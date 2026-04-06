@@ -149,8 +149,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Fire composer_updated hook on key presses when the composer is active
 	if _, isKey := msg.(tea.KeyPressMsg); isKey {
 		if composer, ok := m.current.(*tui.Composer); ok && m.plugins != nil {
-			m.plugins.CallComposerHook(plugin.HookComposerUpdated, composer.GetBody(), composer.GetSubject(), composer.GetTo())
+			m.plugins.CallComposerHook(plugin.HookComposerUpdated, composer.GetBody(), composer.GetSubject(), composer.GetTo(), composer.GetCc(), composer.GetBcc())
 			m.syncPluginStatus()
+			m.applyPluginFields(composer)
 		}
 	}
 
@@ -1315,6 +1316,27 @@ func (m *mainModel) syncPluginStatus() {
 		v.SetPluginStatus(m.plugins.StatusText(plugin.StatusComposer))
 	case *tui.EmailView:
 		v.SetPluginStatus(m.plugins.StatusText(plugin.StatusEmailView))
+	}
+}
+
+func (m *mainModel) applyPluginFields(composer *tui.Composer) {
+	fields := m.plugins.TakePendingFields()
+	if fields == nil {
+		return
+	}
+	for field, value := range fields {
+		switch field {
+		case "to":
+			composer.SetTo(value)
+		case "cc":
+			composer.SetCc(value)
+		case "bcc":
+			composer.SetBcc(value)
+		case "subject":
+			composer.SetSubject(value)
+		case "body":
+			composer.SetBody(value)
+		}
 	}
 }
 

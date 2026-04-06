@@ -25,6 +25,7 @@ end)
 | `matcha.log(msg)` | Log a message to stderr |
 | `matcha.notify(msg [, seconds])` | Show a temporary notification in the TUI (default 2s) |
 | `matcha.set_status(area, text)` | Set a persistent status string for a view area (`"inbox"`, `"composer"`, `"email_view"`) |
+| `matcha.set_compose_field(field, value)` | Set a compose field value (`"to"`, `"cc"`, `"bcc"`, `"subject"`, `"body"`) |
 
 ## Hook events
 
@@ -37,7 +38,7 @@ end)
 | `email_send_before` | Table with `to`, `cc`, `subject`, `account_id` | About to send an email |
 | `email_send_after` | Same as `email_send_before` | Email sent successfully |
 | `folder_changed` | Folder name (string) | User switched folders |
-| `composer_updated` | Table with `body`, `body_len`, `subject`, `to` | Composer content changed |
+| `composer_updated` | Table with `body`, `body_len`, `subject`, `to`, `cc`, `bcc` | Composer content changed |
 
 ## Available plugins
 
@@ -52,4 +53,4 @@ The following example plugins ship in `~/.config/matcha/plugins/`:
 |------|-------------|
 | `plugin.go` | Plugin manager — Lua VM setup, plugin discovery and loading, notification/status state |
 | `hooks.go` | Hook definitions, callback registration, and hook invocation helpers |
-| `api.go` | `matcha` Lua module registration (`on`, `log`, `notify`, `set_status`) |
+| `api.go` | `matcha` Lua module registration (`on`, `log`, `notify`, `set_status`, `set_compose_field`) |

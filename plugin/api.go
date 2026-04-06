@@ -11,10 +11,11 @@ func (m *Manager) registerAPI() {
 	L := m.state
 
 	mod := L.RegisterModule("matcha", map[string]lua.LGFunction{
-		"on":         m.luaOn,
-		"log":        m.luaLog,
-		"notify":     m.luaNotify,
-		"set_status": m.luaSetStatus,
+		"on":                m.luaOn,
+		"log":               m.luaLog,
+		"notify":            m.luaNotify,
+		"set_status":        m.luaSetStatus,
+		"set_compose_field": m.luaSetComposeField,
 	})
 
 	L.SetField(mod, "_VERSION", lua.LString("0.1.0"))
@@ -49,5 +50,20 @@ func (m *Manager) luaSetStatus(L *lua.LState) int {
 func (m *Manager) luaNotify(L *lua.LState) int {
 	m.pendingNotification = L.CheckString(1)
 	m.pendingDuration = float64(L.OptNumber(2, 2))
+	return 0
+}
+
+// matcha.set_compose_field(field, value) — set a compose field value.
+// Valid fields: "to", "cc", "bcc", "subject", "body".
+func (m *Manager) luaSetComposeField(L *lua.LState) int {
+	field := L.CheckString(1)
+	value := L.CheckString(2)
+
+	switch field {
+	case "to", "cc", "bcc", "subject", "body":
+		m.pendingFields[field] = value
+	default:
+		L.ArgError(1, "invalid field: must be \"to\", \"cc\", \"bcc\", \"subject\", or \"body\"")
+	}
 	return 0
 }
