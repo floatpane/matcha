@@ -26,6 +26,9 @@ jobs:
         with:
           go-version: "stable"
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
+
       - name: Create Dummy Config
         run: |
           mkdir -p ~/.config/matcha

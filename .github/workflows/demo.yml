@@ -25,6 +25,9 @@ jobs:
         with:
           go-version: "stable"
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
+
       - name: Create Dummy Config
         # Create the config in the workspace so we can map HOME to it for the container.
         run: |
