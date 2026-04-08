@@ -60,8 +60,6 @@ jobs:
 
   mod-tidy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v6
 
@@ -70,30 +68,14 @@ jobs:
         with:
           go-version: "1.26.2"
 
-      - name: Tidy and auto-fix
+      - name: Check go.mod and go.sum are tidy
         run: |
           go mod tidy
-          if git diff --quiet go.mod go.sum; then
-            echo "go.mod and go.sum are tidy."
-            exit 0
-          fi
-
-          # Only auto-commit on pull requests
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
+          if ! git diff --quiet go.mod go.sum; then
             echo "::error::go.mod or go.sum are not tidy. Run 'go mod tidy' and commit the changes."
             git diff go.mod go.sum
             exit 1
           fi
-
-          echo "go.mod/go.sum are out of date — committing fix..."
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin "refs/heads/${{ github.head_ref }}:refs/heads/${{ github.head_ref }}"
-          git checkout "${{ github.head_ref }}"
-          go mod tidy
-          git add go.mod go.sum
-          git commit -m "chore: go mod tidy"
-          git push origin "HEAD:refs/heads/${{ github.head_ref }}"
 
   website:
     runs-on: ubuntu-latest
@@ -200,8 +182,6 @@ jobs:
 
   nix:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v6
 
@@ -210,36 +190,8 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixpkgs-unstable
 
-      - name: Check flake and auto-fix
-        run: |
-          if nix flake check --no-build 2>&1; then
-            echo "Flake is valid."
-            exit 0
-          fi
-
-          echo "Flake check failed — attempting to update flake.lock..."
-          nix flake update
-
-          if git diff --quiet flake.lock; then
-            echo "::error::Flake check failed and flake.lock is already up to date. Manual fix required."
-            exit 1
-          fi
-
-          # Only auto-commit on pull requests
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "::error::flake.lock is out of date. Run 'nix flake update' and commit the changes."
-            exit 1
-          fi
-
-          echo "flake.lock updated — committing fix..."
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin "refs/heads/${{ github.head_ref }}:refs/heads/${{ github.head_ref }}"
-          git checkout "${{ github.head_ref }}"
-          nix flake update
-          git add flake.lock
-          git commit -m "chore: update flake.lock"
-          git push origin "HEAD:refs/heads/${{ github.head_ref }}"
+      - name: Check flake
+        run: nix flake check --no-build
 
   lua-plugins:
     runs-on: ubuntu-latest
