@@ -18,7 +18,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26.1"
+          go-version: "1.26.2"
 
       - name: Install system dependencies
         if: runner.os == 'Linux'
@@ -64,9 +64,6 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.head_ref || github.ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -91,9 +88,12 @@ jobs:
           echo "go.mod/go.sum are out of date — committing fix..."
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin "${{ github.head_ref }}"
+          git checkout "${{ github.head_ref }}"
+          go mod tidy
           git add go.mod go.sum
           git commit -m "chore: go mod tidy"
-          git push
+          git push origin "${{ github.head_ref }}"
 
   website:
     runs-on: ubuntu-latest
@@ -204,9 +204,6 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.head_ref || github.ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
@@ -237,9 +234,12 @@ jobs:
           echo "flake.lock updated — committing fix..."
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin "${{ github.head_ref }}"
+          git checkout "${{ github.head_ref }}"
+          nix flake update
           git add flake.lock
           git commit -m "chore: update flake.lock"
-          git push
+          git push origin "${{ github.head_ref }}"
 
   lua-plugins:
     runs-on: ubuntu-latest
