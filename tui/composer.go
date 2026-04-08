@@ -86,6 +86,11 @@ type Composer struct {
 	// Plugin status text shown in the help bar
 	pluginStatus      string
 	pluginKeyBindings []PluginKeyBinding
+
+	// Plugin prompt overlay
+	showPluginPrompt        bool
+	pluginPromptInput       textinput.Model
+	pluginPromptPlaceholder string
 }
 
 // NewComposer initializes a new composer model.
@@ -295,6 +300,22 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.String() == "shift+tab" {
 				m.showSuggestions = false
 				m.suggestions = nil
+			}
+		}
+
+		// Handle plugin prompt overlay
+		if m.showPluginPrompt {
+			switch msg.String() {
+			case "enter":
+				value := m.pluginPromptInput.Value()
+				m.showPluginPrompt = false
+				return m, func() tea.Msg { return PluginPromptSubmitMsg{Value: value} }
+			case "esc":
+				m.showPluginPrompt = false
+				return m, func() tea.Msg { return PluginPromptCancelMsg{} }
+			default:
+				m.pluginPromptInput, cmd = m.pluginPromptInput.Update(msg)
+				return m, cmd
 			}
 		}
 
@@ -627,6 +648,20 @@ func (m *Composer) View() tea.View {
 	composerView.WriteString(mainContent)
 	composerView.WriteString(helpView)
 
+	// Plugin prompt overlay
+	if m.showPluginPrompt {
+		dialog := DialogBoxStyle.Render(
+			lipgloss.JoinVertical(lipgloss.Left,
+				m.pluginPromptPlaceholder,
+				"",
+				m.pluginPromptInput.View(),
+				"",
+				HelpStyle.Render("enter: submit • esc: cancel"),
+			),
+		)
+		return tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
+	}
+
 	// Account picker overlay
 	if m.showAccountPicker {
 		var accountList strings.Builder
@@ -793,6 +828,22 @@ func (m *Composer) SetPluginStatus(status string) {
 // SetPluginKeyBindings sets the plugin-registered key bindings for display in the help bar.
 func (m *Composer) SetPluginKeyBindings(bindings []PluginKeyBinding) {
 	m.pluginKeyBindings = bindings
+}
+
+// ShowPluginPrompt activates the plugin prompt overlay with the given placeholder text.
+func (m *Composer) ShowPluginPrompt(placeholder string) {
+	m.pluginPromptPlaceholder = placeholder
+	m.pluginPromptInput = textinput.New()
+	m.pluginPromptInput.Placeholder = placeholder
+	m.pluginPromptInput.Prompt = "> "
+	m.pluginPromptInput.CharLimit = 256
+	m.pluginPromptInput.Focus()
+	m.showPluginPrompt = true
+}
+
+// HidePluginPrompt deactivates the plugin prompt overlay.
+func (m *Composer) HidePluginPrompt() {
+	m.showPluginPrompt = false
 }
 
 // ToDraft converts the composer state to a Draft for saving.

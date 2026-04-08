@@ -18,6 +18,7 @@ func (m *Manager) registerAPI() {
 		"set_compose_field": m.luaSetComposeField,
 		"bind_key":          m.luaBindKey,
 		"http":              m.luaHTTP,
+		"prompt":            m.luaPrompt,
 	})
 
 	L.SetField(mod, "_VERSION", lua.LString("0.1.0"))

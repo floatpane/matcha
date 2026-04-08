@@ -31,6 +31,8 @@ type Manager struct {
 	pendingFields map[string]string
 	// bindings holds plugin-registered keyboard shortcuts.
 	bindings []KeyBinding
+	// pendingPrompt is set by matcha.prompt() and consumed by the orchestrator.
+	pendingPrompt *PendingPrompt
 }
 
 // NewManager creates a new plugin manager with a Lua VM.

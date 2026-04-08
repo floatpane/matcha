@@ -28,6 +28,7 @@ end)
 | `matcha.set_compose_field(field, value)` | Set a compose field value (`"to"`, `"cc"`, `"bcc"`, `"subject"`, `"body"`) |
 | `matcha.bind_key(key, area, description, callback)` | Register a custom keyboard shortcut for a view area (`"inbox"`, `"email_view"`, `"composer"`) |
 | `matcha.http(options)` | Make an HTTP request (see below) |
+| `matcha.prompt(placeholder, callback)` | Open a text input overlay in the composer (see below) |
 
 ## Hook events
 
@@ -69,6 +70,21 @@ end
 matcha.log("status: " .. res.status)
 ```
 
+## User input prompts
+
+`matcha.prompt(placeholder, callback)` opens a text input overlay in the composer. When the user presses Enter, the callback receives their input string. Pressing Esc cancels without calling the callback.
+
+Only works inside a `bind_key` callback for the `"composer"` area.
+
+```lua
+matcha.bind_key("ctrl+r", "composer", "rewrite", function(state)
+    matcha.prompt("Enter instruction:", function(input)
+        -- input is the user's text
+        matcha.log("User typed: " .. input)
+    end)
+end)
+```
+
 ## Available plugins
 
 The following example plugins ship in `~/.config/matcha/plugins/`:
@@ -82,5 +98,6 @@ The following example plugins ship in `~/.config/matcha/plugins/`:
 |------|-------------|
 | `plugin.go` | Plugin manager — Lua VM setup, plugin discovery and loading, notification/status state |
 | `hooks.go` | Hook definitions, callback registration, and hook invocation helpers |
-| `api.go` | `matcha` Lua module registration (`on`, `log`, `notify`, `set_status`, `set_compose_field`, `bind_key`, `http`) |
+| `api.go` | `matcha` Lua module registration (`on`, `log`, `notify`, `set_status`, `set_compose_field`, `bind_key`, `http`, `prompt`) |
 | `http.go` | `matcha.http()` implementation — HTTP client with timeout and body size limits |
+| `prompt.go` | `matcha.prompt()` implementation — user input overlay for the composer |

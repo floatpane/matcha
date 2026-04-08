@@ -86,6 +86,8 @@ type mainModel struct {
 	idleUpdates chan fetcher.IdleUpdate
 	// Multi-protocol backend providers (keyed by account ID)
 	providers map[string]backend.Provider
+	// Plugin prompt waiting for user input
+	pendingPrompt *plugin.PendingPrompt
 }
 
 func newInitialModel(cfg *config.Config) *mainModel {
@@ -483,6 +485,25 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Tick(dur, func(t time.Time) tea.Msg {
 			return tui.RestoreViewMsg{}
 		})
+
+	case tui.PluginPromptSubmitMsg:
+		if m.pendingPrompt != nil {
+			if composer, ok := m.current.(*tui.Composer); ok {
+				composer.HidePluginPrompt()
+				m.plugins.ResolvePrompt(m.pendingPrompt, msg.Value)
+				m.applyPluginFields(composer)
+				m.syncPluginStatus()
+			}
+			m.pendingPrompt = nil
+		}
+		return m, nil
+
+	case tui.PluginPromptCancelMsg:
+		if composer, ok := m.current.(*tui.Composer); ok {
+			composer.HidePluginPrompt()
+		}
+		m.pendingPrompt = nil
+		return m, nil
 
 	case tui.FolderEmailsFetchedMsg:
 		if m.folderInbox == nil {
@@ -1387,6 +1408,12 @@ func (m *mainModel) handlePluginKeyBinding(msg tea.KeyPressMsg) {
 			t.RawSetString("bcc", lua.LString(v.GetBcc()))
 			m.plugins.CallKeyBinding(binding, t)
 			m.applyPluginFields(v)
+
+			// Check if the plugin requested a prompt overlay
+			if p, ok := m.plugins.TakePendingPrompt(); ok {
+				m.pendingPrompt = p
+				v.ShowPluginPrompt(p.Placeholder)
+			}
 		}
 
 		m.syncPluginStatus()

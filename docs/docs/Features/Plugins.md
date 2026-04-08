@@ -175,6 +175,21 @@ local res, err = matcha.http({
 })
 ```
 
+### matcha.prompt(placeholder, callback)
+
+Open a text input overlay in the composer. When the user presses Enter, the callback is called with their input string. If the user presses Esc, the prompt is cancelled and the callback is not called.
+
+This function only works inside a `bind_key` callback for the `"composer"` area.
+
+```lua
+matcha.bind_key("ctrl+r", "composer", "rewrite", function(state)
+  matcha.prompt("Enter instruction:", function(input)
+    matcha.log("User typed: " .. input)
+    -- Use matcha.http() + matcha.set_compose_field() to process and update the body
+  end)
+end)
+```
+
 ### matcha.notify(message [, seconds])
 
 Show a temporary notification in the Matcha UI. The optional second argument sets how long the notification is displayed (default 2 seconds).
@@ -314,6 +329,7 @@ Example plugins are included in the repository under `examples/plugins/`:
 | `char_counter.lua`   | Live character count in the composer         |
 | `webhook_notify.lua` | Posts to a webhook when emails arrive        |
 | `weather_status.lua` | Shows current weather in the inbox status bar |
+| `ai_rewrite.lua`   | AI-powered email rewriting in the composer     |
 
 To try one, copy it to your plugins directory:
 

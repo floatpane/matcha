@@ -444,3 +444,11 @@ type PluginKeyBinding struct {
 	Key         string
 	Description string
 }
+
+// PluginPromptSubmitMsg signals that the user submitted a plugin prompt input.
+type PluginPromptSubmitMsg struct {
+	Value string
+}
+
+// PluginPromptCancelMsg signals that the user cancelled a plugin prompt input.
+type PluginPromptCancelMsg struct{}
