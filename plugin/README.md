@@ -27,6 +27,7 @@ end)
 | `matcha.set_status(area, text)` | Set a persistent status string for a view area (`"inbox"`, `"composer"`, `"email_view"`) |
 | `matcha.set_compose_field(field, value)` | Set a compose field value (`"to"`, `"cc"`, `"bcc"`, `"subject"`, `"body"`) |
 | `matcha.bind_key(key, area, description, callback)` | Register a custom keyboard shortcut for a view area (`"inbox"`, `"email_view"`, `"composer"`) |
+| `matcha.http(options)` | Make an HTTP request (see below) |
 
 ## Hook events
 
@@ -41,6 +42,33 @@ end)
 | `folder_changed` | Folder name (string) | User switched folders |
 | `composer_updated` | Table with `body`, `body_len`, `subject`, `to`, `cc`, `bcc` | Composer content changed |
 
+## HTTP requests
+
+`matcha.http(options)` makes an HTTP request and returns `(response, err)`. Options is a table with:
+
+- `url` (string, required) — only `http` and `https` schemes
+- `method` (string, optional, default `"GET"`)
+- `headers` (table, optional)
+- `body` (string, optional)
+
+The response table has `status` (number), `body` (string), and `headers` (table with lowercase keys).
+
+Safety limits: 10s timeout, 1 MB response body cap.
+
+```lua
+local res, err = matcha.http({
+    url     = "https://api.example.com/webhook",
+    method  = "POST",
+    headers = { ["Content-Type"] = "application/json" },
+    body    = '{"text":"hello"}',
+})
+if err then
+    matcha.log("error: " .. err)
+    return
+end
+matcha.log("status: " .. res.status)
+```
+
 ## Available plugins
 
 The following example plugins ship in `~/.config/matcha/plugins/`:
@@ -54,4 +82,5 @@ The following example plugins ship in `~/.config/matcha/plugins/`:
 |------|-------------|
 | `plugin.go` | Plugin manager — Lua VM setup, plugin discovery and loading, notification/status state |
 | `hooks.go` | Hook definitions, callback registration, and hook invocation helpers |
-| `api.go` | `matcha` Lua module registration (`on`, `log`, `notify`, `set_status`, `set_compose_field`, `bind_key`) |
+| `api.go` | `matcha` Lua module registration (`on`, `log`, `notify`, `set_status`, `set_compose_field`, `bind_key`, `http`) |
+| `http.go` | `matcha.http()` implementation — HTTP client with timeout and body size limits |
