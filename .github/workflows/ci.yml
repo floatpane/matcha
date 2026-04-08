@@ -88,12 +88,12 @@ jobs:
           echo "go.mod/go.sum are out of date — committing fix..."
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin "${{ github.head_ref }}"
+          git fetch origin "refs/heads/${{ github.head_ref }}:refs/heads/${{ github.head_ref }}"
           git checkout "${{ github.head_ref }}"
           go mod tidy
           git add go.mod go.sum
           git commit -m "chore: go mod tidy"
-          git push origin "${{ github.head_ref }}"
+          git push origin "HEAD:refs/heads/${{ github.head_ref }}"
 
   website:
     runs-on: ubuntu-latest
@@ -234,12 +234,12 @@ jobs:
           echo "flake.lock updated — committing fix..."
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin "${{ github.head_ref }}"
+          git fetch origin "refs/heads/${{ github.head_ref }}:refs/heads/${{ github.head_ref }}"
           git checkout "${{ github.head_ref }}"
           nix flake update
           git add flake.lock
           git commit -m "chore: update flake.lock"
-          git push origin "${{ github.head_ref }}"
+          git push origin "HEAD:refs/heads/${{ github.head_ref }}"
 
   lua-plugins:
     runs-on: ubuntu-latest
