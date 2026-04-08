@@ -23,7 +23,7 @@ apps:
 
 parts:
   matcha:
-    plugin: go
+    plugin: nil
     source: .
     build-snaps:
       - go/1.26/stable
@@ -34,7 +34,10 @@ parts:
       - pkg-config
     build-environment:
       - CGO_ENABLED: "1"
+      - GOBIN: ""
     override-pull: |
       craftctl default
       version="$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo 0.1)"
       craftctl set version="$version"
+    override-build: |
+      go build -o "${CRAFT_PART_INSTALL}/bin/matcha" .
