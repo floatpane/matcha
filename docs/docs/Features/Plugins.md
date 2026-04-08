@@ -134,6 +134,47 @@ matcha.bind_key("ctrl+g", "composer", "greeting", function(state)
 end)
 ```
 
+### matcha.http(options)
+
+Make an HTTP request. Takes a single options table and returns two values: a response table on success, or `nil` plus an error string on failure.
+
+**Options table:**
+
+| Field     | Type   | Required | Description                              |
+| --------- | ------ | -------- | ---------------------------------------- |
+| `url`     | string | yes      | Request URL (http or https only)         |
+| `method`  | string | no       | HTTP method (default `"GET"`)            |
+| `headers` | table  | no       | Request headers as key-value pairs       |
+| `body`    | string | no       | Request body                             |
+
+**Response table:**
+
+| Field     | Type   | Description                                  |
+| --------- | ------ | -------------------------------------------- |
+| `status`  | number | HTTP status code (e.g. 200)                  |
+| `body`    | string | Response body (capped at 1 MB)               |
+| `headers` | table  | Response headers (lowercase keys)            |
+
+**Limits:** Requests time out after 10 seconds. Response bodies are capped at 1 MB. Only `http://` and `https://` URLs are allowed.
+
+```lua
+-- GET request
+local res, err = matcha.http({ url = "https://api.example.com/status" })
+if err then
+  matcha.log("error: " .. err)
+  return
+end
+matcha.log("status: " .. res.status)
+
+-- POST request with headers and body
+local res, err = matcha.http({
+  url     = "https://hooks.slack.com/services/xxx",
+  method  = "POST",
+  headers = { ["Content-Type"] = "application/json" },
+  body    = '{"text":"New email received!"}',
+})
+```
+
 ### matcha.notify(message [, seconds])
 
 Show a temporary notification in the Matcha UI. The optional second argument sets how long the notification is displayed (default 2 seconds).
@@ -271,6 +312,8 @@ Example plugins are included in the repository under `examples/plugins/`:
 | `folder_announcer.lua` | Shows a notification on folder switch      |
 | `unread_counter.lua` | Displays unread count in the inbox title     |
 | `char_counter.lua`   | Live character count in the composer         |
+| `webhook_notify.lua` | Posts to a webhook when emails arrive        |
+| `weather_status.lua` | Shows current weather in the inbox status bar |
 
 To try one, copy it to your plugins directory:
 
@@ -290,3 +333,5 @@ Plugins run in a sandboxed Lua 5.1 environment. The following standard libraries
 - `package` (for `require`)
 
 The `os`, `io`, and `debug` libraries are **not** available. Plugins cannot access the filesystem or execute system commands.
+
+Plugins can make HTTP requests via `matcha.http()`, with built-in safety limits: 10-second timeout, 1 MB response cap, and only `http`/`https` schemes.
