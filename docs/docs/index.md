@@ -33,6 +33,7 @@ Matcha is packed with features to make email management in the terminal a breeze
 - [**Advanced**](./Features/ADVANCED.md) - Automatic updates, smart image rendering, and performance optimization.
 - [**CLI**](./Features/CLI.md) - Send emails and manage accounts from the command line.
 - [**AI Agents**](./Features/AI_AGENTS.md) - Let AI coding agents send emails through Matcha.
+- [**AI Rewrite**](./setup-guides/ai-rewrite.md) - Rewrite email drafts using your favorite AI models.
 - [**Plugins**](./Features/Plugins.md) - Extend Matcha with Lua plugins.
 
 ### Image & Hyperlink Support

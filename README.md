@@ -24,15 +24,19 @@
 
 ![Demo GIF](public/assets/demo.gif)
 
-### AI Agent Support
+### AI Integration
 
-Matcha can be used by autonomous AI agents to send emails on your behalf. The `matcha send` CLI command provides a non-interactive interface for composing and sending emails.
+**AI Agent Support:** Matcha can be used by autonomous AI agents to send emails on your behalf. The `matcha send` CLI command provides a non-interactive interface for composing and sending emails.
 
 ```bash
 matcha send --to alice@example.com --subject "Hello" --body "Sent by my AI agent"
 ```
 
 [Learn more](https://docs.matcha.floatpane.com/Features/AI_AGENTS)
+
+**AI Rewrite Plugin:** Matcha includes an AI rewrite plugin that allows you to rewrite your email drafts using OpenAI, Ollama, Gemini, or Claude.
+
+[Setup Guide](https://docs.matcha.floatpane.com/setup-guides/ai-rewrite)
 
 ## Documentation
 
