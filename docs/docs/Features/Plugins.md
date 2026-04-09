@@ -315,9 +315,76 @@ end)
 | `cc`       | string | Current CC recipient(s)              |
 | `bcc`      | string | Current BCC recipient(s)             |
 
+## Marketplace
+
+Matcha includes a built-in plugin marketplace with 35+ community plugins. You can browse and install plugins from the terminal or from the [online marketplace](/marketplace).
+
+### Browse Plugins
+
+Open the interactive TUI marketplace:
+
+```bash
+matcha marketplace
+```
+
+Use `j/k` or arrow keys to navigate, `Enter` to install a plugin, and `q` to quit. You can also access it from Matcha's main menu.
+
+### Install a Plugin
+
+Install from the marketplace or directly by URL:
+
+```bash
+matcha install https://raw.githubusercontent.com/floatpane/matcha/master/plugins/hello.lua
+```
+
+Install from a local file:
+
+```bash
+matcha install path/to/my_plugin.lua
+```
+
+Plugins are saved to `~/.config/matcha/plugins/` and loaded on next startup.
+
+### Configure a Plugin
+
+Open an installed plugin in your editor to change its settings:
+
+```bash
+matcha config hello          # opens ~/.config/matcha/plugins/hello.lua
+matcha config                # opens ~/.config/matcha/config.json
+```
+
+### Submit Your Plugin
+
+Anyone can add their plugin to the Matcha marketplace by submitting a pull request to the [matcha repository](https://github.com/floatpane/matcha).
+
+1. Write your plugin as a `.lua` file following the API documented on this page.
+
+2. Add an entry to [`plugins/registry.json`](https://github.com/floatpane/matcha/blob/master/plugins/registry.json):
+
+   ```json
+   {
+     "name": "my_plugin",
+     "title": "My Plugin",
+     "description": "A short description of what your plugin does.",
+     "file": "my_plugin.lua",
+     "url": "https://raw.githubusercontent.com/YOUR_USER/YOUR_REPO/main/my_plugin.lua"
+   }
+   ```
+
+   The `url` field points to where your plugin file is hosted. If you include the `.lua` file directly in the Matcha repo, you can omit `url` and it will default to the `plugins/` directory.
+
+3. Submit your pull request. Once merged, your plugin will appear in the TUI marketplace, the CLI, and the [online marketplace](/marketplace).
+
+**Guidelines:**
+- Keep plugins focused — one plugin, one purpose.
+- Include a comment header in your `.lua` file with a description.
+- Test your plugin with the latest version of Matcha before submitting.
+- Plugins run in a sandboxed environment — no external dependencies are available.
+
 ## Example Plugins
 
-Example plugins are included in the repository under `examples/plugins/`:
+The repository includes 35+ example plugins. Here are a few to get started:
 
 | Plugin               | Description                                  |
 | -------------------- | -------------------------------------------- |
@@ -331,12 +398,7 @@ Example plugins are included in the repository under `examples/plugins/`:
 | `weather_status.lua` | Shows current weather in the inbox status bar |
 | `ai_rewrite.lua`   | AI-powered email rewriting in the composer     |
 
-To try one, copy it to your plugins directory:
-
-```bash
-mkdir -p ~/.config/matcha/plugins
-cp examples/plugins/hello.lua ~/.config/matcha/plugins/
-```
+Browse the full list in the [Plugin Marketplace](/marketplace) or run `matcha marketplace`.
 
 ## Security
 

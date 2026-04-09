@@ -7,14 +7,13 @@ sidebar_position: 3
 
 Matcha includes an `ai_rewrite.lua` plugin that allows you to rewrite email drafts using an AI model. By default, it works with any OpenAI-compatible API.
 
-To get started, copy the plugin to your configuration directory:
+To get started, install the plugin:
 
 ```bash
-mkdir -p ~/.config/matcha/plugins
-cp plugins/ai_rewrite.lua ~/.config/matcha/plugins/
+matcha install https://raw.githubusercontent.com/floatpane/matcha/master/plugins/ai_rewrite.lua
 ```
 
-You can then edit `~/.config/matcha/plugins/ai_rewrite.lua` to configure it for your preferred AI provider. Since the plugin relies on the OpenAI chat completions format, it seamlessly integrates with OpenAI, local providers like Ollama, and other services that offer an OpenAI-compatible endpoint (like Gemini). For providers without native OpenAI compatibility (like Claude), you can use a local proxy like [LiteLLM](https://github.com/BerriAI/litellm).
+You can then edit `~/.config/matcha/plugins/ai_rewrite.lua` to configure it for your preferred AI provider (`matcha config ai_rewrite`). Since the plugin relies on the OpenAI chat completions format, it seamlessly integrates with OpenAI, local providers like Ollama, and other services that offer an OpenAI-compatible endpoint (like Gemini). For providers without native OpenAI compatibility (like Claude), you can use a local proxy like [LiteLLM](https://github.com/BerriAI/litellm).
 
 Here are the configuration snippets for various popular AI providers. Update the variables at the top of your `ai_rewrite.lua` file.
 

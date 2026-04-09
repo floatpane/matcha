@@ -24,6 +24,18 @@
 
 ![Demo GIF](public/assets/demo.gif)
 
+### Plugin Marketplace
+
+Matcha has a built-in plugin system with 35+ community plugins. Browse and install them from the terminal or the [online marketplace](https://docs.matcha.floatpane.com/marketplace).
+
+```bash
+matcha marketplace                # browse plugins in the TUI
+matcha install <url_or_file>      # install a plugin
+matcha config <plugin_name>       # configure an installed plugin
+```
+
+Anyone can submit their own plugin — just add an entry to `plugins/registry.json` and open a PR. [Learn more](https://docs.matcha.floatpane.com/Features/Plugins#submit-your-plugin)
+
 ### AI Integration
 
 **AI Agent Support:** Matcha can be used by autonomous AI agents to send emails on your behalf. The `matcha send` CLI command provides a non-interactive interface for composing and sending emails.

@@ -19,7 +19,8 @@ The TUI layer is the interactive frontend of Matcha. Each view implements the `t
 | `login.go` | Account login form supporting Gmail, iCloud, and custom IMAP/SMTP providers. Collects credentials, server settings, and optionally S/MIME certificate paths. Validates input before submission. |
 | `settings.go` | Settings panel for managing accounts (add/remove), configuring mailing lists, editing signatures, toggling image display, managing tips visibility, and setting up S/MIME certificates. |
 | `mailing_list.go` | Editor for creating and modifying mailing list groups (name + comma-separated email addresses). |
-| `choice.go` | Main menu / start screen. Presents account selection, navigation to inbox, compose, drafts, sent, folders, trash/archive, and settings. |
+| `choice.go` | Main menu / start screen. Presents account selection, navigation to inbox, compose, drafts, marketplace, sent, folders, trash/archive, and settings. |
+| `marketplace.go` | Plugin marketplace browser. Fetches the plugin registry from GitHub, displays a scrollable list with install status badges, and installs plugins on selection. Can run standalone (`matcha marketplace`) or from the main menu. |
 | `filepicker.go` | File browser for selecting email attachments. Navigates the filesystem with directory listing and file selection. |
 
 ### Supporting Files
@@ -28,7 +29,7 @@ The TUI layer is the interactive frontend of Matcha. Each view implements the `t
 |------|-------------|
 | `styles.go` | Global Lip Gloss style definitions used across all views (dialog boxes, help text, tips, headings, body text). Also defines the `Status` component for spinner-based loading messages. |
 | `theme.go` | `RebuildStyles` function that updates all package-level style variables when the active theme changes, ensuring consistent colors across the UI. |
-| `messages.go` | Shared message types for inter-component communication: `ViewEmailMsg`, `SendEmailMsg`, `Credentials`, `ChooseServiceMsg`, `EmailResultMsg`, `ClearStatusMsg`, and the `MailboxKind` enum. |
+| `messages.go` | Shared message types for inter-component communication: `ViewEmailMsg`, `SendEmailMsg`, `Credentials`, `ChooseServiceMsg`, `EmailResultMsg`, `ClearStatusMsg`, `GoToMarketplaceMsg`, and the `MailboxKind` enum. |
 | `signature.go` | Textarea-based editor for composing and saving email signatures. |
 
 ### Test Files
