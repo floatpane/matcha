@@ -1,6 +1,7 @@
 package fetcher
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
@@ -12,6 +13,7 @@ import (
 	"io/ioutil"
 	"mime"
 	"mime/quotedprintable"
+	"net/textproto"
 	"os"
 	"slices"
 	"strings"
@@ -78,6 +80,37 @@ func formatAddress(addr *imap.Address) string {
 
 func hasSeenFlag(flags []string) bool {
 	return slices.Contains(flags, imap.SeenFlag)
+}
+
+// deliveryHeadersMatch checks if any of the Delivered-To, X-Forwarded-To, or
+// X-Original-To headers contain the given email address. This catches
+// auto-forwarded emails where the envelope To/Cc don't match the local account.
+func deliveryHeadersMatch(msg *imap.Message, section *imap.BodySectionName, fetchEmail string) bool {
+	if section == nil {
+		return false
+	}
+	literal := msg.GetBody(section)
+	if literal == nil {
+		return false
+	}
+	data, err := ioutil.ReadAll(literal)
+	if err != nil || len(data) == 0 {
+		return false
+	}
+	// Parse as MIME headers
+	reader := textproto.NewReader(bufio.NewReader(bytes.NewReader(data)))
+	headers, err := reader.ReadMIMEHeader()
+	if err != nil && len(headers) == 0 {
+		return false
+	}
+	for _, key := range []string{"Delivered-To", "X-Forwarded-To", "X-Original-To"} {
+		for _, val := range headers.Values(key) {
+			if strings.EqualFold(strings.TrimSpace(val), fetchEmail) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func decodePart(reader io.Reader, header mail.PartHeader) (string, error) {
@@ -283,7 +316,10 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 
 		messages := make(chan *imap.Message, chunkSize)
 		done := make(chan error, 1)
-		fetchItems := []imap.FetchItem{imap.FetchEnvelope, imap.FetchUid, imap.FetchFlags}
+		// Fetch delivery headers to match auto-forwarded emails (Delivered-To, X-Forwarded-To, X-Original-To)
+		deliveryHeaderItem := imap.FetchItem("BODY.PEEK[HEADER.FIELDS (Delivered-To X-Forwarded-To X-Original-To)]")
+		deliveryHeaderSection, _ := imap.ParseBodySectionName(deliveryHeaderItem)
+		fetchItems := []imap.FetchItem{imap.FetchEnvelope, imap.FetchUid, imap.FetchFlags, deliveryHeaderItem}
 
 		go func() {
 			done <- c.Fetch(seqset, fetchItems, messages)
@@ -333,6 +369,10 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 						matched = true
 						break
 					}
+				}
+				// Check delivery headers for auto-forwarded emails
+				if !matched {
+					matched = deliveryHeadersMatch(msg, deliveryHeaderSection, fetchEmail)
 				}
 			}
 
@@ -1224,7 +1264,10 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 
 	messages := make(chan *imap.Message, limit)
 	done := make(chan error, 1)
-	fetchItems := []imap.FetchItem{imap.FetchEnvelope, imap.FetchUid, imap.FetchFlags}
+	// Fetch delivery headers to match auto-forwarded emails
+	deliveryHeaderItem := imap.FetchItem("BODY.PEEK[HEADER.FIELDS (Delivered-To X-Forwarded-To X-Original-To)]")
+	deliveryHeaderSection, _ := imap.ParseBodySectionName(deliveryHeaderItem)
+	fetchItems := []imap.FetchItem{imap.FetchEnvelope, imap.FetchUid, imap.FetchFlags, deliveryHeaderItem}
 	go func() {
 		done <- c.Fetch(seqset, fetchItems, messages)
 	}()
@@ -1277,6 +1320,10 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 					break
 				}
 			}
+		}
+		// Check delivery headers for auto-forwarded emails
+		if !matched {
+			matched = deliveryHeadersMatch(msg, deliveryHeaderSection, fetchEmail)
 		}
 
 		if !matched {
