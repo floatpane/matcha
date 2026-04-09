@@ -52,6 +52,11 @@ const config: Config = {
       },
       items: [
         {
+          to: "/marketplace",
+          label: "Marketplace",
+          position: "left",
+        },
+        {
           href: "https://github.com/floatpane/matcha",
           label: "GitHub",
           position: "right",

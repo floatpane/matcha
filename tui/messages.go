@@ -452,3 +452,6 @@ type PluginPromptSubmitMsg struct {
 
 // PluginPromptCancelMsg signals that the user cancelled a plugin prompt input.
 type PluginPromptCancelMsg struct{}
+
+// GoToMarketplaceMsg signals navigation to the plugin marketplace.
+type GoToMarketplaceMsg struct{}

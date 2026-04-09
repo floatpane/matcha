@@ -47,6 +47,7 @@ func NewChoice() Choice {
 	if hasSavedDrafts {
 		choices = append(choices, "\uec0e Drafts")
 	}
+	choices = append(choices, "\uf487 Marketplace")
 	choices = append(choices, "\uf013 Settings")
 	return Choice{
 		choices:         choices,
@@ -87,6 +88,8 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg { return GoToSendMsg{} }
 			case "\uec0e Drafts":
 				return m, func() tea.Msg { return GoToDraftsMsg{} }
+			case "\uf487 Marketplace":
+				return m, func() tea.Msg { return GoToMarketplaceMsg{} }
 			case "\uf013 Settings":
 				return m, func() tea.Msg { return GoToSettingsMsg{} }
 			}

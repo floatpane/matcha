@@ -26,6 +26,7 @@ import (
 	_ "github.com/floatpane/matcha/backend/imap"
 	_ "github.com/floatpane/matcha/backend/jmap"
 	_ "github.com/floatpane/matcha/backend/pop3"
+	matchaCli "github.com/floatpane/matcha/cli"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
@@ -761,6 +762,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Send message back to drafts view
 		m.current, cmd = m.current.Update(tui.DraftDeletedMsg{DraftID: msg.DraftID})
 		return m, cmd
+
+	case tui.GoToMarketplaceMsg:
+		m.current = tui.NewMarketplace(false)
+		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		return m, m.current.Init()
 
 	case tui.GoToSettingsMsg:
 		m.current = tui.NewSettings(m.config)
@@ -2827,6 +2833,35 @@ func main() {
 	// Send email CLI subcommand: matcha send --to <email> --subject <subject> [flags]
 	if len(os.Args) > 1 && os.Args[1] == "send" {
 		runSendCLI(os.Args[2:])
+		os.Exit(0)
+	}
+
+	// Install plugin CLI subcommand: matcha install <url_or_file>
+	if len(os.Args) > 1 && os.Args[1] == "install" {
+		if err := matchaCli.RunInstall(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "install failed: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	// Config CLI subcommand: matcha config [plugin_name]
+	if len(os.Args) > 1 && os.Args[1] == "config" {
+		if err := matchaCli.RunConfig(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "config failed: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	// Marketplace TUI subcommand: matcha marketplace
+	if len(os.Args) > 1 && os.Args[1] == "marketplace" {
+		mp := tui.NewMarketplace(true)
+		p := tea.NewProgram(mp)
+		if _, err := p.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "marketplace failed: %v\n", err)
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 

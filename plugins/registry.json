@@ -1,0 +1,206 @@
+[
+  {
+    "name": "account_indicator",
+    "title": "Account Indicator",
+    "description": "Shows which account received the email you're currently viewing.",
+    "file": "account_indicator.lua"
+  },
+  {
+    "name": "ai_rewrite",
+    "title": "AI Rewrite",
+    "description": "Rewrites the email body using an AI model. Press ctrl+r in the composer to open the prompt overlay. Works with any OpenAI-compatible API.",
+    "file": "ai_rewrite.lua"
+  },
+  {
+    "name": "attachment_reminder",
+    "title": "Attachment Reminder",
+    "description": "Warns if your email body mentions an attachment but you might have forgotten to attach it.",
+    "file": "attachment_reminder.lua"
+  },
+  {
+    "name": "auto_bcc",
+    "title": "Auto BCC",
+    "description": "Automatically adds a BCC address to every email you compose.",
+    "file": "auto_bcc.lua"
+  },
+  {
+    "name": "char_counter",
+    "title": "Char Counter",
+    "description": "Shows a live character count in the composer help bar.",
+    "file": "char_counter.lua"
+  },
+  {
+    "name": "domain_filter",
+    "title": "Domain Filter",
+    "description": "Highlights emails from specific domains with a notification.",
+    "file": "domain_filter.lua"
+  },
+  {
+    "name": "email_age",
+    "title": "Email Age",
+    "description": "Shows the date of the email you're viewing in the status bar.",
+    "file": "email_age.lua"
+  },
+  {
+    "name": "empty_body_guard",
+    "title": "Empty Body Guard",
+    "description": "Warns before sending an email with an empty body.",
+    "file": "empty_body_guard.lua"
+  },
+  {
+    "name": "folder_announcer",
+    "title": "Folder Announcer",
+    "description": "Shows a brief notification when you switch folders.",
+    "file": "folder_announcer.lua"
+  },
+  {
+    "name": "folder_favorites",
+    "title": "Folder Favorites",
+    "description": "Tracks your most visited folders and logs the top 3 on shutdown.",
+    "file": "folder_favorites.lua"
+  },
+  {
+    "name": "greeting",
+    "title": "Greeting",
+    "description": "Shows a random motivational greeting on startup.",
+    "file": "greeting.lua"
+  },
+  {
+    "name": "hello",
+    "title": "Hello",
+    "description": "A minimal example plugin that logs lifecycle events.",
+    "file": "hello.lua"
+  },
+  {
+    "name": "inbox_activity",
+    "title": "Inbox Activity",
+    "description": "Shows a live activity indicator in the inbox status bar with received, read, and sent counts.",
+    "file": "inbox_activity.lua"
+  },
+  {
+    "name": "keyword_highlighter",
+    "title": "Keyword Highlighter",
+    "description": "Notifies you when incoming emails contain specific keywords.",
+    "file": "keyword_highlighter.lua"
+  },
+  {
+    "name": "notify_github",
+    "title": "Notify GitHub",
+    "description": "Shows a notification when emails from GitHub arrive.",
+    "file": "notify_github.lua"
+  },
+  {
+    "name": "quick_label",
+    "title": "Quick Label",
+    "description": "Demonstrates custom keyboard shortcuts with matcha.bind_key(). Press ctrl+i in the inbox to show the selected email's subject.",
+    "file": "quick_label.lua"
+  },
+  {
+    "name": "reading_time",
+    "title": "Reading Time",
+    "description": "Estimates reading time based on word count while composing.",
+    "file": "reading_time.lua"
+  },
+  {
+    "name": "read_tracker",
+    "title": "Read Tracker",
+    "description": "Displays a running count of emails you've read this session.",
+    "file": "read_tracker.lua"
+  },
+  {
+    "name": "recipient_counter",
+    "title": "Recipient Counter",
+    "description": "Shows the number of recipients in the composer status bar.",
+    "file": "recipient_counter.lua"
+  },
+  {
+    "name": "reply_all_warn",
+    "title": "Reply All Warn",
+    "description": "Warns when sending to many recipients (possible accidental reply-all).",
+    "file": "reply_all_warn.lua"
+  },
+  {
+    "name": "self_email_warn",
+    "title": "Self Email Warn",
+    "description": "Notifies you when you receive an email you sent to yourself.",
+    "file": "self_email_warn.lua"
+  },
+  {
+    "name": "sender_frequency",
+    "title": "Sender Frequency",
+    "description": "Tracks how many emails each sender sends you and shows repeat senders.",
+    "file": "sender_frequency.lua"
+  },
+  {
+    "name": "send_logger",
+    "title": "Send Logger",
+    "description": "Logs every email you send for personal record-keeping.",
+    "file": "send_logger.lua"
+  },
+  {
+    "name": "session_stats",
+    "title": "Session Stats",
+    "description": "Tracks emails received, read, and sent during your session.",
+    "file": "session_stats.lua"
+  },
+  {
+    "name": "spam_detector",
+    "title": "Spam Detector",
+    "description": "Flags incoming emails that match common spam patterns.",
+    "file": "spam_detector.lua"
+  },
+  {
+    "name": "subject_length_warn",
+    "title": "Subject Length Warn",
+    "description": "Warns when your subject line is getting too long.",
+    "file": "subject_length_warn.lua"
+  },
+  {
+    "name": "subject_reminder",
+    "title": "Subject Reminder",
+    "description": "Warns you if you're composing an email without a subject line.",
+    "file": "subject_reminder.lua"
+  },
+  {
+    "name": "thread_tracker",
+    "title": "Thread Tracker",
+    "description": "Tracks how many replies and forwards you receive per session.",
+    "file": "thread_tracker.lua"
+  },
+  {
+    "name": "ultimate_plugin",
+    "title": "Ultimate Plugin",
+    "description": "A comprehensive demo plugin showcasing all available Matcha plugin APIs.",
+    "file": "ultimate_plugin.lua"
+  },
+  {
+    "name": "unread_counter",
+    "title": "Unread Counter",
+    "description": "Displays unread count in the inbox title bar.",
+    "file": "unread_counter.lua"
+  },
+  {
+    "name": "vip_alerts",
+    "title": "VIP Alerts",
+    "description": "Shows prominent notifications for emails from important senders.",
+    "file": "vip_alerts.lua"
+  },
+  {
+    "name": "weather_status",
+    "title": "Weather Status",
+    "description": "Fetches current weather and displays it in the inbox status bar.",
+    "file": "weather_status.lua"
+  },
+  {
+    "name": "webhook_notify",
+    "title": "Webhook Notify",
+    "description": "Posts a JSON payload to a webhook URL when an email is received.",
+    "file": "webhook_notify.lua"
+  },
+  {
+    "name": "word_counter",
+    "title": "Word Counter",
+    "description": "Shows a live word count in the composer help bar.",
+    "file": "word_counter.lua"
+  }
+]
