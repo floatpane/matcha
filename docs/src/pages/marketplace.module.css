@@ -106,3 +106,9 @@
     color: var(--ifm-color-emphasis-500);
     margin-bottom: 1.5rem;
 }
+
+.error {
+    text-align: center;
+    color: var(--ifm-color-danger);
+    margin-bottom: 1.5rem;
+}

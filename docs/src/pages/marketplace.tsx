@@ -1,7 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Layout from "@theme/Layout";
 import styles from "./marketplace.module.css";
-import pluginsData from "@site/static/plugins.json";
 
 interface Plugin {
   name: string;
@@ -11,7 +10,8 @@ interface Plugin {
   url?: string;
 }
 
-const plugins: Plugin[] = pluginsData;
+const REGISTRY_URL =
+  "https://raw.githubusercontent.com/floatpane/matcha/master/plugins/registry.json";
 const RAW_BASE =
   "https://raw.githubusercontent.com/floatpane/matcha/master/plugins/";
 
@@ -61,6 +61,27 @@ function PluginCard({ plugin }: { plugin: Plugin }) {
 }
 
 export default function Marketplace(): React.JSX.Element {
+  const [plugins, setPlugins] = useState<Plugin[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(REGISTRY_URL)
+      .then((res) => {
+        if (!res.ok)
+          throw new Error(`Failed to fetch registry (${res.status})`);
+        return res.json();
+      })
+      .then((data: Plugin[]) => {
+        setPlugins(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message);
+        setLoading(false);
+      });
+  }, []);
+
   return (
     <Layout
       title="Plugin Marketplace"
@@ -73,12 +94,18 @@ export default function Marketplace(): React.JSX.Element {
             Browse community plugins for Matcha. Click install commands to copy.
           </p>
         </div>
-        <p className={styles.count}>{plugins.length} plugins available</p>
-        <div className={styles.grid}>
-          {plugins.map((plugin) => (
-            <PluginCard key={plugin.name} plugin={plugin} />
-          ))}
-        </div>
+        {loading && <p className={styles.count}>Loading plugins...</p>}
+        {error && <p className={styles.error}>Error: {error}</p>}
+        {!loading && !error && (
+          <>
+            <p className={styles.count}>{plugins.length} plugins available</p>
+            <div className={styles.grid}>
+              {plugins.map((plugin) => (
+                <PluginCard key={plugin.name} plugin={plugin} />
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </Layout>
   );
