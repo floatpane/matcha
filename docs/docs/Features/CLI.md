@@ -88,6 +88,74 @@ matcha send --from work@company.com --to someone@example.com --subject "Hi" --bo
 | `0` | Email sent successfully |
 | `1` | Error (missing flags, bad config, send failure) |
 
+## matcha marketplace
+
+Open the interactive plugin marketplace in the terminal. Fetches the plugin registry from GitHub and displays a browsable list of available plugins.
+
+```bash
+matcha marketplace
+```
+
+Use `j/k` or arrow keys to navigate, `Enter` to install a plugin, and `q` to quit. Installed plugins are marked with an `[installed]` badge.
+
+You can also access the marketplace from Matcha's main menu, or browse the [online marketplace](https://docs.matcha.floatpane.com/marketplace).
+
+## matcha install
+
+Install a plugin from a URL or a local file.
+
+```bash
+matcha install <url_or_file>
+```
+
+### Examples
+
+**Install from the official plugin repository:**
+
+```bash
+matcha install https://raw.githubusercontent.com/floatpane/matcha/master/plugins/hello.lua
+```
+
+**Install from a third-party URL:**
+
+```bash
+matcha install https://raw.githubusercontent.com/someone/repo/main/my_plugin.lua
+```
+
+**Install from a local file:**
+
+```bash
+matcha install ~/Downloads/custom_plugin.lua
+```
+
+Plugins are saved to `~/.config/matcha/plugins/` and loaded automatically on next startup. The file must have a `.lua` extension.
+
+## matcha config
+
+Open a configuration file in your `$EDITOR` (falls back to `vi`).
+
+```bash
+matcha config [plugin_name]
+```
+
+### Examples
+
+**Open the main config file:**
+
+```bash
+matcha config
+```
+
+Opens `~/.config/matcha/config.json`.
+
+**Open a plugin for configuration:**
+
+```bash
+matcha config ai_rewrite
+```
+
+Opens `~/.config/matcha/plugins/ai_rewrite.lua` so you can edit settings like API keys or model names.
+
 ## matcha update
 
 Check for and install the latest version of Matcha.
