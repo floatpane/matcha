@@ -226,7 +226,9 @@ jobs:
           sudo usermod -aG lxd $USER
 
       - name: Build snap
-        run: sg lxd -c 'snapcraft pack --use-lxd --build-for=${{ matrix.arch }}'
+        run: |
+          touch .nightly
+          sg lxd -c 'snapcraft pack --use-lxd --build-for=${{ matrix.arch }}'
 
       - name: Upload snap
         env:
