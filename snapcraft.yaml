@@ -37,7 +37,7 @@ parts:
       - GOBIN: ""
     override-pull: |
       craftctl default
-      version="$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo 0.1)"
+      version="$(git describe --tags --abbrev=0 --exclude='nightlyv*' 2>/dev/null | sed 's/^v//' || echo 0.1)"
       craftctl set version="$version"
     override-build: |
       go build -o "${CRAFT_PART_INSTALL}/bin/matcha" .
