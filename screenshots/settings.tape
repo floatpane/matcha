@@ -28,6 +28,8 @@ Down
 Sleep 300ms
 Down
 Sleep 300ms
+Down
+Sleep 300ms
 Enter
 
 Sleep 1.5s
