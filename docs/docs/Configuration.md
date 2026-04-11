@@ -47,9 +47,34 @@ Configuration is stored in `~/.config/matcha/config.json`.
 }
 ```
 
-## Additional Data Locations
+## Data Locations
 
-- **Drafts**: `~/.config/matcha/drafts/`
-- **Email Cache**: `~/.config/matcha/cache.json`
-- **Contacts**: `~/.config/matcha/contacts.json`
-- **Custom Themes**: `~/.config/matcha/themes/*.json`
+Configuration and persistent data are stored in `~/.config/matcha/`:
+
+| File | Description |
+|------|-------------|
+| `config.json` | Account settings, preferences |
+| `signatures/` | Email signatures |
+| `pgp/` | PGP keys |
+| `plugins/` | Installed Lua plugins |
+| `themes/` | Custom theme JSON files |
+| `secure.meta` | Encryption metadata (only when encryption is enabled) |
+
+Cache data is stored in `~/.cache/matcha/`:
+
+| File | Description |
+|------|-------------|
+| `email_cache.json` | Email metadata cache |
+| `contacts.json` | Contact autocomplete data |
+| `drafts.json` | Saved email drafts |
+| `folder_cache.json` | Folder listings per account |
+| `folder_emails/` | Per-folder email list cache |
+| `email_bodies/` | Cached email body content |
+
+Cache files are automatically refreshed from the server on each app launch and manual refresh. If an email is removed from the server, its cache entry is cleaned up on the next refresh.
+
+## Encryption
+
+All data files can optionally be encrypted with a password. See [Encryption](/docs/Features/Encryption) for details.
+
+When encryption is enabled, account passwords are stored inside the encrypted `config.json` instead of the OS keyring.
