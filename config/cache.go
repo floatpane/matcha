@@ -29,7 +29,7 @@ type EmailCache struct {
 
 // cacheFile returns the full path to the email cache file.
 func cacheFile() (string, error) {
-	dir, err := configDir()
+	dir, err := cacheDir()
 	if err != nil {
 		return "", err
 	}
@@ -50,7 +50,7 @@ func SaveEmailCache(cache *EmailCache) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return SecureWriteFile(path, data, 0600)
 }
 
 // LoadEmailCache loads emails from the cache file.
@@ -59,7 +59,7 @@ func LoadEmailCache() (*EmailCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := SecureReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +107,7 @@ type ContactsCache struct {
 
 // contactsFile returns the full path to the contacts cache file.
 func contactsFile() (string, error) {
-	dir, err := configDir()
+	dir, err := cacheDir()
 	if err != nil {
 		return "", err
 	}
@@ -128,7 +128,7 @@ func SaveContactsCache(cache *ContactsCache) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return SecureWriteFile(path, data, 0600)
 }
 
 // LoadContactsCache loads contacts from the cache file.
@@ -137,7 +137,7 @@ func LoadContactsCache() (*ContactsCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := SecureReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +270,7 @@ type DraftsCache struct {
 
 // draftsFile returns the full path to the drafts cache file.
 func draftsFile() (string, error) {
-	dir, err := configDir()
+	dir, err := cacheDir()
 	if err != nil {
 		return "", err
 	}
@@ -291,7 +291,7 @@ func SaveDraftsCache(cache *DraftsCache) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return SecureWriteFile(path, data, 0600)
 }
 
 // LoadDraftsCache loads drafts from the cache file.
@@ -300,7 +300,7 @@ func LoadDraftsCache() (*DraftsCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := SecureReadFile(path)
 	if err != nil {
 		return nil, err
 	}

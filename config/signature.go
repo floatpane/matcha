@@ -20,7 +20,7 @@ func LoadSignature() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	data, err := os.ReadFile(path)
+	data, err := SecureReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil
@@ -39,7 +39,7 @@ func SaveSignature(signature string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(signature), 0600)
+	return SecureWriteFile(path, []byte(signature), 0600)
 }
 
 // HasSignature checks if a signature file exists and is non-empty.

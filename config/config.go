@@ -155,6 +155,64 @@ func configDir() (string, error) {
 	return filepath.Join(home, ".config", "matcha"), nil
 }
 
+// GetCacheDir returns the path to the cache directory (exported).
+func GetCacheDir() (string, error) {
+	return cacheDir()
+}
+
+// cacheDir returns the path to the cache directory (internal).
+func cacheDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".cache", "matcha"), nil
+}
+
+// MigrateCacheFiles moves cache files from ~/.config/matcha/ to ~/.cache/matcha/ if needed.
+// This is a one-time migration for existing installations.
+func MigrateCacheFiles() error {
+	src, err := configDir()
+	if err != nil {
+		return err
+	}
+	dst, err := cacheDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dst, 0700); err != nil {
+		return err
+	}
+
+	// Files to migrate
+	files := []string{"email_cache.json", "contacts.json", "drafts.json", "folder_cache.json"}
+	for _, f := range files {
+		oldPath := filepath.Join(src, f)
+		newPath := filepath.Join(dst, f)
+		if _, err := os.Stat(oldPath); err == nil {
+			// Only migrate if destination doesn't already exist
+			if _, err := os.Stat(newPath); err != nil {
+				if err := os.Rename(oldPath, newPath); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	// Migrate folder_emails directory
+	oldDir := filepath.Join(src, "folder_emails")
+	newDir := filepath.Join(dst, "folder_emails")
+	if info, err := os.Stat(oldDir); err == nil && info.IsDir() {
+		if _, err := os.Stat(newDir); err != nil {
+			if err := os.Rename(oldDir, newDir); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // configFile returns the full path to the configuration file.
 func configFile() (string, error) {
 	dir, err := configDir()
@@ -164,18 +222,56 @@ func configFile() (string, error) {
 	return filepath.Join(dir, "config.json"), nil
 }
 
+// secureDiskAccount includes the Password field in JSON when secure mode is active.
+type secureDiskAccount struct {
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	Email              string `json:"email"`
+	Password           string `json:"password,omitempty"`
+	ServiceProvider    string `json:"service_provider"`
+	FetchEmail         string `json:"fetch_email,omitempty"`
+	IMAPServer         string `json:"imap_server,omitempty"`
+	IMAPPort           int    `json:"imap_port,omitempty"`
+	SMTPServer         string `json:"smtp_server,omitempty"`
+	SMTPPort           int    `json:"smtp_port,omitempty"`
+	Insecure           bool   `json:"insecure,omitempty"`
+	SMIMECert          string `json:"smime_cert,omitempty"`
+	SMIMEKey           string `json:"smime_key,omitempty"`
+	SMIMESignByDefault bool   `json:"smime_sign_by_default,omitempty"`
+	PGPPublicKey       string `json:"pgp_public_key,omitempty"`
+	PGPPrivateKey      string `json:"pgp_private_key,omitempty"`
+	PGPKeySource       string `json:"pgp_key_source,omitempty"`
+	PGPPIN             string `json:"pgp_pin,omitempty"`
+	PGPSignByDefault   bool   `json:"pgp_sign_by_default,omitempty"`
+	AuthMethod         string `json:"auth_method,omitempty"`
+	Protocol           string `json:"protocol,omitempty"`
+	JMAPEndpoint       string `json:"jmap_endpoint,omitempty"`
+	POP3Server         string `json:"pop3_server,omitempty"`
+	POP3Port           int    `json:"pop3_port,omitempty"`
+}
+
+type secureDiskConfig struct {
+	Accounts             []secureDiskAccount `json:"accounts"`
+	DisableImages        bool                `json:"disable_images,omitempty"`
+	HideTips             bool                `json:"hide_tips,omitempty"`
+	DisableNotifications bool                `json:"disable_notifications,omitempty"`
+	Theme                string              `json:"theme,omitempty"`
+	MailingLists         []MailingList       `json:"mailing_lists,omitempty"`
+}
+
 // SaveConfig saves the given configuration to the config file and passwords to the keyring.
 func SaveConfig(config *Config) error {
-	// Save passwords and PGP PINs to the OS keyring before writing the JSON file
-	for _, acc := range config.Accounts {
-		if acc.Password != "" {
-			// We ignore the error here because some environments (like headless CI)
-			// might not have a keyring service, but we still want to save the rest of the config.
-			_ = keyring.Set(keyringServiceName, acc.Email, acc.Password)
-		}
-		// Save YubiKey PIN if present
-		if acc.PGPPIN != "" && acc.PGPKeySource == "yubikey" {
-			_ = keyring.Set(keyringServiceName, acc.Email+":pgp-pin", acc.PGPPIN)
+	secureMode := GetSessionKey() != nil
+
+	if !secureMode {
+		// Save passwords and PGP PINs to the OS keyring before writing the JSON file
+		for _, acc := range config.Accounts {
+			if acc.Password != "" {
+				_ = keyring.Set(keyringServiceName, acc.Email, acc.Password)
+			}
+			if acc.PGPPIN != "" && acc.PGPKeySource == "yubikey" {
+				_ = keyring.Set(keyringServiceName, acc.Email+":pgp-pin", acc.PGPPIN)
+			}
 		}
 	}
 
@@ -186,11 +282,53 @@ func SaveConfig(config *Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(config, "", "  ")
+
+	var data []byte
+	if secureMode {
+		// In secure mode, include passwords in the JSON (they'll be encrypted on disk)
+		sdc := secureDiskConfig{
+			DisableImages:        config.DisableImages,
+			HideTips:             config.HideTips,
+			DisableNotifications: config.DisableNotifications,
+			Theme:                config.Theme,
+			MailingLists:         config.MailingLists,
+		}
+		for _, acc := range config.Accounts {
+			sdc.Accounts = append(sdc.Accounts, secureDiskAccount{
+				ID:                 acc.ID,
+				Name:               acc.Name,
+				Email:              acc.Email,
+				Password:           acc.Password,
+				ServiceProvider:    acc.ServiceProvider,
+				FetchEmail:         acc.FetchEmail,
+				IMAPServer:         acc.IMAPServer,
+				IMAPPort:           acc.IMAPPort,
+				SMTPServer:         acc.SMTPServer,
+				SMTPPort:           acc.SMTPPort,
+				Insecure:           acc.Insecure,
+				SMIMECert:          acc.SMIMECert,
+				SMIMEKey:           acc.SMIMEKey,
+				SMIMESignByDefault: acc.SMIMESignByDefault,
+				PGPPublicKey:       acc.PGPPublicKey,
+				PGPPrivateKey:      acc.PGPPrivateKey,
+				PGPKeySource:       acc.PGPKeySource,
+				PGPPIN:             acc.PGPPIN,
+				PGPSignByDefault:   acc.PGPSignByDefault,
+				AuthMethod:         acc.AuthMethod,
+				Protocol:           acc.Protocol,
+				JMAPEndpoint:       acc.JMAPEndpoint,
+				POP3Server:         acc.POP3Server,
+				POP3Port:           acc.POP3Port,
+			})
+		}
+		data, err = json.MarshalIndent(sdc, "", "  ")
+	} else {
+		data, err = json.MarshalIndent(config, "", "  ")
+	}
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return SecureWriteFile(path, data, 0600)
 }
 
 // LoadConfig loads the configuration from the config file and passwords from the keyring.
@@ -200,10 +338,12 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := SecureReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+
+	secureMode := GetSessionKey() != nil
 
 	var config Config
 	var needsMigration bool
@@ -226,6 +366,7 @@ func LoadConfig() (*Config, error) {
 		PGPPublicKey       string `json:"pgp_public_key,omitempty"`
 		PGPPrivateKey      string `json:"pgp_private_key,omitempty"`
 		PGPKeySource       string `json:"pgp_key_source,omitempty"`
+		PGPPIN             string `json:"pgp_pin,omitempty"`
 		PGPSignByDefault   bool   `json:"pgp_sign_by_default,omitempty"`
 		AuthMethod         string `json:"auth_method,omitempty"`
 		Protocol           string `json:"protocol,omitempty"`
@@ -298,7 +439,11 @@ func LoadConfig() (*Config, error) {
 			POP3Port:           rawAcc.POP3Port,
 		}
 
-		if rawAcc.Password != "" {
+		if secureMode {
+			// In secure mode, passwords and PINs are stored in the encrypted config JSON
+			acc.Password = rawAcc.Password
+			acc.PGPPIN = rawAcc.PGPPIN
+		} else if rawAcc.Password != "" {
 			// Found a plain-text password! Move it to the OS Keyring.
 			_ = keyring.Set(keyringServiceName, rawAcc.Email, rawAcc.Password)
 			acc.Password = rawAcc.Password
@@ -310,10 +455,12 @@ func LoadConfig() (*Config, error) {
 			}
 		}
 
-		// Load YubiKey PIN from keyring if using YubiKey
-		if acc.PGPKeySource == "yubikey" {
-			if pin, err := keyring.Get(keyringServiceName, acc.Email+":pgp-pin"); err == nil {
-				acc.PGPPIN = pin
+		if !secureMode {
+			// Load YubiKey PIN from keyring if using YubiKey
+			if acc.PGPKeySource == "yubikey" {
+				if pin, err := keyring.Get(keyringServiceName, acc.Email+":pgp-pin"); err == nil {
+					acc.PGPPIN = pin
+				}
 			}
 		}
 

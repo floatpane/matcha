@@ -455,3 +455,19 @@ type PluginPromptCancelMsg struct{}
 
 // GoToMarketplaceMsg signals navigation to the plugin marketplace.
 type GoToMarketplaceMsg struct{}
+
+// PasswordVerifiedMsg signals that the encryption password was verified (or failed).
+type PasswordVerifiedMsg struct {
+	Key []byte // The derived encryption key (nil on failure)
+	Err error  // Non-nil if verification failed
+}
+
+// SecureModeEnabledMsg signals that encryption was enabled from settings.
+type SecureModeEnabledMsg struct {
+	Err error
+}
+
+// SecureModeDisabledMsg signals that encryption was disabled from settings.
+type SecureModeDisabledMsg struct {
+	Err error
+}

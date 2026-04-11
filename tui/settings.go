@@ -29,6 +29,7 @@ const (
 	SettingsMailingLists
 	SettingsSMIMEConfig
 	SettingsTheme
+	SettingsEncryption
 )
 
 // Settings displays the settings screen.
@@ -51,6 +52,14 @@ type Settings struct {
 	pgpPrivateKeyInput textinput.Model
 	pgpKeySource       string // "file" or "yubikey"
 	pgpPINInput        textinput.Model
+
+	// Encryption fields
+	encPasswordInput  textinput.Model
+	encConfirmInput   textinput.Model
+	encFocusIndex     int
+	encError          string
+	encEnabling       bool // true when enabling encryption in progress
+	confirmingDisable bool // true when confirming disable
 }
 
 // NewSettings creates a new settings model.
@@ -93,6 +102,22 @@ func NewSettings(cfg *config.Config) *Settings {
 	pgpPINInput.EchoCharacter = '*'
 	pgpPINInput.SetStyles(tiStyles)
 
+	encPassInput := textinput.New()
+	encPassInput.Placeholder = "Password"
+	encPassInput.Prompt = "> "
+	encPassInput.CharLimit = 256
+	encPassInput.EchoMode = textinput.EchoPassword
+	encPassInput.EchoCharacter = '*'
+	encPassInput.SetStyles(tiStyles)
+
+	encConfInput := textinput.New()
+	encConfInput.Placeholder = "Confirm Password"
+	encConfInput.Prompt = "> "
+	encConfInput.CharLimit = 256
+	encConfInput.EchoMode = textinput.EchoPassword
+	encConfInput.EchoCharacter = '*'
+	encConfInput.SetStyles(tiStyles)
+
 	return &Settings{
 		cfg:                cfg,
 		state:              SettingsMain,
@@ -103,6 +128,8 @@ func NewSettings(cfg *config.Config) *Settings {
 		pgpPrivateKeyInput: pgpPrivInput,
 		pgpKeySource:       "file", // Default to file-based keys
 		pgpPINInput:        pgpPINInput,
+		encPasswordInput:   encPassInput,
+		encConfirmInput:    encConfInput,
 	}
 }
 
@@ -139,9 +166,38 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m2, cmd = m.updateSMIMEConfig(msg)
 			cmds = append(cmds, cmd)
 			return m2, tea.Batch(cmds...)
+		} else if m.state == SettingsEncryption {
+			return m.updateEncryption(msg)
 		} else {
 			return m.updateAccounts(msg)
 		}
+
+	case SecureModeEnabledMsg:
+		m.encEnabling = false
+		if msg.Err != nil {
+			m.encError = msg.Err.Error()
+			return m, nil
+		}
+		m.state = SettingsMain
+		m.cursor = 7
+		return m, nil
+
+	case SecureModeDisabledMsg:
+		if msg.Err != nil {
+			m.encError = msg.Err.Error()
+			return m, nil
+		}
+		m.confirmingDisable = false
+		m.state = SettingsMain
+		m.cursor = 7
+		return m, nil
+	}
+
+	if m.state == SettingsEncryption {
+		m.encPasswordInput, cmd = m.encPasswordInput.Update(msg)
+		cmds = append(cmds, cmd)
+		m.encConfirmInput, cmd = m.encConfirmInput.Update(msg)
+		cmds = append(cmds, cmd)
 	}
 
 	if m.state == SettingsSMIMEConfig {
@@ -167,8 +223,8 @@ func (m *Settings) updateMain(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.cursor--
 		}
 	case "down", "j":
-		// Options: 0: Email Accounts, 1: Theme, 2: Image Display, 3: Edit Signature, 4: Contextual Tips, 5: Desktop Notifications, 6: Mailing Lists
-		if m.cursor < 6 {
+		// Options: 0: Email Accounts, 1: Theme, 2: Image Display, 3: Edit Signature, 4: Contextual Tips, 5: Desktop Notifications, 6: Mailing Lists, 7: Encryption
+		if m.cursor < 7 {
 			m.cursor++
 		}
 	case "enter":
@@ -206,6 +262,20 @@ func (m *Settings) updateMain(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case 6: // Mailing Lists
 			m.state = SettingsMailingLists
 			m.cursor = 0
+			return m, nil
+		case 7: // Encryption
+			m.state = SettingsEncryption
+			m.encError = ""
+			m.encPasswordInput.SetValue("")
+			m.encConfirmInput.SetValue("")
+			m.encFocusIndex = 0
+			m.confirmingDisable = false
+			m.encEnabling = false
+			if !config.IsSecureModeEnabled() {
+				m.encPasswordInput.Focus()
+				m.encConfirmInput.Blur()
+				return m, textinput.Blink
+			}
 			return m, nil
 		}
 	case "esc":
@@ -517,6 +587,8 @@ func (m *Settings) View() tea.View {
 		return tea.NewView(m.viewMailingLists())
 	} else if m.state == SettingsSMIMEConfig {
 		return tea.NewView(m.viewSMIMEConfig())
+	} else if m.state == SettingsEncryption {
+		return tea.NewView(m.viewEncryption())
 	}
 	return tea.NewView(m.viewAccounts())
 }
@@ -601,6 +673,19 @@ func (m *Settings) viewMain() string {
 	} else {
 		b.WriteString(accountItemStyle.Render("  " + mailingListsText))
 	}
+	b.WriteString("\n")
+
+	// Option 7: Encryption
+	encStatus := "OFF"
+	if config.IsSecureModeEnabled() {
+		encStatus = "ON"
+	}
+	encText := fmt.Sprintf("Encryption: %s", encStatus)
+	if m.cursor == 7 {
+		b.WriteString(selectedAccountItemStyle.Render("> " + encText))
+	} else {
+		b.WriteString(accountItemStyle.Render("  " + encText))
+	}
 	b.WriteString("\n\n")
 
 	if !m.cfg.HideTips {
@@ -620,6 +705,8 @@ func (m *Settings) viewMain() string {
 			tip = "Toggle desktop notifications when new mail arrives."
 		case 6:
 			tip = "Manage groups of email addresses to quickly send to multiple people."
+		case 7:
+			tip = "Encrypt all data with a password. You'll need to enter it each time you open matcha."
 		}
 		if tip != "" {
 			b.WriteString(TipStyle.Render("Tip: "+tip) + "\n\n")
@@ -1042,6 +1129,175 @@ func renderThemePreview(t theme.Theme, maxWidth int) string {
 		Render(b.String())
 
 	return box
+}
+
+func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	isEnabled := config.IsSecureModeEnabled()
+
+	if isEnabled {
+		// Disable flow: confirmation dialog
+		if m.confirmingDisable {
+			switch msg.String() {
+			case "y", "Y":
+				m.confirmingDisable = false
+				return m, func() tea.Msg {
+					err := config.DisableSecureMode()
+					return SecureModeDisabledMsg{Err: err}
+				}
+			case "n", "N", "esc":
+				m.confirmingDisable = false
+				m.state = SettingsMain
+				m.cursor = 7
+				return m, nil
+			}
+			return m, nil
+		}
+
+		// Show disable prompt
+		m.confirmingDisable = true
+		return m, nil
+	}
+
+	// Enable flow: password + confirm
+	switch msg.String() {
+	case "esc":
+		m.state = SettingsMain
+		m.cursor = 7
+		return m, nil
+	case "tab", "shift+tab", "down", "up":
+		if msg.String() == "shift+tab" || msg.String() == "up" {
+			m.encFocusIndex--
+			if m.encFocusIndex < 0 {
+				m.encFocusIndex = 2 // wrap to cancel
+			}
+		} else {
+			m.encFocusIndex++
+			if m.encFocusIndex > 2 {
+				m.encFocusIndex = 0
+			}
+		}
+		m.encPasswordInput.Blur()
+		m.encConfirmInput.Blur()
+		var cmds []tea.Cmd
+		switch m.encFocusIndex {
+		case 0:
+			cmds = append(cmds, m.encPasswordInput.Focus())
+		case 1:
+			cmds = append(cmds, m.encConfirmInput.Focus())
+		}
+		return m, tea.Batch(cmds...)
+	case "enter":
+		switch m.encFocusIndex {
+		case 0: // Password field — advance to confirm
+			m.encFocusIndex = 1
+			m.encPasswordInput.Blur()
+			return m, m.encConfirmInput.Focus()
+		case 1: // Confirm field — advance to save
+			m.encFocusIndex = 2
+			m.encConfirmInput.Blur()
+			return m, nil
+		case 2: // Save button
+			password := m.encPasswordInput.Value()
+			confirm := m.encConfirmInput.Value()
+			if password == "" {
+				m.encError = "Password cannot be empty"
+				return m, nil
+			}
+			if password != confirm {
+				m.encError = "Passwords do not match"
+				return m, nil
+			}
+			m.encEnabling = true
+			m.encError = ""
+			return m, func() tea.Msg {
+				err := config.EnableSecureMode(password)
+				return SecureModeEnabledMsg{Err: err}
+			}
+		}
+	}
+
+	// Update text inputs
+	var cmd tea.Cmd
+	switch m.encFocusIndex {
+	case 0:
+		m.encPasswordInput, cmd = m.encPasswordInput.Update(msg)
+	case 1:
+		m.encConfirmInput, cmd = m.encConfirmInput.Update(msg)
+	}
+	return m, cmd
+}
+
+func (m *Settings) viewEncryption() string {
+	var b strings.Builder
+
+	isEnabled := config.IsSecureModeEnabled()
+
+	b.WriteString(titleStyle.Render("Encryption") + "\n\n")
+
+	if isEnabled {
+		// Disable mode
+		if m.confirmingDisable {
+			dialog := DialogBoxStyle.Render(
+				lipgloss.JoinVertical(lipgloss.Center,
+					dangerStyle.Render("Disable encryption?"),
+					accountEmailStyle.Render("All data will be stored unencrypted."),
+					HelpStyle.Render("\n(y/n)"),
+				),
+			)
+			return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog)
+		}
+
+		b.WriteString(settingsFocusedStyle.Render("  Encryption is currently enabled.") + "\n\n")
+		b.WriteString(accountEmailStyle.Render("  Press enter to disable encryption.") + "\n")
+	} else {
+		// Enable mode
+		b.WriteString(accountEmailStyle.Render("  Set a password to encrypt all data.") + "\n\n")
+
+		if m.encFocusIndex == 0 {
+			b.WriteString(settingsFocusedStyle.Render("Password:\n"))
+		} else {
+			b.WriteString(settingsBlurredStyle.Render("Password:\n"))
+		}
+		b.WriteString(m.encPasswordInput.View() + "\n\n")
+
+		if m.encFocusIndex == 1 {
+			b.WriteString(settingsFocusedStyle.Render("Confirm Password:\n"))
+		} else {
+			b.WriteString(settingsBlurredStyle.Render("Confirm Password:\n"))
+		}
+		b.WriteString(m.encConfirmInput.View() + "\n\n")
+
+		saveBtn := "[ Enable Encryption ]"
+		if m.encFocusIndex == 2 {
+			saveBtn = settingsFocusedStyle.Render(saveBtn)
+		} else {
+			saveBtn = settingsBlurredStyle.Render(saveBtn)
+		}
+		b.WriteString(saveBtn + "\n")
+
+		if m.encEnabling {
+			b.WriteString("\n" + accountEmailStyle.Render("  Encrypting data...") + "\n")
+		}
+	}
+
+	if m.encError != "" {
+		b.WriteString("\n" + dangerStyle.Render("  "+m.encError) + "\n")
+	}
+
+	mainContent := b.String()
+	helpView := helpStyle.Render("tab/shift+tab: navigate • enter: select • esc: back")
+
+	if m.height > 0 {
+		currentHeight := lipgloss.Height(docStyle.Render(mainContent + helpView))
+		gap := m.height - currentHeight
+		if gap > 0 {
+			mainContent += strings.Repeat("\n", gap)
+		}
+	} else {
+		mainContent += "\n\n"
+	}
+
+	return docStyle.Render(mainContent + helpView)
 }
 
 // UpdateConfig updates the configuration (used when accounts are deleted).

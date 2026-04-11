@@ -839,6 +839,42 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
 
+	case tui.PasswordVerifiedMsg:
+		if msg.Err != nil {
+			// Error is handled inside PasswordPrompt itself
+			return m, nil
+		}
+		// Password verified — set session key and load config
+		config.SetSessionKey(msg.Key)
+		cfg, err := config.LoadConfig()
+		if err == nil && cfg.Theme != "" {
+			theme.SetTheme(cfg.Theme)
+			tui.RebuildStyles()
+		}
+		_ = config.EnsurePGPDir()
+		if err != nil {
+			m.config = nil
+			hideTips := false
+			m.current = tui.NewLogin(hideTips)
+		} else {
+			m.config = cfg
+			m.current = tui.NewChoice()
+		}
+		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		return m, m.current.Init()
+
+	case tui.SecureModeEnabledMsg:
+		if msg.Err != nil {
+			log.Printf("Failed to enable encryption: %v", msg.Err)
+		}
+		return m, nil
+
+	case tui.SecureModeDisabledMsg:
+		if msg.Err != nil {
+			log.Printf("Failed to disable encryption: %v", msg.Err)
+		}
+		return m, nil
+
 	case tui.GoToChoiceMenuMsg:
 		m.current = tui.NewChoice()
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
@@ -2865,20 +2901,31 @@ func main() {
 		os.Exit(0)
 	}
 
-	cfg, err := config.LoadConfig()
-	if err == nil && cfg.Theme != "" {
-		theme.SetTheme(cfg.Theme)
-	}
-	tui.RebuildStyles()
-
-	// Ensure PGP keys directory exists
-	_ = config.EnsurePGPDir()
+	// Migrate cache files from ~/.config/matcha/ to ~/.cache/matcha/ if needed
+	_ = config.MigrateCacheFiles()
 
 	var initialModel *mainModel
-	if err != nil {
+
+	if config.IsSecureModeEnabled() {
+		// Secure mode: show password prompt before loading config
+		tui.RebuildStyles()
 		initialModel = newInitialModel(nil)
+		initialModel.current = tui.NewPasswordPrompt()
 	} else {
-		initialModel = newInitialModel(cfg)
+		cfg, err := config.LoadConfig()
+		if err == nil && cfg.Theme != "" {
+			theme.SetTheme(cfg.Theme)
+		}
+		tui.RebuildStyles()
+
+		// Ensure PGP keys directory exists
+		_ = config.EnsurePGPDir()
+
+		if err != nil {
+			initialModel = newInitialModel(nil)
+		} else {
+			initialModel = newInitialModel(cfg)
+		}
 	}
 
 	// Initialize plugin system

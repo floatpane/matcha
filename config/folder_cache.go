@@ -23,7 +23,7 @@ type FolderCache struct {
 
 // folderCacheFile returns the full path to the folder cache file.
 func folderCacheFile() (string, error) {
-	dir, err := configDir()
+	dir, err := cacheDir()
 	if err != nil {
 		return "", err
 	}
@@ -44,7 +44,7 @@ func SaveFolderCache(cache *FolderCache) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return SecureWriteFile(path, data, 0600)
 }
 
 // LoadFolderCache loads the folder cache from disk.
@@ -53,7 +53,7 @@ func LoadFolderCache() (*FolderCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := SecureReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +117,7 @@ type FolderEmailCache struct {
 
 // folderEmailCacheDir returns the directory for folder email cache files.
 func folderEmailCacheDir() (string, error) {
-	dir, err := configDir()
+	dir, err := cacheDir()
 	if err != nil {
 		return "", err
 	}
@@ -160,7 +160,7 @@ func SaveFolderEmailCache(folderName string, emails []CachedEmail) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return SecureWriteFile(path, data, 0600)
 }
 
 // LoadFolderEmailCache loads cached emails for a folder from disk.
@@ -169,7 +169,7 @@ func LoadFolderEmailCache(folderName string) ([]CachedEmail, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := SecureReadFile(path)
 	if err != nil {
 		return nil, err
 	}
