@@ -396,3 +396,149 @@ func HasDrafts() bool {
 	}
 	return len(cache.Drafts) > 0
 }
+
+// --- Email Body Cache ---
+
+// CachedAttachment stores attachment metadata (not the binary data).
+type CachedAttachment struct {
+	Filename         string `json:"filename"`
+	PartID           string `json:"part_id"`
+	Encoding         string `json:"encoding,omitempty"`
+	MIMEType         string `json:"mime_type,omitempty"`
+	ContentID        string `json:"content_id,omitempty"`
+	Inline           bool   `json:"inline,omitempty"`
+	IsSMIMESignature bool   `json:"is_smime_signature,omitempty"`
+	SMIMEVerified    bool   `json:"smime_verified,omitempty"`
+	IsSMIMEEncrypted bool   `json:"is_smime_encrypted,omitempty"`
+}
+
+// CachedEmailBody stores the body and attachment metadata for a single email.
+type CachedEmailBody struct {
+	UID         uint32             `json:"uid"`
+	AccountID   string             `json:"account_id"`
+	Body        string             `json:"body"`
+	Attachments []CachedAttachment `json:"attachments,omitempty"`
+	CachedAt    time.Time          `json:"cached_at"`
+}
+
+// EmailBodyCache stores cached email bodies for a folder.
+type EmailBodyCache struct {
+	FolderName string            `json:"folder_name"`
+	Bodies     []CachedEmailBody `json:"bodies"`
+	UpdatedAt  time.Time         `json:"updated_at"`
+}
+
+// bodyCacheDir returns the directory for body cache files.
+func bodyCacheDir() (string, error) {
+	dir, err := cacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "email_bodies"), nil
+}
+
+// bodyBacheFile returns the file path for a folder's body cache.
+func bodyCacheFile(folderName string) (string, error) {
+	dir, err := bodyCacheDir()
+	if err != nil {
+		return "", err
+	}
+	safe := strings.NewReplacer("/", "_", "\\", "_", ":", "_", " ", "_").Replace(folderName)
+	return filepath.Join(dir, safe+".json"), nil
+}
+
+// LoadEmailBodyCache loads the body cache for a folder.
+func LoadEmailBodyCache(folderName string) (*EmailBodyCache, error) {
+	path, err := bodyCacheFile(folderName)
+	if err != nil {
+		return nil, err
+	}
+	data, err := SecureReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var cache EmailBodyCache
+	if err := json.Unmarshal(data, &cache); err != nil {
+		return nil, err
+	}
+	return &cache, nil
+}
+
+// saveEmailBodyCache writes the body cache for a folder.
+func saveEmailBodyCache(cache *EmailBodyCache) error {
+	path, err := bodyCacheFile(cache.FolderName)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	cache.UpdatedAt = time.Now()
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return err
+	}
+	return SecureWriteFile(path, data, 0600)
+}
+
+// GetCachedEmailBody returns the cached body for a specific email, or nil if not cached.
+func GetCachedEmailBody(folderName string, uid uint32, accountID string) *CachedEmailBody {
+	cache, err := LoadEmailBodyCache(folderName)
+	if err != nil {
+		return nil
+	}
+	for _, b := range cache.Bodies {
+		if b.UID == uid && b.AccountID == accountID {
+			return &b
+		}
+	}
+	return nil
+}
+
+// SaveEmailBody saves or updates a cached email body for a folder.
+func SaveEmailBody(folderName string, body CachedEmailBody) error {
+	cache, err := LoadEmailBodyCache(folderName)
+	if err != nil {
+		cache = &EmailBodyCache{FolderName: folderName}
+	}
+
+	body.CachedAt = time.Now()
+
+	// Replace existing or append
+	found := false
+	for i, b := range cache.Bodies {
+		if b.UID == body.UID && b.AccountID == body.AccountID {
+			cache.Bodies[i] = body
+			found = true
+			break
+		}
+	}
+	if !found {
+		cache.Bodies = append(cache.Bodies, body)
+	}
+
+	return saveEmailBodyCache(cache)
+}
+
+// PruneEmailBodyCache removes cached bodies for emails that are no longer in the folder.
+// validUIDs is a map of UID -> AccountID for emails still present.
+func PruneEmailBodyCache(folderName string, validUIDs map[uint32]string) error {
+	cache, err := LoadEmailBodyCache(folderName)
+	if err != nil {
+		return nil // No cache to prune
+	}
+
+	var kept []CachedEmailBody
+	for _, b := range cache.Bodies {
+		if accID, ok := validUIDs[b.UID]; ok && accID == b.AccountID {
+			kept = append(kept, b)
+		}
+	}
+
+	if len(kept) == len(cache.Bodies) {
+		return nil // Nothing pruned
+	}
+
+	cache.Bodies = kept
+	return saveEmailBodyCache(cache)
+}

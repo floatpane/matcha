@@ -185,8 +185,9 @@ func VerifyPassword(password string) ([]byte, error) {
 
 // EnableSecureMode sets up encryption with the given password.
 // It generates a salt, derives a key, encrypts the sentinel, saves secure.meta,
-// and re-encrypts all existing data files.
-func EnableSecureMode(password string) error {
+// and re-encrypts all existing data files. The config must be passed so that
+// passwords (normally stored in the OS keyring) can be written into the encrypted config.
+func EnableSecureMode(password string, cfg *Config) error {
 	// Generate random salt
 	salt := make([]byte, 32)
 	if _, err := rand.Read(salt); err != nil {
@@ -225,8 +226,17 @@ func EnableSecureMode(password string) error {
 	// Set the session key so SecureWriteFile will encrypt
 	SetSessionKey(key)
 
-	// Re-encrypt all existing data files
-	if err := reEncryptExistingFiles(); err != nil {
+	// Re-save config first — this writes passwords into the encrypted JSON
+	// (SaveConfig uses secureDiskConfig when session key is set)
+	if cfg != nil {
+		if err := SaveConfig(cfg); err != nil {
+			ClearSessionKey()
+			return fmt.Errorf("failed to save encrypted config: %w", err)
+		}
+	}
+
+	// Re-encrypt all remaining data files (caches, signatures, etc.)
+	if err := reEncryptCacheFiles(); err != nil {
 		ClearSessionKey()
 		return fmt.Errorf("failed to encrypt existing files: %w", err)
 	}
@@ -241,27 +251,44 @@ func EnableSecureMode(password string) error {
 }
 
 // DisableSecureMode decrypts all files back to plain JSON and removes secure.meta.
-func DisableSecureMode() error {
+// The config must be passed so passwords can be restored to the OS keyring.
+func DisableSecureMode(cfg *Config) error {
 	// Collect all files that need decryption
 	files, err := collectDataFiles()
 	if err != nil {
 		return err
 	}
 
-	// Read and decrypt all files while we still have the session key
+	// Find config.json path to skip it (handled separately below)
+	cfgPath, _ := configFile()
+
+	// Read and decrypt all cache files while we still have the session key
+	key := GetSessionKey()
 	for _, f := range files {
+		if f == cfgPath {
+			continue
+		}
 		data, err := SecureReadFile(f)
 		if err != nil {
 			continue // File may not exist
 		}
-		// Clear session key temporarily to write plain
-		key := GetSessionKey()
+		// Write plain
 		ClearSessionKey()
 		if err := os.WriteFile(f, data, 0600); err != nil {
 			SetSessionKey(key) // Restore on error
 			return err
 		}
 		SetSessionKey(key)
+	}
+
+	// Clear session key so SaveConfig writes plain JSON and restores passwords to keyring
+	ClearSessionKey()
+
+	// Re-save config — this will use the keyring (no session key) and strip passwords from JSON
+	if cfg != nil {
+		if err := SaveConfig(cfg); err != nil {
+			return fmt.Errorf("failed to save plain config: %w", err)
+		}
 	}
 
 	// Remove secure.meta
@@ -271,7 +298,6 @@ func DisableSecureMode() error {
 	}
 	_ = os.Remove(path)
 
-	ClearSessionKey()
 	return nil
 }
 
@@ -301,13 +327,20 @@ func SecureWriteFile(path string, data []byte, perm os.FileMode) error {
 	return os.WriteFile(path, encrypted, perm)
 }
 
-// reEncryptExistingFiles reads all plain data files and writes them encrypted.
-func reEncryptExistingFiles() error {
+// reEncryptCacheFiles reads all plain cache/data files (excluding config.json) and writes them encrypted.
+func reEncryptCacheFiles() error {
 	files, err := collectDataFiles()
 	if err != nil {
 		return err
 	}
+
+	// Find config.json path to skip it (already saved separately with passwords)
+	cfgPath, _ := configFile()
+
 	for _, f := range files {
+		if f == cfgPath {
+			continue // Already handled by SaveConfig
+		}
 		plainData, err := os.ReadFile(f)
 		if err != nil {
 			continue // File may not exist
@@ -347,6 +380,16 @@ func collectDataFiles() ([]string, error) {
 		for _, entry := range entries {
 			if !entry.IsDir() {
 				files = append(files, filepath.Join(folderDir, entry.Name()))
+			}
+		}
+	}
+
+	// Email body cache files
+	bodyDir := filepath.Join(cDir, "email_bodies")
+	if entries, err := os.ReadDir(bodyDir); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				files = append(files, filepath.Join(bodyDir, entry.Name()))
 			}
 		}
 	}

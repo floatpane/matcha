@@ -2,6 +2,7 @@ package fetcher
 
 import (
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -127,6 +128,12 @@ func (a *accountIdle) run() {
 		case <-a.stop:
 			return
 		default:
+		}
+
+		// Don't retry on authentication errors — they won't resolve by retrying
+		if strings.Contains(err.Error(), "authentication error") || strings.Contains(err.Error(), "XOAUTH2 authentication failed") {
+			log.Printf("IDLE stopped for account %s: %v", a.account.ID, err)
+			return
 		}
 
 		log.Printf("IDLE error for account %s: %v (reconnecting in %v)", a.account.ID, err, backoff)

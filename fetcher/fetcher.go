@@ -217,7 +217,7 @@ func connect(account *config.Account) (*client.Client, error) {
 		}
 	} else {
 		if err := c.Login(account.Email, account.Password); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("authentication error")
 		}
 	}
 

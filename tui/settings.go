@@ -1140,8 +1140,9 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "y", "Y":
 				m.confirmingDisable = false
+				cfg := m.cfg
 				return m, func() tea.Msg {
-					err := config.DisableSecureMode()
+					err := config.DisableSecureMode(cfg)
 					return SecureModeDisabledMsg{Err: err}
 				}
 			case "n", "N", "esc":
@@ -1209,8 +1210,9 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			m.encEnabling = true
 			m.encError = ""
+			cfg := m.cfg
 			return m, func() tea.Msg {
-				err := config.EnableSecureMode(password)
+				err := config.EnableSecureMode(password, cfg)
 				return SecureModeEnabledMsg{Err: err}
 			}
 		}

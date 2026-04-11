@@ -520,6 +520,14 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Always cache in memory and to disk
 		m.folderEmails[msg.FolderName] = msg.Emails
 		go saveFolderEmailsToCache(msg.FolderName, msg.Emails)
+		// Prune stale body cache entries
+		go func() {
+			validUIDs := make(map[uint32]string, len(msg.Emails))
+			for _, e := range msg.Emails {
+				validUIDs[e.UID] = e.AccountID
+			}
+			_ = config.PruneEmailBodyCache(msg.FolderName, validUIDs)
+		}()
 		// Only update the view if the user is still on this folder
 		if m.folderInbox.GetCurrentFolder() != msg.FolderName {
 			return m, nil
@@ -915,6 +923,33 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t := m.plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, folderName)
 			m.plugins.CallHook(plugin.HookEmailViewed, t)
 		}
+		// Check body cache first
+		if cached := config.GetCachedEmailBody(folderName, msg.UID, msg.AccountID); cached != nil {
+			// Convert cached attachments back to fetcher.Attachment
+			var attachments []fetcher.Attachment
+			for _, ca := range cached.Attachments {
+				attachments = append(attachments, fetcher.Attachment{
+					Filename:         ca.Filename,
+					PartID:           ca.PartID,
+					Encoding:         ca.Encoding,
+					MIMEType:         ca.MIMEType,
+					ContentID:        ca.ContentID,
+					Inline:           ca.Inline,
+					IsSMIMESignature: ca.IsSMIMESignature,
+					SMIMEVerified:    ca.SMIMEVerified,
+					IsSMIMEEncrypted: ca.IsSMIMEEncrypted,
+				})
+			}
+			return m, func() tea.Msg {
+				return tui.EmailBodyFetchedMsg{
+					UID:         msg.UID,
+					Body:        cached.Body,
+					Attachments: attachments,
+					AccountID:   msg.AccountID,
+					Mailbox:     msg.Mailbox,
+				}
+			}
+		}
 		m.current = tui.NewStatus("Fetching email content...")
 		return m, tea.Batch(m.current.Init(), fetchFolderEmailBodyCmd(m.config, msg.UID, msg.AccountID, folderName, msg.Mailbox), m.pluginNotifyCmd())
 
@@ -929,6 +964,32 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update the email in our stores
 		m.updateEmailBodyByUID(msg.UID, msg.AccountID, msg.Mailbox, msg.Body, msg.Attachments)
+
+		// Cache the body to disk
+		folderForCache := "INBOX"
+		if m.folderInbox != nil {
+			folderForCache = m.folderInbox.GetCurrentFolder()
+		}
+		var cachedAttachments []config.CachedAttachment
+		for _, a := range msg.Attachments {
+			cachedAttachments = append(cachedAttachments, config.CachedAttachment{
+				Filename:         a.Filename,
+				PartID:           a.PartID,
+				Encoding:         a.Encoding,
+				MIMEType:         a.MIMEType,
+				ContentID:        a.ContentID,
+				Inline:           a.Inline,
+				IsSMIMESignature: a.IsSMIMESignature,
+				SMIMEVerified:    a.SMIMEVerified,
+				IsSMIMEEncrypted: a.IsSMIMEEncrypted,
+			})
+		}
+		_ = config.SaveEmailBody(folderForCache, config.CachedEmailBody{
+			UID:         msg.UID,
+			AccountID:   msg.AccountID,
+			Body:        msg.Body,
+			Attachments: cachedAttachments,
+		})
 
 		email := m.getEmailByUIDAndAccount(msg.UID, msg.AccountID, msg.Mailbox)
 		if email == nil {
