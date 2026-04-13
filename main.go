@@ -265,6 +265,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Password:        msg.Password,
 				ServiceProvider: msg.Provider,
 				FetchEmail:      fetchEmails[0],
+				SendAsEmail:     msg.SendAsEmail,
 				AuthMethod:      msg.AuthMethod,
 				Protocol:        msg.Protocol,
 				JMAPEndpoint:    msg.JMAPEndpoint,
@@ -307,6 +308,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Password:        msg.Password,
 					ServiceProvider: msg.Provider,
 					FetchEmail:      fe,
+					SendAsEmail:     msg.SendAsEmail,
 					AuthMethod:      msg.AuthMethod,
 					Protocol:        msg.Protocol,
 					JMAPEndpoint:    msg.JMAPEndpoint,
@@ -801,7 +803,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			hideTips = m.config.HideTips
 		}
 		login := tui.NewLogin(hideTips)
-		login.SetEditMode(msg.AccountID, msg.Protocol, msg.Provider, msg.Name, msg.Email, msg.FetchEmail, msg.IMAPServer, msg.IMAPPort, msg.SMTPServer, msg.SMTPPort, msg.JMAPEndpoint, msg.POP3Server, msg.POP3Port)
+		login.SetEditMode(msg.AccountID, msg.Protocol, msg.Provider, msg.Name, msg.Email, msg.FetchEmail, msg.SendAsEmail, msg.IMAPServer, msg.IMAPPort, msg.SMTPServer, msg.SMTPPort, msg.JMAPEndpoint, msg.POP3Server, msg.POP3Port)
 		m.current = login
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()

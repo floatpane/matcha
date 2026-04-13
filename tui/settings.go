@@ -328,6 +328,7 @@ func (m *Settings) updateAccounts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 					Name:         acc.Name,
 					Email:        acc.Email,
 					FetchEmail:   acc.FetchEmail,
+					SendAsEmail:  acc.SendAsEmail,
 					IMAPServer:   acc.IMAPServer,
 					IMAPPort:     acc.IMAPPort,
 					SMTPServer:   acc.SMTPServer,

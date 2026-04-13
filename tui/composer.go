@@ -180,11 +180,7 @@ func (m *Composer) Init() tea.Cmd {
 
 func (m *Composer) getFromAddress() string {
 	if len(m.accounts) > 0 && m.selectedAccountIdx < len(m.accounts) {
-		acc := m.accounts[m.selectedAccountIdx]
-		if acc.Name != "" {
-			return fmt.Sprintf("%s <%s>", acc.Name, acc.FetchEmail)
-		}
-		return acc.FetchEmail
+		return m.accounts[m.selectedAccountIdx].FormatFromHeader()
 	}
 	return ""
 }
@@ -667,9 +663,9 @@ func (m *Composer) View() tea.View {
 		var accountList strings.Builder
 		accountList.WriteString("Select Account:\n\n")
 		for i, acc := range m.accounts {
-			display := acc.FetchEmail
+			display := acc.GetSendAsEmail()
 			if acc.Name != "" {
-				display = fmt.Sprintf("%s (%s)", acc.Name, acc.FetchEmail)
+				display = fmt.Sprintf("%s (%s)", acc.Name, acc.GetSendAsEmail())
 			}
 			if i == m.selectedAccountIdx {
 				accountList.WriteString(selectedItemStyle.Render(fmt.Sprintf("> %s", display)))

@@ -28,6 +28,7 @@ func TestSaveAndLoadConfig(t *testing.T) {
 				Email:           "test@example.com",
 				Password:        "supersecret",
 				ServiceProvider: "gmail",
+				SendAsEmail:     "alias@example.com",
 			},
 			{
 				ID:              "test-id-2",
@@ -245,4 +246,41 @@ func TestAccountGetPorts(t *testing.T) {
 	if customDefaultAccount.GetSMTPPort() != 587 {
 		t.Errorf("Expected default SMTP port 587 for custom with no port, got %d", customDefaultAccount.GetSMTPPort())
 	}
+}
+
+func TestAccountSendIdentityHelpers(t *testing.T) {
+	t.Run("send as takes precedence", func(t *testing.T) {
+		account := Account{
+			Name:        "Alias User",
+			Email:       "login@gmail.com",
+			FetchEmail:  "inbox@gmail.com",
+			SendAsEmail: "alias@example.com",
+		}
+
+		if got := account.GetFetchEmail(); got != "inbox@gmail.com" {
+			t.Fatalf("GetFetchEmail() = %q, want %q", got, "inbox@gmail.com")
+		}
+		if got := account.GetSendAsEmail(); got != "alias@example.com" {
+			t.Fatalf("GetSendAsEmail() = %q, want %q", got, "alias@example.com")
+		}
+		if got := account.FormatFromHeader(); got != "Alias User <alias@example.com>" {
+			t.Fatalf("FormatFromHeader() = %q, want %q", got, "Alias User <alias@example.com>")
+		}
+	})
+
+	t.Run("send as falls back to fetch then login", func(t *testing.T) {
+		account := Account{
+			Name:       "Fallback User",
+			Email:      "login@gmail.com",
+			FetchEmail: "inbox@gmail.com",
+		}
+		if got := account.GetSendAsEmail(); got != "inbox@gmail.com" {
+			t.Fatalf("GetSendAsEmail() = %q, want %q", got, "inbox@gmail.com")
+		}
+
+		account.FetchEmail = ""
+		if got := account.GetSendAsEmail(); got != "login@gmail.com" {
+			t.Fatalf("GetSendAsEmail() = %q, want %q", got, "login@gmail.com")
+		}
+	})
 }

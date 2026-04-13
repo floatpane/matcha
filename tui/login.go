@@ -27,6 +27,7 @@ const (
 	inputName
 	inputEmail
 	inputFetchEmail
+	inputSendAsEmail
 	inputAuthMethod // "password" or "oauth2" (shown for gmail)
 	inputPassword
 	inputIMAPServer
@@ -70,6 +71,9 @@ func NewLogin(hideTips bool) *Login {
 		case inputFetchEmail:
 			t.Placeholder = "Email Address (comma-separated for multiple)"
 			t.Prompt = "📧 > "
+		case inputSendAsEmail:
+			t.Placeholder = "Send As Email (optional From header override)"
+			t.Prompt = "✉️ > "
 		case inputAuthMethod:
 			t.Placeholder = "Auth Method (password or oauth2)"
 			t.Prompt = "🔐 > "
@@ -131,14 +135,14 @@ func (m *Login) visibleFields() []int {
 	switch proto {
 	case "jmap":
 		// JMAP: no provider selector, just endpoint + common fields
-		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputPassword, inputJMAPEndpoint)
+		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputSendAsEmail, inputPassword, inputJMAPEndpoint)
 	case "pop3":
 		// POP3: custom server fields + SMTP for sending
-		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputPassword,
+		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputSendAsEmail, inputPassword,
 			inputPOP3Server, inputPOP3Port, inputSMTPServer, inputSMTPPort)
 	default:
 		// IMAP (default): existing flow
-		fields = append(fields, inputProvider, inputName, inputEmail, inputFetchEmail)
+		fields = append(fields, inputProvider, inputName, inputEmail, inputFetchEmail, inputSendAsEmail)
 		if isGmail {
 			fields = append(fields, inputAuthMethod)
 		}
@@ -271,6 +275,7 @@ func (m *Login) submitForm() func() tea.Msg {
 			Name:         m.inputs[inputName].Value(),
 			Host:         m.inputs[inputEmail].Value(),
 			FetchEmail:   m.inputs[inputFetchEmail].Value(),
+			SendAsEmail:  m.inputs[inputSendAsEmail].Value(),
 			Password:     m.inputs[inputPassword].Value(),
 			IMAPServer:   m.inputs[inputIMAPServer].Value(),
 			IMAPPort:     imapPort,
@@ -305,6 +310,8 @@ func (m *Login) View() tea.View {
 		tip = "Your full email address used to log in."
 	case inputFetchEmail:
 		tip = "The email address to fetch messages for (comma-separated for multiple, e.g. me@icloud.com,me@mac.com)."
+	case inputSendAsEmail:
+		tip = "Optional From header override for outgoing email. Leave blank to send as the fetched address."
 	case inputAuthMethod:
 		tip = "Type 'oauth2' for Gmail OAuth2 or 'password' for app password."
 	case inputPassword:
@@ -338,6 +345,7 @@ func (m *Login) View() tea.View {
 			m.inputs[inputName].View(),
 			m.inputs[inputEmail].View(),
 			m.inputs[inputFetchEmail].View(),
+			m.inputs[inputSendAsEmail].View(),
 			m.inputs[inputPassword].View(),
 			"",
 			listHeader.Render("JMAP Settings:"),
@@ -348,6 +356,7 @@ func (m *Login) View() tea.View {
 			m.inputs[inputName].View(),
 			m.inputs[inputEmail].View(),
 			m.inputs[inputFetchEmail].View(),
+			m.inputs[inputSendAsEmail].View(),
 			m.inputs[inputPassword].View(),
 			"",
 			listHeader.Render("POP3 Server Settings:"),
@@ -366,6 +375,7 @@ func (m *Login) View() tea.View {
 			m.inputs[inputName].View(),
 			m.inputs[inputEmail].View(),
 			m.inputs[inputFetchEmail].View(),
+			m.inputs[inputSendAsEmail].View(),
 		)
 
 		if isGmail {
@@ -401,7 +411,7 @@ func (m *Login) View() tea.View {
 }
 
 // SetEditMode sets the login form to edit an existing account.
-func (m *Login) SetEditMode(accountID, protocol, provider, name, email, fetchEmail, imapServer string, imapPort int, smtpServer string, smtpPort int, jmapEndpoint, pop3Server string, pop3Port int) {
+func (m *Login) SetEditMode(accountID, protocol, provider, name, email, fetchEmail, sendAsEmail, imapServer string, imapPort int, smtpServer string, smtpPort int, jmapEndpoint, pop3Server string, pop3Port int) {
 	m.isEditMode = true
 	m.accountID = accountID
 
@@ -413,6 +423,7 @@ func (m *Login) SetEditMode(accountID, protocol, provider, name, email, fetchEma
 	m.inputs[inputName].SetValue(name)
 	m.inputs[inputEmail].SetValue(email)
 	m.inputs[inputFetchEmail].SetValue(fetchEmail)
+	m.inputs[inputSendAsEmail].SetValue(sendAsEmail)
 	m.showCustom = provider == "custom"
 
 	if m.showCustom {

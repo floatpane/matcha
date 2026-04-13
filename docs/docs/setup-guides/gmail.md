@@ -99,6 +99,7 @@ From Matcha, open settings and choose to add a new account. Enter:
 - **Display name**: The name that will appear on emails you send
 - **Username**: Your Gmail address
 - **Email Address**: The Gmail address to fetch messages from (usually the same as Username)
+- **Send As Email**: Optional. Set this if you want the outgoing `From` header to use a verified Gmail alias instead of your login address
 - **Auth Method**: oauth2
 
 No password is needed — Matcha will use the tokens from the authorization step.

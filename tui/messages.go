@@ -43,6 +43,7 @@ type Credentials struct {
 	Name         string
 	Host         string // Host (this was the previous "Email Address" field in the UI)
 	FetchEmail   string // Single email address to fetch messages for. If empty, code should default this to Host when creating the account.
+	SendAsEmail  string // Optional From header email. If empty, sending falls back to FetchEmail, then Host.
 	Password     string
 	IMAPServer   string
 	IMAPPort     int
@@ -208,6 +209,7 @@ type GoToEditAccountMsg struct {
 	Name         string
 	Email        string
 	FetchEmail   string
+	SendAsEmail  string
 	IMAPServer   string
 	IMAPPort     int
 	SMTPServer   string

@@ -253,6 +253,19 @@ func TestComposerGetFromAddress(t *testing.T) {
 		}
 	})
 
+	t.Run("Send as overrides fetch email", func(t *testing.T) {
+		accounts := []config.Account{
+			{ID: "account-1", FetchEmail: "gmail@gmail.com", SendAsEmail: "alias@example.com", Name: "Test User"},
+		}
+		composer := NewComposerWithAccounts(accounts, "account-1", "", "", "", false)
+
+		fromAddr := composer.getFromAddress()
+		expected := "Test User <alias@example.com>"
+		if fromAddr != expected {
+			t.Errorf("Expected from address %q, got %q", expected, fromAddr)
+		}
+	})
+
 	t.Run("No accounts", func(t *testing.T) {
 		composer := NewComposer("", "", "", "", false)
 

@@ -393,7 +393,7 @@ func (p *Provider) SendEmail(_ context.Context, msg *backend.OutgoingEmail) erro
 
 	// Build raw RFC5322 message and upload as blob
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "From: %s\r\n", p.account.Email)
+	fmt.Fprintf(&buf, "From: %s\r\n", p.account.FormatFromHeader())
 	fmt.Fprintf(&buf, "To: %s\r\n", strings.Join(msg.To, ", "))
 	if len(msg.Cc) > 0 {
 		fmt.Fprintf(&buf, "Cc: %s\r\n", strings.Join(msg.Cc, ", "))

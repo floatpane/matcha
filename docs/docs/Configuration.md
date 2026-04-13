@@ -19,7 +19,8 @@ Configuration is stored in `~/.config/matcha/config.json`.
       "name": "John Doe",
       "email": "john@gmail.com",
       "service_provider": "gmail",
-      "fetch_email": "john@gmail.com"
+      "fetch_email": "john@gmail.com",
+      "send_as_email": "john@alias.example",
       "smime_cert": "/home/jane/.certs/jane_smime_cert.pem",
       "smime_key": "/home/jane/.certs/jane_smime_private.pem"
     },
@@ -46,6 +47,8 @@ Configuration is stored in `~/.config/matcha/config.json`.
   "hide_tips": true
 }
 ```
+
+`send_as_email` is optional. When set, Matcha uses it for the outgoing `From` header while continuing to authenticate with the account's login address.
 
 ## Data Locations
 

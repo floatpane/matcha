@@ -166,10 +166,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	plainAuth := smtp.PlainAuth("", account.Email, account.Password, smtpServer)
 	loginAuthFallback := &loginAuth{username: account.Email, password: account.Password}
 
-	fromHeader := account.FetchEmail
-	if account.Name != "" {
-		fromHeader = fmt.Sprintf("%s <%s>", account.Name, account.FetchEmail)
-	}
+	fromHeader := account.FormatFromHeader()
 
 	// Set top-level headers (From/To/Subject/Date/etc)
 	headers := map[string]string{
@@ -177,7 +174,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		"To":           strings.Join(to, ", "),
 		"Subject":      subject,
 		"Date":         time.Now().Format(time.RFC1123Z),
-		"Message-ID":   generateMessageID(account.FetchEmail),
+		"Message-ID":   generateMessageID(account.GetSendAsEmail()),
 		"MIME-Version": "1.0",
 	}
 
@@ -694,7 +691,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	}
 
 	// Send Envelope
-	if err = c.Mail(account.FetchEmail); err != nil {
+	if err = c.Mail(account.GetFetchEmail()); err != nil {
 		return err
 	}
 	for _, r := range allRecipients {

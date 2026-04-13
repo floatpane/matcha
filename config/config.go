@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -21,6 +22,9 @@ type Account struct {
 	// FetchEmail is the single email address for which messages should be fetched.
 	// If empty, it will default to `Email` when accounts are added.
 	FetchEmail string `json:"fetch_email,omitempty"`
+	// SendAsEmail controls the visible From header on outgoing mail.
+	// If empty, it defaults to FetchEmail, then Email.
+	SendAsEmail string `json:"send_as_email,omitempty"`
 
 	// Custom server settings (used when ServiceProvider is "custom")
 	IMAPServer string `json:"imap_server,omitempty"`
@@ -123,6 +127,31 @@ func (a *Account) GetSMTPPort() int {
 	default:
 		return 587
 	}
+}
+
+// GetFetchEmail returns the configured fetch identity, falling back to Email.
+func (a *Account) GetFetchEmail() string {
+	if a.FetchEmail != "" {
+		return a.FetchEmail
+	}
+	return a.Email
+}
+
+// GetSendAsEmail returns the visible sender address for outgoing mail.
+func (a *Account) GetSendAsEmail() string {
+	if a.SendAsEmail != "" {
+		return a.SendAsEmail
+	}
+	return a.GetFetchEmail()
+}
+
+// FormatFromHeader returns the display-ready From header value.
+func (a *Account) FormatFromHeader() string {
+	sendAs := a.GetSendAsEmail()
+	if a.Name != "" && sendAs != "" {
+		return fmt.Sprintf("%s <%s>", a.Name, sendAs)
+	}
+	return sendAs
 }
 
 // GetPOP3Server returns the POP3 server address for the account.
@@ -230,6 +259,7 @@ type secureDiskAccount struct {
 	Password           string `json:"password,omitempty"`
 	ServiceProvider    string `json:"service_provider"`
 	FetchEmail         string `json:"fetch_email,omitempty"`
+	SendAsEmail        string `json:"send_as_email,omitempty"`
 	IMAPServer         string `json:"imap_server,omitempty"`
 	IMAPPort           int    `json:"imap_port,omitempty"`
 	SMTPServer         string `json:"smtp_server,omitempty"`
@@ -301,6 +331,7 @@ func SaveConfig(config *Config) error {
 				Password:           acc.Password,
 				ServiceProvider:    acc.ServiceProvider,
 				FetchEmail:         acc.FetchEmail,
+				SendAsEmail:        acc.SendAsEmail,
 				IMAPServer:         acc.IMAPServer,
 				IMAPPort:           acc.IMAPPort,
 				SMTPServer:         acc.SMTPServer,
@@ -355,6 +386,7 @@ func LoadConfig() (*Config, error) {
 		Password           string `json:"password,omitempty"`
 		ServiceProvider    string `json:"service_provider"`
 		FetchEmail         string `json:"fetch_email,omitempty"`
+		SendAsEmail        string `json:"send_as_email,omitempty"`
 		IMAPServer         string `json:"imap_server,omitempty"`
 		IMAPPort           int    `json:"imap_port,omitempty"`
 		SMTPServer         string `json:"smtp_server,omitempty"`
@@ -420,6 +452,7 @@ func LoadConfig() (*Config, error) {
 			Email:              rawAcc.Email,
 			ServiceProvider:    rawAcc.ServiceProvider,
 			FetchEmail:         rawAcc.FetchEmail,
+			SendAsEmail:        rawAcc.SendAsEmail,
 			IMAPServer:         rawAcc.IMAPServer,
 			IMAPPort:           rawAcc.IMAPPort,
 			SMTPServer:         rawAcc.SMTPServer,
