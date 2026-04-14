@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/emersion/go-imap/client"
+	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/floatpane/matcha/config"
 )
 
@@ -155,61 +155,59 @@ func (a *accountIdle) run() {
 // idleOnce connects, selects the mailbox, and runs IDLE until an error or stop.
 // Returns nil if stopped cleanly.
 func (a *accountIdle) idleOnce() error {
-	c, err := connect(a.account)
+	mailboxUpdates := make(chan uint32, 32)
+	c, err := connectWithHandler(a.account, &imapclient.UnilateralDataHandler{
+		Mailbox: func(data *imapclient.UnilateralDataMailbox) {
+			if data.NumMessages != nil {
+				mailboxUpdates <- *data.NumMessages
+			}
+		},
+	})
 	if err != nil {
 		return err
 	}
-	defer func() {
-		_ = c.Logout()
-	}()
+	defer c.Close()
 
 	// Select the mailbox in read-only mode
-	mbox, err := c.Select(a.folder, true)
+	selectData, err := c.Select(a.folder, nil).Wait()
 	if err != nil {
 		return err
 	}
-	prevExists := mbox.Messages
+	prevExists := selectData.NumMessages
 
-	// Set up update channel
-	updates := make(chan client.Update, 32)
-	c.Updates = updates
-
-	// Run IDLE in a goroutine
-	idleDone := make(chan error, 1)
-	idleStop := make(chan struct{})
-	go func() {
-		idleDone <- c.Idle(idleStop, nil)
-	}()
+	// Start IDLE
+	idleCmd, err := c.Idle()
+	if err != nil {
+		return err
+	}
 
 	for {
 		select {
 		case <-a.stop:
-			close(idleStop)
-			<-idleDone
+			idleCmd.Close()
+			idleCmd.Wait()
 			return nil
 
-		case update := <-updates:
-			switch u := update.(type) {
-			case *client.MailboxUpdate:
-				newExists := u.Mailbox.Messages
-				if newExists > prevExists {
-					// New mail arrived
-					select {
-					case a.notify <- IdleUpdate{
-						AccountID:  a.account.ID,
-						FolderName: a.folder,
-					}:
-					case <-a.stop:
-						close(idleStop)
-						<-idleDone
-						return nil
-					}
+		case newExists := <-mailboxUpdates:
+			if newExists > prevExists {
+				select {
+				case a.notify <- IdleUpdate{
+					AccountID:  a.account.ID,
+					FolderName: a.folder,
+				}:
+				case <-a.stop:
+					idleCmd.Close()
+					idleCmd.Wait()
+					return nil
 				}
-				prevExists = newExists
 			}
+			prevExists = newExists
 
-		case err := <-idleDone:
-			return err
+		case <-c.Closed():
+			if err := idleCmd.Close(); err != nil {
+				return err
+			}
+			return idleCmd.Wait()
 		}
 	}
 }

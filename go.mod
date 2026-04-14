@@ -12,7 +12,7 @@ require (
 	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/ebfe/scard v0.0.0-20241214075232-7af069cabc25
-	github.com/emersion/go-imap v1.2.1
+	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
 	github.com/emersion/go-pgpmail v0.2.2
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6

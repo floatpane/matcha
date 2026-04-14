@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
-	"github.com/emersion/go-imap"
-	"github.com/emersion/go-imap/client"
+	"github.com/emersion/go-imap/v2"
+	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message/mail"
 	"github.com/emersion/go-pgpmail"
 	"github.com/floatpane/matcha/config"
@@ -68,33 +68,25 @@ type Folder struct {
 	Attributes []string
 }
 
-// formatAddress returns "Name <email>" when a PersonalName is present,
+// formatAddress returns "Name <email>" when a Name is present,
 // otherwise just "email".
-func formatAddress(addr *imap.Address) string {
-	email := addr.Address()
-	if addr.PersonalName != "" {
-		return addr.PersonalName + " <" + email + ">"
+func formatAddress(addr imap.Address) string {
+	email := addr.Addr()
+	if addr.Name != "" {
+		return addr.Name + " <" + email + ">"
 	}
 	return email
 }
 
-func hasSeenFlag(flags []string) bool {
-	return slices.Contains(flags, imap.SeenFlag)
+func hasSeenFlag(flags []imap.Flag) bool {
+	return slices.Contains(flags, imap.FlagSeen)
 }
 
 // deliveryHeadersMatch checks if any of the Delivered-To, X-Forwarded-To, or
 // X-Original-To headers contain the given email address. This catches
 // auto-forwarded emails where the envelope To/Cc don't match the local account.
-func deliveryHeadersMatch(msg *imap.Message, section *imap.BodySectionName, fetchEmail string) bool {
-	if section == nil {
-		return false
-	}
-	literal := msg.GetBody(section)
-	if literal == nil {
-		return false
-	}
-	data, err := ioutil.ReadAll(literal)
-	if err != nil || len(data) == 0 {
+func deliveryHeadersMatch(data []byte, fetchEmail string) bool {
+	if len(data) == 0 {
 		return false
 	}
 	// Parse as MIME headers
@@ -171,7 +163,57 @@ func decodeAttachmentData(rawBytes []byte, encoding string) ([]byte, error) {
 	}
 }
 
-func connect(account *config.Account) (*client.Client, error) {
+// parsePartID converts a string part ID like "1.2.3" to []int{1, 2, 3}.
+// Special cases: "TEXT" maps to empty with PartSpecifierText (handled by caller).
+func parsePartID(partID string) []int {
+	if partID == "" || partID == "TEXT" {
+		return nil
+	}
+	var parts []int
+	for _, s := range strings.Split(partID, ".") {
+		n := 0
+		for _, c := range s {
+			if c >= '0' && c <= '9' {
+				n = n*10 + int(c-'0')
+			}
+		}
+		parts = append(parts, n)
+	}
+	return parts
+}
+
+// formatPartPath converts a Walk path like []int{1, 2, 3} to "1.2.3".
+func formatPartPath(path []int) string {
+	if len(path) == 0 {
+		return "1"
+	}
+	parts := make([]string, len(path))
+	for i, p := range path {
+		parts[i] = fmt.Sprintf("%d", p)
+	}
+	return strings.Join(parts, ".")
+}
+
+// getBodyStructureBoundary extracts the boundary parameter from a multipart body structure.
+func getBodyStructureBoundary(bs imap.BodyStructure) string {
+	if mp, ok := bs.(*imap.BodyStructureMultiPart); ok {
+		if mp.Extended != nil && mp.Extended.Params != nil {
+			return mp.Extended.Params["boundary"]
+		}
+	}
+	return ""
+}
+
+// uidsToUIDSet converts a slice of uint32 UIDs to an imap.UIDSet.
+func uidsToUIDSet(uids []uint32) imap.UIDSet {
+	var uidSet imap.UIDSet
+	for _, uid := range uids {
+		uidSet.AddNum(imap.UID(uid))
+	}
+	return uidSet
+}
+
+func connectWithHandler(account *config.Account, handler *imapclient.UnilateralDataHandler) (*imapclient.Client, error) {
 	imapServer := account.GetIMAPServer()
 	imapPort := account.GetIMAPPort()
 
@@ -181,29 +223,85 @@ func connect(account *config.Account) (*client.Client, error) {
 
 	addr := fmt.Sprintf("%s:%d", imapServer, imapPort)
 
-	tlsConfig := &tls.Config{
-		ServerName:         imapServer,
-		InsecureSkipVerify: account.Insecure,
+	options := &imapclient.Options{
+		TLSConfig: &tls.Config{
+			ServerName:         imapServer,
+			InsecureSkipVerify: account.Insecure,
+		},
+		UnilateralDataHandler: handler,
 	}
 
-	var c *client.Client
+	var c *imapclient.Client
 	var err error
 
-	// If using standard non-implicit ports (1143 or 143), use Dial + STARTTLS
 	if imapPort == 1143 || imapPort == 143 {
-		c, err = client.Dial(addr)
+		c, err = imapclient.DialStartTLS(addr, options)
+	} else {
+		c, err = imapclient.DialTLS(addr, options)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.WaitGreeting(); err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	if account.IsOAuth2() {
+		token, err := config.GetOAuth2Token(account.Email)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("oauth2: %w", err)
 		}
-		if err := c.StartTLS(tlsConfig); err != nil {
+		if err := c.Authenticate(newXOAuth2Client(account.Email, token)); err != nil {
+			return nil, fmt.Errorf("XOAUTH2 authentication failed: %w", err)
+		}
+	} else {
+		if err := c.Login(account.Email, account.Password).Wait(); err != nil {
+			return nil, fmt.Errorf("authentication error")
+		}
+	}
+
+	return c, nil
+}
+
+func connect(account *config.Account) (*imapclient.Client, error) {
+	imapServer := account.GetIMAPServer()
+	imapPort := account.GetIMAPPort()
+
+	if imapServer == "" {
+		return nil, fmt.Errorf("unsupported service_provider: %s", account.ServiceProvider)
+	}
+
+	addr := fmt.Sprintf("%s:%d", imapServer, imapPort)
+
+	options := &imapclient.Options{
+		TLSConfig: &tls.Config{
+			ServerName:         imapServer,
+			InsecureSkipVerify: account.Insecure,
+		},
+	}
+
+	var c *imapclient.Client
+	var err error
+
+	// If using standard non-implicit ports (1143 or 143), use DialStartTLS
+	if imapPort == 1143 || imapPort == 143 {
+		c, err = imapclient.DialStartTLS(addr, options)
+		if err != nil {
 			return nil, err
 		}
 	} else {
 		// Otherwise default to implicit TLS (port 993)
-		c, err = client.DialTLS(addr, tlsConfig)
+		c, err = imapclient.DialTLS(addr, options)
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if err := c.WaitGreeting(); err != nil {
+		c.Close()
+		return nil, err
 	}
 
 	// Authenticate using OAuth2 (XOAUTH2) or plain password
@@ -216,7 +314,7 @@ func connect(account *config.Account) (*client.Client, error) {
 			return nil, fmt.Errorf("XOAUTH2 authentication failed: %w", err)
 		}
 	} else {
-		if err := c.Login(account.Email, account.Password); err != nil {
+		if err := c.Login(account.Email, account.Password).Wait(); err != nil {
 			return nil, fmt.Errorf("authentication error")
 		}
 	}
@@ -236,24 +334,25 @@ func getSentMailbox(account *config.Account) string {
 }
 
 // getMailboxByAttr finds a mailbox with the given IMAP attribute (e.g., \All, \Sent, \Trash).
-func getMailboxByAttr(c *client.Client, attr string) (string, error) {
-	mailboxes := make(chan *imap.MailboxInfo, 10)
-	done := make(chan error, 1)
-	go func() {
-		done <- c.List("", "*", mailboxes)
-	}()
+func getMailboxByAttr(c *imapclient.Client, attr imap.MailboxAttr) (string, error) {
+	listCmd := c.List("", "*", nil)
+	defer listCmd.Close()
 
 	var foundMailbox string
-	for m := range mailboxes {
-		for _, a := range m.Attributes {
+	for {
+		data := listCmd.Next()
+		if data == nil {
+			break
+		}
+		for _, a := range data.Attrs {
 			if a == attr {
-				foundMailbox = m.Name
+				foundMailbox = data.Mailbox
 				break
 			}
 		}
 	}
 
-	if err := <-done; err != nil {
+	if err := listCmd.Close(); err != nil {
 		return "", err
 	}
 
@@ -269,14 +368,14 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 	if err != nil {
 		return nil, err
 	}
-	defer c.Logout()
+	defer c.Close()
 
-	mbox, err := c.Select(mailbox, false)
+	selectData, err := c.Select(mailbox, nil).Wait()
 	if err != nil {
 		return nil, err
 	}
 
-	if mbox.Messages == 0 {
+	if selectData.NumMessages == 0 {
 		return []Email{}, nil
 	}
 
@@ -284,8 +383,8 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 
 	// Start from the top minus offset
 	cursor := uint32(0)
-	if mbox.Messages > offset {
-		cursor = mbox.Messages - offset
+	if selectData.NumMessages > offset {
+		cursor = selectData.NumMessages - offset
 	} else {
 		return []Email{}, nil
 	}
@@ -297,10 +396,16 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 	}
 	isSentMailbox := mailbox == getSentMailbox(account)
 
+	// Delivery header section for matching auto-forwarded emails
+	deliveryHeaderSection := &imap.FetchItemBodySection{
+		Specifier:    imap.PartSpecifierHeader,
+		HeaderFields: []string{"Delivered-To", "X-Forwarded-To", "X-Original-To"},
+		Peek:         true,
+	}
+
 	// Loop until we have enough emails or run out of messages
 	for len(allEmails) < int(limit) && cursor > 0 {
 		// Determine chunk size
-		// Fetch at least 'limit' or 50 messages to reduce round trips
 		chunkSize := limit
 		if chunkSize < 50 {
 			chunkSize = 50
@@ -311,33 +416,25 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 			from = cursor - uint32(chunkSize) + 1
 		}
 
-		seqset := new(imap.SeqSet)
+		var seqset imap.SeqSet
 		seqset.AddRange(from, cursor)
 
-		messages := make(chan *imap.Message, chunkSize)
-		done := make(chan error, 1)
-		// Fetch delivery headers to match auto-forwarded emails (Delivered-To, X-Forwarded-To, X-Original-To)
-		deliveryHeaderItem := imap.FetchItem("BODY.PEEK[HEADER.FIELDS (Delivered-To X-Forwarded-To X-Original-To)]")
-		deliveryHeaderSection, _ := imap.ParseBodySectionName(deliveryHeaderItem)
-		fetchItems := []imap.FetchItem{imap.FetchEnvelope, imap.FetchUid, imap.FetchFlags, deliveryHeaderItem}
+		fetchCmd := c.Fetch(seqset, &imap.FetchOptions{
+			Envelope:    true,
+			UID:         true,
+			Flags:       true,
+			BodySection: []*imap.FetchItemBodySection{deliveryHeaderSection},
+		})
 
-		go func() {
-			done <- c.Fetch(seqset, fetchItems, messages)
-		}()
-
-		var batchMsgs []*imap.Message
-		for msg := range messages {
-			batchMsgs = append(batchMsgs, msg)
-		}
-
-		if err := <-done; err != nil {
+		batchMsgs, err := fetchCmd.Collect()
+		if err != nil {
 			return nil, err
 		}
 
 		// Filter messages in this batch
 		var batchEmails []Email
 		for _, msg := range batchMsgs {
-			if msg == nil || msg.Envelope == nil {
+			if msg.Envelope == nil {
 				continue
 			}
 
@@ -348,17 +445,17 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 
 			var toAddrList []string
 			for _, addr := range msg.Envelope.To {
-				toAddrList = append(toAddrList, addr.Address())
+				toAddrList = append(toAddrList, addr.Addr())
 			}
 			for _, addr := range msg.Envelope.Cc {
-				toAddrList = append(toAddrList, addr.Address())
+				toAddrList = append(toAddrList, addr.Addr())
 			}
 
 			matched := false
 			if isSentMailbox {
 				var senderEmail string
 				if len(msg.Envelope.From) > 0 {
-					senderEmail = msg.Envelope.From[0].Address()
+					senderEmail = msg.Envelope.From[0].Addr()
 				}
 				if strings.EqualFold(strings.TrimSpace(senderEmail), fetchEmail) {
 					matched = true
@@ -372,7 +469,8 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 				}
 				// Check delivery headers for auto-forwarded emails
 				if !matched {
-					matched = deliveryHeadersMatch(msg, deliveryHeaderSection, fetchEmail)
+					headerData := msg.FindBodySection(deliveryHeaderSection)
+					matched = deliveryHeadersMatch(headerData, fetchEmail)
 				}
 			}
 
@@ -381,7 +479,7 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 			}
 
 			batchEmails = append(batchEmails, Email{
-				UID:       msg.Uid,
+				UID:       uint32(msg.UID),
 				From:      fromAddr,
 				To:        toAddrList,
 				Subject:   decodeHeader(msg.Envelope.Subject),
@@ -391,11 +489,7 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 			})
 		}
 
-		// Sort batch Newest -> Oldest (since IMAP usually returns Oldest->Newest or arbitrary)
-		// Assuming seqset order or standard behavior, we want to ensure we append Newest emails first
-		// so that the final list is correct.
-		// Actually, let's just sort the batch by UID desc (Newest first)
-		// Simple bubble sort for small batch
+		// Sort batch Newest -> Oldest by UID desc
 		for i := 0; i < len(batchEmails); i++ {
 			for j := i + 1; j < len(batchEmails); j++ {
 				if batchEmails[j].UID > batchEmails[i].UID {
@@ -404,10 +498,7 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 			}
 		}
 
-		// Append to allEmails
 		allEmails = append(allEmails, batchEmails...)
-
-		// Update cursor for next iteration
 		cursor = from - 1
 	}
 
@@ -424,97 +515,82 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 	if err != nil {
 		return "", nil, err
 	}
-	defer c.Logout()
+	defer c.Close()
 
-	if _, err := c.Select(mailbox, false); err != nil {
+	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return "", nil, err
 	}
 
-	seqset := new(imap.SeqSet)
-	seqset.AddNum(uid)
+	uidSet := imap.UIDSetNum(imap.UID(uid))
 
 	fetchWholeMessage := func() ([]byte, error) {
-		fetchItem := imap.FetchItem("BODY.PEEK[]")
-		section, _ := imap.ParseBodySectionName(fetchItem)
-		partMessages := make(chan *imap.Message, 1)
-		partDone := make(chan error, 1)
-		go func() {
-			partDone <- c.UidFetch(seqset, []imap.FetchItem{fetchItem}, partMessages)
-		}()
-		if err := <-partDone; err != nil {
+		wholeSection := &imap.FetchItemBodySection{Peek: true}
+		fetchCmd := c.Fetch(uidSet, &imap.FetchOptions{
+			BodySection: []*imap.FetchItemBodySection{wholeSection},
+		})
+		msgs, err := fetchCmd.Collect()
+		if err != nil {
 			return nil, err
 		}
-		partMsg := <-partMessages
-		if partMsg != nil {
-			literal := partMsg.GetBody(section)
-			if literal != nil {
-				return ioutil.ReadAll(literal)
+		if len(msgs) > 0 {
+			if data := msgs[0].FindBodySection(wholeSection); data != nil {
+				return data, nil
 			}
 		}
 		return nil, fmt.Errorf("could not fetch whole message")
 	}
 
 	fetchInlinePart := func(partID, encoding string) ([]byte, error) {
-		fetchItem := imap.FetchItem(fmt.Sprintf("BODY.PEEK[%s]", partID))
-		section, err := imap.ParseBodySectionName(fetchItem)
+		part := parsePartID(partID)
+		section := &imap.FetchItemBodySection{
+			Part: part,
+			Peek: true,
+		}
+
+		fetchCmd := c.Fetch(uidSet, &imap.FetchOptions{
+			BodySection: []*imap.FetchItemBodySection{section},
+		})
+		msgs, err := fetchCmd.Collect()
 		if err != nil {
 			return nil, err
 		}
 
-		partMessages := make(chan *imap.Message, 1)
-		partDone := make(chan error, 1)
-		go func() {
-			partDone <- c.UidFetch(seqset, []imap.FetchItem{fetchItem}, partMessages)
-		}()
-
-		if err := <-partDone; err != nil {
-			return nil, err
-		}
-
-		partMsg := <-partMessages
-		if partMsg == nil {
+		if len(msgs) == 0 {
 			return nil, fmt.Errorf("could not fetch inline part %s", partID)
 		}
 
-		literal := partMsg.GetBody(section)
-		if literal == nil {
+		rawBytes := msgs[0].FindBodySection(section)
+		if rawBytes == nil {
 			return nil, fmt.Errorf("could not get inline part body %s", partID)
-		}
-
-		rawBytes, err := ioutil.ReadAll(literal)
-		if err != nil {
-			return nil, err
 		}
 
 		return decodeAttachmentData(rawBytes, encoding)
 	}
 
-	messages := make(chan *imap.Message, 1)
-	done := make(chan error, 1)
-	fetchItems := []imap.FetchItem{imap.FetchBodyStructure}
-	go func() {
-		done <- c.UidFetch(seqset, fetchItems, messages)
-	}()
-
-	if err := <-done; err != nil {
+	fetchCmd := c.Fetch(uidSet, &imap.FetchOptions{
+		BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
+	})
+	bsMsgs, err := fetchCmd.Collect()
+	if err != nil {
 		return "", nil, err
 	}
 
-	msg := <-messages
-	if msg == nil || msg.BodyStructure == nil {
+	if len(bsMsgs) == 0 || bsMsgs[0].BodyStructure == nil {
 		return "", nil, fmt.Errorf("no message or body structure found with UID %d", uid)
 	}
+
+	msg := bsMsgs[0]
 
 	var plainPartID, plainPartEncoding string
 	var htmlPartID, htmlPartEncoding string
 	var attachments []Attachment
 	var extractedBody string // Used if we intercept and decrypt a payload
 
-	var checkPart func(part *imap.BodyStructure, partID string)
-	checkPart = func(part *imap.BodyStructure, partID string) {
+	var checkPart func(part *imap.BodyStructureSinglePart, partID string)
+	checkPart = func(part *imap.BodyStructureSinglePart, partID string) {
 		// Check for text content (prefer html over plain)
-		if part.MIMEType == "text" {
-			sub := strings.ToLower(part.MIMESubType)
+		if strings.EqualFold(part.Type, "text") {
+			sub := strings.ToLower(part.Subtype)
 			switch sub {
 			case "html":
 				if htmlPartID == "" {
@@ -530,17 +606,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 		}
 
 		// Check for attachments using multiple methods
-		filename := ""
-		// First try the Filename() method which handles various cases
-		if fn, err := part.Filename(); err == nil && fn != "" {
-			filename = fn
-		}
-		// Fallback: check DispositionParams
-		if filename == "" {
-			if fn, ok := part.DispositionParams["filename"]; ok && fn != "" {
-				filename = fn
-			}
-		}
+		filename := part.Filename()
 		// Fallback: check Params (for name parameter)
 		if filename == "" {
 			if fn, ok := part.Params["name"]; ok && fn != "" {
@@ -556,10 +622,17 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 
 		// Add as attachment if it has a disposition or a filename (and not just plain text).
 		// Allow inline parts without filenames (common for cid images).
-		contentID := strings.Trim(part.Id, "<>")
-		mimeType := fmt.Sprintf("%s/%s", strings.ToLower(part.MIMEType), strings.ToLower(part.MIMESubType))
+		contentID := strings.Trim(part.ID, "<>")
+		mimeType := part.MediaType()
+		dispValue := ""
+		dispParams := map[string]string{}
+		if part.Disposition() != nil {
+			dispValue = part.Disposition().Value
+			dispParams = part.Disposition().Params
+		}
+		_ = dispParams // used below in attachment fallback checks
 		isCID := contentID != ""
-		isInline := part.Disposition == "inline" || isCID
+		isInline := strings.EqualFold(dispValue, "inline") || isCID
 
 		if filename == "" && isInline && strings.HasPrefix(mimeType, "image/") {
 			filename = "inline"
@@ -721,7 +794,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 				att.Data = data
 				p7, err := pkcs7.Parse(data)
 				if err == nil {
-					boundary := msg.BodyStructure.Params["boundary"]
+					boundary := getBodyStructureBoundary(msg.BodyStructure)
 					if boundary != "" {
 						rawEmail, err := fetchWholeMessage()
 						if err == nil {
@@ -777,7 +850,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 		}
 
 		// === PGP ENCRYPTED MESSAGE DETECTION ===
-		if mimeType == "application/pgp-encrypted" || (mimeType == "multipart/encrypted" && strings.Contains(part.MIMESubType, "pgp")) {
+		if mimeType == "application/pgp-encrypted" || (mimeType == "multipart/encrypted" && strings.Contains(part.Subtype, "pgp")) {
 			// PGP encrypted messages typically have two parts:
 			// 1. Version info (application/pgp-encrypted)
 			// 2. Encrypted data (application/octet-stream)
@@ -855,7 +928,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 				att.Data = data
 
 				// Try to verify the signature
-				boundary := msg.BodyStructure.Params["boundary"]
+				boundary := getBodyStructureBoundary(msg.BodyStructure)
 				if boundary != "" {
 					rawEmail, err := fetchWholeMessage()
 					if err == nil {
@@ -890,7 +963,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 				}
 			}
 			attachments = append(attachments, att)
-		} else if (filename != "" || isCID) && (part.Disposition == "attachment" || isInline || part.MIMEType != "text") {
+		} else if (filename != "" || isCID) && (strings.EqualFold(dispValue, "attachment") || isInline || !strings.EqualFold(part.Type, "text")) {
 			att := Attachment{
 				Filename:  filename,
 				PartID:    partID,
@@ -908,33 +981,14 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 		}
 	}
 
-	var findParts func(*imap.BodyStructure, string)
-	findParts = func(bs *imap.BodyStructure, prefix string) {
-		// If this is a non-multipart message, check the body structure itself
-		if len(bs.Parts) == 0 {
-			partID := prefix
-			if partID == "" {
-				partID = "1"
-			}
-			checkPart(bs, partID)
-			return
+	// Walk the body structure tree
+	msg.BodyStructure.Walk(func(path []int, part imap.BodyStructure) bool {
+		if sp, ok := part.(*imap.BodyStructureSinglePart); ok {
+			partID := formatPartPath(path)
+			checkPart(sp, partID)
 		}
-
-		// Iterate through parts
-		for i, part := range bs.Parts {
-			partID := fmt.Sprintf("%d", i+1)
-			if prefix != "" {
-				partID = fmt.Sprintf("%s.%d", prefix, i+1)
-			}
-
-			checkPart(part, partID)
-
-			if len(part.Parts) > 0 {
-				findParts(part, partID)
-			}
-		}
-	}
-	findParts(msg.BodyStructure, "")
+		return true
+	})
 
 	// If we hijacked and decrypted the body, return it immediately
 	if extractedBody != "" {
@@ -962,28 +1016,22 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 		}
 	}
 	if textPartID != "" {
-		partMessages := make(chan *imap.Message, 1)
-		partDone := make(chan error, 1)
+		part := parsePartID(textPartID)
+		section := &imap.FetchItemBodySection{
+			Part: part,
+			Peek: true,
+		}
 
-		fetchItem := imap.FetchItem(fmt.Sprintf("BODY.PEEK[%s]", textPartID))
-		section, err := imap.ParseBodySectionName(fetchItem)
+		fetchCmd := c.Fetch(uidSet, &imap.FetchOptions{
+			BodySection: []*imap.FetchItemBodySection{section},
+		})
+		msgs, err := fetchCmd.Collect()
 		if err != nil {
 			return "", nil, err
 		}
 
-		go func() {
-			partDone <- c.UidFetch(seqset, []imap.FetchItem{fetchItem}, partMessages)
-		}()
-
-		if err := <-partDone; err != nil {
-			return "", nil, err
-		}
-
-		partMsg := <-partMessages
-		if partMsg != nil {
-			literal := partMsg.GetBody(section)
-			if literal != nil {
-				buf, _ := ioutil.ReadAll(literal)
+		if len(msgs) > 0 {
+			if buf := msgs[0].FindBodySection(section); buf != nil {
 				// Use the encoding from BodyStructure to decode
 				if decoded, err := decodeAttachmentData(buf, textPartEncoding); err == nil {
 					body = string(decoded)
@@ -1002,44 +1050,34 @@ func FetchAttachmentFromMailbox(account *config.Account, mailbox string, uid uin
 	if err != nil {
 		return nil, err
 	}
-	defer c.Logout()
+	defer c.Close()
 
-	if _, err := c.Select(mailbox, false); err != nil {
+	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return nil, err
 	}
 
-	seqset := new(imap.SeqSet)
-	seqset.AddNum(uid)
+	uidSet := imap.UIDSetNum(imap.UID(uid))
+	part := parsePartID(partID)
+	section := &imap.FetchItemBodySection{
+		Part: part,
+		Peek: true,
+	}
 
-	fetchItem := imap.FetchItem(fmt.Sprintf("BODY.PEEK[%s]", partID))
-	section, err := imap.ParseBodySectionName(fetchItem)
+	fetchCmd := c.Fetch(uidSet, &imap.FetchOptions{
+		BodySection: []*imap.FetchItemBodySection{section},
+	})
+	msgs, err := fetchCmd.Collect()
 	if err != nil {
 		return nil, err
 	}
 
-	messages := make(chan *imap.Message, 1)
-	done := make(chan error, 1)
-	go func() {
-		done <- c.UidFetch(seqset, []imap.FetchItem{fetchItem}, messages)
-	}()
-
-	if err := <-done; err != nil {
-		return nil, err
-	}
-
-	msg := <-messages
-	if msg == nil {
+	if len(msgs) == 0 {
 		return nil, fmt.Errorf("could not fetch attachment")
 	}
 
-	literal := msg.GetBody(section)
-	if literal == nil {
+	rawBytes := msgs[0].FindBodySection(section)
+	if rawBytes == nil {
 		return nil, fmt.Errorf("could not get attachment body")
-	}
-
-	rawBytes, err := ioutil.ReadAll(literal)
-	if err != nil {
-		return nil, err
 	}
 
 	decoded, err := decodeAttachmentData(rawBytes, encoding)
@@ -1054,16 +1092,15 @@ func moveEmail(account *config.Account, uid uint32, sourceMailbox, destMailbox s
 	if err != nil {
 		return err
 	}
-	defer c.Logout()
+	defer c.Close()
 
-	if _, err := c.Select(sourceMailbox, false); err != nil {
+	if _, err := c.Select(sourceMailbox, nil).Wait(); err != nil {
 		return err
 	}
 
-	seqSet := new(imap.SeqSet)
-	seqSet.AddNum(uid)
-
-	return c.UidMove(seqSet, destMailbox)
+	uidSet := imap.UIDSetNum(imap.UID(uid))
+	_, err = c.Move(uidSet, destMailbox).Wait()
+	return err
 }
 
 func MarkEmailAsReadInMailbox(account *config.Account, mailbox string, uid uint32) error {
@@ -1071,19 +1108,18 @@ func MarkEmailAsReadInMailbox(account *config.Account, mailbox string, uid uint3
 	if err != nil {
 		return err
 	}
-	defer c.Logout()
+	defer c.Close()
 
-	if _, err := c.Select(mailbox, false); err != nil {
+	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return err
 	}
 
-	seqSet := new(imap.SeqSet)
-	seqSet.AddNum(uid)
-
-	item := imap.FormatFlagsOp(imap.AddFlags, true)
-	flags := []interface{}{imap.SeenFlag}
-
-	return c.UidStore(seqSet, item, flags, nil)
+	uidSet := imap.UIDSetNum(imap.UID(uid))
+	return c.Store(uidSet, &imap.StoreFlags{
+		Op:     imap.StoreFlagsAdd,
+		Silent: true,
+		Flags:  []imap.Flag{imap.FlagSeen},
+	}, nil).Close()
 }
 
 func DeleteEmailFromMailbox(account *config.Account, mailbox string, uid uint32) error {
@@ -1091,23 +1127,22 @@ func DeleteEmailFromMailbox(account *config.Account, mailbox string, uid uint32)
 	if err != nil {
 		return err
 	}
-	defer c.Logout()
+	defer c.Close()
 
-	if _, err := c.Select(mailbox, false); err != nil {
+	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return err
 	}
 
-	seqSet := new(imap.SeqSet)
-	seqSet.AddNum(uid)
-
-	item := imap.FormatFlagsOp(imap.AddFlags, true)
-	flags := []interface{}{imap.DeletedFlag}
-
-	if err := c.UidStore(seqSet, item, flags, nil); err != nil {
+	uidSet := imap.UIDSetNum(imap.UID(uid))
+	if err := c.Store(uidSet, &imap.StoreFlags{
+		Op:     imap.StoreFlagsAdd,
+		Silent: true,
+		Flags:  []imap.Flag{imap.FlagDeleted},
+	}, nil).Close(); err != nil {
 		return err
 	}
 
-	return c.Expunge(nil)
+	return c.Expunge().Close()
 }
 
 func ArchiveEmailFromMailbox(account *config.Account, mailbox string, uid uint32) error {
@@ -1115,13 +1150,13 @@ func ArchiveEmailFromMailbox(account *config.Account, mailbox string, uid uint32
 	if err != nil {
 		return err
 	}
-	defer c.Logout()
+	defer c.Close()
 
 	var archiveMailbox string
 	switch account.ServiceProvider {
 	case "gmail":
 		// For Gmail, find the mailbox with the \All attribute
-		archiveMailbox, err = getMailboxByAttr(c, imap.AllAttr)
+		archiveMailbox, err = getMailboxByAttr(c, imap.MailboxAttrAll)
 		if err != nil {
 			// Fallback to hardcoded path if attribute lookup fails
 			archiveMailbox = "[Gmail]/All Mail"
@@ -1130,14 +1165,13 @@ func ArchiveEmailFromMailbox(account *config.Account, mailbox string, uid uint32
 		archiveMailbox = "Archive"
 	}
 
-	if _, err := c.Select(mailbox, false); err != nil {
+	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return err
 	}
 
-	seqSet := new(imap.SeqSet)
-	seqSet.AddNum(uid)
-
-	return c.UidMove(seqSet, archiveMailbox)
+	uidSet := imap.UIDSetNum(imap.UID(uid))
+	_, err = c.Move(uidSet, archiveMailbox).Wait()
+	return err
 }
 
 // Batch operations for multiple emails
@@ -1152,25 +1186,22 @@ func DeleteEmailsFromMailbox(account *config.Account, mailbox string, uids []uin
 	if err != nil {
 		return err
 	}
-	defer c.Logout()
+	defer c.Close()
 
-	if _, err := c.Select(mailbox, false); err != nil {
+	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return err
 	}
 
-	seqSet := new(imap.SeqSet)
-	for _, uid := range uids {
-		seqSet.AddNum(uid)
-	}
-
-	item := imap.FormatFlagsOp(imap.AddFlags, true)
-	flags := []interface{}{imap.DeletedFlag}
-
-	if err := c.UidStore(seqSet, item, flags, nil); err != nil {
+	uidSet := uidsToUIDSet(uids)
+	if err := c.Store(uidSet, &imap.StoreFlags{
+		Op:     imap.StoreFlagsAdd,
+		Silent: true,
+		Flags:  []imap.Flag{imap.FlagDeleted},
+	}, nil).Close(); err != nil {
 		return err
 	}
 
-	return c.Expunge(nil)
+	return c.Expunge().Close()
 }
 
 // ArchiveEmailsFromMailbox archives multiple emails from a mailbox (batch operation)
@@ -1183,12 +1214,12 @@ func ArchiveEmailsFromMailbox(account *config.Account, mailbox string, uids []ui
 	if err != nil {
 		return err
 	}
-	defer c.Logout()
+	defer c.Close()
 
 	var archiveMailbox string
 	switch account.ServiceProvider {
 	case "gmail":
-		archiveMailbox, err = getMailboxByAttr(c, imap.AllAttr)
+		archiveMailbox, err = getMailboxByAttr(c, imap.MailboxAttrAll)
 		if err != nil {
 			archiveMailbox = "[Gmail]/All Mail"
 		}
@@ -1196,16 +1227,13 @@ func ArchiveEmailsFromMailbox(account *config.Account, mailbox string, uids []ui
 		archiveMailbox = "Archive"
 	}
 
-	if _, err := c.Select(mailbox, false); err != nil {
+	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return err
 	}
 
-	seqSet := new(imap.SeqSet)
-	for _, uid := range uids {
-		seqSet.AddNum(uid)
-	}
-
-	return c.UidMove(seqSet, archiveMailbox)
+	uidSet := uidsToUIDSet(uids)
+	_, err = c.Move(uidSet, archiveMailbox).Wait()
+	return err
 }
 
 // MoveEmailsToFolder moves multiple emails to a different folder (batch operation)
@@ -1218,18 +1246,15 @@ func MoveEmailsToFolder(account *config.Account, uids []uint32, sourceFolder, de
 	if err != nil {
 		return err
 	}
-	defer c.Logout()
+	defer c.Close()
 
-	if _, err := c.Select(sourceFolder, false); err != nil {
+	if _, err := c.Select(sourceFolder, nil).Wait(); err != nil {
 		return err
 	}
 
-	seqSet := new(imap.SeqSet)
-	for _, uid := range uids {
-		seqSet.AddNum(uid)
-	}
-
-	return c.UidMove(seqSet, destFolder)
+	uidSet := uidsToUIDSet(uids)
+	_, err = c.Move(uidSet, destFolder).Wait()
+	return err
 }
 
 // Convenience wrappers defaulting to INBOX for existing call sites.
@@ -1275,16 +1300,26 @@ func ArchiveSentEmail(account *config.Account, uid uint32) error {
 }
 
 // AppendToSentMailbox appends a raw RFC822 message to the Sent mailbox via IMAP APPEND.
-func AppendToSentMailbox(account *config.Account, msg []byte) error {
+func AppendToSentMailbox(account *config.Account, rawMsg []byte) error {
 	c, err := connect(account)
 	if err != nil {
 		return err
 	}
-	defer c.Logout()
+	defer c.Close()
 
 	sentMailbox := getSentMailbox(account)
-	flags := []string{imap.SeenFlag}
-	return c.Append(sentMailbox, flags, time.Now(), bytes.NewReader(msg))
+	appendCmd := c.Append(sentMailbox, int64(len(rawMsg)), &imap.AppendOptions{
+		Flags: []imap.Flag{imap.FlagSeen},
+		Time:  time.Now(),
+	})
+	if _, err := appendCmd.Write(rawMsg); err != nil {
+		return err
+	}
+	if err := appendCmd.Close(); err != nil {
+		return err
+	}
+	_, err = appendCmd.Wait()
+	return err
 }
 
 // getTrashMailbox returns the trash mailbox name for the account
@@ -1317,10 +1352,10 @@ func FetchTrashEmails(account *config.Account, limit, offset uint32) ([]Email, e
 	if err != nil {
 		return nil, err
 	}
-	defer c.Logout()
+	defer c.Close()
 
 	// Try to find trash by attribute first
-	trashMailbox, err := getMailboxByAttr(c, imap.TrashAttr)
+	trashMailbox, err := getMailboxByAttr(c, imap.MailboxAttrTrash)
 	if err != nil {
 		// Fallback to hardcoded path
 		trashMailbox = getTrashMailbox(account)
@@ -1336,25 +1371,25 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 	if err != nil {
 		return nil, err
 	}
-	defer c.Logout()
+	defer c.Close()
 
 	// Try to find archive by attribute first (Gmail uses \All)
-	archiveMailbox, err := getMailboxByAttr(c, imap.AllAttr)
+	archiveMailbox, err := getMailboxByAttr(c, imap.MailboxAttrAll)
 	if err != nil {
 		// Fallback to hardcoded path
 		archiveMailbox = getArchiveMailbox(account)
 	}
 
-	mbox, err := c.Select(archiveMailbox, false)
+	selectData, err := c.Select(archiveMailbox, nil).Wait()
 	if err != nil {
 		return nil, err
 	}
 
-	if mbox.Messages == 0 {
+	if selectData.NumMessages == 0 {
 		return []Email{}, nil
 	}
 
-	to := mbox.Messages - offset
+	to := selectData.NumMessages - offset
 	from := uint32(1)
 	if to > limit {
 		from = to - limit + 1
@@ -1364,25 +1399,24 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 		return []Email{}, nil
 	}
 
-	seqset := new(imap.SeqSet)
+	var seqset imap.SeqSet
 	seqset.AddRange(from, to)
 
-	messages := make(chan *imap.Message, limit)
-	done := make(chan error, 1)
-	// Fetch delivery headers to match auto-forwarded emails
-	deliveryHeaderItem := imap.FetchItem("BODY.PEEK[HEADER.FIELDS (Delivered-To X-Forwarded-To X-Original-To)]")
-	deliveryHeaderSection, _ := imap.ParseBodySectionName(deliveryHeaderItem)
-	fetchItems := []imap.FetchItem{imap.FetchEnvelope, imap.FetchUid, imap.FetchFlags, deliveryHeaderItem}
-	go func() {
-		done <- c.Fetch(seqset, fetchItems, messages)
-	}()
-
-	var msgs []*imap.Message
-	for msg := range messages {
-		msgs = append(msgs, msg)
+	// Delivery header section for matching auto-forwarded emails
+	deliveryHeaderSection := &imap.FetchItemBodySection{
+		Specifier:    imap.PartSpecifierHeader,
+		HeaderFields: []string{"Delivered-To", "X-Forwarded-To", "X-Original-To"},
+		Peek:         true,
 	}
 
-	if err := <-done; err != nil {
+	fetchCmd := c.Fetch(seqset, &imap.FetchOptions{
+		Envelope:    true,
+		UID:         true,
+		Flags:       true,
+		BodySection: []*imap.FetchItemBodySection{deliveryHeaderSection},
+	})
+	msgs, err := fetchCmd.Collect()
+	if err != nil {
 		return nil, err
 	}
 
@@ -1394,7 +1428,7 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 
 	var emails []Email
 	for _, msg := range msgs {
-		if msg == nil || msg.Envelope == nil {
+		if msg.Envelope == nil {
 			continue
 		}
 
@@ -1405,10 +1439,10 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 
 		var toAddrList []string
 		for _, addr := range msg.Envelope.To {
-			toAddrList = append(toAddrList, addr.Address())
+			toAddrList = append(toAddrList, addr.Addr())
 		}
 		for _, addr := range msg.Envelope.Cc {
-			toAddrList = append(toAddrList, addr.Address())
+			toAddrList = append(toAddrList, addr.Addr())
 		}
 
 		// For archive/All Mail, match emails where user is sender OR recipient
@@ -1428,7 +1462,8 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 		}
 		// Check delivery headers for auto-forwarded emails
 		if !matched {
-			matched = deliveryHeadersMatch(msg, deliveryHeaderSection, fetchEmail)
+			headerData := msg.FindBodySection(deliveryHeaderSection)
+			matched = deliveryHeadersMatch(headerData, fetchEmail)
 		}
 
 		if !matched {
@@ -1436,7 +1471,7 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 		}
 
 		emails = append(emails, Email{
-			UID:       msg.Uid,
+			UID:       uint32(msg.UID),
 			From:      fromAddr,
 			To:        toAddrList,
 			Subject:   decodeHeader(msg.Envelope.Subject),
@@ -1460,9 +1495,9 @@ func FetchTrashEmailBody(account *config.Account, uid uint32) (string, []Attachm
 	if err != nil {
 		return "", nil, err
 	}
-	defer c.Logout()
+	defer c.Close()
 
-	trashMailbox, err := getMailboxByAttr(c, imap.TrashAttr)
+	trashMailbox, err := getMailboxByAttr(c, imap.MailboxAttrTrash)
 	if err != nil {
 		trashMailbox = getTrashMailbox(account)
 	}
@@ -1476,9 +1511,9 @@ func FetchArchiveEmailBody(account *config.Account, uid uint32) (string, []Attac
 	if err != nil {
 		return "", nil, err
 	}
-	defer c.Logout()
+	defer c.Close()
 
-	archiveMailbox, err := getMailboxByAttr(c, imap.AllAttr)
+	archiveMailbox, err := getMailboxByAttr(c, imap.MailboxAttrAll)
 	if err != nil {
 		archiveMailbox = getArchiveMailbox(account)
 	}
@@ -1492,9 +1527,9 @@ func FetchTrashAttachment(account *config.Account, uid uint32, partID string, en
 	if err != nil {
 		return nil, err
 	}
-	defer c.Logout()
+	defer c.Close()
 
-	trashMailbox, err := getMailboxByAttr(c, imap.TrashAttr)
+	trashMailbox, err := getMailboxByAttr(c, imap.MailboxAttrTrash)
 	if err != nil {
 		trashMailbox = getTrashMailbox(account)
 	}
@@ -1508,9 +1543,9 @@ func FetchArchiveAttachment(account *config.Account, uid uint32, partID string, 
 	if err != nil {
 		return nil, err
 	}
-	defer c.Logout()
+	defer c.Close()
 
-	archiveMailbox, err := getMailboxByAttr(c, imap.AllAttr)
+	archiveMailbox, err := getMailboxByAttr(c, imap.MailboxAttrAll)
 	if err != nil {
 		archiveMailbox = getArchiveMailbox(account)
 	}
@@ -1524,9 +1559,9 @@ func DeleteTrashEmail(account *config.Account, uid uint32) error {
 	if err != nil {
 		return err
 	}
-	defer c.Logout()
+	defer c.Close()
 
-	trashMailbox, err := getMailboxByAttr(c, imap.TrashAttr)
+	trashMailbox, err := getMailboxByAttr(c, imap.MailboxAttrTrash)
 	if err != nil {
 		trashMailbox = getTrashMailbox(account)
 	}
@@ -1540,9 +1575,9 @@ func DeleteArchiveEmail(account *config.Account, uid uint32) error {
 	if err != nil {
 		return err
 	}
-	defer c.Logout()
+	defer c.Close()
 
-	archiveMailbox, err := getMailboxByAttr(c, imap.AllAttr)
+	archiveMailbox, err := getMailboxByAttr(c, imap.MailboxAttrAll)
 	if err != nil {
 		archiveMailbox = getArchiveMailbox(account)
 	}
@@ -1556,24 +1591,33 @@ func FetchFolders(account *config.Account) ([]Folder, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer c.Logout()
+	defer c.Close()
 
-	mailboxes := make(chan *imap.MailboxInfo, 50)
-	done := make(chan error, 1)
-	go func() {
-		done <- c.List("", "*", mailboxes)
-	}()
+	listCmd := c.List("", "*", nil)
+	defer listCmd.Close()
 
 	var folders []Folder
-	for m := range mailboxes {
+	for {
+		data := listCmd.Next()
+		if data == nil {
+			break
+		}
+		delim := ""
+		if data.Delim != 0 {
+			delim = string(data.Delim)
+		}
+		var attrs []string
+		for _, a := range data.Attrs {
+			attrs = append(attrs, string(a))
+		}
 		folders = append(folders, Folder{
-			Name:       m.Name,
-			Delimiter:  m.Delimiter,
-			Attributes: m.Attributes,
+			Name:       data.Mailbox,
+			Delimiter:  delim,
+			Attributes: attrs,
 		})
 	}
 
-	if err := <-done; err != nil {
+	if err := listCmd.Close(); err != nil {
 		return nil, err
 	}
 
