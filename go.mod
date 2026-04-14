@@ -5,7 +5,7 @@ go 1.26.2
 require (
 	charm.land/bubbles/v2 v2.1.0
 	charm.land/bubbletea/v2 v2.0.5
-	charm.land/lipgloss/v2 v2.0.2
+	charm.land/lipgloss/v2 v2.0.3
 	cunicu.li/go-iso7816 v0.8.8
 	cunicu.li/go-openpgp-card v0.3.11
 	git.sr.ht/~rockorager/go-jmap v0.5.3
