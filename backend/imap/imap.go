@@ -4,6 +4,7 @@ package imap
 
 import (
 	"context"
+	"log"
 
 	"github.com/floatpane/matcha/backend"
 	"github.com/floatpane/matcha/config"
@@ -76,7 +77,7 @@ func (p *Provider) MoveEmails(_ context.Context, uids []uint32, srcFolder, dstFo
 }
 
 func (p *Provider) SendEmail(_ context.Context, msg *backend.OutgoingEmail) error {
-	return sender.SendEmail(
+	rawMsg, err := sender.SendEmail(
 		p.account, msg.To, msg.Cc, msg.Bcc,
 		msg.Subject, msg.PlainBody, msg.HTMLBody,
 		msg.Images, msg.Attachments,
@@ -84,6 +85,20 @@ func (p *Provider) SendEmail(_ context.Context, msg *backend.OutgoingEmail) erro
 		msg.SignSMIME, msg.EncryptSMIME,
 		msg.SignPGP, msg.EncryptPGP,
 	)
+	if err != nil {
+		return err
+	}
+
+	// Gmail automatically saves sent messages server-side; skip APPEND to avoid duplicates.
+	if p.account.ServiceProvider == "gmail" {
+		return nil
+	}
+
+	if err := fetcher.AppendToSentMailbox(p.account, rawMsg); err != nil {
+		log.Printf("Failed to append sent message to Sent folder: %v", err)
+	}
+
+	return nil
 }
 
 func (p *Provider) FetchFolders(_ context.Context) ([]backend.Folder, error) {

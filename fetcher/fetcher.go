@@ -1274,6 +1274,19 @@ func ArchiveSentEmail(account *config.Account, uid uint32) error {
 	return ArchiveEmailFromMailbox(account, getSentMailbox(account), uid)
 }
 
+// AppendToSentMailbox appends a raw RFC822 message to the Sent mailbox via IMAP APPEND.
+func AppendToSentMailbox(account *config.Account, msg []byte) error {
+	c, err := connect(account)
+	if err != nil {
+		return err
+	}
+	defer c.Logout()
+
+	sentMailbox := getSentMailbox(account)
+	flags := []string{imap.SeenFlag}
+	return c.Append(sentMailbox, flags, time.Now(), bytes.NewReader(msg))
+}
+
 // getTrashMailbox returns the trash mailbox name for the account
 func getTrashMailbox(account *config.Account) string {
 	switch account.ServiceProvider {

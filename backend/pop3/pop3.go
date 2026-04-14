@@ -224,7 +224,7 @@ func (p *Provider) MoveEmails(_ context.Context, _ []uint32, _, _ string) error 
 }
 
 func (p *Provider) SendEmail(_ context.Context, msg *backend.OutgoingEmail) error {
-	return sender.SendEmail(
+	_, err := sender.SendEmail(
 		p.account, msg.To, msg.Cc, msg.Bcc,
 		msg.Subject, msg.PlainBody, msg.HTMLBody,
 		msg.Images, msg.Attachments,
@@ -232,6 +232,7 @@ func (p *Provider) SendEmail(_ context.Context, msg *backend.OutgoingEmail) erro
 		msg.SignSMIME, msg.EncryptSMIME,
 		msg.SignPGP, msg.EncryptPGP,
 	)
+	return err
 }
 
 func (p *Provider) FetchFolders(_ context.Context) ([]backend.Folder, error) {

@@ -155,12 +155,12 @@ func detectPlaintextOnly(body string, images, attachments map[string][]byte) boo
 }
 
 // SendEmail constructs a multipart message with plain text, HTML, embedded images, and attachments.
-func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody, htmlBody string, images map[string][]byte, attachments map[string][]byte, inReplyTo string, references []string, signSMIME bool, encryptSMIME bool, signPGP bool, encryptPGP bool) error {
+func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody, htmlBody string, images map[string][]byte, attachments map[string][]byte, inReplyTo string, references []string, signSMIME bool, encryptSMIME bool, signPGP bool, encryptPGP bool) ([]byte, error) {
 	smtpServer := account.GetSMTPServer()
 	smtpPort := account.GetSMTPPort()
 
 	if smtpServer == "" {
-		return fmt.Errorf("unsupported or missing service_provider: %s", account.ServiceProvider)
+		return nil, fmt.Errorf("unsupported or missing service_provider: %s", account.ServiceProvider)
 	}
 
 	plainAuth := smtp.PlainAuth("", account.Email, account.Password, smtpServer)
@@ -210,7 +210,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	// If plaintext-only mode is requested, build a single text/plain part (or a multipart/signed wrapper when signing)
 	if plaintextOnly {
 		if len(images) > 0 || len(attachments) > 0 {
-			return errors.New("plaintext-only messages cannot contain attachments or inline images")
+			return nil, errors.New("plaintext-only messages cannot contain attachments or inline images")
 		}
 
 		// Build quoted-printable encoded body
@@ -229,36 +229,36 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 
 		if signSMIME {
 			if account.SMIMECert == "" || account.SMIMEKey == "" {
-				return errors.New("S/MIME certificate or key path is missing")
+				return nil, errors.New("S/MIME certificate or key path is missing")
 			}
 
 			certData, err := os.ReadFile(account.SMIMECert)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			keyData, err := os.ReadFile(account.SMIMEKey)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			certBlock, _ := pem.Decode(certData)
 			if certBlock == nil {
-				return errors.New("failed to parse certificate PEM")
+				return nil, errors.New("failed to parse certificate PEM")
 			}
 			cert, err := x509.ParseCertificate(certBlock.Bytes)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			keyBlock, _ := pem.Decode(keyData)
 			if keyBlock == nil {
-				return errors.New("failed to parse private key PEM")
+				return nil, errors.New("failed to parse private key PEM")
 			}
 			privKey, err := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
 			if err != nil {
 				privKey, err = x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
 				if err != nil {
-					return err
+					return nil, err
 				}
 			}
 
@@ -268,14 +268,14 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 
 			signedData, err := pkcs7.NewSignedData(canonicalBody)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if err := signedData.AddSigner(cert, privKey, pkcs7.SignerInfoConfig{}); err != nil {
-				return err
+				return nil, err
 			}
 			detachedSig, err := signedData.Finish()
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			var rb [12]byte
@@ -330,7 +330,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		relatedHeader.Set("Content-Type", "multipart/related; boundary=\""+relatedBoundary+"\"")
 		relatedPartWriter, err := innerWriter.CreatePart(relatedHeader)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		relatedWriter := multipart.NewWriter(relatedPartWriter)
 		relatedWriter.SetBoundary(relatedBoundary)
@@ -341,7 +341,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		altHeader.Set("Content-Type", "multipart/alternative; boundary=\""+altBoundary+"\"")
 		altPartWriter, err := relatedWriter.CreatePart(altHeader)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		altWriter := multipart.NewWriter(altPartWriter)
 		altWriter.SetBoundary(altBoundary)
@@ -353,7 +353,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		}
 		textPart, err := altWriter.CreatePart(textHeader)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		qpText := quotedprintable.NewWriter(textPart)
 		fmt.Fprint(qpText, plainBody)
@@ -366,7 +366,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		}
 		htmlPart, err := altWriter.CreatePart(htmlHeader)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		qpHTML := quotedprintable.NewWriter(htmlPart)
 		fmt.Fprint(qpHTML, htmlBody)
@@ -390,7 +390,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 
 			imgPart, err := relatedWriter.CreatePart(imgHeader)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			// Encode raw image bytes to base64, then wrap at 76 chars per MIME rules
 			encodedImg := base64.StdEncoding.EncodeToString(data)
@@ -413,7 +413,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 
 			attachmentPart, err := innerWriter.CreatePart(partHeader)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			encodedData := base64.StdEncoding.EncodeToString(data)
 			// MIME requires base64 to be line-wrapped at 76 characters
@@ -434,36 +434,36 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	// Handle S/MIME Detached Signing for non-plaintext messages
 	if signSMIME && len(innerBodyBytes) > 0 {
 		if account.SMIMECert == "" || account.SMIMEKey == "" {
-			return errors.New("S/MIME certificate or key path is missing")
+			return nil, errors.New("S/MIME certificate or key path is missing")
 		}
 
 		certData, err := os.ReadFile(account.SMIMECert)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		keyData, err := os.ReadFile(account.SMIMEKey)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		certBlock, _ := pem.Decode(certData)
 		if certBlock == nil {
-			return errors.New("failed to parse certificate PEM")
+			return nil, errors.New("failed to parse certificate PEM")
 		}
 		cert, err := x509.ParseCertificate(certBlock.Bytes)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		keyBlock, _ := pem.Decode(keyData)
 		if keyBlock == nil {
-			return errors.New("failed to parse private key PEM")
+			return nil, errors.New("failed to parse private key PEM")
 		}
 		privKey, err := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
 		if err != nil {
 			privKey, err = x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 
@@ -472,14 +472,14 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 
 		signedData, err := pkcs7.NewSignedData(canonicalBody)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err := signedData.AddSigner(cert, privKey, pkcs7.SignerInfoConfig{}); err != nil {
-			return err
+			return nil, err
 		}
 		detachedSig, err := signedData.Finish()
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		var rb [12]byte
@@ -548,12 +548,12 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		}
 
 		if len(certs) == 0 {
-			return errors.New("cannot encrypt: no valid public certificates found for recipients")
+			return nil, errors.New("cannot encrypt: no valid public certificates found for recipients")
 		}
 
 		encryptedDer, err := pkcs7.Encrypt(payloadToEncrypt, certs)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		msg.WriteString("Content-Type: application/pkcs7-mime; smime-type=enveloped-data; name=\"smime.p7m\"\r\n")
@@ -577,7 +577,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 
 		signed, err := signEmailPGP(toSign, account)
 		if err != nil {
-			return fmt.Errorf("PGP signing failed: %w", err)
+			return nil, fmt.Errorf("PGP signing failed: %w", err)
 		}
 
 		if encryptPGP {
@@ -610,7 +610,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 
 		encrypted, err := encryptEmailPGP(toEncrypt, allRecipients, account)
 		if err != nil {
-			return fmt.Errorf("PGP encryption failed: %w", err)
+			return nil, fmt.Errorf("PGP encryption failed: %w", err)
 		}
 
 		msg.Reset()
@@ -636,31 +636,31 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	if smtpPort == 465 {
 		conn, err := tls.Dial("tcp", addr, tlsConfig)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		c, err = smtp.NewClient(conn, smtpServer)
 		if err != nil {
 			conn.Close()
-			return err
+			return nil, err
 		}
 	} else {
 		var err error
 		c, err = smtp.Dial(addr)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	defer c.Close()
 
 	if err = c.Hello("localhost"); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Trigger STARTTLS if supported (not needed for implicit TLS on port 465)
 	if smtpPort != 465 {
 		if ok, _ := c.Extension("STARTTLS"); ok {
 			if err = c.StartTLS(tlsConfig); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
@@ -674,7 +674,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 			// Use XOAUTH2 for OAuth2-enabled accounts
 			token, tokenErr := config.GetOAuth2Token(account.Email)
 			if tokenErr != nil {
-				return fmt.Errorf("oauth2: %w", tokenErr)
+				return nil, fmt.Errorf("oauth2: %w", tokenErr)
 			}
 			err = c.Auth(&xoauth2Auth{username: account.Email, token: token})
 		} else if strings.Contains(mechList, "PLAIN") {
@@ -686,35 +686,42 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 			err = c.Auth(plainAuth)
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	// Send Envelope
 	if err = c.Mail(account.GetFetchEmail()); err != nil {
-		return err
+		return nil, err
 	}
 	for _, r := range allRecipients {
 		if err = c.Rcpt(r); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	// Write Data
 	w, err := c.Data()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, err = w.Write(msg.Bytes())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = w.Close()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return c.Quit()
+	rawMsg := make([]byte, len(msg.Bytes()))
+	copy(rawMsg, msg.Bytes())
+
+	if err := c.Quit(); err != nil {
+		return nil, err
+	}
+
+	return rawMsg, nil
 }
 
 // signEmailPGP signs the message payload with PGP and returns a multipart/signed message.
