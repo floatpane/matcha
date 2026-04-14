@@ -27,6 +27,7 @@ var (
 var dateStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
 var unreadEmailStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 var readEmailStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+var visualSelectedStyle lipgloss.Style
 
 type item struct {
 	title, desc   string
@@ -42,7 +43,9 @@ func (i item) Title() string       { return i.title }
 func (i item) Description() string { return i.desc }
 func (i item) FilterValue() string { return i.title + " " + i.desc }
 
-type itemDelegate struct{}
+type itemDelegate struct {
+	inbox *Inbox
+}
 
 func (d itemDelegate) Height() int                               { return 1 }
 func (d itemDelegate) Spacing() int                              { return 0 }
@@ -119,10 +122,36 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		padding = 1
 	}
 
+	// Check if this item is in visual selection
+	inVisualSelection := false
+	if d.inbox != nil && d.inbox.visualMode {
+		_, inVisualSelection = d.inbox.selectedUIDs[i.uid]
+	}
+
 	fn := itemStyle.Render
-	if index == m.Index() {
+	if inVisualSelection && !isSelected {
+		// Item is in visual selection but not the cursor
 		fn = func(s ...string) string {
-			return selectedItemStyle.Render("> " + s[0])
+			return visualSelectedStyle.Render("* " + s[0])
+		}
+		cursorWidth = 2 // "* " prefix
+		padding = listWidth - lipgloss.Width(str) - dateWidth - cursorWidth
+		if padding < 1 {
+			padding = 1
+		}
+	} else if isSelected {
+		// Cursor position (may also be in selection)
+		prefix := "> "
+		if inVisualSelection {
+			prefix = ">*"
+		}
+		fn = func(s ...string) string {
+			return selectedItemStyle.Render(prefix + s[0])
+		}
+		cursorWidth = len(prefix)
+		padding = listWidth - lipgloss.Width(str) - dateWidth - cursorWidth
+		if padding < 1 {
+			padding = 1
 		}
 	}
 
@@ -219,6 +248,12 @@ type Inbox struct {
 	extraShortHelpKeys []key.Binding
 	pluginStatus       string // Persistent status text set by plugins
 	pluginKeyBindings  []PluginKeyBinding
+
+	// Visual mode state (Vim-style multi-select)
+	visualMode     bool              // Whether visual mode is active
+	visualAnchor   int               // Index where visual selection started
+	selectedUIDs   map[uint32]string // map[uid]accountID for selected emails
+	selectionOrder []uint32          // Ordered list of UIDs for display
 }
 
 func NewInbox(emails []fetcher.Email, accounts []config.Account) *Inbox {
@@ -275,6 +310,9 @@ func NewInboxWithMailbox(emails []fetcher.Email, accounts []config.Account, mail
 		currentAccountID: "",
 		emailCountByAcct: emailCountByAcct,
 		mailbox:          mailbox,
+		visualMode:       false,
+		selectedUIDs:     make(map[uint32]string),
+		selectionOrder:   []uint32{},
 	}
 
 	inbox.updateList()
@@ -330,7 +368,7 @@ func (m *Inbox) updateList() {
 		}
 	}
 
-	l := list.New(items, itemDelegate{}, 20, 14)
+	l := list.New(items, itemDelegate{inbox: m}, 20, 14)
 	l.Title = m.getTitle()
 	l.SetShowStatusBar(true)
 	l.SetFilteringEnabled(true)
@@ -340,6 +378,7 @@ func (m *Inbox) updateList() {
 	l.SetStatusBarItemName("email", "emails")
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		bindings := []key.Binding{
+			key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "visual mode")),
 			key.NewBinding(key.WithKeys("d"), key.WithHelp("\uf014 d", "delete")),
 			key.NewBinding(key.WithKeys("a"), key.WithHelp("\uea98 a", "archive")),
 			key.NewBinding(key.WithKeys("r"), key.WithHelp("\ue348 r", "refresh")),
@@ -437,9 +476,55 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		if m.list.FilterState() == list.Filtering {
+			// Don't allow visual mode while filtering
+			if m.visualMode {
+				m.visualMode = false
+				m.selectedUIDs = make(map[uint32]string)
+				m.selectionOrder = []uint32{}
+				m.updateListTitle()
+			}
 			break
 		}
 		switch keypress := msg.String(); keypress {
+		case "v":
+			if !m.visualMode {
+				// Enter visual mode
+				m.visualMode = true
+				m.visualAnchor = m.list.Index()
+				selectedItem, ok := m.list.SelectedItem().(item)
+				if ok {
+					m.selectedUIDs = make(map[uint32]string)
+					m.selectionOrder = []uint32{}
+					m.selectedUIDs[selectedItem.uid] = selectedItem.accountID
+					m.selectionOrder = append(m.selectionOrder, selectedItem.uid)
+				}
+				m.updateListTitle()
+			} else {
+				// Exit visual mode
+				m.visualMode = false
+				m.selectedUIDs = make(map[uint32]string)
+				m.selectionOrder = []uint32{}
+				m.updateListTitle()
+			}
+			return m, nil
+		case "esc":
+			if m.visualMode {
+				// Exit visual mode on ESC
+				m.visualMode = false
+				m.selectedUIDs = make(map[uint32]string)
+				m.selectionOrder = []uint32{}
+				m.updateListTitle()
+				return m, nil
+			}
+		case "j", "down", "k", "up":
+			if m.visualMode {
+				// Let the list handle navigation first
+				var cmd tea.Cmd
+				m.list, cmd = m.list.Update(msg)
+				// Then update selection
+				m.updateVisualSelection()
+				return m, cmd
+			}
 		case "left", "h":
 			if len(m.tabs) > 1 {
 				m.activeTabIndex--
@@ -447,6 +532,10 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.activeTabIndex = len(m.tabs) - 1
 				}
 				m.currentAccountID = m.tabs[m.activeTabIndex].ID
+				// Exit visual mode when switching tabs
+				m.visualMode = false
+				m.selectedUIDs = make(map[uint32]string)
+				m.selectionOrder = []uint32{}
 				m.updateList()
 				return m, nil
 			}
@@ -457,21 +546,69 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.activeTabIndex = 0
 				}
 				m.currentAccountID = m.tabs[m.activeTabIndex].ID
+				// Exit visual mode when switching tabs
+				m.visualMode = false
+				m.selectedUIDs = make(map[uint32]string)
+				m.selectionOrder = []uint32{}
 				m.updateList()
 				return m, nil
 			}
 		case "d":
-			selectedItem, ok := m.list.SelectedItem().(item)
-			if ok {
+			if m.visualMode && len(m.selectedUIDs) > 0 {
+				// Batch delete
+				uids := make([]uint32, len(m.selectionOrder))
+				copy(uids, m.selectionOrder)
+				accountID := ""
+				for _, aid := range m.selectedUIDs {
+					accountID = aid // Get any account (all should be same in single-account selection)
+					break
+				}
+
+				// Exit visual mode
+				m.visualMode = false
+				m.selectedUIDs = make(map[uint32]string)
+				m.selectionOrder = []uint32{}
+				m.updateListTitle()
+
 				return m, func() tea.Msg {
-					return DeleteEmailMsg{UID: selectedItem.uid, AccountID: selectedItem.accountID, Mailbox: m.mailbox}
+					return BatchDeleteEmailsMsg{UIDs: uids, AccountID: accountID, Mailbox: m.mailbox}
+				}
+			} else {
+				// Single delete
+				selectedItem, ok := m.list.SelectedItem().(item)
+				if ok {
+					return m, func() tea.Msg {
+						return DeleteEmailMsg{UID: selectedItem.uid, AccountID: selectedItem.accountID, Mailbox: m.mailbox}
+					}
 				}
 			}
 		case "a":
-			selectedItem, ok := m.list.SelectedItem().(item)
-			if ok {
+			if m.visualMode && len(m.selectedUIDs) > 0 {
+				// Batch archive
+				uids := make([]uint32, len(m.selectionOrder))
+				copy(uids, m.selectionOrder)
+				accountID := ""
+				for _, aid := range m.selectedUIDs {
+					accountID = aid
+					break
+				}
+
+				// Exit visual mode
+				m.visualMode = false
+				m.selectedUIDs = make(map[uint32]string)
+				m.selectionOrder = []uint32{}
+				m.updateListTitle()
+
 				return m, func() tea.Msg {
-					return ArchiveEmailMsg{UID: selectedItem.uid, AccountID: selectedItem.accountID, Mailbox: m.mailbox}
+					return BatchArchiveEmailsMsg{UIDs: uids, AccountID: accountID, Mailbox: m.mailbox}
+				}
+			} else {
+				// Single archive
+				selectedItem, ok := m.list.SelectedItem().(item)
+				if ok {
+					return m, func() tea.Msg {
+						return ArchiveEmailMsg{UID: selectedItem.uid, AccountID: selectedItem.accountID, Mailbox: m.mailbox}
+					}
 				}
 			}
 		case "r":
@@ -736,6 +873,87 @@ func (m *Inbox) MarkEmailAsRead(uid uint32, accountID string) {
 			}
 		}
 	}
+	m.updateList()
+}
+
+// updateVisualSelection updates the selected UIDs based on anchor and current index
+func (m *Inbox) updateVisualSelection() {
+	if !m.visualMode {
+		return
+	}
+
+	currentIdx := m.list.Index()
+	start := m.visualAnchor
+	end := currentIdx
+
+	if start > end {
+		start, end = end, start
+	}
+
+	// Clear and rebuild selection
+	m.selectedUIDs = make(map[uint32]string)
+	m.selectionOrder = []uint32{}
+
+	items := m.list.Items()
+	firstAccountID := ""
+	for i := start; i <= end && i < len(items); i++ {
+		if itm, ok := items[i].(item); ok {
+			// Ensure all selected emails are from the same account (prevent cross-account batch ops)
+			if firstAccountID == "" {
+				firstAccountID = itm.accountID
+			}
+			if itm.accountID != firstAccountID {
+				// Don't add emails from different accounts
+				continue
+			}
+
+			if _, exists := m.selectedUIDs[itm.uid]; !exists {
+				m.selectedUIDs[itm.uid] = itm.accountID
+				m.selectionOrder = append(m.selectionOrder, itm.uid)
+			}
+		}
+	}
+
+	m.updateListTitle()
+}
+
+// updateListTitle updates the title to show selection count when in visual mode
+func (m *Inbox) updateListTitle() {
+	if m.visualMode && len(m.selectedUIDs) > 0 {
+		baseTitle := m.getBaseTitle()
+		m.list.Title = fmt.Sprintf("%s - VISUAL (%d selected)", baseTitle, len(m.selectedUIDs))
+	} else {
+		m.list.Title = m.getTitle()
+	}
+}
+
+// RemoveEmails removes multiple emails by UID and account ID (batch operation)
+func (m *Inbox) RemoveEmails(uids []uint32, accountID string) {
+	uidSet := make(map[uint32]bool)
+	for _, uid := range uids {
+		uidSet[uid] = true
+	}
+
+	// Remove from account-specific list
+	if emails, ok := m.emailsByAccount[accountID]; ok {
+		var filtered []fetcher.Email
+		for _, e := range emails {
+			if !uidSet[e.UID] {
+				filtered = append(filtered, e)
+			}
+		}
+		m.emailsByAccount[accountID] = filtered
+	}
+
+	// Remove from all emails list
+	var filteredAll []fetcher.Email
+	for _, e := range m.allEmails {
+		if !(uidSet[e.UID] && e.AccountID == accountID) {
+			filteredAll = append(filteredAll, e)
+		}
+	}
+	m.allEmails = filteredAll
+
 	m.updateList()
 }
 

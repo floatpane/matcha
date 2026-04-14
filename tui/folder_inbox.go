@@ -72,7 +72,8 @@ type FolderInbox struct {
 	// Move-to-folder overlay state
 	movingEmail      bool
 	moveTargetIdx    int
-	moveUID          uint32
+	moveUID          uint32   // Legacy: single UID
+	moveUIDs         []uint32 // Batch: multiple UIDs
 	moveAccountID    string
 	moveSourceFolder string
 }
@@ -151,14 +152,31 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.switchFolder()
 		case "m":
 			// Start move-to-folder flow
-			selectedItem, ok := m.inbox.list.SelectedItem().(item)
-			if ok {
+			if m.inbox.visualMode && len(m.inbox.selectedUIDs) > 0 {
+				// Batch move
 				m.movingEmail = true
 				m.moveTargetIdx = 0
-				m.moveUID = selectedItem.uid
-				m.moveAccountID = selectedItem.accountID
+				m.moveUIDs = make([]uint32, len(m.inbox.selectionOrder))
+				copy(m.moveUIDs, m.inbox.selectionOrder)
+				m.moveAccountID = ""
+				for _, acctID := range m.inbox.selectedUIDs {
+					m.moveAccountID = acctID
+					break
+				}
 				m.moveSourceFolder = m.currentFolder
 				return m, nil
+			} else {
+				// Single move
+				selectedItem, ok := m.inbox.list.SelectedItem().(item)
+				if ok {
+					m.movingEmail = true
+					m.moveTargetIdx = 0
+					m.moveUID = selectedItem.uid
+					m.moveUIDs = []uint32{selectedItem.uid}
+					m.moveAccountID = selectedItem.accountID
+					m.moveSourceFolder = m.currentFolder
+					return m, nil
+				}
 			}
 		}
 
@@ -272,12 +290,35 @@ func (m *FolderInbox) updateMoveOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(choices) > 0 && m.moveTargetIdx < len(choices) {
 				destFolder := choices[m.moveTargetIdx]
 				m.movingEmail = false
-				return m, func() tea.Msg {
-					return MoveEmailToFolderMsg{
-						UID:          m.moveUID,
-						AccountID:    m.moveAccountID,
-						SourceFolder: m.moveSourceFolder,
-						DestFolder:   destFolder,
+
+				if len(m.moveUIDs) > 1 {
+					// Batch move
+					uids := m.moveUIDs
+					m.moveUIDs = nil
+
+					// Exit visual mode in inbox
+					m.inbox.visualMode = false
+					m.inbox.selectedUIDs = make(map[uint32]string)
+					m.inbox.selectionOrder = []uint32{}
+					m.inbox.updateListTitle()
+
+					return m, func() tea.Msg {
+						return BatchMoveEmailsMsg{
+							UIDs:         uids,
+							AccountID:    m.moveAccountID,
+							SourceFolder: m.moveSourceFolder,
+							DestFolder:   destFolder,
+						}
+					}
+				} else {
+					// Single move
+					return m, func() tea.Msg {
+						return MoveEmailToFolderMsg{
+							UID:          m.moveUID,
+							AccountID:    m.moveAccountID,
+							SourceFolder: m.moveSourceFolder,
+							DestFolder:   destFolder,
+						}
 					}
 				}
 			}
@@ -386,7 +427,11 @@ func (m *FolderInbox) renderWithMoveOverlay(content string) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(moveOverlayTitleStyle.Render("Move to folder:"))
+	title := "Move to folder:"
+	if len(m.moveUIDs) > 1 {
+		title = fmt.Sprintf("Move %d emails to folder:", len(m.moveUIDs))
+	}
+	b.WriteString(moveOverlayTitleStyle.Render(title))
 	b.WriteString("\n")
 
 	for i, folder := range choices {

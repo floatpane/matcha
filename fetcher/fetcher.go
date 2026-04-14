@@ -1140,6 +1140,98 @@ func ArchiveEmailFromMailbox(account *config.Account, mailbox string, uid uint32
 	return c.UidMove(seqSet, archiveMailbox)
 }
 
+// Batch operations for multiple emails
+
+// DeleteEmailsFromMailbox deletes multiple emails from a mailbox (batch operation)
+func DeleteEmailsFromMailbox(account *config.Account, mailbox string, uids []uint32) error {
+	if len(uids) == 0 {
+		return nil
+	}
+
+	c, err := connect(account)
+	if err != nil {
+		return err
+	}
+	defer c.Logout()
+
+	if _, err := c.Select(mailbox, false); err != nil {
+		return err
+	}
+
+	seqSet := new(imap.SeqSet)
+	for _, uid := range uids {
+		seqSet.AddNum(uid)
+	}
+
+	item := imap.FormatFlagsOp(imap.AddFlags, true)
+	flags := []interface{}{imap.DeletedFlag}
+
+	if err := c.UidStore(seqSet, item, flags, nil); err != nil {
+		return err
+	}
+
+	return c.Expunge(nil)
+}
+
+// ArchiveEmailsFromMailbox archives multiple emails from a mailbox (batch operation)
+func ArchiveEmailsFromMailbox(account *config.Account, mailbox string, uids []uint32) error {
+	if len(uids) == 0 {
+		return nil
+	}
+
+	c, err := connect(account)
+	if err != nil {
+		return err
+	}
+	defer c.Logout()
+
+	var archiveMailbox string
+	switch account.ServiceProvider {
+	case "gmail":
+		archiveMailbox, err = getMailboxByAttr(c, imap.AllAttr)
+		if err != nil {
+			archiveMailbox = "[Gmail]/All Mail"
+		}
+	default:
+		archiveMailbox = "Archive"
+	}
+
+	if _, err := c.Select(mailbox, false); err != nil {
+		return err
+	}
+
+	seqSet := new(imap.SeqSet)
+	for _, uid := range uids {
+		seqSet.AddNum(uid)
+	}
+
+	return c.UidMove(seqSet, archiveMailbox)
+}
+
+// MoveEmailsToFolder moves multiple emails to a different folder (batch operation)
+func MoveEmailsToFolder(account *config.Account, uids []uint32, sourceFolder, destFolder string) error {
+	if len(uids) == 0 {
+		return nil
+	}
+
+	c, err := connect(account)
+	if err != nil {
+		return err
+	}
+	defer c.Logout()
+
+	if _, err := c.Select(sourceFolder, false); err != nil {
+		return err
+	}
+
+	seqSet := new(imap.SeqSet)
+	for _, uid := range uids {
+		seqSet.AddNum(uid)
+	}
+
+	return c.UidMove(seqSet, destFolder)
+}
+
 // Convenience wrappers defaulting to INBOX for existing call sites.
 
 func FetchEmails(account *config.Account, limit, offset uint32) ([]Email, error) {

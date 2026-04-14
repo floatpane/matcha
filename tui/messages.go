@@ -153,6 +153,35 @@ type EmailActionDoneMsg struct {
 	Err       error
 }
 
+// Batch operation messages
+type BatchDeleteEmailsMsg struct {
+	UIDs      []uint32
+	AccountID string
+	Mailbox   MailboxKind
+}
+
+type BatchArchiveEmailsMsg struct {
+	UIDs      []uint32
+	AccountID string
+	Mailbox   MailboxKind
+}
+
+type BatchMoveEmailsMsg struct {
+	UIDs         []uint32
+	AccountID    string
+	SourceFolder string
+	DestFolder   string
+}
+
+type BatchEmailActionDoneMsg struct {
+	Count        int
+	SuccessCount int
+	FailureCount int
+	Action       string // "delete", "archive", or "move"
+	Mailbox      MailboxKind
+	Err          error
+}
+
 type GoToChoiceMenuMsg struct{}
 
 type DownloadAttachmentMsg struct {

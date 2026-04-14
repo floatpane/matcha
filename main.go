@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -1268,6 +1269,94 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
 
+	case tui.BatchDeleteEmailsMsg:
+		tui.ClearKittyGraphics()
+		m.previousModel = m.current
+		count := len(msg.UIDs)
+		m.current = tui.NewStatus(fmt.Sprintf("Deleting %d emails...", count))
+
+		account := m.config.GetAccountByID(msg.AccountID)
+		if account == nil {
+			if m.folderInbox != nil {
+				m.current = m.folderInbox
+			}
+			return m, nil
+		}
+
+		folderName := "INBOX"
+		if m.folderInbox != nil {
+			folderName = m.folderInbox.GetCurrentFolder()
+		}
+
+		return m, tea.Batch(
+			m.current.Init(),
+			m.batchDeleteEmailsCmd(account, msg.UIDs, msg.AccountID, folderName, msg.Mailbox, count),
+		)
+
+	case tui.BatchArchiveEmailsMsg:
+		tui.ClearKittyGraphics()
+		m.previousModel = m.current
+		count := len(msg.UIDs)
+		m.current = tui.NewStatus(fmt.Sprintf("Archiving %d emails...", count))
+
+		account := m.config.GetAccountByID(msg.AccountID)
+		if account == nil {
+			if m.folderInbox != nil {
+				m.current = m.folderInbox
+			}
+			return m, nil
+		}
+
+		folderName := "INBOX"
+		if m.folderInbox != nil {
+			folderName = m.folderInbox.GetCurrentFolder()
+		}
+
+		return m, tea.Batch(
+			m.current.Init(),
+			m.batchArchiveEmailsCmd(account, msg.UIDs, msg.AccountID, folderName, msg.Mailbox, count),
+		)
+
+	case tui.BatchMoveEmailsMsg:
+		if m.config == nil {
+			return m, nil
+		}
+		account := m.config.GetAccountByID(msg.AccountID)
+		if account == nil {
+			return m, nil
+		}
+
+		count := len(msg.UIDs)
+		m.previousModel = m.current
+		m.current = tui.NewStatus(fmt.Sprintf("Moving %d emails...", count))
+
+		return m, tea.Batch(
+			m.current.Init(),
+			m.batchMoveEmailsCmd(account, msg.UIDs, msg.AccountID, msg.SourceFolder, msg.DestFolder, count),
+		)
+
+	case tui.BatchEmailActionDoneMsg:
+		if msg.Err != nil {
+			log.Printf("Batch %s failed: %v", msg.Action, msg.Err)
+			m.current = tui.NewStatus(fmt.Sprintf("Error: %v", msg.Err))
+			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+				return tui.RestoreViewMsg{}
+			})
+		}
+
+		// Success - show brief confirmation
+		successMsg := fmt.Sprintf("%d emails %sd successfully", msg.SuccessCount, msg.Action)
+		if msg.FailureCount > 0 {
+			successMsg = fmt.Sprintf("%d of %d emails %sd (%d failed)",
+				msg.SuccessCount, msg.Count, msg.Action, msg.FailureCount)
+		}
+
+		m.current = tui.NewStatus(successMsg)
+
+		return m, tea.Tick(1500*time.Millisecond, func(t time.Time) tea.Msg {
+			return tui.RestoreViewMsg{}
+		})
+
 	case tui.DownloadAttachmentMsg:
 		m.previousModel = m.current
 		m.current = tui.NewStatus(fmt.Sprintf("Downloading %s...", msg.Filename))
@@ -2156,6 +2245,120 @@ func archiveFolderEmailCmd(account *config.Account, uid uint32, accountID string
 	return func() tea.Msg {
 		err := fetcher.ArchiveFolderEmail(account, folderName, uid)
 		return tui.EmailActionDoneMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
+	}
+}
+
+func (m *mainModel) batchDeleteEmailsCmd(account *config.Account, uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		p := m.getProvider(account)
+		if p == nil {
+			return tui.BatchEmailActionDoneMsg{
+				Count:  count,
+				Action: "delete",
+				Err:    fmt.Errorf("provider not found"),
+			}
+		}
+
+		err := p.DeleteEmails(ctx, folderName, uids)
+
+		// Remove emails from local state on success
+		if err == nil && m.folderInbox != nil {
+			m.folderInbox.GetInbox().RemoveEmails(uids, accountID)
+		}
+
+		successCount := count
+		failureCount := 0
+		if err != nil {
+			failureCount = count
+			successCount = 0
+		}
+
+		return tui.BatchEmailActionDoneMsg{
+			Count:        count,
+			SuccessCount: successCount,
+			FailureCount: failureCount,
+			Action:       "delete",
+			Mailbox:      mailbox,
+			Err:          err,
+		}
+	}
+}
+
+func (m *mainModel) batchArchiveEmailsCmd(account *config.Account, uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		p := m.getProvider(account)
+		if p == nil {
+			return tui.BatchEmailActionDoneMsg{
+				Count:  count,
+				Action: "archive",
+				Err:    fmt.Errorf("provider not found"),
+			}
+		}
+
+		err := p.ArchiveEmails(ctx, folderName, uids)
+
+		if err == nil && m.folderInbox != nil {
+			m.folderInbox.GetInbox().RemoveEmails(uids, accountID)
+		}
+
+		successCount := count
+		failureCount := 0
+		if err != nil {
+			failureCount = count
+			successCount = 0
+		}
+
+		return tui.BatchEmailActionDoneMsg{
+			Count:        count,
+			SuccessCount: successCount,
+			FailureCount: failureCount,
+			Action:       "archive",
+			Mailbox:      mailbox,
+			Err:          err,
+		}
+	}
+}
+
+func (m *mainModel) batchMoveEmailsCmd(account *config.Account, uids []uint32, accountID, sourceFolder, destFolder string, count int) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		p := m.getProvider(account)
+		if p == nil {
+			return tui.BatchEmailActionDoneMsg{
+				Count:  count,
+				Action: "move",
+				Err:    fmt.Errorf("provider not found"),
+			}
+		}
+
+		err := p.MoveEmails(ctx, uids, sourceFolder, destFolder)
+
+		if err == nil && m.folderInbox != nil {
+			m.folderInbox.GetInbox().RemoveEmails(uids, accountID)
+		}
+
+		successCount := count
+		failureCount := 0
+		if err != nil {
+			failureCount = count
+			successCount = 0
+		}
+
+		return tui.BatchEmailActionDoneMsg{
+			Count:        count,
+			SuccessCount: successCount,
+			FailureCount: failureCount,
+			Action:       "move",
+			Err:          err,
+		}
 	}
 }
 

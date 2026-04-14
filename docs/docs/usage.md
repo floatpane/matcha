@@ -31,7 +31,31 @@ On first launch, Matcha will prompt you to configure an email account. You'll ne
 - `r` - Refresh inbox
 - `d` - Delete selected email
 - `a` - Archive selected email
+- `v` - Enter visual mode (multi-select)
 - `Esc` - Back to main menu
+
+#### Visual Mode (Multi-Select)
+
+Visual mode allows you to select multiple emails and perform batch operations, similar to Vim's visual mode:
+
+- `v` - Enter visual mode (selects current email)
+- `↑/↓` or `j/k` - Expand/contract selection
+- `d` - Delete all selected emails
+- `a` - Archive all selected emails
+- `m` - Move all selected emails to a folder
+- `v` or `Esc` - Exit visual mode
+
+**Visual indicators:**
+- `>` - Cursor position
+- `*` - Selected email (not cursor)
+- `>*` - Selected email with cursor
+- Title shows: "Inbox - VISUAL (N selected)"
+
+**Features:**
+- Efficient batch operations using single IMAP commands
+- Automatic prevention of cross-account selections
+- Works in both inbox and folder views
+- Visual mode disabled during search/filtering for safety
 
 ### Email View
 

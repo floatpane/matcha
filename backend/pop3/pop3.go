@@ -205,6 +205,24 @@ func (p *Provider) MoveEmail(_ context.Context, _ uint32, _, _ string) error {
 	return backend.ErrNotSupported
 }
 
+func (p *Provider) DeleteEmails(ctx context.Context, folder string, uids []uint32) error {
+	// POP3 doesn't support batch - loop through individual operations
+	for _, uid := range uids {
+		if err := p.DeleteEmail(ctx, folder, uid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Provider) ArchiveEmails(_ context.Context, _ string, _ []uint32) error {
+	return backend.ErrNotSupported
+}
+
+func (p *Provider) MoveEmails(_ context.Context, _ []uint32, _, _ string) error {
+	return backend.ErrNotSupported
+}
+
 func (p *Provider) SendEmail(_ context.Context, msg *backend.OutgoingEmail) error {
 	return sender.SendEmail(
 		p.account, msg.To, msg.Cc, msg.Bcc,

@@ -380,6 +380,36 @@ func (p *Provider) MoveEmail(_ context.Context, uid uint32, _, dstFolder string)
 	return err
 }
 
+func (p *Provider) DeleteEmails(ctx context.Context, folder string, uids []uint32) error {
+	// JMAP can handle batch operations - loop through for now
+	for _, uid := range uids {
+		if err := p.DeleteEmail(ctx, folder, uid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Provider) ArchiveEmails(ctx context.Context, folder string, uids []uint32) error {
+	// JMAP can handle batch operations - loop through for now
+	for _, uid := range uids {
+		if err := p.ArchiveEmail(ctx, folder, uid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Provider) MoveEmails(ctx context.Context, uids []uint32, srcFolder, dstFolder string) error {
+	// JMAP can handle batch operations - loop through for now
+	for _, uid := range uids {
+		if err := p.MoveEmail(ctx, uid, srcFolder, dstFolder); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (p *Provider) SendEmail(_ context.Context, msg *backend.OutgoingEmail) error {
 	// Build the email as a draft first
 	toAddrs := make([]*mail.Address, len(msg.To))

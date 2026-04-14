@@ -33,6 +33,11 @@ type EmailWriter interface {
 	DeleteEmail(ctx context.Context, folder string, uid uint32) error
 	ArchiveEmail(ctx context.Context, folder string, uid uint32) error
 	MoveEmail(ctx context.Context, uid uint32, srcFolder, dstFolder string) error
+
+	// Batch operations
+	DeleteEmails(ctx context.Context, folder string, uids []uint32) error
+	ArchiveEmails(ctx context.Context, folder string, uids []uint32) error
+	MoveEmails(ctx context.Context, uids []uint32, srcFolder, dstFolder string) error
 }
 
 // EmailSender sends outgoing email.

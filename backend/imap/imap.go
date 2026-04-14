@@ -63,6 +63,18 @@ func (p *Provider) MoveEmail(_ context.Context, uid uint32, srcFolder, dstFolder
 	return fetcher.MoveEmailToFolder(p.account, uid, srcFolder, dstFolder)
 }
 
+func (p *Provider) DeleteEmails(_ context.Context, folder string, uids []uint32) error {
+	return fetcher.DeleteEmailsFromMailbox(p.account, folder, uids)
+}
+
+func (p *Provider) ArchiveEmails(_ context.Context, folder string, uids []uint32) error {
+	return fetcher.ArchiveEmailsFromMailbox(p.account, folder, uids)
+}
+
+func (p *Provider) MoveEmails(_ context.Context, uids []uint32, srcFolder, dstFolder string) error {
+	return fetcher.MoveEmailsToFolder(p.account, uids, srcFolder, dstFolder)
+}
+
 func (p *Provider) SendEmail(_ context.Context, msg *backend.OutgoingEmail) error {
 	return sender.SendEmail(
 		p.account, msg.To, msg.Cc, msg.Bcc,

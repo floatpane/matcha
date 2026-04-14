@@ -75,6 +75,7 @@ func RebuildStyles() {
 	dateStyle = lipgloss.NewStyle().Foreground(t.MutedText)
 	unreadEmailStyle = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	readEmailStyle = lipgloss.NewStyle().Foreground(t.Secondary)
+	visualSelectedStyle = lipgloss.NewStyle().Background(t.AccentDark).Foreground(t.AccentText)
 
 	// folder_inbox.go
 	sidebarStyle = lipgloss.NewStyle().
