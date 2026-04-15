@@ -16,6 +16,7 @@ import (
 	"net/textproto"
 	"os"
 	"slices"
+	"sync"
 	"strings"
 	"time"
 
@@ -29,6 +30,28 @@ import (
 	"golang.org/x/text/encoding/ianaindex"
 	"golang.org/x/text/transform"
 )
+
+// debugIMAPFile holds a single shared file handle for IMAP debug logging,
+// opened once via debugIMAPOnce to avoid leaking a descriptor per connection.
+var (
+	debugIMAPFile *os.File
+	debugIMAPOnce sync.Once
+)
+
+func getDebugIMAPWriter() io.Writer {
+	debugIMAPOnce.Do(func() {
+		if path := os.Getenv("DEBUG_IMAP"); path != "" {
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+			if err == nil {
+				debugIMAPFile = f
+			}
+		}
+	})
+	if debugIMAPFile != nil {
+		return debugIMAPFile
+	}
+	return nil
+}
 
 // Attachment holds data for an email attachment.
 type Attachment struct {
@@ -243,10 +266,8 @@ func connectWithOptions(account *config.Account, extraOpts *imapclient.Options) 
 		options.UnilateralDataHandler = extraOpts.UnilateralDataHandler
 		options.DebugWriter = extraOpts.DebugWriter
 	}
-	if path := os.Getenv("DEBUG_IMAP"); path != "" {
-		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600); err == nil {
-			options.DebugWriter = f
-		}
+	if w := getDebugIMAPWriter(); w != nil {
+		options.DebugWriter = w
 	}
 
 	var c *imapclient.Client
