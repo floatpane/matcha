@@ -6,7 +6,7 @@ The `config` package handles all persistent application state: user configuratio
 
 This package acts as the data layer for Matcha. It manages:
 
-- **Account configuration** with multi-account support (Gmail, iCloud, custom IMAP/SMTP)
+- **Account configuration** with multi-account support (Gmail, Outlook, iCloud, custom IMAP/SMTP)
 - **Secure credential storage** via the OS keyring (with automatic migration from plain-text passwords), or inside the encrypted config when encryption is enabled
 - **Local caches** for emails, email bodies, contacts, drafts, and folder listings to enable fast startup and offline browsing
 - **Email body caching** for instant display of previously viewed emails without network round-trips
@@ -51,7 +51,7 @@ On startup, `MigrateCacheFiles()` moves any cache files from the old location (`
 | `encryption.go` | Optional at-rest encryption using AES-256-GCM with Argon2id key derivation. Provides `SecureReadFile`/`SecureWriteFile` (transparent encryption wrappers used by all other files), `EnableSecureMode`/`DisableSecureMode`, password verification via an encrypted sentinel phrase, and session key management. |
 | `signature.go` | Loads and saves the user's email signature from `~/.config/matcha/signature.txt`. |
 | `oauth.go` | OAuth2 integration — token retrieval, authorization flow launcher, and embedded Python helper extraction. |
-| `oauth_script.py` | Embedded Gmail OAuth2 helper script (browser-based auth, token refresh, secure storage). |
+| `oauth_script.py` | Embedded OAuth2 helper script supporting Gmail and Outlook (browser-based auth, token refresh, secure storage). |
 | `config_test.go` | Unit tests for configuration logic. |
 
 ## Encryption
@@ -92,14 +92,14 @@ Attachment binary data is not cached — only metadata (filename, MIME type, par
 
 ## OAuth2 / XOAUTH2
 
-Accounts with `auth_method: "oauth2"` use Gmail's XOAUTH2 mechanism instead of passwords. The flow works across three layers:
+Accounts with `auth_method: "oauth2"` use the XOAUTH2 mechanism instead of passwords. This is supported for Gmail and Outlook. The flow works across three layers:
 
 1. **`config/oauth.go`** — Go-side orchestration. Extracts the embedded Python helper to `~/.config/matcha/oauth/`, invokes it to run the browser-based authorization flow (`RunOAuth2Flow`) or to retrieve a fresh access token (`GetOAuth2Token`). The `IsOAuth2()` method on `Account` checks the auth method.
 
-2. **`config/oauth_script.py`** — Embedded Python script that handles the full OAuth2 lifecycle:
-   - `auth` — Opens a browser for Google authorization, captures the callback on `localhost:8189`, exchanges the code for tokens, and saves them to `~/.config/matcha/oauth_tokens/`.
+2. **`config/oauth_script.py`** — Embedded Python script that handles the full OAuth2 lifecycle for both Gmail and Outlook:
+   - `auth` — Opens a browser for authorization (Google or Microsoft), captures the callback on `localhost:8189`, exchanges the code for tokens, and saves them to `~/.config/matcha/oauth_tokens/`. The provider is auto-detected from the email domain or can be specified with `--provider`.
    - `token` — Returns a fresh access token, automatically refreshing if expired (with a 5-minute buffer).
-   - `revoke` — Revokes tokens with Google and deletes local storage.
-   - Client credentials are stored in `~/.config/matcha/oauth_client.json`.
+   - `revoke` — Revokes tokens and deletes local storage.
+   - Client credentials are stored per provider: `~/.config/matcha/oauth_client.json` (Gmail), `~/.config/matcha/oauth_client_outlook.json` (Outlook).
 
-3. **`fetcher/xoauth2.go`** — Implements the XOAUTH2 SASL mechanism (`sasl.Client` interface) for IMAP/SMTP authentication. Formats the initial response as `user=<email>\x01auth=Bearer <token>\x01\x01` per Google's XOAUTH2 protocol spec.
+3. **`fetcher/xoauth2.go`** — Implements the XOAUTH2 SASL mechanism (`sasl.Client` interface) for IMAP/SMTP authentication. Formats the initial response as `user=<email>\x01auth=Bearer <token>\x01\x01` per the XOAUTH2 protocol spec.

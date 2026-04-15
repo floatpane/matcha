@@ -77,13 +77,13 @@ Or pass them directly in the next step.
 Run the following command in your terminal:
 
 ```bash
-matcha gmail auth your@gmail.com
+matcha oauth auth your@gmail.com
 ```
 
 Or with inline credentials:
 
 ```bash
-matcha gmail auth your@gmail.com --client-id YOUR_ID --client-secret YOUR_SECRET
+matcha oauth auth your@gmail.com --client-id YOUR_ID --client-secret YOUR_SECRET
 ```
 
 A browser window will open. Sign in with your Google account and grant access. Once authorized, you'll see "Authorization complete!" in your terminal.
@@ -110,13 +110,13 @@ No password is needed — Matcha will use the tokens from the authorization step
 
 ```bash
 # Get a fresh access token (auto-refreshes if expired)
-matcha gmail token your@gmail.com
+matcha oauth token your@gmail.com
 
 # Revoke and delete stored tokens
-matcha gmail revoke your@gmail.com
+matcha oauth revoke your@gmail.com
 
 # Re-authorize (e.g. after token expiry in testing mode)
-matcha gmail auth your@gmail.com
+matcha oauth auth your@gmail.com
 ```
 
 ---
@@ -173,6 +173,6 @@ In Matcha account setup:
 | **"App passwords" option missing** | Confirm 2-Step Verification is enabled in your account settings. Some organizations restrict app passwords via security policies. |
 | **Connection still fails**         | In Google Account, revoke the current app password and generate a new one. Then update your credentials in Matcha.                |
 | **OAuth2: "unverified app" warning** | This is normal in testing mode. Click **Advanced** → **Go to Matcha (unsafe)** to continue.                                     |
-| **OAuth2: token expired**          | In testing mode tokens expire after 7 days. Run `matcha gmail auth your@gmail.com` to re-authorize.                              |
-| **OAuth2: refresh failed**         | Your refresh token may have been revoked. Run `matcha gmail auth your@gmail.com` to re-authorize from scratch.                    |
+| **OAuth2: token expired**          | In testing mode tokens expire after 7 days. Run `matcha oauth auth your@gmail.com` to re-authorize.                              |
+| **OAuth2: refresh failed**         | Your refresh token may have been revoked. Run `matcha oauth auth your@gmail.com` to re-authorize from scratch.                    |
 | **"python3 not found"**            | OAuth2 requires Python 3. Install it via your package manager (e.g. `brew install python3`, `apt install python3`).               |

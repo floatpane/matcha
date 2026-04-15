@@ -18,7 +18,7 @@ type Account struct {
 	Name            string `json:"name"`
 	Email           string `json:"email"`
 	Password        string `json:"-"`                // "-" prevents the password from being saved to config.json
-	ServiceProvider string `json:"service_provider"` // "gmail", "icloud", or "custom"
+	ServiceProvider string `json:"service_provider"` // "gmail", "outlook", "icloud", or "custom"
 	// FetchEmail is the single email address for which messages should be fetched.
 	// If empty, it will default to `Email` when accounts are added.
 	FetchEmail string `json:"fetch_email,omitempty"`
@@ -76,6 +76,8 @@ func (a *Account) GetIMAPServer() string {
 	switch a.ServiceProvider {
 	case "gmail":
 		return "imap.gmail.com"
+	case "outlook":
+		return "outlook.office365.com"
 	case "icloud":
 		return "imap.mail.me.com"
 	case "custom":
@@ -88,7 +90,7 @@ func (a *Account) GetIMAPServer() string {
 // GetIMAPPort returns the IMAP port for the account.
 func (a *Account) GetIMAPPort() int {
 	switch a.ServiceProvider {
-	case "gmail", "icloud":
+	case "gmail", "outlook", "icloud":
 		return 993
 	case "custom":
 		if a.IMAPPort != 0 {
@@ -105,6 +107,8 @@ func (a *Account) GetSMTPServer() string {
 	switch a.ServiceProvider {
 	case "gmail":
 		return "smtp.gmail.com"
+	case "outlook":
+		return "smtp.office365.com"
 	case "icloud":
 		return "smtp.mail.me.com"
 	case "custom":
@@ -117,7 +121,7 @@ func (a *Account) GetSMTPServer() string {
 // GetSMTPPort returns the SMTP port for the account.
 func (a *Account) GetSMTPPort() int {
 	switch a.ServiceProvider {
-	case "gmail", "icloud":
+	case "gmail", "outlook", "icloud":
 		return 587
 	case "custom":
 		if a.SMTPPort != 0 {

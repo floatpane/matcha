@@ -166,17 +166,22 @@ matcha update
 
 Automatically detects your installation method (Homebrew, Snap, Flatpak, WinGet, or binary) and updates accordingly.
 
-## matcha gmail
+## matcha oauth
 
-Manage Gmail OAuth2 authorization.
+Manage OAuth2 authorization for Gmail and Outlook.
 
 ```bash
-matcha gmail auth <email>     # Authorize a Gmail account (opens browser)
-matcha gmail token <email>    # Print a fresh access token
-matcha gmail revoke <email>   # Revoke and delete stored tokens
+matcha oauth auth <email>                        # Authorize an account (opens browser, auto-detects provider)
+matcha oauth auth <email> --provider outlook     # Specify provider explicitly
+matcha oauth token <email>                       # Print a fresh access token
+matcha oauth revoke <email>                      # Revoke and delete stored tokens
 ```
 
-Requires OAuth2 client credentials in `~/.config/matcha/oauth_client.json`. See the [Gmail setup guide](../setup-guides/gmail.md) for details.
+`matcha gmail` is kept as an alias for backwards compatibility.
+
+Client credentials are stored per provider:
+- Gmail: `~/.config/matcha/oauth_client.json` — see the [Gmail setup guide](../setup-guides/gmail.md)
+- Outlook: `~/.config/matcha/oauth_client_outlook.json` — see the [Outlook setup guide](../setup-guides/outlook.md)
 
 ## matcha version
 

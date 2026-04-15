@@ -60,7 +60,7 @@ func NewLogin(hideTips bool) *Login {
 			t.Focus()
 			t.Prompt = "🌐 > "
 		case inputProvider:
-			t.Placeholder = "Provider (gmail, icloud, or custom)"
+			t.Placeholder = "Provider (gmail, outlook, icloud, or custom)"
 			t.Prompt = "🏢 > "
 		case inputName:
 			t.Placeholder = "Display Name"
@@ -128,7 +128,7 @@ func (m *Login) protocol() string {
 func (m *Login) visibleFields() []int {
 	proto := m.protocol()
 	provider := m.inputs[inputProvider].Value()
-	isGmail := provider == "gmail"
+	hasOAuth := provider == "gmail" || provider == "outlook"
 
 	fields := []int{inputProtocol}
 
@@ -143,7 +143,7 @@ func (m *Login) visibleFields() []int {
 	default:
 		// IMAP (default): existing flow
 		fields = append(fields, inputProvider, inputName, inputEmail, inputFetchEmail, inputSendAsEmail)
-		if isGmail {
+		if hasOAuth {
 			fields = append(fields, inputAuthMethod)
 		}
 		if !m.useOAuth2 {
@@ -303,7 +303,7 @@ func (m *Login) View() tea.View {
 	case inputProtocol:
 		tip = "Choose the protocol: imap (default), jmap, or pop3."
 	case inputProvider:
-		tip = "Enter your email provider (e.g., gmail, icloud) or 'custom'."
+		tip = "Enter your email provider (e.g., gmail, outlook, icloud) or 'custom'."
 	case inputName:
 		tip = "The name that will appear on emails you send."
 	case inputEmail:
@@ -313,7 +313,7 @@ func (m *Login) View() tea.View {
 	case inputSendAsEmail:
 		tip = "Optional From header override for outgoing email. Leave blank to send as the fetched address."
 	case inputAuthMethod:
-		tip = "Type 'oauth2' for Gmail OAuth2 or 'password' for app password."
+		tip = "Type 'oauth2' for OAuth2 or 'password' for app password."
 	case inputPassword:
 		tip = "Your password or an app-specific password if using 2FA."
 	case inputIMAPServer:
@@ -369,7 +369,8 @@ func (m *Login) View() tea.View {
 		)
 	default:
 		// IMAP flow
-		isGmail := m.inputs[inputProvider].Value() == "gmail"
+		provider := m.inputs[inputProvider].Value()
+		hasOAuth := provider == "gmail" || provider == "outlook"
 		views = append(views,
 			m.inputs[inputProvider].View(),
 			m.inputs[inputName].View(),
@@ -378,7 +379,7 @@ func (m *Login) View() tea.View {
 			m.inputs[inputSendAsEmail].View(),
 		)
 
-		if isGmail {
+		if hasOAuth {
 			views = append(views, m.inputs[inputAuthMethod].View())
 		}
 

@@ -214,58 +214,16 @@ func uidsToUIDSet(uids []uint32) imap.UIDSet {
 }
 
 func connectWithHandler(account *config.Account, handler *imapclient.UnilateralDataHandler) (*imapclient.Client, error) {
-	imapServer := account.GetIMAPServer()
-	imapPort := account.GetIMAPPort()
-
-	if imapServer == "" {
-		return nil, fmt.Errorf("unsupported service_provider: %s", account.ServiceProvider)
-	}
-
-	addr := fmt.Sprintf("%s:%d", imapServer, imapPort)
-
-	options := &imapclient.Options{
-		TLSConfig: &tls.Config{
-			ServerName:         imapServer,
-			InsecureSkipVerify: account.Insecure,
-		},
+	return connectWithOptions(account, &imapclient.Options{
 		UnilateralDataHandler: handler,
-	}
-
-	var c *imapclient.Client
-	var err error
-
-	if imapPort == 1143 || imapPort == 143 {
-		c, err = imapclient.DialStartTLS(addr, options)
-	} else {
-		c, err = imapclient.DialTLS(addr, options)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	if err := c.WaitGreeting(); err != nil {
-		c.Close()
-		return nil, err
-	}
-
-	if account.IsOAuth2() {
-		token, err := config.GetOAuth2Token(account.Email)
-		if err != nil {
-			return nil, fmt.Errorf("oauth2: %w", err)
-		}
-		if err := c.Authenticate(newXOAuth2Client(account.Email, token)); err != nil {
-			return nil, fmt.Errorf("XOAUTH2 authentication failed: %w", err)
-		}
-	} else {
-		if err := c.Login(account.Email, account.Password).Wait(); err != nil {
-			return nil, fmt.Errorf("authentication error")
-		}
-	}
-
-	return c, nil
+	})
 }
 
 func connect(account *config.Account) (*imapclient.Client, error) {
+	return connectWithOptions(account, nil)
+}
+
+func connectWithOptions(account *config.Account, extraOpts *imapclient.Options) (*imapclient.Client, error) {
 	imapServer := account.GetIMAPServer()
 	imapPort := account.GetIMAPPort()
 
@@ -280,6 +238,15 @@ func connect(account *config.Account) (*imapclient.Client, error) {
 			ServerName:         imapServer,
 			InsecureSkipVerify: account.Insecure,
 		},
+	}
+	if extraOpts != nil {
+		options.UnilateralDataHandler = extraOpts.UnilateralDataHandler
+		options.DebugWriter = extraOpts.DebugWriter
+	}
+	if path := os.Getenv("DEBUG_IMAP"); path != "" {
+		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600); err == nil {
+			options.DebugWriter = f
+		}
 	}
 
 	var c *imapclient.Client
@@ -315,7 +282,7 @@ func connect(account *config.Account) (*imapclient.Client, error) {
 		}
 	} else {
 		if err := c.Login(account.Email, account.Password).Wait(); err != nil {
-			return nil, fmt.Errorf("authentication error")
+			return nil, fmt.Errorf("authentication error: %w", err)
 		}
 	}
 
@@ -326,6 +293,8 @@ func getSentMailbox(account *config.Account) string {
 	switch account.ServiceProvider {
 	case "gmail":
 		return "[Gmail]/Sent Mail"
+	case "outlook":
+		return "Sent Items"
 	case "icloud":
 		return "Sent Messages"
 	default:
@@ -1327,6 +1296,8 @@ func getTrashMailbox(account *config.Account) string {
 	switch account.ServiceProvider {
 	case "gmail":
 		return "[Gmail]/Trash"
+	case "outlook":
+		return "Deleted Items"
 	case "icloud":
 		return "Deleted Messages"
 	default:
@@ -1339,7 +1310,7 @@ func getArchiveMailbox(account *config.Account) string {
 	switch account.ServiceProvider {
 	case "gmail":
 		return "[Gmail]/All Mail"
-	case "icloud":
+	case "outlook", "icloud":
 		return "Archive"
 	default:
 		return "Archive"

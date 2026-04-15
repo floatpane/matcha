@@ -341,8 +341,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// If OAuth2, launch the authorization flow after saving the account
 		if lastAccount.IsOAuth2() {
 			email := lastAccount.Email
+			provider := lastAccount.ServiceProvider
 			return m, func() tea.Msg {
-				err := config.RunOAuth2Flow(email, "", "")
+				err := config.RunOAuth2Flow(email, provider, "", "")
 				return tui.OAuth2CompleteMsg{Email: email, Err: err}
 			}
 		}
@@ -2591,25 +2592,29 @@ func checkForUpdatesCmd() tea.Cmd {
 // runUpdateCLI implements the CLI entrypoint for `matcha update`.
 // It detects the likely installation method and attempts the appropriate
 // update path (Homebrew, Snap, or GitHub release binary extract).
-// runGmailOAuthCLI handles the "matcha gmail" subcommand for OAuth2 management.
+// runOAuthCLI handles the "matcha oauth" subcommand for OAuth2 management.
 // Usage:
 //
-//	matcha gmail auth   <email> [--client-id ID --client-secret SECRET]
-//	matcha gmail token  <email>
-//	matcha gmail revoke <email>
-func runGmailOAuthCLI(args []string) {
+//	matcha oauth auth   <email> [--provider gmail|outlook] [--client-id ID --client-secret SECRET]
+//	matcha oauth token  <email>
+//	matcha oauth revoke <email>
+func runOAuthCLI(args []string) {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: matcha gmail <auth|token|revoke> <email> [flags]")
+		fmt.Fprintln(os.Stderr, "Usage: matcha oauth <auth|token|revoke> <email> [flags]")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Commands:")
-		fmt.Fprintln(os.Stderr, "  auth   <email>  Authorize a Gmail account via OAuth2 (opens browser)")
+		fmt.Fprintln(os.Stderr, "  auth   <email>  Authorize an email account via OAuth2 (opens browser)")
 		fmt.Fprintln(os.Stderr, "  token  <email>  Print a fresh access token (refreshes automatically)")
 		fmt.Fprintln(os.Stderr, "  revoke <email>  Revoke and delete stored OAuth2 tokens")
 		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Before using OAuth2, create ~/.config/matcha/oauth_client.json with:")
-		fmt.Fprintln(os.Stderr, `  {"client_id": "YOUR_ID", "client_secret": "YOUR_SECRET"}`)
+		fmt.Fprintln(os.Stderr, "Flags for auth:")
+		fmt.Fprintln(os.Stderr, "  --provider gmail|outlook  OAuth2 provider (auto-detected from email)")
+		fmt.Fprintln(os.Stderr, "  --client-id ID            OAuth2 client ID")
+		fmt.Fprintln(os.Stderr, "  --client-secret SECRET    OAuth2 client secret")
 		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Get credentials at: https://console.cloud.google.com/apis/credentials")
+		fmt.Fprintln(os.Stderr, "Credentials are stored per provider in:")
+		fmt.Fprintln(os.Stderr, "  Gmail:   ~/.config/matcha/oauth_client.json")
+		fmt.Fprintln(os.Stderr, "  Outlook: ~/.config/matcha/oauth_client_outlook.json")
 		os.Exit(1)
 	}
 
@@ -3141,9 +3146,10 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Gmail OAuth2 CLI subcommand: matcha gmail <auth|token|revoke> <email> [flags]
-	if len(os.Args) > 1 && os.Args[1] == "gmail" {
-		runGmailOAuthCLI(os.Args[2:])
+	// OAuth2 CLI subcommand: matcha oauth <auth|token|revoke> <email> [flags]
+	// "gmail" is kept as an alias for backwards compatibility.
+	if len(os.Args) > 1 && (os.Args[1] == "oauth" || os.Args[1] == "gmail") {
+		runOAuthCLI(os.Args[2:])
 		os.Exit(0)
 	}
 

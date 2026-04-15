@@ -6,7 +6,7 @@ import (
 	"github.com/emersion/go-sasl"
 )
 
-// xoauth2Client implements the XOAUTH2 SASL mechanism for Gmail.
+// xoauth2Client implements the XOAUTH2 SASL mechanism for IMAP/SMTP.
 // See https://developers.google.com/gmail/imap/xoauth2-protocol
 type xoauth2Client struct {
 	Username string
