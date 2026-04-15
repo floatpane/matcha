@@ -16,8 +16,8 @@ import (
 	"net/textproto"
 	"os"
 	"slices"
-	"sync"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
