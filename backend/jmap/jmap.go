@@ -186,25 +186,7 @@ func (p *Provider) FetchEmails(_ context.Context, folder string, limit, offset u
 				p.idToJMAPID[uid] = eml.ID
 				p.mu.Unlock()
 
-				e := backend.Email{
-					UID:       uid,
-					Subject:   eml.Subject,
-					Date:      safeTime(eml.ReceivedAt),
-					IsRead:    eml.Keywords["$seen"],
-					AccountID: p.account.ID,
-				}
-				if len(eml.From) > 0 {
-					e.From = eml.From[0].String()
-				}
-				for _, addr := range eml.To {
-					e.To = append(e.To, addr.String())
-				}
-				for _, addr := range eml.ReplyTo {
-					e.ReplyTo = append(e.ReplyTo, addr.String())
-				}
-				if len(eml.MessageID) > 0 {
-					e.MessageID = eml.MessageID[0]
-				}
+				e := jmapEmailToBackend(eml, uid, p.account.ID)
 				emails = append(emails, e)
 			}
 		}
@@ -609,6 +591,30 @@ func jmapIDToUID(id jmapclient.ID) uint32 {
 		v = 1
 	}
 	return v
+}
+
+// jmapEmailToBackend converts a JMAP email to a backend.Email.
+func jmapEmailToBackend(eml *email.Email, uid uint32, accountID string) backend.Email {
+	e := backend.Email{
+		UID:       uid,
+		Subject:   eml.Subject,
+		Date:      safeTime(eml.ReceivedAt),
+		IsRead:    eml.Keywords["$seen"],
+		AccountID: accountID,
+	}
+	if len(eml.From) > 0 {
+		e.From = eml.From[0].String()
+	}
+	for _, addr := range eml.To {
+		e.To = append(e.To, addr.Email)
+	}
+	for _, addr := range eml.ReplyTo {
+		e.ReplyTo = append(e.ReplyTo, addr.Email)
+	}
+	if len(eml.MessageID) > 0 {
+		e.MessageID = eml.MessageID[0]
+	}
+	return e
 }
 
 func safeTime(t *time.Time) time.Time {
