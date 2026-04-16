@@ -229,8 +229,8 @@ func truncateEmail(email string) string {
 	domain := parts[1]
 
 	// Keep full domain visible (e.g. ...@gmail.com) and truncate local part first.
-	if len(local) > 6 {
-		return local[:6] + "...@" + domain
+	if len(local) > 8 {
+		return local[:8] + "...@" + domain
 	}
 
 	return local + "@" + domain
