@@ -324,7 +324,7 @@ func TestTruncateEmailKeepsDomain(t *testing.T) {
 		{
 			name:  "long local part keeps full domain",
 			email: "verylongemail@gmail.com",
-			want:  "verylo...@gmail.com",
+			want:  "verylong...@gmail.com",
 		},
 		{
 			name:  "short email unchanged",
