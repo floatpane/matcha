@@ -520,6 +520,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		cfgDir, _ := config.GetConfigDir()
 		certsDir := filepath.Join(cfgDir, "certs")
 		var certs []*x509.Certificate
+		var missingCerts []string
 
 		for _, em := range allRecipients {
 			em = strings.TrimSpace(em)
@@ -538,17 +539,26 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 				certPath = filepath.Join(certsDir, em+".pem")
 			}
 
-			if certData, err := os.ReadFile(certPath); err == nil {
-				if block, _ := pem.Decode(certData); block != nil {
-					if cert, err := x509.ParseCertificate(block.Bytes); err == nil {
-						certs = append(certs, cert)
-					}
-				}
+			certData, err := os.ReadFile(certPath)
+			if err != nil {
+				missingCerts = append(missingCerts, em)
+				continue
 			}
+			block, _ := pem.Decode(certData)
+			if block == nil {
+				missingCerts = append(missingCerts, em)
+				continue
+			}
+			cert, err := x509.ParseCertificate(block.Bytes)
+			if err != nil {
+				missingCerts = append(missingCerts, em)
+				continue
+			}
+			certs = append(certs, cert)
 		}
 
-		if len(certs) == 0 {
-			return nil, errors.New("cannot encrypt: no valid public certificates found for recipients")
+		if len(missingCerts) > 0 {
+			return nil, fmt.Errorf("cannot encrypt: missing or invalid S/MIME certificates for: %s", strings.Join(missingCerts, ", "))
 		}
 
 		encryptedDer, err := pkcs7.Encrypt(payloadToEncrypt, certs)
