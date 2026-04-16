@@ -389,6 +389,34 @@ const cryptoConfigMaxFocus = 9
 func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
+	key := msg.Key()
+	isEnter := key.Code == tea.KeyEnter || key.Code == tea.KeyReturn || key.Code == tea.KeyKpEnter
+	isSpace := key.Code == tea.KeySpace
+
+	setFocus := func(next int) tea.Cmd {
+		m.focusIndex = next
+
+		m.smimeCertInput.Blur()
+		m.smimeKeyInput.Blur()
+		m.pgpPublicKeyInput.Blur()
+		m.pgpPrivateKeyInput.Blur()
+		m.pgpPINInput.Blur()
+
+		switch m.focusIndex {
+		case 0:
+			return m.smimeCertInput.Focus()
+		case 1:
+			return m.smimeKeyInput.Focus()
+		case 3:
+			return m.pgpPublicKeyInput.Focus()
+		case 4:
+			return m.pgpPrivateKeyInput.Focus()
+		case 6:
+			return m.pgpPINInput.Focus()
+		default:
+			return nil
+		}
+	}
 
 	switch msg.String() {
 	case "esc":
@@ -407,95 +435,71 @@ func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 			}
 		}
 
-		m.smimeCertInput.Blur()
-		m.smimeKeyInput.Blur()
-		m.pgpPublicKeyInput.Blur()
-		m.pgpPrivateKeyInput.Blur()
-		m.pgpPINInput.Blur()
-
-		switch m.focusIndex {
-		case 0:
-			cmds = append(cmds, m.smimeCertInput.Focus())
-		case 1:
-			cmds = append(cmds, m.smimeKeyInput.Focus())
-		case 3:
-			cmds = append(cmds, m.pgpPublicKeyInput.Focus())
-		case 4:
-			cmds = append(cmds, m.pgpPrivateKeyInput.Focus())
-		case 6:
-			cmds = append(cmds, m.pgpPINInput.Focus())
-		}
+		cmds = append(cmds, setFocus(m.focusIndex))
 		return m, tea.Batch(cmds...)
-	case "enter", " ":
+	}
+
+	if isEnter {
 		switch m.focusIndex {
 		case 0: // S/MIME cert - enter advances to next field
-			if msg.String() == "enter" {
-				m.focusIndex = 1
-				m.smimeCertInput.Blur()
-				cmds = append(cmds, m.smimeKeyInput.Focus())
-				return m, tea.Batch(cmds...)
-			}
+			cmds = append(cmds, setFocus(1))
+			return m, tea.Batch(cmds...)
 		case 1: // S/MIME key - enter advances
-			if msg.String() == "enter" {
-				m.focusIndex = 2
-				m.smimeKeyInput.Blur()
-				return m, nil
-			}
-		case 2: // S/MIME sign toggle
-			if msg.String() == "enter" || msg.String() == " " {
-				m.cfg.Accounts[m.editingAccountIdx].SMIMESignByDefault = !m.cfg.Accounts[m.editingAccountIdx].SMIMESignByDefault
-			}
-			return m, nil
+			cmds = append(cmds, setFocus(2))
+			return m, tea.Batch(cmds...)
+		case 2: // S/MIME sign toggle - enter advances
+			cmds = append(cmds, setFocus(3))
+			return m, tea.Batch(cmds...)
 		case 3: // PGP public key - enter advances
-			if msg.String() == "enter" {
-				m.focusIndex = 4
-				m.pgpPublicKeyInput.Blur()
-				cmds = append(cmds, m.pgpPrivateKeyInput.Focus())
-				return m, tea.Batch(cmds...)
-			}
+			cmds = append(cmds, setFocus(4))
+			return m, tea.Batch(cmds...)
 		case 4: // PGP private key - enter advances
-			if msg.String() == "enter" {
-				m.focusIndex = 5
-				m.pgpPrivateKeyInput.Blur()
-				return m, nil
+			cmds = append(cmds, setFocus(5))
+			return m, tea.Batch(cmds...)
+		case 5: // PGP key source - enter advances
+			nextFocus := 7
+			if m.pgpKeySource == "yubikey" {
+				nextFocus = 6
 			}
-		case 5: // PGP key source toggle (file/yubikey)
-			if msg.String() == "enter" || msg.String() == " " {
-				if m.pgpKeySource == "file" {
-					m.pgpKeySource = "yubikey"
-				} else {
-					m.pgpKeySource = "file"
-				}
-			}
-			return m, nil
+			cmds = append(cmds, setFocus(nextFocus))
+			return m, tea.Batch(cmds...)
 		case 6: // PGP PIN input - enter advances
-			if msg.String() == "enter" {
-				m.focusIndex = 7
-				m.pgpPINInput.Blur()
-				return m, nil
-			}
-		case 7: // PGP sign toggle
-			if msg.String() == "enter" || msg.String() == " " {
-				m.cfg.Accounts[m.editingAccountIdx].PGPSignByDefault = !m.cfg.Accounts[m.editingAccountIdx].PGPSignByDefault
+			cmds = append(cmds, setFocus(7))
+			return m, tea.Batch(cmds...)
+		case 7: // PGP sign toggle - enter advances
+			cmds = append(cmds, setFocus(8))
+			return m, tea.Batch(cmds...)
+		case 8: // Save
+			m.cfg.Accounts[m.editingAccountIdx].SMIMECert = m.smimeCertInput.Value()
+			m.cfg.Accounts[m.editingAccountIdx].SMIMEKey = m.smimeKeyInput.Value()
+			m.cfg.Accounts[m.editingAccountIdx].PGPPublicKey = m.pgpPublicKeyInput.Value()
+			m.cfg.Accounts[m.editingAccountIdx].PGPPrivateKey = m.pgpPrivateKeyInput.Value()
+			m.cfg.Accounts[m.editingAccountIdx].PGPKeySource = m.pgpKeySource
+			m.cfg.Accounts[m.editingAccountIdx].PGPPIN = m.pgpPINInput.Value()
+			_ = config.SaveConfig(m.cfg)
+			m.state = SettingsAccounts
+			return m, nil
+		case 9: // Cancel
+			m.state = SettingsAccounts
+			return m, nil
+		}
+	}
+
+	if isSpace {
+		switch m.focusIndex {
+		case 2: // S/MIME sign toggle
+			m.cfg.Accounts[m.editingAccountIdx].SMIMESignByDefault = !m.cfg.Accounts[m.editingAccountIdx].SMIMESignByDefault
+			return m, nil
+		case 5: // PGP key source toggle (file/yubikey)
+			if m.pgpKeySource == "file" {
+				m.pgpKeySource = "yubikey"
+			} else {
+				m.pgpKeySource = "file"
 			}
 			return m, nil
-		case 8: // Save
-			if msg.String() == "enter" {
-				m.cfg.Accounts[m.editingAccountIdx].SMIMECert = m.smimeCertInput.Value()
-				m.cfg.Accounts[m.editingAccountIdx].SMIMEKey = m.smimeKeyInput.Value()
-				m.cfg.Accounts[m.editingAccountIdx].PGPPublicKey = m.pgpPublicKeyInput.Value()
-				m.cfg.Accounts[m.editingAccountIdx].PGPPrivateKey = m.pgpPrivateKeyInput.Value()
-				m.cfg.Accounts[m.editingAccountIdx].PGPKeySource = m.pgpKeySource
-				m.cfg.Accounts[m.editingAccountIdx].PGPPIN = m.pgpPINInput.Value()
-				_ = config.SaveConfig(m.cfg)
-				m.state = SettingsAccounts
-				return m, nil
-			}
-		case 9: // Cancel
-			if msg.String() == "enter" {
-				m.state = SettingsAccounts
-				return m, nil
-			}
+		case 7: // PGP sign toggle
+			m.cfg.Accounts[m.editingAccountIdx].PGPSignByDefault = !m.cfg.Accounts[m.editingAccountIdx].PGPSignByDefault
+			return m, nil
 		}
 	}
 
@@ -834,9 +838,9 @@ func (m *Settings) viewSMIMEConfig() string {
 		smimeSignStatus = "ON"
 	}
 	if m.focusIndex == 2 {
-		b.WriteString(settingsFocusedStyle.Render(fmt.Sprintf("> Sign By Default: %s\n\n", smimeSignStatus)))
+		b.WriteString(settingsFocusedStyle.Render(fmt.Sprintf("Sign By Default: %s", smimeSignStatus)) + "\n\n")
 	} else {
-		b.WriteString(settingsBlurredStyle.Render(fmt.Sprintf("  Sign By Default: %s\n\n", smimeSignStatus)))
+		b.WriteString(settingsBlurredStyle.Render(fmt.Sprintf("Sign By Default: %s", smimeSignStatus)) + "\n\n")
 	}
 
 	// --- PGP Section ---
@@ -862,9 +866,9 @@ func (m *Settings) viewSMIMEConfig() string {
 		keySourceDisplay = "YubiKey"
 	}
 	if m.focusIndex == 5 {
-		b.WriteString(settingsFocusedStyle.Render(fmt.Sprintf("> Key Source: %s\n\n", keySourceDisplay)))
+		b.WriteString(settingsFocusedStyle.Render(fmt.Sprintf("Key Source: %s", keySourceDisplay)) + "\n\n")
 	} else {
-		b.WriteString(settingsBlurredStyle.Render(fmt.Sprintf("  Key Source: %s\n\n", keySourceDisplay)))
+		b.WriteString(settingsBlurredStyle.Render(fmt.Sprintf("Key Source: %s", keySourceDisplay)) + "\n\n")
 	}
 
 	// PIN input (only shown if YubiKey is selected)
@@ -882,9 +886,9 @@ func (m *Settings) viewSMIMEConfig() string {
 		pgpSignStatus = "ON"
 	}
 	if m.focusIndex == 7 {
-		b.WriteString(settingsFocusedStyle.Render(fmt.Sprintf("> Sign By Default: %s\n\n", pgpSignStatus)))
+		b.WriteString(settingsFocusedStyle.Render(fmt.Sprintf("Sign By Default: %s", pgpSignStatus)) + "\n\n")
 	} else {
-		b.WriteString(settingsBlurredStyle.Render(fmt.Sprintf("  Sign By Default: %s\n\n", pgpSignStatus)))
+		b.WriteString(settingsBlurredStyle.Render(fmt.Sprintf("Sign By Default: %s", pgpSignStatus)) + "\n\n")
 	}
 
 	// --- Buttons ---
