@@ -627,7 +627,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					accountName = acc.Email
 				}
 			}
-			go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", msg.FolderName, accountName))
+			go func(folderName, accName string) {
+				if err := notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", folderName, accName)); err != nil {
+					log.Printf("Desktop notification failed: %v", err)
+				}
+			}(msg.FolderName, accountName)
 		}
 
 		// IDLE detected new mail — refetch the folder if we're viewing it
