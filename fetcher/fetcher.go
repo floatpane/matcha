@@ -74,6 +74,7 @@ type Email struct {
 	UID         uint32
 	From        string
 	To          []string
+	ReplyTo     []string
 	Subject     string
 	Body        string
 	Date        time.Time
@@ -441,6 +442,11 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 				toAddrList = append(toAddrList, addr.Addr())
 			}
 
+			var replyToAddrList []string
+			for _, addr := range msg.Envelope.ReplyTo {
+				replyToAddrList = append(replyToAddrList, addr.Addr())
+			}
+
 			matched := false
 			if isSentMailbox {
 				var senderEmail string
@@ -472,6 +478,7 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 				UID:       uint32(msg.UID),
 				From:      fromAddr,
 				To:        toAddrList,
+				ReplyTo:   replyToAddrList,
 				Subject:   decodeHeader(msg.Envelope.Subject),
 				Date:      msg.Envelope.Date,
 				IsRead:    hasSeenFlag(msg.Flags),

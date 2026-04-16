@@ -130,6 +130,7 @@ func toBackendEmails(emails []fetcher.Email) []backend.Email {
 			UID:         e.UID,
 			From:        e.From,
 			To:          e.To,
+			ReplyTo:     e.ReplyTo,
 			Subject:     e.Subject,
 			Body:        e.Body,
 			Date:        e.Date,

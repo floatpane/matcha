@@ -166,7 +166,7 @@ func (p *Provider) FetchEmails(_ context.Context, folder string, limit, offset u
 			Path:     "/ids",
 		},
 		Properties: []string{
-			"id", "subject", "from", "to", "receivedAt",
+			"id", "subject", "from", "to", "replyTo", "receivedAt",
 			"preview", "keywords", "mailboxIds", "hasAttachment",
 			"messageId",
 		},
@@ -198,6 +198,9 @@ func (p *Provider) FetchEmails(_ context.Context, folder string, limit, offset u
 				}
 				for _, addr := range eml.To {
 					e.To = append(e.To, addr.String())
+				}
+				for _, addr := range eml.ReplyTo {
+					e.ReplyTo = append(e.ReplyTo, addr.String())
 				}
 				if len(eml.MessageID) > 0 {
 					e.MessageID = eml.MessageID[0]

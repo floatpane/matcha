@@ -65,6 +65,7 @@ type Email struct {
 	UID         uint32
 	From        string
 	To          []string
+	ReplyTo     []string
 	Subject     string
 	Body        string
 	Date        time.Time

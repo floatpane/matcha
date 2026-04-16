@@ -1031,7 +1031,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tui.ReplyToEmailMsg:
-		to := msg.Email.From
+		var to string
+		if len(msg.Email.ReplyTo) > 0 {
+			to = strings.Join(msg.Email.ReplyTo, ", ")
+		} else {
+			to = msg.Email.From
+		}
 		subject := msg.Email.Subject
 		normalizedSubject := strings.ToLower(strings.TrimSpace(subject))
 		if !strings.HasPrefix(normalizedSubject, "re:") {
