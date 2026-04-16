@@ -71,6 +71,16 @@ You can install Matcha via Flatpak using the following command:
 flatpak install https://matcha.floatpane.com/matcha.flatpakref
 ```
 
+### AUR (Arch Linux) (unofficial)
+
+> Note: This is an unofficial package, not maintained by the Matcha team. Use at your own risk. For any issues with the AUR package, please contact the maintainer ([Dominiquini](https://github.com/Dominiquini)).
+
+If you're using Arch Linux, you can install Matcha from the AUR:
+
+```bash
+yay -S matcha-client-bin
+```
+
 ### Nix
 
 You can run Matcha directly using [Nix](https://nixos.org/) flakes:
