@@ -211,14 +211,29 @@ func parseSenderName(from string) string {
 
 // truncateEmail shortens an email for display
 func truncateEmail(email string) string {
-	parts := strings.Split(email, "@")
-	if len(parts) >= 1 && len(parts[0]) > 8 {
-		return parts[0][:8] + "..."
+	maxLength := 18
+
+	if len(email) <= maxLength {
+		return email
 	}
-	if len(parts) >= 1 {
-		return parts[0]
+
+	parts := strings.SplitN(email, "@", 2)
+	if len(parts) != 2 {
+		if len(email) > maxLength {
+			return email[:maxLength-3] + "..."
+		}
+		return email
 	}
-	return email
+
+	local := parts[0]
+	domain := parts[1]
+
+	// Keep full domain visible (e.g. ...@gmail.com) and truncate local part first.
+	if len(local) > 6 {
+		return local[:6] + "...@" + domain
+	}
+
+	return local + "@" + domain
 }
 
 // AccountTab represents a tab for an account

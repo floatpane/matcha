@@ -314,3 +314,31 @@ func TestFetchMoreTriggeredAtListEnd(t *testing.T) {
 		t.Fatalf("expected Limit %d, got %d", expectedLimit, fetchMsg.Limit)
 	}
 }
+
+func TestTruncateEmailKeepsDomain(t *testing.T) {
+	tests := []struct {
+		name  string
+		email string
+		want  string
+	}{
+		{
+			name:  "long local part keeps full domain",
+			email: "verylongemail@gmail.com",
+			want:  "verylo...@gmail.com",
+		},
+		{
+			name:  "short email unchanged",
+			email: "abc@gmail.com",
+			want:  "abc@gmail.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncateEmail(tt.email)
+			if got != tt.want {
+				t.Fatalf("truncateEmail(%q) = %q, want %q", tt.email, got, tt.want)
+			}
+		})
+	}
+}
