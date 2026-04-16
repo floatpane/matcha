@@ -201,6 +201,34 @@ func TestConfigGetAccountByEmail(t *testing.T) {
 	}
 }
 
+func TestAddContactNormalizesEmailAndDeduplicates(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	if err := AddContact("Alice", "Alice@Example.com"); err != nil {
+		t.Fatalf("AddContact() failed: %v", err)
+	}
+	if err := AddContact("", "alice@example.com"); err != nil {
+		t.Fatalf("AddContact() failed: %v", err)
+	}
+
+	cache, err := LoadContactsCache()
+	if err != nil {
+		t.Fatalf("LoadContactsCache() failed: %v", err)
+	}
+
+	if len(cache.Contacts) != 1 {
+		t.Fatalf("Expected 1 contact after deduplication, got %d", len(cache.Contacts))
+	}
+
+	contact := cache.Contacts[0]
+	if contact.Email != "alice@example.com" {
+		t.Errorf("Expected normalized email alice@example.com, got %s", contact.Email)
+	}
+	if contact.UseCount != 2 {
+		t.Errorf("Expected UseCount 2 after duplicate add, got %d", contact.UseCount)
+	}
+}
+
 // TestConfigHasAccounts tests the HasAccounts method.
 func TestConfigHasAccounts(t *testing.T) {
 	cfg := &Config{}

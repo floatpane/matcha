@@ -148,13 +148,17 @@ func LoadContactsCache() (*ContactsCache, error) {
 	return &cache, nil
 }
 
+func normalizeContactEmail(email string) string {
+	return strings.ToLower(strings.Trim(strings.TrimSpace(email), ","))
+}
+
 // AddContact adds or updates a contact in the cache.
 func AddContact(name, email string) error {
 	if email == "" {
 		return nil
 	}
 
-	email = strings.ToLower(strings.Trim(strings.TrimSpace(email), ","))
+	email = normalizeContactEmail(email)
 	name = strings.TrimSpace(name)
 
 	cache, err := LoadContactsCache()
@@ -166,7 +170,8 @@ func AddContact(name, email string) error {
 	found := false
 	for i, c := range cache.Contacts {
 		if strings.EqualFold(c.Email, email) {
-			// Update existing contact
+			// Normalize the stored email to a canonical lowercase form.
+			cache.Contacts[i].Email = email
 			cache.Contacts[i].UseCount++
 			cache.Contacts[i].LastUsed = time.Now()
 			// Update name if we have a better one
