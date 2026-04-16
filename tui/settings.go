@@ -435,6 +435,15 @@ func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 			}
 		}
 
+		// Skip Yubikey PIN field when key source is "file"
+		if m.focusIndex == 6 && m.pgpKeySource != "yubikey" {
+			if msg.String() == "shift+tab" || msg.String() == "up" {
+				m.focusIndex = 5
+			} else {
+				m.focusIndex = 7
+			}
+		}
+
 		cmds = append(cmds, setFocus(m.focusIndex))
 		return m, tea.Batch(cmds...)
 	}
