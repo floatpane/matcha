@@ -9,12 +9,12 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/theme"
+	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 func linkStyle() lipgloss.Style {
@@ -264,8 +264,18 @@ func debugImageProtocol(format string, args ...interface{}) {
 	}
 }
 
+const remoteImageCacheSize = 20
+
 // remoteImageCache caches fetched remote images (URL -> base64 PNG string).
-var remoteImageCache sync.Map
+var remoteImageCache *lru.Cache[string, string]
+
+func init() {
+	c, err := lru.New[string, string](remoteImageCacheSize)
+	if err != nil {
+		panic(err) // only fails on size <= 0
+	}
+	remoteImageCache = c
+}
 
 // nextImageID is an auto-incrementing counter for Kitty image IDs.
 var nextImageID uint32 = 1000
@@ -283,9 +293,9 @@ func fetchRemoteBase64(url string) string {
 	}
 
 	// Check cache first
-	if cached, ok := remoteImageCache.Load(url); ok {
+	if cached, ok := remoteImageCache.Get(url); ok {
 		debugImageProtocol("remote cache hit url=%s", url)
-		return cached.(string)
+		return cached
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -313,7 +323,7 @@ func fetchRemoteBase64(url string) string {
 
 	encoded := base64.StdEncoding.EncodeToString(result.PNGData)
 	debugImageProtocol("remote fetch ok url=%s len=%d", url, len(encoded))
-	remoteImageCache.Store(url, encoded)
+	remoteImageCache.Add(url, encoded)
 	return encoded
 }
 

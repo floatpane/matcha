@@ -1,6 +1,7 @@
 package view
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -722,5 +723,41 @@ func TestProcessBody(t *testing.T) {
 				t.Errorf("Processed body does not contain expected text.\nGot: %q\nWant to contain: %q", cleanProcessed, tc.expected)
 			}
 		})
+	}
+}
+
+func TestRemoteImageCache_EvictsOldestWhenFull(t *testing.T) {
+	// Start with a clean cache so prior tests don't interfere.
+	remoteImageCache.Purge()
+	// cleaning up the current test's cache
+	defer remoteImageCache.Purge()
+
+	// overfilling the cache beyond its configured capacity.
+	overfillBy := 5
+	totalInserts := remoteImageCacheSize + overfillBy
+	for i := range totalInserts {
+		url := fmt.Sprintf("https://example.com/img%d.png", i)
+		remoteImageCache.Add(url, "fake-base64-data")
+	}
+
+	// cache should not be overfilled beyond it's capped size
+	if got := remoteImageCache.Len(); got != remoteImageCacheSize {
+		t.Errorf("expected cache size %d, got %d", remoteImageCacheSize, got)
+	}
+
+	// old entries should be evicted
+	for i := range overfillBy {
+		evictedURL := fmt.Sprintf("https://example.com/img%d.png", i)
+		if _, ok := remoteImageCache.Get(evictedURL); ok {
+			t.Errorf("expected %q to be evicted, but it's still in cache", evictedURL)
+		}
+	}
+
+	// The most recent entries should still be present.
+	for i := overfillBy; i < totalInserts; i++ {
+		keptURL := fmt.Sprintf("https://example.com/img%d.png", i)
+		if _, ok := remoteImageCache.Get(keptURL); !ok {
+			t.Errorf("expected %q to still be in cache", keptURL)
+		}
 	}
 }
