@@ -299,7 +299,10 @@ func fetchRemoteBase64(url string) string {
 		debugImageProtocol("remote fetch non-200 url=%s status=%d", url, resp.StatusCode)
 		return ""
 	}
-	data, err := io.ReadAll(resp.Body)
+	// Limit response body to 10 MB to prevent memory exhaustion from
+	// malicious or very large images.
+	const maxImageSize = 10 << 20 // 10 MB
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxImageSize))
 	if err != nil {
 		debugImageProtocol("remote fetch read error url=%s err=%v", url, err)
 		return ""
