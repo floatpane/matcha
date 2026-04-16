@@ -1,7 +1,10 @@
 package plugin
 
 import (
+	"context"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -16,6 +19,43 @@ const (
 
 var httpClient = &http.Client{
 	Timeout: httpTimeout,
+	Transport: &http.Transport{
+		DialContext: safeDialContext,
+	},
+}
+
+// safeDialContext prevents SSRF by blocking connections to private/internal
+// IP ranges including loopback, link-local, and cloud metadata endpoints.
+func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address: %w", err)
+	}
+
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("DNS lookup failed: %w", err)
+	}
+
+	for _, ip := range ips {
+		if isPrivateIP(ip.IP) {
+			return nil, fmt.Errorf("requests to private/internal addresses are not allowed: %s", ip.IP)
+		}
+	}
+
+	// All IPs are safe; connect to the first one.
+	var d net.Dialer
+	return d.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
+}
+
+// isPrivateIP returns true if the IP is in a private, loopback, link-local,
+// or otherwise internal range that should not be reachable from plugins.
+func isPrivateIP(ip net.IP) bool {
+	return ip.IsLoopback() ||
+		ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified()
 }
 
 // luaHTTP implements matcha.http(options) — make an HTTP request.
