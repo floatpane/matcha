@@ -213,11 +213,17 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 			return nil, errors.New("plaintext-only messages cannot contain attachments or inline images")
 		}
 
-		// Build quoted-printable encoded body
+		// Build quoted-printable encoded body. Close() flushes the final
+		// soft-line-break state, so an ignored error here would silently ship
+		// a truncated body. See #614.
 		var encBody bytes.Buffer
 		qp := quotedprintable.NewWriter(&encBody)
-		fmt.Fprint(qp, plainBody)
-		qp.Close()
+		if _, err := fmt.Fprint(qp, plainBody); err != nil {
+			return nil, fmt.Errorf("encoding plain body: %w", err)
+		}
+		if err := qp.Close(); err != nil {
+			return nil, fmt.Errorf("encoding plain body: %w", err)
+		}
 		encodedBody := encBody.Bytes()
 
 		// Build the canonical MIME part (headers + body) used for signing/encryption
@@ -356,8 +362,12 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 			return nil, err
 		}
 		qpText := quotedprintable.NewWriter(textPart)
-		fmt.Fprint(qpText, plainBody)
-		qpText.Close()
+		if _, err := fmt.Fprint(qpText, plainBody); err != nil {
+			return nil, fmt.Errorf("encoding text part: %w", err)
+		}
+		if err := qpText.Close(); err != nil {
+			return nil, fmt.Errorf("encoding text part: %w", err)
+		}
 
 		// HTML part
 		htmlHeader := textproto.MIMEHeader{
@@ -369,8 +379,12 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 			return nil, err
 		}
 		qpHTML := quotedprintable.NewWriter(htmlPart)
-		fmt.Fprint(qpHTML, htmlBody)
-		qpHTML.Close()
+		if _, err := fmt.Fprint(qpHTML, htmlBody); err != nil {
+			return nil, fmt.Errorf("encoding html part: %w", err)
+		}
+		if err := qpHTML.Close(); err != nil {
+			return nil, fmt.Errorf("encoding html part: %w", err)
+		}
 
 		altWriter.Close() // Finish the alternative part
 
