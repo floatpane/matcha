@@ -2390,6 +2390,36 @@ func moveEmailToFolderCmd(account *config.Account, uid uint32, accountID string,
 	}
 }
 
+// sanitizeAttachmentFilename returns a filename safe to join with a trusted
+// directory. It strips any directory component the sender put in the name
+// (so "../../etc/passwd" collapses to "passwd"), replaces both path separators
+// even on the wrong platform (Windows clients can see "/", unix clients "\"),
+// trims leading dots that would produce hidden files, and falls back to a
+// generic name when the sender supplies an empty or nothing-but-separators
+// string. Used by the attachment download path; see #642.
+func sanitizeAttachmentFilename(name string) string {
+	// Drop any directory component (e.g. "foo/bar.txt" -> "bar.txt",
+	// "../../etc/passwd" -> "passwd"). filepath.Base handles the active
+	// OS separator; we also strip the alternate separator so a Windows
+	// name on a unix host (or vice versa) cannot sneak a segment through.
+	name = filepath.Base(name)
+	name = strings.ReplaceAll(name, "/", "_")
+	name = strings.ReplaceAll(name, "\\", "_")
+
+	// Strip NUL bytes just in case (some filesystems accept them, most do not).
+	name = strings.ReplaceAll(name, "\x00", "")
+
+	// A leading dot would create a hidden file on unix, which is
+	// surprising for a user-triggered download. Collapse any leading
+	// dots and spaces.
+	name = strings.TrimLeft(name, ". ")
+
+	if name == "" {
+		name = "attachment"
+	}
+	return name
+}
+
 func downloadAttachmentCmd(account *config.Account, uid uint32, msg tui.DownloadAttachmentMsg) tea.Cmd {
 	return func() tea.Msg {
 		// Download and decode the attachment using encoding provided in msg.Encoding.
@@ -2421,8 +2451,12 @@ func downloadAttachmentCmd(account *config.Account, uid uint32, msg tui.Download
 		}
 
 		// Save the attachment using an exclusive create so we never overwrite an existing file.
-		// If the filename already exists, append \" (n)\" before the extension.
-		origName := msg.Filename
+		// If the filename already exists, append " (n)" before the extension.
+		// The sender-supplied msg.Filename is untrusted - a hostile email can
+		// set it to "../../etc/passwd" or contain path separators that escape
+		// downloadsPath. Normalise with filepath.Base and strip stray path
+		// characters before using it (#642).
+		origName := sanitizeAttachmentFilename(msg.Filename)
 		ext := filepath.Ext(origName)
 		base := strings.TrimSuffix(origName, ext)
 		candidate := origName
