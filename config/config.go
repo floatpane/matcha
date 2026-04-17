@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -376,13 +377,20 @@ func SaveConfig(config *Config) error {
 	secureMode := GetSessionKey() != nil
 
 	if !secureMode {
-		// Save passwords and PGP PINs to the OS keyring before writing the JSON file
+		// Save passwords and PGP PINs to the OS keyring before writing the JSON file.
+		// A silent keyring failure here would lose the credential on restart without
+		// any hint to the user. Log the error as a warning so the misconfiguration
+		// (no keyring backend, locked keyring, etc.) is at least visible. See #616.
 		for _, acc := range config.Accounts {
 			if acc.Password != "" {
-				_ = keyring.Set(keyringServiceName, acc.Email, acc.Password)
+				if err := keyring.Set(keyringServiceName, acc.Email, acc.Password); err != nil {
+					log.Printf("matcha: failed to store password for %s in keyring: %v", acc.Email, err)
+				}
 			}
 			if acc.PGPPIN != "" && acc.PGPKeySource == "yubikey" {
-				_ = keyring.Set(keyringServiceName, acc.Email+":pgp-pin", acc.PGPPIN)
+				if err := keyring.Set(keyringServiceName, acc.Email+":pgp-pin", acc.PGPPIN); err != nil {
+					log.Printf("matcha: failed to store PGP PIN for %s in keyring: %v", acc.Email, err)
+				}
 			}
 		}
 	}
@@ -563,7 +571,9 @@ func LoadConfig() (*Config, error) {
 			acc.PGPPIN = rawAcc.PGPPIN
 		} else if rawAcc.Password != "" {
 			// Found a plain-text password! Move it to the OS Keyring.
-			_ = keyring.Set(keyringServiceName, rawAcc.Email, rawAcc.Password)
+			if err := keyring.Set(keyringServiceName, rawAcc.Email, rawAcc.Password); err != nil {
+				log.Printf("matcha: failed to migrate password for %s into keyring: %v", rawAcc.Email, err)
+			}
 			acc.Password = rawAcc.Password
 			needsMigration = true
 		} else {
@@ -618,10 +628,17 @@ func (c *Config) AddAccount(account Account) {
 func (c *Config) RemoveAccount(id string) bool {
 	for i, acc := range c.Accounts {
 		if acc.ID == id {
-			// Delete password from OS Keyring when account is removed
-			_ = keyring.Delete(keyringServiceName, acc.Email)
+			// Delete password from OS Keyring when account is removed. A
+			// missing entry is expected and not worth logging (keyring.Get is
+			// what we rely on elsewhere to detect that), but any other error
+			// means we failed to clean up a still-reachable secret.
+			if err := keyring.Delete(keyringServiceName, acc.Email); err != nil && err != keyring.ErrNotFound {
+				log.Printf("matcha: failed to delete password for %s from keyring: %v", acc.Email, err)
+			}
 			// Delete PGP PIN from OS Keyring if present
-			_ = keyring.Delete(keyringServiceName, acc.Email+":pgp-pin")
+			if err := keyring.Delete(keyringServiceName, acc.Email+":pgp-pin"); err != nil && err != keyring.ErrNotFound {
+				log.Printf("matcha: failed to delete PGP PIN for %s from keyring: %v", acc.Email, err)
+			}
 
 			c.Accounts = append(c.Accounts[:i], c.Accounts[i+1:]...)
 			return true
