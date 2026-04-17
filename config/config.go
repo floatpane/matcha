@@ -89,11 +89,11 @@ type Config struct {
 }
 
 // GetDateFormat returns the Go time reference layout translated from the
-// user's configured human-readable format. Defaults to US when unset.
+// user's configured human-readable format. Defaults to EU when unset.
 func (c *Config) GetDateFormat() string {
 	f := c.DateFormat
 	if f == "" {
-		f = DateFormatUS
+		f = DateFormatEU
 	}
 	return translateDateFormat(f)
 }

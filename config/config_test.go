@@ -347,7 +347,7 @@ func TestTranslateDateFormat(t *testing.T) {
 func TestConfigGetDateFormatDefault(t *testing.T) {
 	c := &Config{}
 	got := c.GetDateFormat()
-	want := translateDateFormat(DateFormatUS)
+	want := translateDateFormat(DateFormatEU)
 	if got != want {
 		t.Fatalf("GetDateFormat() with empty DateFormat = %q, want %q", got, want)
 	}
