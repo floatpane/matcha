@@ -414,6 +414,10 @@ func writeNewFormatLength(w *bytes.Buffer, length int) {
 }
 
 // parseASN1Signature extracts r and s from an ASN.1 DER encoded ECDSA signature.
+//
+// Each intermediate slice access is bounds-checked against len(der). A truncated
+// or malformed signature produces a typed error rather than an index-out-of-range
+// panic; the minimum-length check up front only rules out obvious runts (#613).
 func parseASN1Signature(der []byte) (r, s []byte, err error) {
 	// ASN.1 SEQUENCE { INTEGER r, INTEGER s }
 	if len(der) < 6 || der[0] != 0x30 {
@@ -423,22 +427,34 @@ func parseASN1Signature(der []byte) (r, s []byte, err error) {
 	pos := 2 // skip SEQUENCE tag and length
 
 	// Parse R
-	if der[pos] != 0x02 {
+	if pos >= len(der) || der[pos] != 0x02 {
 		return nil, nil, fmt.Errorf("expected INTEGER tag for R")
 	}
 	pos++
+	if pos >= len(der) {
+		return nil, nil, fmt.Errorf("ASN.1 signature truncated before R length")
+	}
 	rLen := int(der[pos])
 	pos++
+	if pos+rLen > len(der) {
+		return nil, nil, fmt.Errorf("ASN.1 signature truncated: R length overflow")
+	}
 	rVal := new(big.Int).SetBytes(der[pos : pos+rLen])
 	pos += rLen
 
 	// Parse S
-	if der[pos] != 0x02 {
+	if pos >= len(der) || der[pos] != 0x02 {
 		return nil, nil, fmt.Errorf("expected INTEGER tag for S")
 	}
 	pos++
+	if pos >= len(der) {
+		return nil, nil, fmt.Errorf("ASN.1 signature truncated before S length")
+	}
 	sLen := int(der[pos])
 	pos++
+	if pos+sLen > len(der) {
+		return nil, nil, fmt.Errorf("ASN.1 signature truncated: S length overflow")
+	}
 	sVal := new(big.Int).SetBytes(der[pos : pos+sLen])
 
 	return rVal.Bytes(), sVal.Bytes(), nil
