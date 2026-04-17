@@ -262,23 +262,29 @@ func DisableSecureMode(cfg *Config) error {
 	// Find config.json path to skip it (handled separately below)
 	cfgPath, _ := configFile()
 
-	// Read and decrypt all cache files while we still have the session key
-	key := GetSessionKey()
+	// Copy the key so ClearSessionKey's in-place zeroing doesn't destroy it.
+	origKey := GetSessionKey()
+	key := make([]byte, len(origKey))
+	copy(key, origKey)
+
+	// Decrypt all cache files and write them back as plain data.
+	// We use Decrypt directly instead of toggling the session key, because
+	// ClearSessionKey zeroes the slice in-place which would corrupt our copy.
 	for _, f := range files {
 		if f == cfgPath {
 			continue
 		}
-		data, err := SecureReadFile(f)
+		encrypted, err := os.ReadFile(f)
 		if err != nil {
 			continue // File may not exist
 		}
-		// Write plain
-		ClearSessionKey()
-		if err := os.WriteFile(f, data, 0600); err != nil {
-			SetSessionKey(key) // Restore on error
+		plain, err := Decrypt(encrypted, key)
+		if err != nil {
+			continue // File may not be encrypted
+		}
+		if err := os.WriteFile(f, plain, 0600); err != nil {
 			return err
 		}
-		SetSessionKey(key)
 	}
 
 	// Clear session key so SaveConfig writes plain JSON and restores passwords to keyring
