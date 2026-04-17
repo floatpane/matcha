@@ -74,7 +74,11 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 
 	// Format and right-align date
-	dateStr := formatRelativeDate(i.date)
+	layout := ""
+	if d.inbox != nil {
+		layout = d.inbox.dateFormat
+	}
+	dateStr := formatRelativeDate(i.date, layout)
 	styledDate := dateStyle.Render(dateStr)
 	if i.isRead {
 		styledDate = readEmailStyle.Render(dateStr)
@@ -159,8 +163,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 // formatRelativeDate formats a time as relative if within the last week,
-// otherwise as an absolute date.
-func formatRelativeDate(t time.Time) string {
+// otherwise as an absolute date using the caller-supplied Go time layout.
+// When layout is empty, falls back to the built-in short/long defaults.
+func formatRelativeDate(t time.Time, layout string) string {
 	if t.IsZero() {
 		return ""
 	}
@@ -189,6 +194,9 @@ func formatRelativeDate(t time.Time) string {
 		}
 		return fmt.Sprintf("%d days ago", days)
 	default:
+		if layout != "" {
+			return t.Format(layout)
+		}
 		if t.Year() == now.Year() {
 			return t.Format("Jan 02")
 		}
@@ -269,6 +277,17 @@ type Inbox struct {
 	visualAnchor   int               // Index where visual selection started
 	selectedUIDs   map[uint32]string // map[uid]accountID for selected emails
 	selectionOrder []uint32          // Ordered list of UIDs for display
+
+	// dateFormat is the Go reference-time layout used for absolute dates
+	// older than a week. When empty, the built-in defaults apply.
+	dateFormat string
+}
+
+// SetDateFormat configures the Go time layout used to render absolute
+// dates in the email list. Pass the value returned by
+// config.Config.GetDateFormat.
+func (m *Inbox) SetDateFormat(layout string) {
+	m.dateFormat = layout
 }
 
 func NewInbox(emails []fetcher.Email, accounts []config.Account) *Inbox {

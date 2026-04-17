@@ -5,12 +5,28 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/zalando/go-keyring"
 )
 
 const keyringServiceName = "matcha-email-client"
+
+// Date format presets use human-readable tokens. Supported tokens:
+//
+//	YYYY (4-digit year), YY (2-digit year)
+//	MM   (month, or minutes when following an hour token + colon)
+//	mm   (minutes, explicit)
+//	DD   (day)
+//	HH   (24-hour), hh (12-hour, zero-padded)
+//	SS, ss (seconds)
+//	AM, PM (meridiem marker)
+const (
+	DateFormatISO = "YYYY-MM-DD HH:MM"
+	DateFormatUS  = "MM/DD/YYYY hh:MM AM"
+	DateFormatEU  = "DD/MM/YYYY HH:MM"
+)
 
 // Account stores the configuration for a single email account.
 type Account struct {
@@ -69,6 +85,67 @@ type Config struct {
 	DisableNotifications bool          `json:"disable_notifications,omitempty"`
 	Theme                string        `json:"theme,omitempty"`
 	MailingLists         []MailingList `json:"mailing_lists,omitempty"`
+	DateFormat           string        `json:"date_format,omitempty"`
+}
+
+// GetDateFormat returns the Go time reference layout translated from the
+// user's configured human-readable format. Defaults to US when unset.
+func (c *Config) GetDateFormat() string {
+	f := c.DateFormat
+	if f == "" {
+		f = DateFormatUS
+	}
+	return translateDateFormat(f)
+}
+
+// translateDateFormat converts a human-readable format string (e.g.
+// "DD/MM/YYYY HH:MM") into a Go reference-time layout usable by
+// time.Format. MM is disambiguated by context: when it directly follows
+// an hour token plus ":", it maps to minutes; otherwise to month.
+func translateDateFormat(f string) string {
+	var b strings.Builder
+	i := 0
+	for i < len(f) {
+		rest := f[i:]
+		switch {
+		case strings.HasPrefix(rest, "YYYY"):
+			b.WriteString("2006")
+			i += 4
+		case strings.HasPrefix(rest, "YY"):
+			b.WriteString("06")
+			i += 2
+		case strings.HasPrefix(rest, "DD"):
+			b.WriteString("02")
+			i += 2
+		case strings.HasPrefix(rest, "HH"):
+			b.WriteString("15")
+			i += 2
+		case strings.HasPrefix(rest, "hh"):
+			b.WriteString("03")
+			i += 2
+		case strings.HasPrefix(rest, "mm"):
+			b.WriteString("04")
+			i += 2
+		case strings.HasPrefix(rest, "SS"), strings.HasPrefix(rest, "ss"):
+			b.WriteString("05")
+			i += 2
+		case strings.HasPrefix(rest, "MM"):
+			cur := b.String()
+			if strings.HasSuffix(cur, "15:") || strings.HasSuffix(cur, "03:") {
+				b.WriteString("04")
+			} else {
+				b.WriteString("01")
+			}
+			i += 2
+		case strings.HasPrefix(rest, "AM"), strings.HasPrefix(rest, "PM"):
+			b.WriteString("PM")
+			i += 2
+		default:
+			b.WriteByte(f[i])
+			i++
+		}
+	}
+	return b.String()
 }
 
 // GetIMAPServer returns the IMAP server address for the account.
@@ -291,6 +368,7 @@ type secureDiskConfig struct {
 	DisableNotifications bool                `json:"disable_notifications,omitempty"`
 	Theme                string              `json:"theme,omitempty"`
 	MailingLists         []MailingList       `json:"mailing_lists,omitempty"`
+	DateFormat           string              `json:"date_format,omitempty"`
 }
 
 // SaveConfig saves the given configuration to the config file and passwords to the keyring.
@@ -326,6 +404,7 @@ func SaveConfig(config *Config) error {
 			DisableNotifications: config.DisableNotifications,
 			Theme:                config.Theme,
 			MailingLists:         config.MailingLists,
+			DateFormat:           config.DateFormat,
 		}
 		for _, acc := range config.Accounts {
 			sdc.Accounts = append(sdc.Accounts, secureDiskAccount{
@@ -417,6 +496,7 @@ func LoadConfig() (*Config, error) {
 		DisableNotifications bool          `json:"disable_notifications,omitempty"`
 		Theme                string        `json:"theme,omitempty"`
 		MailingLists         []MailingList `json:"mailing_lists,omitempty"`
+		DateFormat           string        `json:"date_format,omitempty"`
 	}
 
 	var raw diskConfig
@@ -449,6 +529,7 @@ func LoadConfig() (*Config, error) {
 	config.DisableNotifications = raw.DisableNotifications
 	config.Theme = raw.Theme
 	config.MailingLists = raw.MailingLists
+	config.DateFormat = raw.DateFormat
 	for _, rawAcc := range raw.Accounts {
 		acc := Account{
 			ID:                 rawAcc.ID,

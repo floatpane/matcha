@@ -3,6 +3,7 @@ package config
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/zalando/go-keyring"
 )
@@ -311,4 +312,50 @@ func TestAccountSendIdentityHelpers(t *testing.T) {
 			t.Fatalf("GetSendAsEmail() = %q, want %q", got, "login@gmail.com")
 		}
 	})
+}
+
+func TestTranslateDateFormat(t *testing.T) {
+	testCases := []struct {
+		name   string
+		input  string
+		want   string
+		sample string // expected output of time.Format for a fixed sample instant
+	}{
+		{"EU preset", DateFormatEU, "02/01/2006 15:04", "17/04/2026 09:05"},
+		{"US preset", DateFormatUS, "01/02/2006 03:04 PM", "04/17/2026 09:05 AM"},
+		{"ISO preset", DateFormatISO, "2006-01-02 15:04", "2026-04-17 09:05"},
+		{"seconds", "HH:MM:SS", "15:04:05", "09:05:00"},
+		{"explicit minutes", "YYYY-MM-DD HH:mm", "2006-01-02 15:04", "2026-04-17 09:05"},
+		{"2-digit year", "DD/MM/YY", "02/01/06", "17/04/26"},
+		{"literal passthrough", "some text", "some text", "some text"},
+	}
+
+	sample := time.Date(2026, 4, 17, 9, 5, 0, 0, time.UTC)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := translateDateFormat(tc.input)
+			if got != tc.want {
+				t.Fatalf("translateDateFormat(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+			if rendered := sample.Format(got); rendered != tc.sample {
+				t.Fatalf("sample.Format(%q) = %q, want %q", got, rendered, tc.sample)
+			}
+		})
+	}
+}
+
+func TestConfigGetDateFormatDefault(t *testing.T) {
+	c := &Config{}
+	got := c.GetDateFormat()
+	want := translateDateFormat(DateFormatUS)
+	if got != want {
+		t.Fatalf("GetDateFormat() with empty DateFormat = %q, want %q", got, want)
+	}
+}
+
+func TestConfigGetDateFormatCustom(t *testing.T) {
+	c := &Config{DateFormat: "DD/MM/YYYY HH:MM"}
+	if got, want := c.GetDateFormat(), "02/01/2006 15:04"; got != want {
+		t.Fatalf("GetDateFormat() = %q, want %q", got, want)
+	}
 }

@@ -96,6 +96,13 @@ func sortFolders(folders []string) []string {
 	return sorted
 }
 
+// SetDateFormat propagates the configured date layout to the inner inbox.
+func (m *FolderInbox) SetDateFormat(layout string) {
+	if m.inbox != nil {
+		m.inbox.SetDateFormat(layout)
+	}
+}
+
 // NewFolderInbox creates a new FolderInbox with the given folders and accounts.
 func NewFolderInbox(folders []string, accounts []config.Account) *FolderInbox {
 	folders = sortFolders(folders)
