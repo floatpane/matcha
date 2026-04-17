@@ -225,12 +225,18 @@ func buildSignaturePacket(signedContent []byte, signer crypto.Signer, pubKey *pa
 		if len(rawSig) != 64 {
 			return nil, fmt.Errorf("unexpected EdDSA signature length: %d", len(rawSig))
 		}
-		writeMPI(&body, rawSig[:32]) // r
-		writeMPI(&body, rawSig[32:]) // s
+		if err := writeMPI(&body, rawSig[:32]); err != nil {
+			return nil, err
+		}
+		if err := writeMPI(&body, rawSig[32:]); err != nil {
+			return nil, err
+		}
 
 	case packet.PubKeyAlgoRSA, packet.PubKeyAlgoRSASignOnly:
 		// RSA: single MPI
-		writeMPI(&body, rawSig)
+		if err := writeMPI(&body, rawSig); err != nil {
+			return nil, err
+		}
 
 	case packet.PubKeyAlgoECDSA:
 		// ECDSA: card returns ASN.1 DER encoded (R, S)
@@ -238,8 +244,12 @@ func buildSignaturePacket(signedContent []byte, signer crypto.Signer, pubKey *pa
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse ECDSA signature: %w", err)
 		}
-		writeMPI(&body, r)
-		writeMPI(&body, s)
+		if err := writeMPI(&body, r); err != nil {
+			return nil, err
+		}
+		if err := writeMPI(&body, s); err != nil {
+			return nil, err
+		}
 
 	default:
 		return nil, fmt.Errorf("unsupported key algorithm: %d", pubKey.PubKeyAlgo)
@@ -372,7 +382,10 @@ func writeSubpacket(w *bytes.Buffer, typ byte, writeContent func(*bytes.Buffer))
 }
 
 // writeMPI writes a big-endian integer as an OpenPGP MPI (2-byte bit count + data).
-func writeMPI(w io.Writer, data []byte) {
+// The signature takes io.Writer, so write failures are a real possibility (callers
+// can swap in an armor writer, network writer, etc.) and silently dropping them
+// would produce a malformed signature packet. See #612.
+func writeMPI(w io.Writer, data []byte) error {
 	// Strip leading zero bytes
 	for len(data) > 0 && data[0] == 0 {
 		data = data[1:]
@@ -383,8 +396,13 @@ func writeMPI(w io.Writer, data []byte) {
 	bitLen := uint16((len(data)-1)*8 + bitLength(data[0]))
 	buf := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf, bitLen)
-	w.Write(buf)  //nolint:errcheck
-	w.Write(data) //nolint:errcheck
+	if _, err := w.Write(buf); err != nil {
+		return fmt.Errorf("write MPI length: %w", err)
+	}
+	if _, err := w.Write(data); err != nil {
+		return fmt.Errorf("write MPI data: %w", err)
+	}
+	return nil
 }
 
 // bitLength returns the number of significant bits in a byte.
