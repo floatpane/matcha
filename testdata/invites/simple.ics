@@ -1,0 +1,18 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:test-event-123@example.com
+DTSTAMP:20260415T120000Z
+DTSTART:20260421T140000Z
+DTEND:20260421T153000Z
+SUMMARY:Q2 Planning Meeting
+DESCRIPTION:Discuss roadmap priorities and resource allocation for Q2.
+LOCATION:Conference Room A
+ORGANIZER:mailto:alice@company.com
+ATTENDEE;CN=Bob Smith;PARTSTAT=NEEDS-ACTION:mailto:bob@company.com
+ATTENDEE;CN=Carol Jones;PARTSTAT=NEEDS-ACTION:mailto:carol@company.com
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR

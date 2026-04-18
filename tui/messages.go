@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/floatpane/matcha/calendar"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
 )
@@ -501,4 +502,21 @@ type SecureModeEnabledMsg struct {
 // SecureModeDisabledMsg signals that encryption was disabled from settings.
 type SecureModeDisabledMsg struct {
 	Err error
+}
+
+// SendRSVPMsg signals that user wants to send RSVP to calendar invite
+type SendRSVPMsg struct {
+	OriginalICS []byte
+	Event       *calendar.Event
+	Response    string // "ACCEPTED", "DECLINED", "TENTATIVE"
+	AccountID   string
+	InReplyTo   string
+	References  []string
+}
+
+// RSVPResultMsg signals that RSVP was sent (or failed)
+type RSVPResultMsg struct {
+	Err       error
+	Response  string // "ACCEPTED", "DECLINED", "TENTATIVE"
+	Organizer string // organizer email for Google Calendar note
 }

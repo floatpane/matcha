@@ -415,6 +415,8 @@ type CachedAttachment struct {
 	IsSMIMESignature bool   `json:"is_smime_signature,omitempty"`
 	SMIMEVerified    bool   `json:"smime_verified,omitempty"`
 	IsSMIMEEncrypted bool   `json:"is_smime_encrypted,omitempty"`
+	IsCalendarInvite bool   `json:"is_calendar_invite,omitempty"`
+	CalendarData     []byte `json:"calendar_data,omitempty"` // Raw .ics data for calendar invites
 }
 
 // CachedEmailBody stores the body and attachment metadata for a single email.

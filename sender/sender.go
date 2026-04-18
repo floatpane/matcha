@@ -734,6 +734,193 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	return rawMsg, nil
 }
 
+// SendCalendarReply sends an iMIP (RFC 6047) calendar reply.
+// Google Calendar requires:
+// - multipart/alternative with text/plain + text/calendar; method=REPLY
+// - text/calendar part must NOT be Content-Disposition: attachment
+func SendCalendarReply(account *config.Account, to []string, subject, plainBody string, icsData []byte, inReplyTo string, references []string) ([]byte, error) {
+	smtpServer := account.GetSMTPServer()
+	smtpPort := account.GetSMTPPort()
+
+	if smtpServer == "" {
+		return nil, fmt.Errorf("unsupported or missing service_provider: %s", account.ServiceProvider)
+	}
+
+	plainAuth := smtp.PlainAuth("", account.Email, account.Password, smtpServer)
+	loginAuthFallback := &loginAuth{username: account.Email, password: account.Password}
+
+	fromHeader := account.FormatFromHeader()
+
+	var msg bytes.Buffer
+
+	// Headers
+	fmt.Fprintf(&msg, "From: %s\r\n", fromHeader)
+	fmt.Fprintf(&msg, "To: %s\r\n", strings.Join(to, ", "))
+	fmt.Fprintf(&msg, "Subject: %s\r\n", subject)
+	fmt.Fprintf(&msg, "Date: %s\r\n", time.Now().Format(time.RFC1123Z))
+	fmt.Fprintf(&msg, "Message-ID: %s\r\n", generateMessageID(account.GetSendAsEmail()))
+	fmt.Fprintf(&msg, "MIME-Version: 1.0\r\n")
+
+	if inReplyTo != "" {
+		fmt.Fprintf(&msg, "In-Reply-To: %s\r\n", inReplyTo)
+		if len(references) > 0 {
+			fmt.Fprintf(&msg, "References: %s %s\r\n", strings.Join(references, " "), inReplyTo)
+		} else {
+			fmt.Fprintf(&msg, "References: %s\r\n", inReplyTo)
+		}
+	}
+
+	// Build multipart/mixed containing:
+	//   multipart/alternative (text/plain + text/calendar inline)
+	//   + attached .ics file
+	// Gmail needs both the inline text/calendar AND the .ics attachment
+	var outerMsg bytes.Buffer
+	outerWriter := multipart.NewWriter(&outerMsg)
+
+	fmt.Fprintf(&msg, "Content-Type: multipart/mixed; boundary=\"%s\"\r\n\r\n", outerWriter.Boundary())
+
+	// multipart/alternative part (text/plain + text/calendar)
+	altHeader := textproto.MIMEHeader{}
+	var altMsg bytes.Buffer
+	altWriter := multipart.NewWriter(&altMsg)
+	altHeader.Set("Content-Type", fmt.Sprintf("multipart/alternative; boundary=\"%s\"", altWriter.Boundary()))
+
+	altPart, err := outerWriter.CreatePart(altHeader)
+	if err != nil {
+		return nil, err
+	}
+
+	// text/plain part
+	plainHeader := textproto.MIMEHeader{}
+	plainHeader.Set("Content-Type", "text/plain; charset=UTF-8")
+	plainHeader.Set("Content-Transfer-Encoding", "quoted-printable")
+	plainPart, err := altWriter.CreatePart(plainHeader)
+	if err != nil {
+		return nil, err
+	}
+	qp := quotedprintable.NewWriter(plainPart)
+	fmt.Fprint(qp, plainBody)
+	qp.Close()
+
+	// text/calendar inline part (Outlook/Mac Mail use this)
+	calHeader := textproto.MIMEHeader{}
+	calHeader.Set("Content-Type", "text/calendar; charset=UTF-8; method=REPLY")
+	calHeader.Set("Content-Transfer-Encoding", "base64")
+	calPart, err := altWriter.CreatePart(calHeader)
+	if err != nil {
+		return nil, err
+	}
+	calPart.Write([]byte(clib.WrapBase64(base64.StdEncoding.EncodeToString(icsData))))
+
+	altWriter.Close()
+	altPart.Write(altMsg.Bytes())
+
+	// .ics file attachment (Gmail uses this)
+	attachHeader := textproto.MIMEHeader{}
+	attachHeader.Set("Content-Type", "application/ics; name=\"invite.ics\"")
+	attachHeader.Set("Content-Disposition", "attachment; filename=\"invite.ics\"")
+	attachHeader.Set("Content-Transfer-Encoding", "base64")
+	attachPart, err := outerWriter.CreatePart(attachHeader)
+	if err != nil {
+		return nil, err
+	}
+	attachPart.Write([]byte(clib.WrapBase64(base64.StdEncoding.EncodeToString(icsData))))
+
+	outerWriter.Close()
+	msg.Write(outerMsg.Bytes())
+
+	// Send via SMTP
+	addr := fmt.Sprintf("%s:%d", smtpServer, smtpPort)
+	tlsConfig := &tls.Config{
+		ServerName:         smtpServer,
+		InsecureSkipVerify: account.Insecure,
+	}
+
+	var c *smtp.Client
+
+	if smtpPort == 465 {
+		conn, err := tls.Dial("tcp", addr, tlsConfig)
+		if err != nil {
+			return nil, err
+		}
+		c, err = smtp.NewClient(conn, smtpServer)
+		if err != nil {
+			conn.Close()
+			return nil, err
+		}
+	} else {
+		var err error
+		c, err = smtp.Dial(addr)
+		if err != nil {
+			return nil, err
+		}
+	}
+	defer c.Close()
+
+	if err = c.Hello("localhost"); err != nil {
+		return nil, err
+	}
+
+	if smtpPort != 465 {
+		if ok, _ := c.Extension("STARTTLS"); ok {
+			if err = c.StartTLS(tlsConfig); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if ok, mechs := c.Extension("AUTH"); ok {
+		mechList := strings.ToUpper(mechs)
+		if account.IsOAuth2() {
+			token, tokenErr := config.GetOAuth2Token(account.Email)
+			if tokenErr != nil {
+				return nil, fmt.Errorf("oauth2: %w", tokenErr)
+			}
+			err = c.Auth(&xoauth2Auth{username: account.Email, token: token})
+		} else if strings.Contains(mechList, "PLAIN") {
+			err = c.Auth(plainAuth)
+		} else if strings.Contains(mechList, "LOGIN") {
+			err = c.Auth(loginAuthFallback)
+		} else {
+			err = c.Auth(plainAuth)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if err = c.Mail(account.GetFetchEmail()); err != nil {
+		return nil, err
+	}
+	for _, r := range to {
+		if err = c.Rcpt(r); err != nil {
+			return nil, err
+		}
+	}
+
+	w, err := c.Data()
+	if err != nil {
+		return nil, err
+	}
+	_, err = w.Write(msg.Bytes())
+	if err != nil {
+		return nil, err
+	}
+	err = w.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	rawMsg := make([]byte, len(msg.Bytes()))
+	copy(rawMsg, msg.Bytes())
+
+	if err := c.Quit(); err != nil {
+		return nil, err
+	}
+
+	return rawMsg, nil
+}
+
 // signEmailPGP signs the message payload with PGP and returns a multipart/signed message.
 // Supports both file-based keys and YubiKey hardware tokens.
 func signEmailPGP(payload []byte, account *config.Account) ([]byte, error) {

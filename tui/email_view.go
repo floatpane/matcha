@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/floatpane/matcha/calendar"
 	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/theme"
 	"github.com/floatpane/matcha/view"
@@ -45,6 +47,9 @@ type EmailView struct {
 	imagePlacements    []view.ImagePlacement
 	pluginStatus       string
 	pluginKeyBindings  []PluginKeyBinding
+	hasCalendarInvite  bool
+	calendarEvent      *calendar.Event
+	originalICSData    []byte
 }
 
 func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox MailboxKind, disableImages bool) *EmailView {
@@ -55,6 +60,8 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 	pgpTrusted := false
 	isPGPEncrypted := false
 	var filteredAtts []fetcher.Attachment
+	var calendarEvent *calendar.Event
+	var originalICSData []byte
 
 	for _, att := range email.Attachments {
 		if att.Filename == "smime-status.internal" {
@@ -79,6 +86,15 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 				pgpTrusted = att.PGPVerified
 			}
 			// Skip UI rendering
+		} else if att.IsCalendarInvite {
+			// Parse calendar invite if not already parsed
+			if len(att.Data) > 0 && calendarEvent == nil {
+				if event, err := calendar.ParseICS(att.Data); err == nil {
+					calendarEvent = event
+					originalICSData = att.Data
+				}
+			}
+			// Don't show .ics in regular attachment list
 		} else {
 			filteredAtts = append(filteredAtts, att)
 		}
@@ -105,28 +121,37 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 		attachmentHeight = len(email.Attachments) + 2
 	}
 
+	// Account for calendar card height
+	calendarHeight := 0
+	if calendarEvent != nil {
+		calendarHeight = 10 // Approximate height for calendar card
+	}
+
 	// Build viewport with initial size and set wrapped content.
 	vp := viewport.New()
 	vp.SetWidth(width)
-	vp.SetHeight(height - headerHeight - attachmentHeight)
+	vp.SetHeight(height - headerHeight - attachmentHeight - calendarHeight)
 	wrapped := wrapBodyToWidth(body, vp.Width())
 	vp.SetContent(wrapped + "\n")
 
 	return &EmailView{
-		viewport:        vp,
-		email:           email,
-		emailIndex:      emailIndex,
-		accountID:       email.AccountID,
-		mailbox:         mailbox,
-		disableImages:   disableImages,
-		showImages:      showImages,
-		isSMIME:         isSMIME,
-		smimeTrusted:    smimeTrusted,
-		isEncrypted:     isEncrypted,
-		isPGP:           isPGP,
-		pgpTrusted:      pgpTrusted,
-		isPGPEncrypted:  isPGPEncrypted,
-		imagePlacements: placements,
+		viewport:          vp,
+		email:             email,
+		emailIndex:        emailIndex,
+		accountID:         email.AccountID,
+		mailbox:           mailbox,
+		disableImages:     disableImages,
+		showImages:        showImages,
+		isSMIME:           isSMIME,
+		smimeTrusted:      smimeTrusted,
+		isEncrypted:       isEncrypted,
+		isPGP:             isPGP,
+		pgpTrusted:        pgpTrusted,
+		isPGPEncrypted:    isPGPEncrypted,
+		imagePlacements:   placements,
+		hasCalendarInvite: calendarEvent != nil,
+		calendarEvent:     calendarEvent,
+		originalICSData:   originalICSData,
 	}
 }
 
@@ -220,6 +245,29 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ClearKittyGraphics()
 				return m, func() tea.Msg {
 					return ArchiveEmailMsg{UID: uid, AccountID: accountID, Mailbox: m.mailbox}
+				}
+			case "1", "2", "3":
+				if m.hasCalendarInvite && m.calendarEvent != nil {
+					var response string
+					switch msg.String() {
+					case "1":
+						response = "ACCEPTED"
+					case "2":
+						response = "DECLINED"
+					case "3":
+						response = "TENTATIVE"
+					}
+
+					return m, func() tea.Msg {
+						return SendRSVPMsg{
+							OriginalICS: m.originalICSData,
+							Event:       m.calendarEvent,
+							Response:    response,
+							AccountID:   m.accountID,
+							InReplyTo:   m.email.MessageID,
+							References:  m.email.References,
+						}
+					}
 				}
 			case "tab":
 				if len(m.email.Attachments) > 0 {
@@ -346,7 +394,16 @@ func (m *EmailView) View() tea.View {
 		}
 	}
 
+	// Render calendar invite card if present
+	var calendarView string
+	if m.hasCalendarInvite && m.calendarEvent != nil {
+		calendarView = renderCalendarInvite(m.calendarEvent)
+	}
+
 	// m.viewport.View() returns a string in Bubbles v2 viewport
+	if calendarView != "" {
+		return tea.NewView(fmt.Sprintf("%s\n%s\n%s\n%s\n%s", styledHeader, calendarView, m.viewport.View(), attachmentView, help))
+	}
 	return tea.NewView(fmt.Sprintf("%s\n%s\n%s\n%s", styledHeader, m.viewport.View(), attachmentView, help))
 }
 
@@ -386,4 +443,58 @@ func wrapBodyToWidth(body string, width int) string {
 // GetEmail returns the email being viewed
 func (m *EmailView) GetEmail() fetcher.Email {
 	return m.email
+}
+
+// renderCalendarInvite renders a calendar invite card
+func renderCalendarInvite(event *calendar.Event) string {
+	style := lipgloss.NewStyle().
+		Border(lipgloss.DoubleBorder()).
+		BorderForeground(theme.ActiveTheme.Accent).
+		Padding(1, 2).
+		MarginTop(1).
+		MarginBottom(1)
+
+	var b strings.Builder
+	b.WriteString("📅 Meeting Invite\n\n")
+	b.WriteString(fmt.Sprintf("Title:    %s\n", event.Summary))
+	b.WriteString(fmt.Sprintf("When:     %s\n", formatEventTime(event.Start, event.End)))
+
+	if event.Location != "" {
+		b.WriteString(fmt.Sprintf("Where:    %s\n", event.Location))
+	}
+
+	b.WriteString(fmt.Sprintf("Organizer: %s\n", event.Organizer))
+
+	if event.Description != "" {
+		desc := truncateString(event.Description, 100)
+		b.WriteString(fmt.Sprintf("\n%s\n", desc))
+	}
+
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().Italic(true).Render("Press 1:Accept  2:Decline  3:Tentative"))
+
+	return style.Render(b.String())
+}
+
+// formatEventTime formats event start/end times
+func formatEventTime(start, end time.Time) string {
+	if start.Format("2006-01-02") == end.Format("2006-01-02") {
+		// Same day
+		return fmt.Sprintf("%s, %s - %s",
+			start.Format("Mon Jan 2, 2006"),
+			start.Format("3:04 PM"),
+			end.Format("3:04 PM"))
+	}
+	// Multi-day
+	return fmt.Sprintf("%s - %s",
+		start.Format("Mon Jan 2 3:04 PM"),
+		end.Format("Mon Jan 2 3:04 PM"))
+}
+
+// truncateString truncates string to maxLen
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

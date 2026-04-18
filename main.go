@@ -27,6 +27,7 @@ import (
 	_ "github.com/floatpane/matcha/backend/imap"
 	_ "github.com/floatpane/matcha/backend/jmap"
 	_ "github.com/floatpane/matcha/backend/pop3"
+	"github.com/floatpane/matcha/calendar"
 	matchaCli "github.com/floatpane/matcha/cli"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/config"
@@ -933,7 +934,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Convert cached attachments back to fetcher.Attachment
 			var attachments []fetcher.Attachment
 			for _, ca := range cached.Attachments {
-				attachments = append(attachments, fetcher.Attachment{
+				att := fetcher.Attachment{
 					Filename:         ca.Filename,
 					PartID:           ca.PartID,
 					Encoding:         ca.Encoding,
@@ -943,7 +944,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					IsSMIMESignature: ca.IsSMIMESignature,
 					SMIMEVerified:    ca.SMIMEVerified,
 					IsSMIMEEncrypted: ca.IsSMIMEEncrypted,
-				})
+					IsCalendarInvite: ca.IsCalendarInvite,
+				}
+				if ca.IsCalendarInvite && len(ca.CalendarData) > 0 {
+					att.Data = ca.CalendarData
+				}
+				attachments = append(attachments, att)
 			}
 			return m, func() tea.Msg {
 				return tui.EmailBodyFetchedMsg{
@@ -977,7 +983,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var cachedAttachments []config.CachedAttachment
 		for _, a := range msg.Attachments {
-			cachedAttachments = append(cachedAttachments, config.CachedAttachment{
+			ca := config.CachedAttachment{
 				Filename:         a.Filename,
 				PartID:           a.PartID,
 				Encoding:         a.Encoding,
@@ -987,7 +993,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				IsSMIMESignature: a.IsSMIMESignature,
 				SMIMEVerified:    a.SMIMEVerified,
 				IsSMIMEEncrypted: a.IsSMIMEEncrypted,
-			})
+				IsCalendarInvite: a.IsCalendarInvite,
+			}
+			if a.IsCalendarInvite && len(a.Data) > 0 {
+				ca.CalendarData = a.Data
+			}
+			cachedAttachments = append(cachedAttachments, ca)
 		}
 		_ = config.SaveEmailBody(folderForCache, config.CachedEmailBody{
 			UID:         msg.UID,
@@ -1189,6 +1200,37 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}()
 
 		return m, tea.Batch(m.current.Init(), sendEmail(account, msg))
+
+	case tui.SendRSVPMsg:
+		account := m.config.GetAccountByID(msg.AccountID)
+		if account == nil {
+			m.current = tui.NewStatus("Error: account not found")
+			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+				return tui.RestoreViewMsg{}
+			})
+		}
+
+		m.current = tui.NewStatus("Sending RSVP...")
+		return m, tea.Batch(m.current.Init(), sendRSVP(account, msg))
+
+	case tui.RSVPResultMsg:
+		if msg.Err != nil {
+			log.Printf("Failed to send RSVP: %v", msg.Err)
+			m.previousModel = tui.NewChoice()
+			m.previousModel, _ = m.previousModel.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			m.current = tui.NewStatus(fmt.Sprintf("RSVP error: %v", msg.Err))
+			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+				return tui.RestoreViewMsg{}
+			})
+		}
+		status := fmt.Sprintf("RSVP sent: %s", msg.Response)
+		if strings.HasSuffix(strings.ToLower(msg.Organizer), "@gmail.com") || strings.HasSuffix(strings.ToLower(msg.Organizer), "@googlemail.com") {
+			status += " (Google Calendar may not auto-update — use Gmail buttons for Google events)"
+		}
+		m.current = tui.NewStatus(status)
+		return m, tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+			return tui.RestoreViewMsg{}
+		})
 
 	case tui.EmailResultMsg:
 		if msg.Err != nil {
@@ -2025,6 +2067,56 @@ func sendEmail(account *config.Account, msg tui.SendEmailMsg) tea.Cmd {
 		}
 
 		return tui.EmailResultMsg{}
+	}
+}
+
+func sendRSVP(account *config.Account, msg tui.SendRSVPMsg) tea.Cmd {
+	return func() tea.Msg {
+		if account == nil {
+			return tui.EmailResultMsg{Err: fmt.Errorf("no account configured")}
+		}
+
+		// Generate RSVP .ics
+		rsvpICS, err := calendar.GenerateRSVP(msg.OriginalICS, account.Email, msg.Response)
+		if err != nil {
+			return tui.EmailResultMsg{Err: fmt.Errorf("generate RSVP: %w", err)}
+		}
+
+		// Compose reply email
+		subject := fmt.Sprintf("Re: %s", msg.Event.Summary)
+		bodyText := fmt.Sprintf("%s: %s\n\n%s",
+			msg.Response,
+			msg.Event.Summary,
+			msg.Event.Start.Format("Mon Jan 2, 2006 3:04 PM"))
+		if msg.Event.Location != "" {
+			bodyText += " at " + msg.Event.Location
+		}
+
+		// Send as multipart/alternative with text/calendar; method=REPLY
+		// This iMIP format is required for Google Calendar to recognize the RSVP
+		references := append(msg.References, msg.InReplyTo)
+		rawMsg, err := sender.SendCalendarReply(
+			account,
+			[]string{msg.Event.Organizer},
+			subject,
+			bodyText,
+			rsvpICS,
+			msg.InReplyTo,
+			references,
+		)
+
+		if err != nil {
+			return tui.RSVPResultMsg{Err: fmt.Errorf("send RSVP: %w", err), Response: msg.Response, Organizer: msg.Event.Organizer}
+		}
+
+		// Append to Sent folder
+		if account.ServiceProvider != "gmail" {
+			if err := fetcher.AppendToSentMailbox(account, rawMsg); err != nil {
+				log.Printf("Failed to append RSVP to Sent folder: %v", err)
+			}
+		}
+
+		return tui.RSVPResultMsg{Response: msg.Response, Organizer: msg.Event.Organizer}
 	}
 }
 

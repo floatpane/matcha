@@ -58,16 +58,18 @@ type Attachment struct {
 	Filename         string
 	PartID           string // Keep PartID to fetch on demand
 	Data             []byte
-	Encoding         string // Store encoding for proper decoding
-	MIMEType         string // Full MIME type (e.g., image/png)
-	ContentID        string // Content-ID for inline assets (e.g., cid: references)
-	Inline           bool   // True when the part is meant to be displayed inline
-	IsSMIMESignature bool   // True if this attachment is an S/MIME signature
-	SMIMEVerified    bool   // True if the S/MIME signature was verified successfully
-	IsSMIMEEncrypted bool   // True if the S/MIME content was successfully decrypted
-	IsPGPSignature   bool   // True if this attachment is a PGP signature
-	PGPVerified      bool   // True if the PGP signature was verified successfully
-	IsPGPEncrypted   bool   // True if the PGP content was successfully decrypted
+	Encoding         string      // Store encoding for proper decoding
+	MIMEType         string      // Full MIME type (e.g., image/png)
+	ContentID        string      // Content-ID for inline assets (e.g., cid: references)
+	Inline           bool        // True when the part is meant to be displayed inline
+	IsSMIMESignature bool        // True if this attachment is an S/MIME signature
+	SMIMEVerified    bool        // True if the S/MIME signature was verified successfully
+	IsSMIMEEncrypted bool        // True if the S/MIME content was successfully decrypted
+	IsPGPSignature   bool        // True if this attachment is a PGP signature
+	PGPVerified      bool        // True if the PGP signature was verified successfully
+	IsPGPEncrypted   bool        // True if the PGP content was successfully decrypted
+	IsCalendarInvite bool        // True if this attachment is a calendar invite (.ics)
+	CalendarEvent    interface{} // Parsed calendar event (calendar.Event pointer)
 }
 
 type Email struct {
@@ -958,6 +960,22 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 						}
 					}
 				}
+			}
+			attachments = append(attachments, att)
+		} else if mimeType == "text/calendar" || strings.HasSuffix(strings.ToLower(filename), ".ics") {
+			// === CALENDAR INVITE DETECTION ===
+			att := Attachment{
+				Filename:         filename,
+				PartID:           partID,
+				Encoding:         part.Encoding,
+				MIMEType:         mimeType,
+				IsCalendarInvite: true,
+			}
+
+			// Fetch and parse calendar data
+			if data, err := fetchInlinePart(partID, part.Encoding); err == nil {
+				att.Data = data
+				// Parse will be done lazily in calendar package when needed
 			}
 			attachments = append(attachments, att)
 		} else if (filename != "" || isCID) && (strings.EqualFold(dispValue, "attachment") || isInline || !strings.EqualFold(part.Type, "text")) {
