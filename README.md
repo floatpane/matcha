@@ -70,9 +70,11 @@ This project is distributed under the MIT License. See the `LICENSE` file for mo
 
 ## Suggestions
 
-Feedback and ideas are welcome via GitHub issues using the available templates.
+For general suggestions and community discussion, please join the Discord server: https://discord.gg/jVnYTeSPV8
 
-Your feedback helps improve the project.
+For security-related issues, please refer to the Security Policy.
+
+For urgent concerns, contact support@floatpane.com
 
 ---
 
