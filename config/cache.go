@@ -363,6 +363,32 @@ func DeleteDraft(id string) error {
 	return SaveDraftsCache(cache)
 }
 
+// DeleteDraftsForAccount removes every draft belonging to the given account ID
+// from the drafts cache. Used when an account is removed via RemoveAccount so
+// drafts for the removed account do not linger in the cache as orphans (#566).
+//
+// No-op if the cache does not exist or contains no drafts for the account.
+func DeleteDraftsForAccount(accountID string) error {
+	cache, err := LoadDraftsCache()
+	if err != nil {
+		return nil // No cache, nothing to delete
+	}
+
+	var filtered []Draft
+	for _, d := range cache.Drafts {
+		if d.AccountID != accountID {
+			filtered = append(filtered, d)
+		}
+	}
+	if len(filtered) == len(cache.Drafts) {
+		// Nothing to remove; skip the disk write.
+		return nil
+	}
+	cache.Drafts = filtered
+
+	return SaveDraftsCache(cache)
+}
+
 // GetDraft retrieves a draft by ID.
 func GetDraft(id string) *Draft {
 	cache, err := LoadDraftsCache()
