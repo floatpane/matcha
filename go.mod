@@ -11,6 +11,7 @@ require (
 	git.sr.ht/~rockorager/go-jmap v0.5.3
 	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/PuerkitoBio/goquery v1.12.0
+	github.com/arran4/golang-ical v0.3.5
 	github.com/ebfe/scard v0.0.0-20241214075232-7af069cabc25
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
@@ -31,7 +32,6 @@ require (
 
 require (
 	github.com/andybalholm/cascadia v1.3.3 // indirect
-	github.com/arran4/golang-ical v0.3.5 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260416155717-489999b90468 // indirect
