@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -176,7 +177,13 @@ func VerifyPassword(password string) ([]byte, error) {
 		return nil, errors.New("incorrect password")
 	}
 
-	if string(plaintext) != sentinelPlaintext {
+	// subtle.ConstantTimeCompare short-circuits on length mismatch before
+	// doing the byte loop, but both the data-dependent length check and
+	// the early-exit inside `!=` on strings were measurable timing
+	// side-channels for the sentinel recovery (#659). Keep the comparison
+	// constant-time even though the input is small and cipher failure
+	// above already handles the common wrong-password case.
+	if subtle.ConstantTimeCompare(plaintext, []byte(sentinelPlaintext)) != 1 {
 		return nil, errors.New("incorrect password")
 	}
 
