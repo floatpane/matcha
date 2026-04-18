@@ -68,6 +68,18 @@ This project is distributed under the MIT License. See the `LICENSE` file for mo
 
 ---
 
+## 💡 Suggestions & Feedback
+
+We’re always open to improvements and ideas!
+
+- 🐛 **Report bugs:** [Bug Report](https://github.com/floatpane/matcha/issues/new?template=bug_report.md)
+- ✨ **Feature requests:** [Feature Request](https://github.com/floatpane/matcha/issues/new?template=feature_request.md)
+- 💬 **General ideas:** Open an issue or discussion
+
+Your feedback helps improve the project 🚀
+
+---
+
 ## GitAds Sponsored
 [![Sponsored by GitAds](https://gitads.dev/v1/ad-serve?source=floatpane/matcha@github)](https://gitads.dev/v1/ad-track?source=floatpane/matcha@github)
 >[!TIP]
