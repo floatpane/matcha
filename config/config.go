@@ -565,6 +565,11 @@ func LoadConfig() (*Config, error) {
 			POP3Port:           rawAcc.POP3Port,
 		}
 
+		// Validate PGPKeySource
+		if acc.PGPKeySource != "" && acc.PGPKeySource != "file" && acc.PGPKeySource != "yubikey" {
+			return nil, fmt.Errorf("account %q: invalid pgp_key_source %q (must be \"file\" or \"yubikey\")", acc.Name, acc.PGPKeySource)
+		}
+
 		if secureMode {
 			// In secure mode, passwords and PINs are stored in the encrypted config JSON
 			acc.Password = rawAcc.Password
