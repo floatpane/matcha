@@ -68,15 +68,11 @@ This project is distributed under the MIT License. See the `LICENSE` file for mo
 
 ---
 
-## 💡 Suggestions & Feedback
+## Suggestions
 
-We’re always open to improvements and ideas!
+Feedback and ideas are welcome via GitHub issues using the available templates.
 
-- 🐛 **Report bugs:** [Bug Report](https://github.com/floatpane/matcha/issues/new?template=bug_report.md)
-- ✨ **Feature requests:** [Feature Request](https://github.com/floatpane/matcha/issues/new?template=feature_request.md)
-- 💬 **General ideas:** Open an issue or discussion
-
-Your feedback helps improve the project 🚀
+Your feedback helps improve the project.
 
 ---
 
