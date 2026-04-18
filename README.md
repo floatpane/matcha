@@ -68,11 +68,11 @@ This project is distributed under the MIT License. See the `LICENSE` file for mo
 
 ## Suggestions
 
-For general suggestions and community discussion, please join the Discord server: https://discord.gg/jVnYTeSPV8
+For general suggestions and community discussion, please join our [Discord server](https://discord.gg/jVnYTeSPV8).
 
-For security-related issues, please refer to the Security Policy.
+For security-related issues, please refer to the [Security Policy](https://github.com/floatpane/matcha/blob/master/SECURITY.md).
 
-For urgent concerns, contact support@floatpane.com
+For urgent concerns, contact [support@floatpane.com](mailto:support@floatpane.com)
 
 ## GitAds Sponsored
 [![Sponsored by GitAds](https://gitads.dev/v1/ad-serve?source=floatpane/matcha@github)](https://gitads.dev/v1/ad-track?source=floatpane/matcha@github)
