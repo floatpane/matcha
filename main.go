@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/mail"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1972,6 +1973,18 @@ func sendEmail(account *config.Account, msg tui.SendEmailMsg) tea.Cmd {
 		recipients := splitEmails(msg.To)
 		cc := splitEmails(msg.Cc)
 		bcc := splitEmails(msg.Bcc)
+
+		// Validate recipient addresses before dialling SMTP. Without this, the
+		// SMTP server rejects them at RCPT TO with a cryptic protocol error
+		// that users can't act on.
+		for _, group := range [][]string{recipients, cc, bcc} {
+			for _, r := range group {
+				if _, err := mail.ParseAddress(r); err != nil {
+					return tui.EmailResultMsg{Err: fmt.Errorf("invalid email address %q: %w", r, err)}
+				}
+			}
+		}
+
 		body := msg.Body
 		// Append signature if present
 		if msg.Signature != "" {
