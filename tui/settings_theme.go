@@ -36,7 +36,7 @@ func (m *Settings) updateTheme(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m *Settings) viewTheme() string {
 	themes := theme.AllThemes()
 	var b strings.Builder
-	
+
 	b.WriteString(titleStyle.Render("Theme") + "\n\n")
 
 	for i, t := range themes {
@@ -52,12 +52,12 @@ func (m *Settings) viewTheme() string {
 			cursor = "> "
 			style = selectedAccountItemStyle
 		}
-		
+
 		b.WriteString(style.Render(cursor+label) + "\n")
 	}
 
 	b.WriteString("\n")
-	
+
 	// Preview
 	var previewTheme theme.Theme
 	if m.themeCursor < len(themes) {
@@ -65,10 +65,12 @@ func (m *Settings) viewTheme() string {
 	} else {
 		previewTheme = theme.ActiveTheme
 	}
-	
+
 	previewWidth := m.width - 34 - 4
-	if previewWidth < 30 { previewWidth = 30 }
-	
+	if previewWidth < 30 {
+		previewWidth = 30
+	}
+
 	b.WriteString(renderThemePreview(previewTheme, previewWidth) + "\n\n")
 
 	if !m.cfg.HideTips {

@@ -90,7 +90,7 @@ func (m *Settings) enterCryptoConfig() {
 	m.isCryptoConfig = true
 	m.editingAccountIdx = m.accountsCursor
 	acc := m.cfg.Accounts[m.accountsCursor]
-	
+
 	m.smimeCertInput.SetValue(acc.SMIMECert)
 	m.smimeKeyInput.SetValue(acc.SMIMEKey)
 	m.pgpPublicKeyInput.SetValue(acc.PGPPublicKey)
@@ -101,7 +101,7 @@ func (m *Settings) enterCryptoConfig() {
 		m.pgpKeySource = acc.PGPKeySource
 	}
 	m.pgpPINInput.SetValue(acc.PGPPIN)
-	
+
 	m.cryptoFocusIndex = 0
 	m.smimeCertInput.Focus()
 	m.smimeKeyInput.Blur()
@@ -141,14 +141,14 @@ func (m *Settings) viewAccounts() string {
 		}
 
 		line := fmt.Sprintf("%s - %s", displayName, accountEmailStyle.Render(providerInfo))
-		
+
 		cursor := "  "
 		style := accountItemStyle
 		if m.accountsCursor == i {
 			cursor = "> "
 			style = selectedAccountItemStyle
 		}
-		
+
 		b.WriteString(style.Render(cursor+line) + "\n")
 	}
 

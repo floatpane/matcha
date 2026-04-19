@@ -38,33 +38,33 @@ const (
 )
 
 type Settings struct {
-	cfg              *config.Config
-	width            int
-	height           int
+	cfg    *config.Config
+	width  int
+	height int
 
-	activePane       SettingsPane
-	activeCategory   SettingsCategory
-	
+	activePane     SettingsPane
+	activeCategory SettingsCategory
+
 	// Menu state
-	menuCursor       int
+	menuCursor int
 
 	// Sub-components states
-	generalCursor     int
-	accountsCursor    int
-	themeCursor       int
-	listsCursor       int
-	confirmingDelete  bool
+	generalCursor    int
+	accountsCursor   int
+	themeCursor      int
+	listsCursor      int
+	confirmingDelete bool
 
 	// S/MIME Config fields
-	isCryptoConfig    bool
-	editingAccountIdx int
-	cryptoFocusIndex  int
-	smimeCertInput    textinput.Model
-	smimeKeyInput     textinput.Model
-	pgpPublicKeyInput textinput.Model
+	isCryptoConfig     bool
+	editingAccountIdx  int
+	cryptoFocusIndex   int
+	smimeCertInput     textinput.Model
+	smimeKeyInput      textinput.Model
+	pgpPublicKeyInput  textinput.Model
 	pgpPrivateKeyInput textinput.Model
-	pgpKeySource      string // "file" or "yubikey"
-	pgpPINInput       textinput.Model
+	pgpKeySource       string // "file" or "yubikey"
+	pgpPINInput        textinput.Model
 
 	// Encryption fields
 	encPasswordInput  textinput.Model
@@ -217,7 +217,7 @@ func (m *Settings) updateMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "right", "l", "enter":
 		m.activeCategory = SettingsCategory(m.menuCursor)
 		m.activePane = PaneContent
-		
+
 		// Reset states
 		m.confirmingDelete = false
 		if m.activeCategory == CategoryTheme {
@@ -241,7 +241,7 @@ func (m *Settings) updateMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.encConfirmInput.Blur()
 			}
 		}
-		
+
 		return m, textinput.Blink
 	case "esc":
 		return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
@@ -265,13 +265,13 @@ func (m *Settings) View() tea.View {
 				cursor = "• "
 			}
 		}
-		
+
 		style := accountItemStyle
 		if m.menuCursor == i {
 			style = selectedAccountItemStyle
 		}
-		
-		left.WriteString(style.Render(cursor + c) + "\n")
+
+		left.WriteString(style.Render(cursor+c) + "\n")
 	}
 
 	leftPanel := lipgloss.NewStyle().
@@ -302,7 +302,7 @@ func (m *Settings) View() tea.View {
 		Render(right)
 
 	content := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
-	
+
 	helpText := "esc: back to menu"
 	if m.activePane == PaneMenu {
 		helpText = "↑/↓: navigate • right/enter: select • esc: go back"

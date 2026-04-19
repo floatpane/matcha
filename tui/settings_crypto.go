@@ -12,7 +12,7 @@ const cryptoConfigMaxFocus = 9
 
 func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 	var cmds []tea.Cmd
-	
+
 	key := msg.Key()
 	isEnter := key.Code == tea.KeyEnter || key.Code == tea.KeyReturn || key.Code == tea.KeyKpEnter
 	isSpace := key.Code == tea.KeySpace
@@ -26,11 +26,16 @@ func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 		m.pgpPINInput.Blur()
 
 		switch m.cryptoFocusIndex {
-		case 0: return m.smimeCertInput.Focus()
-		case 1: return m.smimeKeyInput.Focus()
-		case 3: return m.pgpPublicKeyInput.Focus()
-		case 4: return m.pgpPrivateKeyInput.Focus()
-		case 6: return m.pgpPINInput.Focus()
+		case 0:
+			return m.smimeCertInput.Focus()
+		case 1:
+			return m.smimeKeyInput.Focus()
+		case 3:
+			return m.pgpPublicKeyInput.Focus()
+		case 4:
+			return m.pgpPrivateKeyInput.Focus()
+		case 6:
+			return m.pgpPINInput.Focus()
 		}
 		return nil
 	}
@@ -128,30 +133,44 @@ func (m *Settings) viewSMIMEConfig() string {
 	renderField(0, "Certificate (PEM) Path:", m.smimeCertInput.View())
 	renderField(1, "Private Key (PEM) Path:", m.smimeKeyInput.View())
 	smimeSign := "OFF"
-	if account.SMIMESignByDefault { smimeSign = "ON" }
+	if account.SMIMESignByDefault {
+		smimeSign = "ON"
+	}
 	renderField(2, "Sign By Default:", smimeSign)
 
 	// PGP
 	b.WriteString(settingsFocusedStyle.Render("PGP") + "\n")
 	renderField(3, "Public Key Path:", m.pgpPublicKeyInput.View())
 	renderField(4, "Private Key Path:", m.pgpPrivateKeyInput.View())
-	
+
 	keySource := "File"
-	if m.pgpKeySource == "yubikey" { keySource = "YubiKey" }
+	if m.pgpKeySource == "yubikey" {
+		keySource = "YubiKey"
+	}
 	renderField(5, "Key Source:", keySource)
-	
+
 	if m.pgpKeySource == "yubikey" {
 		renderField(6, "YubiKey PIN:", m.pgpPINInput.View())
 	}
-	
+
 	pgpSign := "OFF"
-	if account.PGPSignByDefault { pgpSign = "ON" }
+	if account.PGPSignByDefault {
+		pgpSign = "ON"
+	}
 	renderField(7, "Sign By Default:", pgpSign)
 
 	saveBtn := "[ Save ]"
 	cancelBtn := "[ Cancel ]"
-	if m.cryptoFocusIndex == 8 { saveBtn = settingsFocusedStyle.Render(saveBtn) } else { saveBtn = settingsBlurredStyle.Render(saveBtn) }
-	if m.cryptoFocusIndex == 9 { cancelBtn = settingsFocusedStyle.Render(cancelBtn) } else { cancelBtn = settingsBlurredStyle.Render(cancelBtn) }
+	if m.cryptoFocusIndex == 8 {
+		saveBtn = settingsFocusedStyle.Render(saveBtn)
+	} else {
+		saveBtn = settingsBlurredStyle.Render(saveBtn)
+	}
+	if m.cryptoFocusIndex == 9 {
+		cancelBtn = settingsFocusedStyle.Render(cancelBtn)
+	} else {
+		cancelBtn = settingsBlurredStyle.Render(cancelBtn)
+	}
 
 	b.WriteString(saveBtn + "  " + cancelBtn + "\n\n")
 	b.WriteString(helpStyle.Render("tab: next • enter: next/save • space: toggle • esc: cancel"))

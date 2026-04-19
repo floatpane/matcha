@@ -49,8 +49,12 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.encPasswordInput.Blur()
 		m.encConfirmInput.Blur()
 		var cmds []tea.Cmd
-		if m.encFocusIndex == 0 { cmds = append(cmds, m.encPasswordInput.Focus()) }
-		if m.encFocusIndex == 1 { cmds = append(cmds, m.encConfirmInput.Focus()) }
+		if m.encFocusIndex == 0 {
+			cmds = append(cmds, m.encPasswordInput.Focus())
+		}
+		if m.encFocusIndex == 1 {
+			cmds = append(cmds, m.encConfirmInput.Focus())
+		}
 		return m, tea.Batch(cmds...)
 	case "enter":
 		switch m.encFocusIndex {
@@ -133,7 +137,7 @@ func (m *Settings) viewEncryption() string {
 		if m.encEnabling {
 			b.WriteString("\n" + accountEmailStyle.Render("  Encrypting data...") + "\n")
 		}
-		
+
 		b.WriteString("\n" + helpStyle.Render("tab: next • enter: save"))
 	}
 
