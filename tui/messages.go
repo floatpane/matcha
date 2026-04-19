@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/floatpane/matcha/calendar"
 	"github.com/floatpane/matcha/config"
+	"github.com/floatpane/matcha/daemonrpc"
 	"github.com/floatpane/matcha/fetcher"
 )
 
@@ -461,6 +462,13 @@ type EditorFinishedMsg struct {
 type IdleNewMailMsg struct {
 	AccountID  string
 	FolderName string
+}
+
+// --- Daemon Messages ---
+
+// DaemonEventMsg wraps an event pushed from the daemon process.
+type DaemonEventMsg struct {
+	Event *daemonrpc.Event
 }
 
 // --- Plugin Messages ---

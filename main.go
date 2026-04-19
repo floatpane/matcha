@@ -31,6 +31,9 @@ import (
 	matchaCli "github.com/floatpane/matcha/cli"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/config"
+	matchaDaemon "github.com/floatpane/matcha/daemon"
+	"github.com/floatpane/matcha/daemonclient"
+	"github.com/floatpane/matcha/daemonrpc"
 	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/notify"
 	"github.com/floatpane/matcha/plugin"
@@ -89,6 +92,8 @@ type mainModel struct {
 	idleUpdates chan fetcher.IdleUpdate
 	// Multi-protocol backend providers (keyed by account ID)
 	providers map[string]backend.Provider
+	// Daemon client service (daemon or direct fallback)
+	service daemonclient.Service
 	// Plugin prompt waiting for user input
 	pendingPrompt *plugin.PendingPrompt
 }
@@ -176,6 +181,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			m.idleWatcher.StopAll()
+			if m.service != nil {
+				m.service.Close()
+			}
 			return m, tea.Quit
 		}
 		if msg.String() == "esc" {
@@ -401,13 +409,27 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i := range m.config.Accounts {
 			m.idleWatcher.Watch(&m.config.Accounts[i], "INBOX")
 		}
+		// Initialize daemon service if not already set.
+		if m.service == nil {
+			m.service = daemonclient.NewService(m.config)
+		}
+		// Subscribe to INBOX updates if using daemon.
+		if m.service.IsDaemon() {
+			for _, acct := range m.config.Accounts {
+				m.service.Subscribe(acct.ID, "INBOX")
+			}
+		}
 		// Fetch folders and INBOX emails in parallel (background refresh)
-		return m, tea.Batch(
+		batchCmds := []tea.Cmd{
 			m.current.Init(),
 			fetchFoldersCmd(m.config),
 			fetchFolderEmailsCmd(m.config, "INBOX"),
 			listenForIdleUpdates(m.idleUpdates),
-		)
+		}
+		if m.service.IsDaemon() {
+			batchCmds = append(batchCmds, listenForDaemonEvents(m.service.Events()))
+		}
+		return m, tea.Batch(batchCmds...)
 
 	case tui.FoldersFetchedMsg:
 		if m.folderInbox == nil {
@@ -641,6 +663,33 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Re-subscribe even if not viewing the affected folder
 		return m, listenForIdleUpdates(m.idleUpdates)
+
+	case tui.DaemonEventMsg:
+		if msg.Event == nil {
+			return m, nil
+		}
+		var cmds []tea.Cmd
+		// Re-subscribe for next event.
+		if m.service != nil && m.service.IsDaemon() {
+			cmds = append(cmds, listenForDaemonEvents(m.service.Events()))
+		}
+		switch msg.Event.Type {
+		case daemonrpc.EventNewMail:
+			var ev daemonrpc.NewMailEvent
+			if err := json.Unmarshal(msg.Event.Data, &ev); err == nil {
+				if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
+					cmds = append(cmds, fetchFolderEmailsCmd(m.config, ev.Folder))
+				}
+			}
+		case daemonrpc.EventSyncComplete:
+			var ev daemonrpc.SyncCompleteEvent
+			if err := json.Unmarshal(msg.Event.Data, &ev); err == nil {
+				if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
+					cmds = append(cmds, fetchFolderEmailsCmd(m.config, ev.Folder))
+				}
+			}
+		}
+		return m, tea.Batch(cmds...)
 
 	case tui.RequestRefreshMsg:
 		// Folder-based refresh: clear folder cache and refetch
@@ -2210,6 +2259,19 @@ func listenForIdleUpdates(ch <-chan fetcher.IdleUpdate) tea.Cmd {
 	}
 }
 
+// --- Daemon event listener ---
+
+// listenForDaemonEvents blocks until a daemon event arrives, then returns it as a tea.Msg.
+func listenForDaemonEvents(ch <-chan *daemonrpc.Event) tea.Cmd {
+	return func() tea.Msg {
+		ev, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return tui.DaemonEventMsg{Event: ev}
+	}
+}
+
 // --- Folder-based command functions ---
 
 func fetchFoldersCmd(cfg *config.Config) tea.Cmd {
@@ -3244,6 +3306,12 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Daemon CLI subcommand: matcha daemon <start|stop|status|run>
+	if len(os.Args) > 1 && os.Args[1] == "daemon" {
+		runDaemonCLI(os.Args[2:])
+		os.Exit(0)
+	}
+
 	// OAuth2 CLI subcommand: matcha oauth <auth|token|revoke> <email> [flags]
 	// "gmail" is kept as an alias for backwards compatibility.
 	if len(os.Args) > 1 && (os.Args[1] == "oauth" || os.Args[1] == "gmail") {
@@ -3338,4 +3406,136 @@ func main() {
 
 	plugins.CallHook(plugin.HookShutdown)
 	plugins.Close()
+}
+
+func runDaemonCLI(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: matcha daemon <start|stop|status|run>")
+		fmt.Println()
+		fmt.Println("Commands:")
+		fmt.Println("  start   Start the daemon in the background")
+		fmt.Println("  stop    Stop the running daemon")
+		fmt.Println("  status  Show daemon status")
+		fmt.Println("  run     Run the daemon in the foreground")
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "start":
+		runDaemonStart()
+	case "stop":
+		runDaemonStop()
+	case "status":
+		runDaemonStatus()
+	case "run":
+		runDaemonRun()
+	default:
+		fmt.Fprintf(os.Stderr, "unknown daemon command: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func runDaemonStart() {
+	pidPath := daemonrpc.PIDPath()
+	if pid, running := matchaDaemon.IsRunning(pidPath); running {
+		fmt.Printf("Daemon already running (PID %d)\n", pid)
+		return
+	}
+
+	// Fork ourselves with "daemon run".
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot find executable: %v\n", err)
+		os.Exit(1)
+	}
+
+	cmd := exec.Command(exe, "daemon", "run")
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.Stdin = nil
+
+	// Detach from parent process.
+	cmd.SysProcAttr = daemonSysProcAttr()
+
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to start daemon: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Daemon started (PID %d)\n", cmd.Process.Pid)
+}
+
+func runDaemonStop() {
+	pidPath := daemonrpc.PIDPath()
+	pid, running := matchaDaemon.IsRunning(pidPath)
+	if !running {
+		fmt.Println("Daemon is not running")
+		return
+	}
+
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot find process %d: %v\n", pid, err)
+		os.Exit(1)
+	}
+
+	if err := process.Signal(os.Interrupt); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to stop daemon: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Daemon stopped (PID %d)\n", pid)
+}
+
+func runDaemonStatus() {
+	// Try connecting to daemon for live status.
+	client, err := daemonclient.Dial()
+	if err != nil {
+		pidPath := daemonrpc.PIDPath()
+		if pid, running := matchaDaemon.IsRunning(pidPath); running {
+			fmt.Printf("Daemon running (PID %d) but not responding\n", pid)
+		} else {
+			fmt.Println("Daemon is not running")
+		}
+		return
+	}
+	defer client.Close()
+
+	status, err := client.Status()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to get status: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Daemon running (PID %d)\n", status.PID)
+	fmt.Printf("Uptime: %s\n", formatUptime(status.Uptime))
+	fmt.Printf("Accounts: %d\n", len(status.Accounts))
+	for _, acct := range status.Accounts {
+		fmt.Printf("  - %s\n", acct)
+	}
+}
+
+func runDaemonRun() {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
+		os.Exit(1)
+	}
+
+	d := matchaDaemon.New(cfg)
+	if err := d.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "daemon error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func formatUptime(seconds int64) string {
+	d := time.Duration(seconds) * time.Second
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm %ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
 }
