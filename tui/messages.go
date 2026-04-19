@@ -381,8 +381,9 @@ type FoldersFetchedMsg struct {
 
 // SwitchFolderMsg signals switching to a different IMAP folder.
 type SwitchFolderMsg struct {
-	FolderName string
-	AccountID  string
+	FolderName     string
+	PreviousFolder string
+	AccountID      string
 }
 
 // FolderEmailsFetchedMsg signals that emails from a folder have been fetched.

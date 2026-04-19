@@ -405,18 +405,19 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.current = m.folderInbox
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
-		// Start IDLE watchers for all accounts on INBOX
-		for i := range m.config.Accounts {
-			m.idleWatcher.Watch(&m.config.Accounts[i], "INBOX")
-		}
 		// Initialize daemon service if not already set.
 		if m.service == nil {
 			m.service = daemonclient.NewService(m.config)
 		}
-		// Subscribe to INBOX updates if using daemon.
 		if m.service.IsDaemon() {
+			// Subscribe to INBOX updates if using daemon.
 			for _, acct := range m.config.Accounts {
 				m.service.Subscribe(acct.ID, "INBOX")
+			}
+		} else {
+			// Start IDLE watchers for all accounts on INBOX
+			for i := range m.config.Accounts {
+				m.idleWatcher.Watch(&m.config.Accounts[i], "INBOX")
 			}
 		}
 		// Fetch folders and INBOX emails in parallel (background refresh)
@@ -459,10 +460,22 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Only start IDLE for accounts that actually have this folder
 			folders := config.GetCachedFolders(m.config.Accounts[i].ID)
 			if !slices.Contains(folders, msg.FolderName) {
-				m.idleWatcher.Stop(m.config.Accounts[i].ID)
+				if m.service != nil && m.service.IsDaemon() {
+					m.service.Unsubscribe(m.config.Accounts[i].ID, msg.PreviousFolder)
+				} else {
+					m.idleWatcher.Stop(m.config.Accounts[i].ID)
+				}
 				continue
 			}
-			m.idleWatcher.Watch(&m.config.Accounts[i], msg.FolderName)
+			if m.service != nil && m.service.IsDaemon() {
+				// Unsubscribe from old, subscribe to new.
+				if msg.PreviousFolder != "" {
+					m.service.Unsubscribe(m.config.Accounts[i].ID, msg.PreviousFolder)
+				}
+				m.service.Subscribe(m.config.Accounts[i].ID, msg.FolderName)
+			} else {
+				m.idleWatcher.Watch(&m.config.Accounts[i], msg.FolderName)
+			}
 		}
 		if m.plugins != nil {
 			m.plugins.CallFolderHook(plugin.HookFolderChanged, msg.FolderName)
@@ -677,6 +690,16 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case daemonrpc.EventNewMail:
 			var ev daemonrpc.NewMailEvent
 			if err := json.Unmarshal(msg.Event.Data, &ev); err == nil {
+				if m.config == nil || !m.config.DisableNotifications {
+					accountName := ev.AccountID
+					if m.config != nil {
+						if acc := m.config.GetAccountByID(ev.AccountID); acc != nil {
+							accountName = acc.Email
+						}
+					}
+					go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", ev.Folder, accountName))
+				}
+
 				if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
 					cmds = append(cmds, fetchFolderEmailsCmd(m.config, ev.Folder))
 				}

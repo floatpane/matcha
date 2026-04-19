@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -31,6 +32,9 @@ type Daemon struct {
 	// Per-client subscriptions: conn → set of "accountID:folder".
 	subscriptions map[*daemonrpc.Conn]map[string]struct{}
 	subMu         sync.RWMutex
+
+	// Mutex for disk cache updates.
+	cacheMu sync.Mutex
 
 	// IMAP IDLE watcher for push notifications.
 	idleWatcher *fetcher.IdleWatcher
@@ -358,8 +362,8 @@ func (d *Daemon) syncAllAccounts(ctx context.Context) {
 				IsRead:    e.IsRead,
 			})
 		}
-		if err := config.SaveFolderEmailCache("INBOX", cached); err != nil {
-			log.Printf("daemon: cache save for INBOX failed: %v", err)
+		if err := d.updateFolderCache("INBOX", acct.ID, cached); err != nil {
+			log.Printf("daemon: cache update for INBOX failed: %v", err)
 		}
 
 		d.broadcastToSubscribers(acct.ID, "INBOX", daemonrpc.EventSyncComplete, daemonrpc.SyncCompleteEvent{
@@ -466,8 +470,8 @@ func (d *Daemon) fetchAndCache(accountID, folder string) {
 		})
 	}
 
-	if err := config.SaveFolderEmailCache(folder, cached); err != nil {
-		log.Printf("daemon: cache save for %s failed: %v", folder, err)
+	if err := d.updateFolderCache(folder, accountID, cached); err != nil {
+		log.Printf("daemon: cache update for %s failed: %v", folder, err)
 		return
 	}
 
@@ -479,4 +483,32 @@ func (d *Daemon) fetchAndCache(accountID, folder string) {
 		Folder:     folder,
 		EmailCount: len(emails),
 	})
+}
+
+// updateFolderCache safely merges new emails for a specific account into the existing folder cache.
+func (d *Daemon) updateFolderCache(folderName, accountID string, newEmails []config.CachedEmail) error {
+	d.cacheMu.Lock()
+	defer d.cacheMu.Unlock()
+
+	// Load existing cache
+	existing, _ := config.LoadFolderEmailCache(folderName) // Ignore error, assume empty if missing
+
+	// Filter out old emails for this account
+	var merged []config.CachedEmail
+	for _, e := range existing {
+		if e.AccountID != accountID {
+			merged = append(merged, e)
+		}
+	}
+
+	// Append new emails
+	merged = append(merged, newEmails...)
+
+	// Sort newest first
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].Date.After(merged[j].Date)
+	})
+
+	// Save merged cache
+	return config.SaveFolderEmailCache(folderName, merged)
 }

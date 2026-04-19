@@ -347,6 +347,7 @@ func (m *FolderInbox) moveFolderChoices() []string {
 
 func (m *FolderInbox) switchFolder() tea.Cmd {
 	if m.activeFolderIdx >= 0 && m.activeFolderIdx < len(m.folders) {
+		prevFolder := m.currentFolder
 		m.currentFolder = m.folders[m.activeFolderIdx]
 		m.isLoadingEmails = true
 		m.inbox.SetFolderName(m.currentFolder)
@@ -354,7 +355,7 @@ func (m *FolderInbox) switchFolder() tea.Cmd {
 		m.inbox.SetEmails(nil, m.accounts)
 		folder := m.currentFolder
 		return func() tea.Msg {
-			return SwitchFolderMsg{FolderName: folder}
+			return SwitchFolderMsg{FolderName: folder, PreviousFolder: prevFolder}
 		}
 	}
 	return nil
