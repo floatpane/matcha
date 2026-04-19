@@ -34,6 +34,7 @@ const (
 	inputIMAPPort
 	inputSMTPServer
 	inputSMTPPort
+	inputInsecure
 	inputJMAPEndpoint // JMAP session URL
 	inputPOP3Server
 	inputPOP3Port
@@ -93,6 +94,9 @@ func NewLogin(hideTips bool) *Login {
 		case inputSMTPPort:
 			t.Placeholder = "SMTP Port (default: 587)"
 			t.Prompt = "🔢 > "
+		case inputInsecure:
+			t.Placeholder = "Insecure (true/false) - Skip TLS verification"
+			t.Prompt = "🔓 > "
 		case inputJMAPEndpoint:
 			t.Placeholder = "JMAP Session URL (e.g., https://api.fastmail.com/jmap/session)"
 			t.Prompt = "🔗 > "
@@ -139,7 +143,7 @@ func (m *Login) visibleFields() []int {
 	case "pop3":
 		// POP3: custom server fields + SMTP for sending
 		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputSendAsEmail, inputPassword,
-			inputPOP3Server, inputPOP3Port, inputSMTPServer, inputSMTPPort)
+			inputPOP3Server, inputPOP3Port, inputSMTPServer, inputSMTPPort, inputInsecure)
 	default:
 		// IMAP (default): existing flow
 		fields = append(fields, inputProvider, inputName, inputEmail, inputFetchEmail, inputSendAsEmail)
@@ -150,7 +154,7 @@ func (m *Login) visibleFields() []int {
 			fields = append(fields, inputPassword)
 		}
 		if m.showCustom {
-			fields = append(fields, inputIMAPServer, inputIMAPPort, inputSMTPServer, inputSMTPPort)
+			fields = append(fields, inputIMAPServer, inputIMAPPort, inputSMTPServer, inputSMTPPort, inputInsecure)
 		}
 	}
 
@@ -268,6 +272,8 @@ func (m *Login) submitForm() func() tea.Msg {
 
 	proto := m.protocol()
 
+	insecure := m.inputs[inputInsecure].Value() == "true"
+
 	return func() tea.Msg {
 		return Credentials{
 			Protocol:     proto,
@@ -281,6 +287,7 @@ func (m *Login) submitForm() func() tea.Msg {
 			IMAPPort:     imapPort,
 			SMTPServer:   m.inputs[inputSMTPServer].Value(),
 			SMTPPort:     smtpPort,
+			Insecure:     insecure,
 			AuthMethod:   authMethod,
 			JMAPEndpoint: m.inputs[inputJMAPEndpoint].Value(),
 			POP3Server:   m.inputs[inputPOP3Server].Value(),
@@ -324,6 +331,8 @@ func (m *Login) View() tea.View {
 		tip = "The server address for sending emails."
 	case inputSMTPPort:
 		tip = "The port for the SMTP server (usually 587 for TLS)."
+	case inputInsecure:
+		tip = "Type 'true' to disable TLS certificate verification (not recommended)."
 	case inputJMAPEndpoint:
 		tip = "The JMAP session resource URL (e.g., https://api.fastmail.com/jmap/session)."
 	case inputPOP3Server:
@@ -366,6 +375,7 @@ func (m *Login) View() tea.View {
 			listHeader.Render("SMTP Settings (for sending):"),
 			m.inputs[inputSMTPServer].View(),
 			m.inputs[inputSMTPPort].View(),
+			m.inputs[inputInsecure].View(),
 		)
 	default:
 		// IMAP flow
@@ -398,6 +408,7 @@ func (m *Login) View() tea.View {
 				m.inputs[inputIMAPPort].View(),
 				m.inputs[inputSMTPServer].View(),
 				m.inputs[inputSMTPPort].View(),
+				m.inputs[inputInsecure].View(),
 			)
 		}
 	}
@@ -412,7 +423,7 @@ func (m *Login) View() tea.View {
 }
 
 // SetEditMode sets the login form to edit an existing account.
-func (m *Login) SetEditMode(accountID, protocol, provider, name, email, fetchEmail, sendAsEmail, imapServer string, imapPort int, smtpServer string, smtpPort int, jmapEndpoint, pop3Server string, pop3Port int) {
+func (m *Login) SetEditMode(accountID, protocol, provider, name, email, fetchEmail, sendAsEmail, imapServer string, imapPort int, smtpServer string, smtpPort int, insecure bool, jmapEndpoint, pop3Server string, pop3Port int) {
 	m.isEditMode = true
 	m.accountID = accountID
 
@@ -429,6 +440,11 @@ func (m *Login) SetEditMode(accountID, protocol, provider, name, email, fetchEma
 
 	if m.showCustom {
 		m.inputs[inputIMAPServer].SetValue(imapServer)
+		if insecure {
+			m.inputs[inputInsecure].SetValue("true")
+		} else {
+			m.inputs[inputInsecure].SetValue("false")
+		}
 		if imapPort != 0 {
 			m.inputs[inputIMAPPort].SetValue(strconv.Itoa(imapPort))
 		}

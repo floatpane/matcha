@@ -51,6 +51,7 @@ type Credentials struct {
 	IMAPPort     int
 	SMTPServer   string
 	SMTPPort     int
+	Insecure     bool
 	AuthMethod   string // "password" or "oauth2"
 	Protocol     string // "imap" (default), "jmap", or "pop3"
 	JMAPEndpoint string // JMAP session URL
@@ -245,6 +246,7 @@ type GoToEditAccountMsg struct {
 	IMAPPort     int
 	SMTPServer   string
 	SMTPPort     int
+	Insecure     bool
 	Protocol     string
 	JMAPEndpoint string
 	POP3Server   string

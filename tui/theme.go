@@ -117,10 +117,6 @@ func RebuildStyles() {
 	filePickerSelectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(t.Accent)
 	directoryStyle = lipgloss.NewStyle().Foreground(t.Directory)
 	fileSizeStyle = lipgloss.NewStyle().Foreground(t.Secondary)
-
-	// trash_archive.go
-	mailboxTabStyle = lipgloss.NewStyle().Padding(0, 3)
-	activeMailboxTabStyle = lipgloss.NewStyle().Padding(0, 3).Foreground(t.Accent).Bold(true).Underline(true)
 }
 
 // ThemedTextInputStyles returns textinput.Styles using the active theme colors.
