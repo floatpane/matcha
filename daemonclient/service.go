@@ -80,7 +80,7 @@ func autoStartDaemon() error {
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil
-	cmd.SysProcAttr = daemonProcAttr()
+	cmd.SysProcAttr = DaemonProcAttr()
 
 	return cmd.Start()
 }

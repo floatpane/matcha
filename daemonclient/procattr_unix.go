@@ -4,7 +4,8 @@ package daemonclient
 
 import "syscall"
 
-func daemonProcAttr() *syscall.SysProcAttr {
+// DaemonProcAttr returns SysProcAttr for detaching the daemon process.
+func DaemonProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{
 		Setsid: true,
 	}

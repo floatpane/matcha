@@ -3478,7 +3478,7 @@ func runDaemonStart() {
 	cmd.Stdin = nil
 
 	// Detach from parent process.
-	cmd.SysProcAttr = daemonSysProcAttr()
+	cmd.SysProcAttr = daemonclient.DaemonProcAttr()
 
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to start daemon: %v\n", err)
