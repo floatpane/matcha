@@ -531,3 +531,9 @@ type RSVPResultMsg struct {
 	Response  string // "ACCEPTED", "DECLINED", "TENTATIVE"
 	Organizer string // organizer email for Google Calendar note
 }
+
+// OfflineQueueReplayedMsg signals that queued offline actions have been replayed.
+type OfflineQueueReplayedMsg struct {
+	Replayed int
+	Failed   int
+}

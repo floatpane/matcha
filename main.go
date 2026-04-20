@@ -96,6 +96,8 @@ type mainModel struct {
 	service daemonclient.Service
 	// Plugin prompt waiting for user input
 	pendingPrompt *plugin.PendingPrompt
+	// Offline state: true when last network fetch failed for all accounts
+	isOffline bool
 }
 
 func newInitialModel(cfg *config.Config) *mainModel {
@@ -548,9 +550,24 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pendingPrompt = nil
 		return m, nil
 
+	case tui.FetchErr:
+		m.isOffline = true
+		if m.folderInbox != nil {
+			m.folderInbox.SetLoadingEmails(false)
+			m.folderInbox.SetRefreshing(false)
+			m.folderInbox.GetInbox().SetOffline(true)
+		}
+		log.Printf("fetch error (offline): %v", error(msg))
+		return m, nil
+
 	case tui.FolderEmailsFetchedMsg:
 		if m.folderInbox == nil {
 			return m, nil
+		}
+		// Clear offline state on successful fetch
+		if m.isOffline {
+			m.isOffline = false
+			m.folderInbox.GetInbox().SetOffline(false)
 		}
 		// Call plugin hooks for received emails
 		if m.plugins != nil {
@@ -626,6 +643,21 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if account == nil {
 			return m, nil
 		}
+
+		if m.isOffline {
+			m.removeEmailFromStores(msg.UID, msg.AccountID)
+			if m.folderInbox != nil {
+				m.folderInbox.RemoveEmail(msg.UID, msg.AccountID)
+				m.current = m.folderInbox
+			}
+			go config.EnqueueOfflineAction(config.OfflineAction{
+				ID: uuid.NewString(), Type: "move", AccountID: msg.AccountID,
+				Folder: msg.SourceFolder, UIDs: []uint32{msg.UID}, DestFolder: msg.DestFolder,
+			})
+			m.updatePendingCount()
+			return m, nil
+		}
+
 		m.previousModel = m.current
 		m.current = tui.NewStatus("Moving email...")
 		return m, tea.Batch(m.current.Init(), moveEmailToFolderCmd(account, msg.UID, msg.AccountID, msg.SourceFolder, msg.DestFolder))
@@ -708,9 +740,24 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case daemonrpc.EventSyncComplete:
 			var ev daemonrpc.SyncCompleteEvent
 			if err := json.Unmarshal(msg.Event.Data, &ev); err == nil {
+				if m.isOffline {
+					m.isOffline = false
+					if m.folderInbox != nil {
+						m.folderInbox.GetInbox().SetOffline(false)
+					}
+				}
 				if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
 					cmds = append(cmds, fetchFolderEmailsCmd(m.config, ev.Folder))
 				}
+			}
+		case daemonrpc.EventSyncError:
+			var ev daemonrpc.SyncErrorEvent
+			if err := json.Unmarshal(msg.Event.Data, &ev); err == nil {
+				m.isOffline = true
+				if m.folderInbox != nil {
+					m.folderInbox.GetInbox().SetOffline(true)
+				}
+				log.Printf("daemon sync error %s/%s: %s", ev.AccountID, ev.Folder, ev.Error)
 			}
 		}
 		return m, tea.Batch(cmds...)
@@ -1324,8 +1371,6 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tui.DeleteEmailMsg:
 		tui.ClearKittyGraphics()
-		m.previousModel = m.current
-		m.current = tui.NewStatus("Deleting email...")
 
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
@@ -1339,12 +1384,27 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.folderInbox != nil {
 			folderName = m.folderInbox.GetCurrentFolder()
 		}
+
+		if m.isOffline {
+			m.removeEmailFromStores(msg.UID, msg.AccountID)
+			if m.folderInbox != nil {
+				m.folderInbox.RemoveEmail(msg.UID, msg.AccountID)
+				m.current = m.folderInbox
+			}
+			go config.EnqueueOfflineAction(config.OfflineAction{
+				ID: uuid.NewString(), Type: "delete", AccountID: msg.AccountID,
+				Folder: folderName, UIDs: []uint32{msg.UID},
+			})
+			m.updatePendingCount()
+			return m, nil
+		}
+
+		m.previousModel = m.current
+		m.current = tui.NewStatus("Deleting email...")
 		return m, tea.Batch(m.current.Init(), deleteFolderEmailCmd(account, msg.UID, msg.AccountID, folderName, msg.Mailbox))
 
 	case tui.ArchiveEmailMsg:
 		tui.ClearKittyGraphics()
-		m.previousModel = m.current
-		m.current = tui.NewStatus("Archiving email...")
 
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
@@ -1358,6 +1418,23 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.folderInbox != nil {
 			folderName = m.folderInbox.GetCurrentFolder()
 		}
+
+		if m.isOffline {
+			m.removeEmailFromStores(msg.UID, msg.AccountID)
+			if m.folderInbox != nil {
+				m.folderInbox.RemoveEmail(msg.UID, msg.AccountID)
+				m.current = m.folderInbox
+			}
+			go config.EnqueueOfflineAction(config.OfflineAction{
+				ID: uuid.NewString(), Type: "archive", AccountID: msg.AccountID,
+				Folder: folderName, UIDs: []uint32{msg.UID},
+			})
+			m.updatePendingCount()
+			return m, nil
+		}
+
+		m.previousModel = m.current
+		m.current = tui.NewStatus("Archiving email...")
 		return m, tea.Batch(m.current.Init(), archiveFolderEmailCmd(account, msg.UID, msg.AccountID, folderName, msg.Mailbox))
 
 	case tui.EmailMarkedReadMsg:
@@ -2345,6 +2422,7 @@ func fetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
 		emailsByAccount := make(map[string][]fetcher.Email)
 		var mu sync.Mutex
 		var wg sync.WaitGroup
+		var errCount int32
 
 		for _, account := range cfg.Accounts {
 			wg.Add(1)
@@ -2352,7 +2430,9 @@ func fetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
 				defer wg.Done()
 				emails, err := fetcher.FetchFolderEmails(&acc, folderName, initialEmailLimit, 0)
 				if err != nil {
-					// Folder may not exist for this account — silently skip
+					mu.Lock()
+					errCount++
+					mu.Unlock()
 					return
 				}
 				mu.Lock()
@@ -2362,6 +2442,11 @@ func fetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
 		}
 
 		wg.Wait()
+
+		// If ALL accounts failed, signal offline
+		if int(errCount) == len(cfg.Accounts) && len(cfg.Accounts) > 0 {
+			return tui.FetchErr(fmt.Errorf("all accounts failed to fetch folder %s", folderName))
+		}
 
 		// Flatten all account emails
 		var allEmails []fetcher.Email

@@ -281,6 +281,9 @@ type Inbox struct {
 	// dateFormat is the Go reference-time layout used for absolute dates
 	// older than a week. When empty, the built-in defaults apply.
 	dateFormat string
+
+	isOffline      bool // True when last network fetch failed
+	pendingActions int  // Number of queued offline actions
 }
 
 // SetDateFormat configures the Go time layout used to render absolute
@@ -288,6 +291,18 @@ type Inbox struct {
 // config.Config.GetDateFormat.
 func (m *Inbox) SetDateFormat(layout string) {
 	m.dateFormat = layout
+}
+
+// SetOffline sets the offline state indicator.
+func (m *Inbox) SetOffline(offline bool) {
+	m.isOffline = offline
+	m.list.Title = m.getTitle()
+}
+
+// SetPendingActions sets the count of queued offline actions.
+func (m *Inbox) SetPendingActions(count int) {
+	m.pendingActions = count
+	m.list.Title = m.getTitle()
 }
 
 func NewInbox(emails []fetcher.Email, accounts []config.Account) *Inbox {
@@ -471,6 +486,12 @@ func (m *Inbox) getTitle() string {
 				break
 			}
 		}
+	}
+	if m.isOffline {
+		title += " (offline)"
+	}
+	if m.pendingActions > 0 {
+		title += fmt.Sprintf(" (%d queued)", m.pendingActions)
 	}
 	if m.isRefreshing {
 		title += " (refreshing...)"
