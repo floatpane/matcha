@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"mime"
 	"mime/quotedprintable"
 	"net/textproto"
@@ -1022,7 +1023,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 	}
 	if os.Getenv("DEBUG_KITTY_IMAGES") != "" {
 		msg := fmt.Sprintf("[kitty-img] body selection html=%s plain=%s chosen=%s\n", htmlPartID, plainPartID, textPartID)
-		fmt.Print(msg)
+		log.Print(msg)
 		if path := os.Getenv("DEBUG_KITTY_LOG"); path != "" {
 			if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
 				_, _ = f.WriteString(msg)
