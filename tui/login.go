@@ -176,6 +176,18 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
 
+		case "ctrl+v":
+			// Toggle password visibility while focused on the password field,
+			// so typos in app-passwords are catchable without retyping.
+			if m.focusIndex == inputPassword {
+				if m.inputs[inputPassword].EchoMode == textinput.EchoPassword {
+					m.inputs[inputPassword].EchoMode = textinput.EchoNormal
+				} else {
+					m.inputs[inputPassword].EchoMode = textinput.EchoPassword
+				}
+				return m, nil
+			}
+
 		case "enter":
 			m.updateFlags()
 			visible := m.visibleFields()
@@ -417,7 +429,11 @@ func (m *Login) View() tea.View {
 	if !m.hideTips && tip != "" {
 		views = append(views, TipStyle.Render("Tip: "+tip))
 	}
-	views = append(views, helpStyle.Render("\nenter: save • tab: next field • esc: back to menu"))
+	helpLine := "enter: save • tab: next field • esc: back to menu"
+	if m.focusIndex == inputPassword {
+		helpLine += " • ctrl+v: toggle password visibility"
+	}
+	views = append(views, helpStyle.Render("\n"+helpLine))
 
 	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, views...))
 }
