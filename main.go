@@ -1127,7 +1127,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !strings.HasPrefix(normalizedSubject, "re:") {
 			subject = "Re: " + subject
 		}
-		quotedText := fmt.Sprintf("\n\nOn %s, %s wrote:\n> %s", msg.Email.Date.Format("Jan 2, 2006 at 3:04 PM"), msg.Email.From, strings.ReplaceAll(msg.Email.Body, "\n", "\n> "))
+		quotedText := fmt.Sprintf("\n\nOn %s, %s wrote:\n> %s", msg.Email.Date.Local().Format("Jan 2, 2006 at 3:04 PM"), msg.Email.From, strings.ReplaceAll(msg.Email.Body, "\n", "\n> "))
 
 		var composer *tui.Composer
 		hideTips := false
@@ -1164,7 +1164,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		forwardHeader := fmt.Sprintf("\n\n---------- Forwarded message ----------\nFrom: %s\nDate: %s\nSubject: %s\nTo: %s\n\n",
 			msg.Email.From,
-			msg.Email.Date.Format("Mon, Jan 2, 2006 at 3:04 PM"),
+			msg.Email.Date.Local().Format("Mon, Jan 2, 2006 at 3:04 PM"),
 			msg.Email.Subject,
 			msg.Email.To,
 		)
@@ -2160,7 +2160,7 @@ func sendRSVP(account *config.Account, msg tui.SendRSVPMsg) tea.Cmd {
 		bodyText := fmt.Sprintf("%s: %s\n\n%s",
 			msg.Response,
 			msg.Event.Summary,
-			msg.Event.Start.Format("Mon Jan 2, 2006 3:04 PM"))
+			msg.Event.Start.Local().Format("Mon Jan 2, 2006 3:04 PM"))
 		if msg.Event.Location != "" {
 			bodyText += " at " + msg.Event.Location
 		}

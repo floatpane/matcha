@@ -79,16 +79,16 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		layout = d.inbox.dateFormat
 	}
 	dateStr := formatRelativeDate(i.date, layout)
+	listWidth := m.Width()
+	isSelected := index == m.Index()
+
 	styledDate := dateStyle.Render(dateStr)
-	if i.isRead {
-		styledDate = readEmailStyle.Render(dateStr)
+	if isSelected {
+		styledDate = selectedItemStyle.Render(dateStr)
 	} else {
 		styledDate = statusStyle.Render(dateStr)
 	}
 	dateWidth := lipgloss.Width(styledDate)
-
-	listWidth := m.Width()
-	isSelected := index == m.Index()
 	cursorWidth := 0
 	if isSelected {
 		cursorWidth = 2 // "> " prefix
@@ -194,6 +194,7 @@ func formatRelativeDate(t time.Time, layout string) string {
 		}
 		return fmt.Sprintf("%d days ago", days)
 	default:
+		t = t.Local()
 		if layout != "" {
 			return t.Format(layout)
 		}
