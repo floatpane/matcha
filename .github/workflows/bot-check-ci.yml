@@ -1,0 +1,104 @@
+name: Bot - CI Failure Notifier
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Process CI Result
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.BOT_TOKEN }}
+          script: |
+            const run = context.payload.workflow_run;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // 1. Robustly find the PR number (works for forks too)
+            let pr_number;
+            if (run.pull_requests && run.pull_requests.length > 0) {
+              pr_number = run.pull_requests[0].number;
+            } else {
+              // Fallback: Find PR associated with the commit SHA
+              const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner,
+                repo,
+                commit_sha: run.head_sha
+              });
+              if (prs.length > 0) {
+                pr_number = prs[0].number;
+              }
+            }
+
+            if (!pr_number) {
+              console.log("No open PR found for this workflow run. Exiting.");
+              return;
+            }
+
+            // 2. Handle CI Failure -> Request Changes
+            if (run.conclusion === 'failure') {
+              const jobs = await github.rest.actions.listJobsForWorkflowRun({
+                owner, repo, run_id: run.id
+              });
+
+              const failedJobs = jobs.data.jobs.filter(j => j.conclusion === 'failure').map(j => j.name);
+
+              let message = "The CI workflow failed. Please fix the following issues locally and push again:\n\n";
+              let foundSpecificInstruction = false;
+
+              if (failedJobs.some(name => name.includes('lint'))) {
+                message += "- **Lint Failed**: Run `gofmt -w .` to format files and `go vet ./...` to check for vet errors.\n";
+                foundSpecificInstruction = true;
+              }
+              if (failedJobs.some(name => name.includes('mod-tidy'))) {
+                message += "- **Mod-tidy Failed**: Run `go mod tidy` locally and commit the resulting `go.mod` and `go.sum` changes.\n";
+                foundSpecificInstruction = true;
+              }
+              if (failedJobs.some(name => name.includes('nix'))) {
+                message += "- **Nix Failed**: Run `nix flake check --no-build` locally to find the issue with the flake.\n";
+                foundSpecificInstruction = true;
+              }
+
+              if (!foundSpecificInstruction) {
+                message += "Please check the [CI logs](" + run.html_url + ") for more details on the failure.";
+              }
+
+              // Submit an official "Request Changes" review
+              await github.rest.pulls.createReview({
+                owner,
+                repo,
+                pull_number: pr_number,
+                body: message,
+                event: 'REQUEST_CHANGES'
+              });
+
+            }
+            // 3. Handle CI Success -> Dismiss Reviews
+            else if (run.conclusion === 'success') {
+              const { data: botUser } = await github.rest.users.getAuthenticated();
+
+              const { data: reviews } = await github.rest.pulls.listReviews({
+                owner, repo, pull_number: pr_number
+              });
+
+              // Find active blocking reviews left by the bot account
+              const botReviews = reviews.filter(r =>
+                r.user.login === botUser.login &&
+                r.state === 'CHANGES_REQUESTED'
+              );
+
+              // Dismiss them
+              for (const review of botReviews) {
+                await github.rest.pulls.dismissReview({
+                  owner,
+                  repo,
+                  pull_number: pr_number,
+                  review_id: review.id,
+                  message: 'The CI workflow has passed! Dismissing previous review.'
+                });
+              }
+            }

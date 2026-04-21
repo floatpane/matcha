@@ -83,8 +83,8 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v8
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "docs: update demo.gif from release [skip ci]"
+          token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          commit-message: "docs: update demo.gif from release"
           title: "docs: update demo.gif"
           body: |
             This PR updates the demo GIF based on the latest release version.

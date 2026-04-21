@@ -124,8 +124,8 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v8
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "docs: update feature screenshots [skip ci]"
+          token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          commit-message: "docs: update feature screenshots"
           title: "docs: update feature screenshots"
           body: |
             This PR updates the feature screenshots based on the latest release version.
