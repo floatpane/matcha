@@ -135,7 +135,10 @@ func deliveryHeadersMatch(data []byte, fetchEmail string) bool {
 func decodePart(reader io.Reader, header mail.PartHeader) (string, error) {
 	mediaType, params, err := mime.ParseMediaType(header.Get("Content-Type"))
 	if err != nil {
-		body, _ := ioutil.ReadAll(reader)
+		body, readErr := io.ReadAll(reader)
+		if readErr != nil {
+			return string(body), fmt.Errorf("fallback read after Content-Type parse error (%v): %w", err, readErr)
+		}
 		return string(body), nil
 	}
 
@@ -738,7 +741,11 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 								}
 								cType, _, _ := mime.ParseMediaType(p.Header.Get("Content-Type"))
 								disp, dParams, _ := mime.ParseMediaType(p.Header.Get("Content-Disposition"))
-								b, _ := ioutil.ReadAll(p.Body) // Auto-decodes quoted-printable/base64
+								b, readErr := io.ReadAll(p.Body) // Auto-decodes quoted-printable/base64
+								if readErr != nil {
+									log.Printf("fetcher: reading inner MIME part body: %v", readErr)
+									continue
+								}
 
 								if disp == "attachment" || disp == "inline" || (!strings.HasPrefix(cType, "multipart/") && cType != "text/plain" && cType != "text/html") {
 									fn := dParams["filename"]
