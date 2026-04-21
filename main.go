@@ -387,8 +387,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		if len(cachedFolders) == 0 {
-			cachedFolders = []string{"INBOX"}
+		// Always ensure INBOX is present, even if cache is empty or stale
+		if !seen["INBOX"] {
+			cachedFolders = append([]string{"INBOX"}, cachedFolders...)
 		}
 		m.folderInbox = tui.NewFolderInbox(cachedFolders, m.config.Accounts)
 		m.folderInbox.SetDateFormat(m.config.GetDateFormat())
