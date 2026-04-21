@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -26,6 +27,10 @@ func TestSanitizeFilename(t *testing.T) {
 		{"null bytes removed", "file\x00name.txt", "file\x00name.txt"},
 		{"unicode filename", "日本語.txt", "日本語.txt"},
 		{"long traversal chain", "a/b/c/../../../d/e/f.txt", "f.txt"},
+		{"exact 255 chars", strings.Repeat("a", 255), strings.Repeat("a", 255)},
+		{"256 chars", strings.Repeat("a", 256), strings.Repeat("a", 255)},
+		{"long with extension", strings.Repeat("b", 260) + ".txt", strings.Repeat("b", 251) + ".txt"},
+		{"long extension only", "a." + strings.Repeat("c", 260), "." + strings.Repeat("c", 254)},
 	}
 
 	for _, tt := range tests {

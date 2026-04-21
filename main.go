@@ -2584,6 +2584,16 @@ func sanitizeFilename(name string) string {
 	if name == "" || name == "." || strings.HasPrefix(name, ".") {
 		name = "attachment"
 	}
+	// Sanitize filename: enforce length limit to prevent filesystem errors
+	// with extremely long names from untrusted email headers.
+	const maxFilenameLen = 255
+	if len(name) > maxFilenameLen {
+		ext := filepath.Ext(name)
+		if len(ext) > maxFilenameLen {
+			ext = ext[:maxFilenameLen]
+		}
+		name = name[:maxFilenameLen-len(ext)] + ext
+	}
 	return name
 }
 
@@ -2602,6 +2612,7 @@ func downloadAttachmentCmd(account *config.Account, uid uint32, msg tui.Download
 		default:
 			data, err = fetcher.FetchAttachment(account, uid, msg.PartID, msg.Encoding)
 		}
+
 		if err != nil {
 			return tui.AttachmentDownloadedMsg{Err: err}
 		}
