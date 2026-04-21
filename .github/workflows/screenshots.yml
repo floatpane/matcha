@@ -121,25 +121,33 @@ jobs:
           rm -f screenshots/*.gif 2>/dev/null || true
           ls -la docs/docs/assets/features/
 
+      - name: Generate PR Body
+        id: pr-body
+        run: |
+          BODY="This PR updates the feature screenshots based on the latest release version.
+
+          Generated automatically by the Generate Screenshots workflow.
+
+          ### Screenshots included:"
+
+          for png in docs/docs/assets/features/*.png; do
+            [ -f "$png" ] || continue
+            filename=$(basename "$png")
+            BODY="$BODY
+          - \`$filename\`"
+          done
+
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
           commit-message: "docs: update feature screenshots"
           title: "docs: update feature screenshots"
-          body: |
-            This PR updates the feature screenshots based on the latest release version.
-
-            Generated automatically by the Generate Screenshots workflow.
-
-            ### Screenshots included:
-            - `main_menu.png` - Main menu / choice screen
-            - `compose_email.png` - Email composition with Markdown
-            - `compose_empty.png` - Clean compose interface
-            - `email_view.png` - HTML email with inline images and attachments
-            - `inbox_view.png` - Inbox with emails from various senders and dates
-            - `settings.png` - Settings / account management
-            - `drafts.png` - Draft management view
+          body: ${{ steps.pr-body.outputs.body }}
           branch: "update-screenshots"
           base: "master"
           add-paths: docs/docs/assets/features/

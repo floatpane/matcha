@@ -37,6 +37,8 @@ Sleep 1s
 # Navigate to Theme (2nd option in settings)
 Down
 Sleep 300ms
+Down
+Sleep 300ms
 Enter
 
 Sleep 1s
