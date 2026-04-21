@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Validate PR Title and Body
-        uses: actions/github-script@v9
+        uses: actions/github-script@v7
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_TITLE: ${{ github.event.pull_request.title }}
@@ -21,32 +21,34 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const pull_number = context.issue.number;
-
+            
             let errors = [];
-
-            // 1. Check Conventional Commits
+            
+            // 1. Check Conventional Commits and Title Length
             const ccRegex = /^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-z0-9\-]+\))?:\s.+$/;
             if (!ccRegex.test(title)) {
               errors.push("- **Title**: Does not follow conventional commits (e.g., `feat: added something`, `fix(core): resolved crash`).");
             }
-
+            if (title.length >= 40) {
+              errors.push(`- **Title**: Is too long (${title.length} characters). The PR title must be strictly under 40 characters.`);
+            }
+            
             // 2. Check PR Template adherence
             if (!body.includes("## What?") || !body.includes("## Why?")) {
               errors.push("- **Body**: Missing the `## What?` or `## Why?` headings required by the PR template.");
             }
-
+            
             // Check if they just left the HTML comments from the template empty
             const commentRegex = new RegExp("", "g");
             const cleanedBody = body.replace(commentRegex, "").trim();
-
             if (cleanedBody.length < 10) {
               errors.push("- **Body**: The PR description is too short or hasn't replaced the template placeholders.");
             }
-
+            
             // 3. Request Changes or Dismiss previous requests
             if (errors.length > 0) {
               const message = `Hi @${context.actor}! Please fix the following issues with your PR:\n\n${errors.join("\n")}`;
-
+              
               await github.rest.pulls.createReview({
                 owner,
                 repo,
@@ -54,25 +56,25 @@ jobs:
                 body: message,
                 event: 'REQUEST_CHANGES'
               });
-
+              
               core.setFailed("PR formatting checks failed.");
             } else {
               // The PR is now valid. Let's find out who the bot is to dismiss its own reviews.
               const { data: botUser } = await github.rest.users.getAuthenticated();
-
+              
               // Fetch all reviews on this PR
               const { data: reviews } = await github.rest.pulls.listReviews({
                 owner,
                 repo,
                 pull_number
               });
-
+              
               // Find active blocking reviews left by the bot account
-              const botReviews = reviews.filter(r =>
-                r.user.login === botUser.login &&
+              const botReviews = reviews.filter(r => 
+                r.user.login === botUser.login && 
                 r.state === 'CHANGES_REQUESTED'
               );
-
+              
               // Dismiss them so the PR is unblocked
               for (const review of botReviews) {
                 await github.rest.pulls.dismissReview({
