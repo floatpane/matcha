@@ -443,6 +443,10 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, f := range msg.MergedFolders {
 			folderNames = append(folderNames, f.Name)
 		}
+		// Don't overwrite cached folders with empty list (offline/error)
+		if len(folderNames) == 0 {
+			return m, nil
+		}
 		m.folderInbox.SetFolders(folderNames)
 		// Cache folder lists per account
 		for accID, folders := range msg.FoldersByAccount {
@@ -551,13 +555,30 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tui.FetchErr:
+		wasOffline := m.isOffline
 		m.isOffline = true
 		if m.folderInbox != nil {
 			m.folderInbox.SetLoadingEmails(false)
 			m.folderInbox.SetRefreshing(false)
 			m.folderInbox.GetInbox().SetOffline(true)
+			// Fall back to disk cache if inbox has no emails yet
+			folderName := m.folderInbox.GetCurrentFolder()
+			if len(m.emails) == 0 {
+				if diskCached := loadFolderEmailsFromCache(folderName); len(diskCached) > 0 {
+					m.folderEmails[folderName] = diskCached
+					m.emails = diskCached
+					m.emailsByAcct = make(map[string][]fetcher.Email)
+					for _, email := range diskCached {
+						m.emailsByAcct[email.AccountID] = append(m.emailsByAcct[email.AccountID], email)
+					}
+					m.folderInbox.SetEmails(diskCached, m.config.Accounts)
+					m.folderInbox.GetInbox().SetFolderName(folderName)
+				}
+			}
 		}
-		log.Printf("fetch error (offline): %v", error(msg))
+		if !wasOffline {
+			log.Printf("went offline: %v", error(msg))
+		}
 		return m, nil
 
 	case tui.FolderEmailsFetchedMsg:
@@ -565,9 +586,13 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Clear offline state on successful fetch
+		var replayCmd tea.Cmd
 		if m.isOffline {
 			m.isOffline = false
 			m.folderInbox.GetInbox().SetOffline(false)
+			if config.PendingActionCount() > 0 {
+				replayCmd = replayOfflineQueueCmd(m.config)
+			}
 		}
 		// Call plugin hooks for received emails
 		if m.plugins != nil {
@@ -589,7 +614,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}()
 		// Only update the view if the user is still on this folder
 		if m.folderInbox.GetCurrentFolder() != msg.FolderName {
-			return m, nil
+			return m, replayCmd
 		}
 		m.emails = msg.Emails
 		m.emailsByAcct = make(map[string][]fetcher.Email)
@@ -601,7 +626,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.folderInbox.SetLoadingEmails(false)
 		m.syncPluginStatus()
 		m.syncPluginKeyBindings()
-		return m, m.pluginNotifyCmd()
+		return m, tea.Batch(m.pluginNotifyCmd(), replayCmd)
 
 	case tui.FetchFolderMoreEmailsMsg:
 		if msg.AccountID == "" || m.config == nil {
@@ -745,6 +770,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.folderInbox != nil {
 						m.folderInbox.GetInbox().SetOffline(false)
 					}
+					if config.PendingActionCount() > 0 {
+						cmds = append(cmds, replayOfflineQueueCmd(m.config))
+					}
 				}
 				if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
 					cmds = append(cmds, fetchFolderEmailsCmd(m.config, ev.Folder))
@@ -777,6 +805,17 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 
 	case tui.EmailsRefreshedMsg:
+		// Clear offline state on successful refresh
+		var replayCmd tea.Cmd
+		if m.isOffline {
+			m.isOffline = false
+			if m.folderInbox != nil {
+				m.folderInbox.GetInbox().SetOffline(false)
+			}
+			if config.PendingActionCount() > 0 {
+				replayCmd = replayOfflineQueueCmd(m.config)
+			}
+		}
 		// Merge refreshed emails with any paginated emails already loaded.
 		for accID, refreshed := range msg.EmailsByAccount {
 			refreshedUIDs := make(map[uint32]struct{}, len(refreshed))
@@ -799,7 +838,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.folderInbox.SetEmails(m.emails, m.config.Accounts)
 			m.folderInbox.GetInbox().Update(msg)
 		}
-		return m, nil
+		return m, replayCmd
 
 	case tui.AllEmailsFetchedMsg:
 		m.emailsByAcct = msg.EmailsByAccount
@@ -1086,6 +1125,15 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tui.EmailBodyFetchedMsg:
 		if msg.Err != nil {
+			if m.isOffline {
+				if m.folderInbox != nil {
+					m.previousModel = m.folderInbox
+				}
+				m.current = tui.NewStatus("Email body not available offline (not cached)")
+				return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+					return tui.RestoreViewMsg{}
+				})
+			}
 			log.Printf("could not fetch email body: %v", msg.Err)
 			if m.folderInbox != nil {
 				m.current = m.folderInbox
@@ -1144,9 +1192,19 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.folderInbox != nil {
 				folderName = m.folderInbox.GetCurrentFolder()
 			}
-			account := m.config.GetAccountByID(msg.AccountID)
-			if account != nil {
-				markReadCmd = markEmailAsReadCmd(account, msg.UID, msg.AccountID, folderName)
+			if m.isOffline {
+				go func() {
+					_ = config.EnqueueOfflineAction(config.OfflineAction{
+						ID: uuid.NewString(), Type: "mark_read", AccountID: msg.AccountID,
+						Folder: folderName, UIDs: []uint32{msg.UID},
+					})
+				}()
+				m.updatePendingCount()
+			} else {
+				account := m.config.GetAccountByID(msg.AccountID)
+				if account != nil {
+					markReadCmd = markEmailAsReadCmd(account, msg.UID, msg.AccountID, folderName)
+				}
 			}
 		}
 
@@ -1289,6 +1347,56 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			account = m.config.GetFirstAccount()
 		}
 
+		if m.isOffline {
+			// Save as draft and queue for sending when back online
+			if m.folderInbox != nil {
+				m.previousModel = m.folderInbox
+			} else {
+				m.previousModel = tui.NewChoice()
+				m.previousModel, _ = m.previousModel.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			}
+			accountID := ""
+			if account != nil {
+				accountID = account.ID
+			}
+			outboxDraftID := uuid.NewString()
+			draft := config.Draft{
+				ID:              outboxDraftID,
+				To:              msg.To,
+				Cc:              msg.Cc,
+				Bcc:             msg.Bcc,
+				Subject:         msg.Subject,
+				Body:            msg.Body,
+				AttachmentPaths: msg.AttachmentPaths,
+				AccountID:       accountID,
+				InReplyTo:       msg.InReplyTo,
+				References:      msg.References,
+				QuotedText:      msg.QuotedText,
+			}
+			if err := config.SaveDraft(draft); err != nil {
+				log.Printf("offline send: failed to save draft: %v", err)
+				m.current = tui.NewStatus("Error: could not save email for offline sending")
+				return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+					return tui.RestoreViewMsg{}
+				})
+			}
+			go func() {
+				_ = config.EnqueueOfflineAction(config.OfflineAction{
+					ID: uuid.NewString(), Type: "send", AccountID: accountID,
+					DraftID: outboxDraftID,
+				})
+			}()
+			// Delete original draft if editing one
+			if draftID != "" {
+				go config.DeleteDraft(draftID)
+			}
+			m.updatePendingCount()
+			m.current = tui.NewStatus("Email queued for sending (offline)")
+			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+				return tui.RestoreViewMsg{}
+			})
+		}
+
 		statusText := "Sending email..."
 		if msg.SignPGP && account != nil && account.PGPKeySource == "yubikey" {
 			statusText = "Touch your YubiKey to sign..."
@@ -1354,6 +1462,45 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tui.EmailResultMsg:
 		if msg.Err != nil {
+			// If send failed and we have the original message, queue it for offline retry
+			if msg.Original != nil && isNetworkError(msg.Err) {
+				m.isOffline = true
+				if m.folderInbox != nil {
+					m.folderInbox.GetInbox().SetOffline(true)
+					m.previousModel = m.folderInbox
+				} else {
+					m.previousModel = tui.NewChoice()
+					m.previousModel, _ = m.previousModel.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+				}
+				outboxDraftID := uuid.NewString()
+				orig := msg.Original
+				draft := config.Draft{
+					ID:              outboxDraftID,
+					To:              orig.To,
+					Cc:              orig.Cc,
+					Bcc:             orig.Bcc,
+					Subject:         orig.Subject,
+					Body:            orig.Body,
+					AttachmentPaths: orig.AttachmentPaths,
+					AccountID:       msg.AccountID,
+					InReplyTo:       orig.InReplyTo,
+					References:      orig.References,
+					QuotedText:      orig.QuotedText,
+				}
+				if err := config.SaveDraft(draft); err == nil {
+					_ = config.EnqueueOfflineAction(config.OfflineAction{
+						ID: uuid.NewString(), Type: "send", AccountID: msg.AccountID,
+						DraftID: outboxDraftID,
+					})
+					m.updatePendingCount()
+					m.current = tui.NewStatus("Network unreachable — email queued for sending")
+				} else {
+					m.current = tui.NewStatus("Send failed offline and could not save draft")
+				}
+				return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+					return tui.RestoreViewMsg{}
+				})
+			}
 			log.Printf("Failed to send email: %v", msg.Err)
 			m.previousModel = tui.NewChoice()
 			m.previousModel, _ = m.previousModel.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
@@ -1440,6 +1587,13 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tui.EmailMarkedReadMsg:
 		if msg.Err != nil {
 			log.Printf("Error marking email as read: %v", msg.Err)
+		}
+		return m, nil
+
+	case tui.OfflineQueueReplayedMsg:
+		m.updatePendingCount()
+		if msg.Failed > 0 {
+			log.Printf("offline queue replay: %d replayed, %d failed", msg.Replayed, msg.Failed)
 		}
 		return m, nil
 
@@ -1698,6 +1852,26 @@ func (m *mainModel) markEmailAsReadInStores(uid uint32, accountID string) {
 	if m.folderInbox != nil {
 		m.folderInbox.GetInbox().MarkEmailAsRead(uid, accountID)
 	}
+}
+
+func (m *mainModel) updatePendingCount() {
+	if m.folderInbox != nil {
+		m.folderInbox.GetInbox().SetPendingActions(config.PendingActionCount())
+	}
+}
+
+// isNetworkError checks if an error is a network connectivity issue.
+func isNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "network is unreachable") ||
+		strings.Contains(s, "no such host") ||
+		strings.Contains(s, "connection refused") ||
+		strings.Contains(s, "i/o timeout") ||
+		strings.Contains(s, "connection reset") ||
+		strings.Contains(s, "no route to host")
 }
 
 func (m *mainModel) removeEmailFromStores(uid uint32, accountID string) {
@@ -2206,7 +2380,7 @@ func sendEmail(account *config.Account, msg tui.SendEmailMsg) tea.Cmd {
 		rawMsg, err := sender.SendEmail(account, recipients, cc, bcc, msg.Subject, body, string(htmlBody), images, attachments, msg.InReplyTo, msg.References, msg.SignSMIME, msg.EncryptSMIME, msg.SignPGP, false)
 		if err != nil {
 			log.Printf("Failed to send email: %v", err)
-			return tui.EmailResultMsg{Err: err}
+			return tui.EmailResultMsg{Err: err, Original: &msg, AccountID: account.ID}
 		}
 
 		// Append to Sent folder via IMAP (Gmail auto-saves, so skip it)
@@ -2509,6 +2683,87 @@ func markEmailAsReadCmd(account *config.Account, uid uint32, accountID string, f
 	return func() tea.Msg {
 		err := fetcher.MarkEmailAsReadInMailbox(account, folderName, uid)
 		return tui.EmailMarkedReadMsg{UID: uid, AccountID: accountID, Err: err}
+	}
+}
+
+func replayOfflineQueueCmd(cfg *config.Config) tea.Cmd {
+	return func() tea.Msg {
+		actions := config.GetPendingActions()
+		if len(actions) == 0 {
+			return tui.OfflineQueueReplayedMsg{}
+		}
+		var replayed, failed int
+		for _, action := range actions {
+			account := cfg.GetAccountByID(action.AccountID)
+			if account == nil {
+				log.Printf("offline replay: unknown account %s, removing action %s", action.AccountID, action.ID)
+				_ = config.DequeueOfflineAction(action.ID)
+				failed++
+				continue
+			}
+			var err error
+			switch action.Type {
+			case "mark_read":
+				for _, uid := range action.UIDs {
+					err = fetcher.MarkEmailAsReadInMailbox(account, action.Folder, uid)
+				}
+			case "delete":
+				for _, uid := range action.UIDs {
+					err = fetcher.DeleteFolderEmail(account, action.Folder, uid)
+				}
+			case "archive":
+				for _, uid := range action.UIDs {
+					err = fetcher.ArchiveFolderEmail(account, action.Folder, uid)
+				}
+			case "move":
+				for _, uid := range action.UIDs {
+					err = fetcher.MoveEmailToFolder(account, uid, action.Folder, action.DestFolder)
+				}
+			case "send":
+				draft := config.GetDraft(action.DraftID)
+				if draft == nil {
+					log.Printf("offline replay: draft %s not found for send action %s", action.DraftID, action.ID)
+					_ = config.DequeueOfflineAction(action.ID)
+					failed++
+					continue
+				}
+				recipients := splitEmails(draft.To)
+				cc := splitEmails(draft.Cc)
+				bcc := splitEmails(draft.Bcc)
+				body := draft.Body
+				if draft.QuotedText != "" {
+					body = body + draft.QuotedText
+				}
+				htmlBody := markdownToHTML([]byte(body))
+				attachments := make(map[string][]byte)
+				for _, attachPath := range draft.AttachmentPaths {
+					fileData, readErr := os.ReadFile(attachPath)
+					if readErr != nil {
+						log.Printf("offline replay: could not read attachment %s: %v", attachPath, readErr)
+						continue
+					}
+					_, filename := filepath.Split(attachPath)
+					attachments[filename] = fileData
+				}
+				_, err = sender.SendEmail(account, recipients, cc, bcc, draft.Subject, body, string(htmlBody), nil, attachments, draft.InReplyTo, draft.References, false, false, false, false)
+				if err == nil {
+					_ = config.DeleteDraft(action.DraftID)
+				}
+			default:
+				log.Printf("offline replay: unknown action type %s", action.Type)
+				_ = config.DequeueOfflineAction(action.ID)
+				failed++
+				continue
+			}
+			if err != nil {
+				log.Printf("offline replay failed for %s/%s: %v", action.Type, action.ID, err)
+				failed++
+			} else {
+				_ = config.DequeueOfflineAction(action.ID)
+				replayed++
+			}
+		}
+		return tui.OfflineQueueReplayedMsg{Replayed: replayed, Failed: failed}
 	}
 }
 

@@ -75,7 +75,9 @@ type ChooseServiceMsg struct {
 }
 
 type EmailResultMsg struct {
-	Err error
+	Err       error
+	Original  *SendEmailMsg // Set on failure so offline queue can retry
+	AccountID string        // Account used for sending
 }
 
 type ClearStatusMsg struct{}

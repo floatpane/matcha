@@ -10,11 +10,12 @@ import (
 // OfflineAction represents a queued email operation to replay when back online.
 type OfflineAction struct {
 	ID         string    `json:"id"`
-	Type       string    `json:"type"` // "mark_read", "delete", "archive", "move"
+	Type       string    `json:"type"` // "mark_read", "delete", "archive", "move", "send"
 	AccountID  string    `json:"account_id"`
 	Folder     string    `json:"folder"`
 	UIDs       []uint32  `json:"uids"`
 	DestFolder string    `json:"dest_folder,omitempty"` // move only
+	DraftID    string    `json:"draft_id,omitempty"`    // send only
 	CreatedAt  time.Time `json:"created_at"`
 }
 
