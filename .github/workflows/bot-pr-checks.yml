@@ -36,7 +36,9 @@ jobs:
             }
 
             // Check if they just left the HTML comments from the template empty
-            const cleanedBody = body.replace(//g, "").trim();
+            const commentRegex = new RegExp("", "g");
+            const cleanedBody = body.replace(commentRegex, "").trim();
+
             if (cleanedBody.length < 10) {
               errors.push("- **Body**: The PR description is too short or hasn't replaced the template placeholders.");
             }
