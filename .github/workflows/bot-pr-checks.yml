@@ -14,7 +14,7 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_TITLE: ${{ github.event.pull_request.title }}
         with:
-          github-token: ${{ secrets.BOT_TOKEN }}
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
           script: |
             const title = process.env.PR_TITLE;
             const body = process.env.PR_BODY || "";
