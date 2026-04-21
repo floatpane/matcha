@@ -34,6 +34,15 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
+	case "esc":
+		// Clear inputs and return to menu
+		m.encPasswordInput.SetValue("")
+		m.encConfirmInput.SetValue("")
+		m.encPasswordInput.Blur()
+		m.encConfirmInput.Blur()
+		m.encError = ""
+		m.activePane = PaneMenu
+		return m, nil
 	case "tab", "shift+tab", "down", "up":
 		if msg.String() == "shift+tab" || msg.String() == "up" {
 			m.encFocusIndex--
@@ -85,6 +94,15 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return SecureModeEnabledMsg{Err: err}
 			}
 		}
+	default:
+		// Forward input to focused textinput
+		var cmd tea.Cmd
+		if m.encFocusIndex == 0 {
+			m.encPasswordInput, cmd = m.encPasswordInput.Update(msg)
+		} else if m.encFocusIndex == 1 {
+			m.encConfirmInput, cmd = m.encConfirmInput.Update(msg)
+		}
+		return m, cmd
 	}
 	return m, nil
 }
