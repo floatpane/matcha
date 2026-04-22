@@ -19,6 +19,7 @@ Ready to dive in? Here are a few places to start:
 - 🚀 [Installation Guide](.//installation.md) - Get Matcha running on your machine
 - 📖 [Usage & Shortcuts](./usage.md) - Learn how to navigate the interface
 - ⚙️ [Configuration](./Configuration.md) - Set up your accounts and preferences
+- 🌍 [Localization](./localization.md) - Add or edit translations for your language
 
 ## Core Features
 
