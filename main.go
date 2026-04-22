@@ -1,17 +1,11 @@
 package main
 
 import (
-	"archive/tar"
-	"archive/zip"
-	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"flag"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,7 +25,6 @@ import (
 	matchaCli "github.com/floatpane/matcha/cli"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/config"
-	matchaDaemon "github.com/floatpane/matcha/daemon"
 	"github.com/floatpane/matcha/daemonclient"
 	"github.com/floatpane/matcha/daemonrpc"
 	"github.com/floatpane/matcha/fetcher"
@@ -58,33 +51,12 @@ var (
 	version = "dev"
 	commit  = ""
 	date    = ""
-
-	// httpClient is used for all outbound HTTP requests (update checks, asset downloads).
-	// Configured with a 30s timeout to prevent indefinite hangs on slow/unresponsive servers.
-	httpClient = &http.Client{
-		Timeout: 30 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return fmt.Errorf("stopped after 5 redirects")
-			}
-			return nil
-		},
-	}
 )
 
 // UpdateAvailableMsg is sent into the TUI when a newer release is detected.
 type UpdateAvailableMsg struct {
 	Latest  string
 	Current string
-}
-
-// internal struct for parsing GitHub release JSON.
-type githubRelease struct {
-	TagName string `json:"tag_name"`
-	Assets  []struct {
-		Name               string `json:"name"`
-		BrowserDownloadURL string `json:"browser_download_url"`
-	} `json:"assets"`
 }
 
 type mainModel struct {
@@ -1284,7 +1256,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if r == "" {
 						continue
 					}
-					name, email := parseEmailAddress(r)
+					name, email := clib.ParseEmailAddress(r)
 					if err := config.AddContact(name, email); err != nil {
 						log.Printf("Error saving contact: %v", err)
 					}
@@ -2021,7 +1993,7 @@ func saveEmailsToCache(emails []fetcher.Email) {
 
 		// Save sender as a contact
 		if email.From != "" {
-			name, emailAddr := parseEmailAddress(email.From)
+			name, emailAddr := clib.ParseEmailAddress(email.From)
 			if err := config.AddContact(name, emailAddr); err != nil {
 				log.Printf("Error saving contact from email: %v", err)
 			}
@@ -2031,23 +2003,6 @@ func saveEmailsToCache(emails []fetcher.Email) {
 	if err := config.SaveEmailCache(cache); err != nil {
 		log.Printf("Error saving email cache: %v", err)
 	}
-}
-
-// parseEmailAddress parses "Name <email>" or just "email" format
-func parseEmailAddress(addr string) (name, email string) {
-	addr = strings.TrimSpace(addr)
-	if idx := strings.Index(addr, "<"); idx != -1 {
-		name = strings.TrimSpace(addr[:idx])
-		endIdx := strings.Index(addr, ">")
-		if endIdx > idx {
-			email = strings.TrimSpace(addr[idx+1 : endIdx])
-		} else {
-			email = strings.TrimSpace(addr[idx+1:])
-		}
-	} else {
-		email = addr
-	}
-	return name, email
 }
 
 func fetchEmailBodyCmd(cfg *config.Config, uid uint32, accountID string, mailbox tui.MailboxKind) tea.Cmd {
@@ -2086,33 +2041,15 @@ func fetchEmailBodyCmd(cfg *config.Config, uid uint32, accountID string, mailbox
 	}
 }
 
-func markdownToHTML(md []byte) []byte {
-	return clib.MarkdownToHTML(md)
-}
-
-func splitEmails(s string) []string {
-	if s == "" {
-		return nil
-	}
-	parts := strings.Split(s, ",")
-	var res []string
-	for _, p := range parts {
-		if trimmed := strings.TrimSpace(p); trimmed != "" {
-			res = append(res, trimmed)
-		}
-	}
-	return res
-}
-
 func sendEmail(account *config.Account, msg tui.SendEmailMsg) tea.Cmd {
 	return func() tea.Msg {
 		if account == nil {
 			return tui.EmailResultMsg{Err: fmt.Errorf("no account configured")}
 		}
 
-		recipients := splitEmails(msg.To)
-		cc := splitEmails(msg.Cc)
-		bcc := splitEmails(msg.Bcc)
+		recipients := clib.SplitEmails(msg.To)
+		cc := clib.SplitEmails(msg.Cc)
+		bcc := clib.SplitEmails(msg.Bcc)
 		body := msg.Body
 		// Append signature if present
 		if msg.Signature != "" {
@@ -2140,7 +2077,7 @@ func sendEmail(account *config.Account, msg tui.SendEmailMsg) tea.Cmd {
 			body = strings.Replace(body, imgPath, "cid:"+cid, 1)
 		}
 
-		htmlBody := markdownToHTML([]byte(body))
+		htmlBody := clib.MarkdownToHTML([]byte(body))
 
 		for _, attachPath := range msg.AttachmentPaths {
 			fileData, err := os.ReadFile(attachPath)
@@ -2721,632 +2658,17 @@ func downloadAttachmentCmd(account *config.Account, uid uint32, msg tui.Download
 	}
 }
 
-/*
-detectInstalledVersion returns a best-effort installed version string.
-Priority:
- 1. If the build-in `version` variable is set to something other than "dev", return it.
- 2. If Homebrew is present and reports a version for `matcha`, return that.
- 3. If snap is present and lists `matcha`, return that.
- 4. Fallback to the build `version` (likely "dev").
-*/
-func detectInstalledVersion() string {
-	v := strings.TrimSpace(version)
-	if v != "dev" && v != "" {
-		return v
-	}
-
-	// Try Homebrew (macOS)
-	if runtime.GOOS == "darwin" {
-		if _, err := exec.LookPath("brew"); err == nil {
-			// `brew list --versions matcha` prints: matcha 1.2.3
-			if out, err := exec.Command("brew", "list", "--versions", "matcha").Output(); err == nil {
-				parts := strings.Fields(string(out))
-				if len(parts) >= 2 {
-					return parts[1]
-				}
-			}
-		}
-	}
-
-	// Try WinGet (Windows)
-	if runtime.GOOS == "windows" {
-		if _, err := exec.LookPath("winget"); err == nil {
-			if out, err := exec.Command("winget", "list", "--id", "floatpane.matcha", "--disable-interactivity").Output(); err == nil {
-				lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-				for _, line := range lines {
-					if strings.Contains(strings.ToLower(line), "floatpane.matcha") {
-						fields := strings.Fields(line)
-						for _, f := range fields {
-							if len(f) > 0 && f[0] >= '0' && f[0] <= '9' && strings.Contains(f, ".") {
-								return f
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// Try snap (Linux)
-	if runtime.GOOS == "linux" {
-		if _, err := exec.LookPath("snap"); err == nil {
-			if out, err := exec.Command("snap", "list", "matcha").Output(); err == nil {
-				lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-				if len(lines) >= 2 {
-					fields := strings.Fields(lines[1])
-					if len(fields) >= 2 {
-						return fields[1]
-					}
-				}
-			}
-		}
-
-		if _, err := exec.LookPath("flatpak"); err == nil {
-			if out, err := exec.Command("flatpak", "info", "com.floatpane.matcha").Output(); err == nil {
-				lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if strings.HasPrefix(line, "Version:") {
-						fields := strings.Fields(line)
-						if len(fields) >= 2 {
-							return fields[1]
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return v
-}
-
-/*
-checkForUpdatesCmd queries GitHub for the latest release tag and returns a
-tea.Msg (UpdateAvailableMsg) if the latest version differs from the current
-installed version. This runs in the background when the TUI initializes.
-*/
+// checkForUpdatesCmd queries GitHub for the latest release tag and returns a
+// tea.Msg (UpdateAvailableMsg) if the latest version differs from the current
+// installed version. This runs in the background when the TUI initializes.
 func checkForUpdatesCmd() tea.Cmd {
 	return func() tea.Msg {
-		// Non-fatal: if anything goes wrong we just don't show the update message.
-		const api = "https://api.github.com/repos/floatpane/matcha/releases/latest"
-		resp, err := httpClient.Get(api)
-		if err != nil {
-			return nil
-		}
-		defer resp.Body.Close()
-
-		var rel githubRelease
-		if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-			return nil
-		}
-
-		latest := strings.TrimPrefix(rel.TagName, "v")
-		installed := strings.TrimPrefix(detectInstalledVersion(), "v")
-		if latest != "" && installed != "" && latest != installed {
-			return UpdateAvailableMsg{Latest: latest, Current: installed}
+		latest, current := matchaCli.CheckForUpdates(version)
+		if latest != "" && current != "" && latest != current {
+			return UpdateAvailableMsg{Latest: latest, Current: current}
 		}
 		return nil
 	}
-}
-
-// runUpdateCLI implements the CLI entrypoint for `matcha update`.
-// It detects the likely installation method and attempts the appropriate
-// update path (Homebrew, Snap, or GitHub release binary extract).
-// runOAuthCLI handles the "matcha oauth" subcommand for OAuth2 management.
-// Usage:
-//
-//	matcha oauth auth   <email> [--provider gmail|outlook] [--client-id ID --client-secret SECRET]
-//	matcha oauth token  <email>
-//	matcha oauth revoke <email>
-func runOAuthCLI(args []string) {
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: matcha oauth <auth|token|revoke> <email> [flags]")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Commands:")
-		fmt.Fprintln(os.Stderr, "  auth   <email>  Authorize an email account via OAuth2 (opens browser)")
-		fmt.Fprintln(os.Stderr, "  token  <email>  Print a fresh access token (refreshes automatically)")
-		fmt.Fprintln(os.Stderr, "  revoke <email>  Revoke and delete stored OAuth2 tokens")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Flags for auth:")
-		fmt.Fprintln(os.Stderr, "  --provider gmail|outlook  OAuth2 provider (auto-detected from email)")
-		fmt.Fprintln(os.Stderr, "  --client-id ID            OAuth2 client ID")
-		fmt.Fprintln(os.Stderr, "  --client-secret SECRET    OAuth2 client secret")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Credentials are stored per provider in:")
-		fmt.Fprintln(os.Stderr, "  Gmail:   ~/.config/matcha/oauth_client.json")
-		fmt.Fprintln(os.Stderr, "  Outlook: ~/.config/matcha/oauth_client_outlook.json")
-		os.Exit(1)
-	}
-
-	// Find the Python script and pass through to it
-	script, err := config.OAuthScriptPath()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	cmdArgs := append([]string{script}, args...)
-	cmd := exec.Command("python3", cmdArgs...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			os.Exit(exitErr.ExitCode())
-		}
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-// stringSliceFlag implements flag.Value to allow repeated --attach flags.
-type stringSliceFlag []string
-
-func (s *stringSliceFlag) String() string { return strings.Join(*s, ", ") }
-func (s *stringSliceFlag) Set(val string) error {
-	*s = append(*s, val)
-	return nil
-}
-
-// runSendCLI implements the CLI entrypoint for `matcha send`.
-// It sends an email non-interactively using configured accounts.
-func runSendCLI(args []string) {
-	fs := flag.NewFlagSet("send", flag.ExitOnError)
-
-	to := fs.String("to", "", "Recipient(s), comma-separated (required)")
-	cc := fs.String("cc", "", "CC recipient(s), comma-separated")
-	bcc := fs.String("bcc", "", "BCC recipient(s), comma-separated")
-	subject := fs.String("subject", "", "Email subject (required)")
-	body := fs.String("body", "", `Email body (Markdown supported). Use "-" to read from stdin`)
-	from := fs.String("from", "", "Sender account email (defaults to first configured account)")
-	withSignature := fs.Bool("signature", true, "Append default signature")
-	signSMIME := fs.Bool("sign-smime", false, "Sign with S/MIME")
-	encryptSMIME := fs.Bool("encrypt-smime", false, "Encrypt with S/MIME")
-	signPGP := fs.Bool("sign-pgp", false, "Sign with PGP")
-
-	var attachments stringSliceFlag
-	fs.Var(&attachments, "attach", "Attachment file path (can be repeated)")
-
-	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: matcha send [flags]")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Send an email non-interactively using a configured account.")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Flags:")
-		fs.PrintDefaults()
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Examples:")
-		fmt.Fprintln(os.Stderr, `  matcha send --to user@example.com --subject "Hello" --body "Hi there"`)
-		fmt.Fprintln(os.Stderr, `  echo "Body text" | matcha send --to user@example.com --subject "Hello" --body -`)
-		fmt.Fprintln(os.Stderr, `  matcha send --to user@example.com --subject "Report" --body "See attached" --attach report.pdf`)
-	}
-
-	if err := fs.Parse(args); err != nil {
-		os.Exit(1)
-	}
-
-	if *to == "" || *subject == "" {
-		fmt.Fprintln(os.Stderr, "Error: --to and --subject are required")
-		fs.Usage()
-		os.Exit(1)
-	}
-
-	// Read body from stdin if "-"
-	emailBody := *body
-	if emailBody == "-" {
-		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
-			os.Exit(1)
-		}
-		emailBody = string(data)
-	}
-
-	// Load config
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		os.Exit(1)
-	}
-	if !cfg.HasAccounts() {
-		fmt.Fprintln(os.Stderr, "Error: no accounts configured. Run matcha to set up an account first.")
-		os.Exit(1)
-	}
-
-	// Resolve account
-	var account *config.Account
-	if *from != "" {
-		account = cfg.GetAccountByEmail(*from)
-		if account == nil {
-			// Also try matching against FetchEmail
-			for i := range cfg.Accounts {
-				if strings.EqualFold(cfg.Accounts[i].FetchEmail, *from) {
-					account = &cfg.Accounts[i]
-					break
-				}
-			}
-		}
-		if account == nil {
-			fmt.Fprintf(os.Stderr, "Error: no account found matching %q\n", *from)
-			os.Exit(1)
-		}
-	} else {
-		account = cfg.GetFirstAccount()
-	}
-
-	// Use account S/MIME/PGP defaults unless explicitly set
-	if !isFlagSet(fs, "sign-smime") {
-		*signSMIME = account.SMIMESignByDefault
-	}
-	if !isFlagSet(fs, "sign-pgp") {
-		*signPGP = account.PGPSignByDefault
-	}
-
-	// Append signature
-	if *withSignature {
-		if sig, err := config.LoadSignature(); err == nil && sig != "" {
-			emailBody = emailBody + "\n\n" + sig
-		}
-	}
-
-	// Process inline images (same logic as TUI sendEmail)
-	images := make(map[string][]byte)
-	re := regexp.MustCompile(`!\[.*?\]\((.*?)\)`)
-	matches := re.FindAllStringSubmatch(emailBody, -1)
-	for _, match := range matches {
-		imgPath := match[1]
-		imgData, err := os.ReadFile(imgPath)
-		if err != nil {
-			log.Printf("Could not read image file %s: %v", imgPath, err)
-			continue
-		}
-		cid := fmt.Sprintf("%s%s@%s", uuid.NewString(), filepath.Ext(imgPath), "matcha")
-		images[cid] = []byte(base64.StdEncoding.EncodeToString(imgData))
-		emailBody = strings.Replace(emailBody, imgPath, "cid:"+cid, 1)
-	}
-
-	htmlBody := markdownToHTML([]byte(emailBody))
-
-	// Process attachments
-	attachMap := make(map[string][]byte)
-	for _, attachPath := range attachments {
-		fileData, err := os.ReadFile(attachPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading attachment %s: %v\n", attachPath, err)
-			os.Exit(1)
-		}
-		attachMap[filepath.Base(attachPath)] = fileData
-	}
-
-	// Send
-	recipients := splitEmails(*to)
-	ccList := splitEmails(*cc)
-	bccList := splitEmails(*bcc)
-
-	rawMsg, sendErr := sender.SendEmail(account, recipients, ccList, bccList, *subject, emailBody, string(htmlBody), images, attachMap, "", nil, *signSMIME, *encryptSMIME, *signPGP, false)
-	if sendErr != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", sendErr)
-		os.Exit(1)
-	}
-
-	// Append to Sent folder via IMAP (Gmail auto-saves, so skip it)
-	if account.ServiceProvider != "gmail" {
-		if err := fetcher.AppendToSentMailbox(account, rawMsg); err != nil {
-			log.Printf("Failed to append sent message to Sent folder: %v", err)
-		}
-	}
-
-	fmt.Println("Email sent successfully.")
-}
-
-// isFlagSet returns true if the named flag was explicitly provided on the command line.
-func isFlagSet(fs *flag.FlagSet, name string) bool {
-	found := false
-	fs.Visit(func(f *flag.Flag) {
-		if f.Name == name {
-			found = true
-		}
-	})
-	return found
-}
-
-func runUpdateCLI() error {
-	const api = "https://api.github.com/repos/floatpane/matcha/releases/latest"
-	resp, err := httpClient.Get(api)
-	if err != nil {
-		return fmt.Errorf("could not query releases: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var rel githubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return fmt.Errorf("could not parse release info: %w", err)
-	}
-
-	latestTag := rel.TagName
-	if strings.HasPrefix(latestTag, "v") {
-		latestTag = latestTag[1:]
-	}
-
-	fmt.Printf("Current version: %s\n", version)
-	fmt.Printf("Latest version: %s\n", latestTag)
-
-	// Quick check: if already up-to-date, exit
-	cur := version
-	if strings.HasPrefix(cur, "v") {
-		cur = cur[1:]
-	}
-	if latestTag == "" || cur == latestTag {
-		fmt.Println("Already up to date.")
-		return nil
-	}
-
-	// Detect Homebrew
-	if _, err := exec.LookPath("brew"); err == nil {
-		fmt.Println("Detected Homebrew — updating taps and attempting to upgrade via brew.")
-
-		updateCmd := exec.Command("brew", "update")
-		updateCmd.Stdout = os.Stdout
-		updateCmd.Stderr = os.Stderr
-		if err := updateCmd.Run(); err != nil {
-			fmt.Printf("Homebrew update failed: %v\n", err)
-			// continue to attempt upgrade even if update failed
-		}
-
-		upgradeCmd := exec.Command("brew", "upgrade", "floatpane/matcha/matcha")
-		upgradeCmd.Stdout = os.Stdout
-		upgradeCmd.Stderr = os.Stderr
-		if err := upgradeCmd.Run(); err == nil {
-			fmt.Println("Successfully upgraded via Homebrew.")
-			return nil
-		}
-		fmt.Printf("Homebrew upgrade failed: %v\n", err)
-		// fallthrough to other methods
-	}
-
-	// Detect snap
-	if _, err := exec.LookPath("snap"); err == nil {
-		// Check if matcha is installed as a snap
-		cmdCheck := exec.Command("snap", "list", "matcha")
-		if err := cmdCheck.Run(); err == nil {
-			fmt.Println("Detected Snap package — attempting to refresh.")
-			cmd := exec.Command("snap", "refresh", "matcha")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err == nil {
-				fmt.Println("Successfully refreshed snap.")
-				return nil
-			}
-			fmt.Printf("Snap refresh failed: %v\n", err)
-			// fallthrough
-		}
-	}
-	// Detect flatpak
-	if _, err := exec.LookPath("flatpak"); err == nil {
-		// Check if matcha is installed as a flatpak
-		cmdCheck := exec.Command("flatpak", "info", "com.floatpane.matcha")
-		if err := cmdCheck.Run(); err == nil {
-			fmt.Println("Detected Flatpak package — attempting to update.")
-			cmd := exec.Command("flatpak", "update", "-y", "com.floatpane.matcha")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err == nil {
-				fmt.Println("Successfully updated flatpak.")
-				return nil
-			}
-			fmt.Printf("Flatpak update failed: %v\n", err)
-			// fallthrough
-		}
-	}
-
-	// Detect WinGet
-	if _, err := exec.LookPath("winget"); err == nil {
-		cmdCheck := exec.Command("winget", "list", "--id", "floatpane.matcha", "--disable-interactivity")
-		if err := cmdCheck.Run(); err == nil {
-			fmt.Println("Detected WinGet package — attempting to upgrade.")
-			cmd := exec.Command("winget", "upgrade", "--id", "floatpane.matcha", "--disable-interactivity")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err == nil {
-				fmt.Println("Successfully upgraded via WinGet.")
-				return nil
-			}
-			fmt.Printf("WinGet upgrade failed: %v\n", err)
-			// fallthrough
-		}
-	}
-
-	// Otherwise attempt to download the proper release asset and replace the binary.
-	osName := runtime.GOOS
-	arch := runtime.GOARCH
-
-	// Try to find a matching asset
-	var assetURL, assetName string
-	for _, a := range rel.Assets {
-		n := strings.ToLower(a.Name)
-		if strings.Contains(n, osName) && strings.Contains(n, arch) && (strings.HasSuffix(n, ".tar.gz") || strings.HasSuffix(n, ".tgz") || strings.HasSuffix(n, ".zip")) {
-			assetURL = a.BrowserDownloadURL
-			assetName = a.Name
-			break
-		}
-	}
-	if assetURL == "" {
-		// Try any asset that contains 'matcha' and os/arch as a fallback
-		for _, a := range rel.Assets {
-			n := strings.ToLower(a.Name)
-			if strings.Contains(n, "matcha") && (strings.Contains(n, osName) || strings.Contains(n, arch)) {
-				assetURL = a.BrowserDownloadURL
-				assetName = a.Name
-				break
-			}
-		}
-	}
-
-	if assetURL == "" {
-		return fmt.Errorf("no suitable release artifact found for %s/%s", osName, arch)
-	}
-
-	fmt.Printf("Found release asset: %s\n", assetName)
-	fmt.Println("Downloading...")
-
-	// Download asset
-	respAsset, err := httpClient.Get(assetURL)
-	if err != nil {
-		return fmt.Errorf("download failed: %w", err)
-	}
-	defer respAsset.Body.Close()
-
-	// Create a temp file for the download
-	tmpDir, err := os.MkdirTemp("", "matcha-update-*")
-	if err != nil {
-		return fmt.Errorf("could not create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	assetPath := filepath.Join(tmpDir, assetName)
-	outFile, err := os.Create(assetPath)
-	if err != nil {
-		return fmt.Errorf("could not create temp file: %w", err)
-	}
-	_, err = io.Copy(outFile, respAsset.Body)
-	outFile.Close()
-	if err != nil {
-		return fmt.Errorf("could not write asset to disk: %w", err)
-	}
-
-	// Determine the expected binary name based on the OS.
-	binaryName := "matcha"
-	if runtime.GOOS == "windows" {
-		binaryName = "matcha.exe"
-	}
-
-	// Extract the binary from the archive.
-	var binPath string
-	if strings.HasSuffix(assetName, ".tar.gz") || strings.HasSuffix(assetName, ".tgz") {
-		f, err := os.Open(assetPath)
-		if err != nil {
-			return fmt.Errorf("could not open archive: %w", err)
-		}
-		defer f.Close()
-		gzr, err := gzip.NewReader(f)
-		if err != nil {
-			return fmt.Errorf("could not create gzip reader: %w", err)
-		}
-		tr := tar.NewReader(gzr)
-		for {
-			hdr, err := tr.Next()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				return fmt.Errorf("error reading tar: %w", err)
-			}
-			name := filepath.Base(hdr.Name)
-			if name == binaryName || strings.Contains(strings.ToLower(name), "matcha") && (hdr.Typeflag == tar.TypeReg) {
-				binPath = filepath.Join(tmpDir, binaryName)
-				out, err := os.Create(binPath)
-				if err != nil {
-					return fmt.Errorf("could not create binary file: %w", err)
-				}
-				if _, err := io.Copy(out, tr); err != nil {
-					out.Close()
-					return fmt.Errorf("could not extract binary: %w", err)
-				}
-				out.Close()
-				if err := os.Chmod(binPath, 0755); err != nil {
-					return fmt.Errorf("could not make binary executable: %w", err)
-				}
-				break
-			}
-		}
-	} else if strings.HasSuffix(assetName, ".zip") {
-		zr, err := zip.OpenReader(assetPath)
-		if err != nil {
-			return fmt.Errorf("could not open zip archive: %w", err)
-		}
-		defer zr.Close()
-		for _, zf := range zr.File {
-			name := filepath.Base(zf.Name)
-			if name == binaryName || strings.Contains(strings.ToLower(name), "matcha") && !zf.FileInfo().IsDir() {
-				rc, err := zf.Open()
-				if err != nil {
-					return fmt.Errorf("could not open file in zip: %w", err)
-				}
-				binPath = filepath.Join(tmpDir, binaryName)
-				out, err := os.Create(binPath)
-				if err != nil {
-					rc.Close()
-					return fmt.Errorf("could not create binary file: %w", err)
-				}
-				if _, err := io.Copy(out, rc); err != nil {
-					out.Close()
-					rc.Close()
-					return fmt.Errorf("could not extract binary: %w", err)
-				}
-				out.Close()
-				rc.Close()
-				if err := os.Chmod(binPath, 0755); err != nil {
-					return fmt.Errorf("could not make binary executable: %w", err)
-				}
-				break
-			}
-		}
-	} else {
-		// For non-archive assets, assume the asset is the binary itself.
-		binPath = assetPath
-		if err := os.Chmod(binPath, 0755); err != nil {
-			// ignore chmod errors but warn
-			fmt.Printf("warning: could not chmod downloaded binary: %v\n", err)
-		}
-	}
-
-	if binPath == "" {
-		return fmt.Errorf("could not locate matcha binary inside the release artifact")
-	}
-
-	// Replace the running executable with the new binary
-	execPath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("could not determine executable path: %w", err)
-	}
-
-	// Write the new binary to a temp file in same dir, then rename for atomic replacement.
-	execDir := filepath.Dir(execPath)
-	tmpNew := filepath.Join(execDir, fmt.Sprintf("matcha.new.%d", time.Now().Unix()))
-	in, err := os.Open(binPath)
-	if err != nil {
-		return fmt.Errorf("could not open new binary: %w", err)
-	}
-	out, err := os.OpenFile(tmpNew, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
-	if err != nil {
-		in.Close()
-		return fmt.Errorf("could not create temp binary in target dir: %w", err)
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		in.Close()
-		out.Close()
-		return fmt.Errorf("could not write new binary to disk: %w", err)
-	}
-	in.Close()
-	out.Close()
-
-	// On Windows, a running executable cannot be overwritten directly.
-	// Move the old binary out of the way first, then rename the new one in.
-	if runtime.GOOS == "windows" {
-		oldPath := execPath + ".old"
-		_ = os.Remove(oldPath) // clean up any previous leftover
-		if err := os.Rename(execPath, oldPath); err != nil {
-			return fmt.Errorf("could not move old executable out of the way: %w", err)
-		}
-	}
-
-	if err := os.Rename(tmpNew, execPath); err != nil {
-		return fmt.Errorf("could not replace executable: %w", err)
-	}
-
-	fmt.Println("Successfully updated matcha to", latestTag)
-	return nil
 }
 
 func filterUnique(existing, incoming []fetcher.Email) []fetcher.Email {
@@ -3498,136 +2820,4 @@ func main() {
 
 	plugins.CallHook(plugin.HookShutdown)
 	plugins.Close()
-}
-
-func runDaemonCLI(args []string) {
-	if len(args) == 0 {
-		fmt.Println("Usage: matcha daemon <start|stop|status|run>")
-		fmt.Println()
-		fmt.Println("Commands:")
-		fmt.Println("  start   Start the daemon in the background")
-		fmt.Println("  stop    Stop the running daemon")
-		fmt.Println("  status  Show daemon status")
-		fmt.Println("  run     Run the daemon in the foreground")
-		os.Exit(1)
-	}
-
-	switch args[0] {
-	case "start":
-		runDaemonStart()
-	case "stop":
-		runDaemonStop()
-	case "status":
-		runDaemonStatus()
-	case "run":
-		runDaemonRun()
-	default:
-		fmt.Fprintf(os.Stderr, "unknown daemon command: %s\n", args[0])
-		os.Exit(1)
-	}
-}
-
-func runDaemonStart() {
-	pidPath := daemonrpc.PIDPath()
-	if pid, running := matchaDaemon.IsRunning(pidPath); running {
-		fmt.Printf("Daemon already running (PID %d)\n", pid)
-		return
-	}
-
-	// Fork ourselves with "daemon run".
-	exe, err := os.Executable()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot find executable: %v\n", err)
-		os.Exit(1)
-	}
-
-	cmd := exec.Command(exe, "daemon", "run")
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	cmd.Stdin = nil
-
-	// Detach from parent process.
-	cmd.SysProcAttr = daemonclient.DaemonProcAttr()
-
-	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to start daemon: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Daemon started (PID %d)\n", cmd.Process.Pid)
-}
-
-func runDaemonStop() {
-	pidPath := daemonrpc.PIDPath()
-	pid, running := matchaDaemon.IsRunning(pidPath)
-	if !running {
-		fmt.Println("Daemon is not running")
-		return
-	}
-
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot find process %d: %v\n", pid, err)
-		os.Exit(1)
-	}
-
-	if err := process.Signal(os.Interrupt); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to stop daemon: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Daemon stopped (PID %d)\n", pid)
-}
-
-func runDaemonStatus() {
-	// Try connecting to daemon for live status.
-	client, err := daemonclient.Dial()
-	if err != nil {
-		pidPath := daemonrpc.PIDPath()
-		if pid, running := matchaDaemon.IsRunning(pidPath); running {
-			fmt.Printf("Daemon running (PID %d) but not responding\n", pid)
-		} else {
-			fmt.Println("Daemon is not running")
-		}
-		return
-	}
-	defer client.Close()
-
-	status, err := client.Status()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to get status: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Daemon running (PID %d)\n", status.PID)
-	fmt.Printf("Uptime: %s\n", formatUptime(status.Uptime))
-	fmt.Printf("Accounts: %d\n", len(status.Accounts))
-	for _, acct := range status.Accounts {
-		fmt.Printf("  - %s\n", acct)
-	}
-}
-
-func runDaemonRun() {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
-		os.Exit(1)
-	}
-
-	d := matchaDaemon.New(cfg)
-	if err := d.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "daemon error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-func formatUptime(seconds int64) string {
-	d := time.Duration(seconds) * time.Second
-	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	}
-	if d < time.Hour {
-		return fmt.Sprintf("%dm %ds", int(d.Minutes()), int(d.Seconds())%60)
-	}
-	return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
 }
