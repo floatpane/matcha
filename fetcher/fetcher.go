@@ -185,9 +185,17 @@ func decodeAttachmentData(rawBytes []byte, encoding string) ([]byte, error) {
 	switch strings.ToLower(encoding) {
 	case "base64":
 		decoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(rawBytes))
-		return ioutil.ReadAll(decoder)
+		data, err := ioutil.ReadAll(decoder)
+		if err != nil {
+			return nil, err
+		}
+		return data, nil
 	case "quoted-printable":
-		return ioutil.ReadAll(quotedprintable.NewReader(bytes.NewReader(rawBytes)))
+		data, err := ioutil.ReadAll(quotedprintable.NewReader(bytes.NewReader(rawBytes)))
+		if err != nil {
+			return nil, err
+		}
+		return data, nil
 	default:
 		return rawBytes, nil
 	}
