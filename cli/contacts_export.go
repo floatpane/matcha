@@ -84,6 +84,9 @@ func runExportContacts(format, outputPath string, noHeader bool) error {
 
 	var outputData []byte
 	if format == "json" {
+		if noHeader {
+			return fmt.Errorf("the --no-header flag is only valid with CSV format")
+		}
 		outputData, err = exportToJSON(contacts)
 		if err != nil {
 			return fmt.Errorf("failed to export to JSON: %w", err)
