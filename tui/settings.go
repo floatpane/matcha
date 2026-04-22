@@ -75,6 +75,16 @@ type Settings struct {
 	confirmingDisable bool
 }
 
+type SettingsState struct {
+	ActivePane     SettingsPane
+	ActiveCategory SettingsCategory
+	MenuCursor     int
+	GeneralCursor  int
+	AccountsCursor int
+	ThemeCursor    int
+	ListsCursor    int
+}
+
 func NewSettings(cfg *config.Config) *Settings {
 	if cfg == nil {
 		cfg = &config.Config{}
@@ -108,6 +118,28 @@ func NewSettings(cfg *config.Config) *Settings {
 		encPasswordInput:   newInput("Password", "> ", true),
 		encConfirmInput:    newInput("Confirm Password", "> ", true),
 	}
+}
+
+func (m *Settings) GetState() SettingsState {
+	return SettingsState{
+		ActivePane:     m.activePane,
+		ActiveCategory: m.activeCategory,
+		MenuCursor:     m.menuCursor,
+		GeneralCursor:  m.generalCursor,
+		AccountsCursor: m.accountsCursor,
+		ThemeCursor:    m.themeCursor,
+		ListsCursor:    m.listsCursor,
+	}
+}
+
+func (m *Settings) RestoreState(state SettingsState) {
+	m.activePane = state.ActivePane
+	m.activeCategory = state.ActiveCategory
+	m.menuCursor = state.MenuCursor
+	m.generalCursor = state.GeneralCursor
+	m.accountsCursor = state.AccountsCursor
+	m.themeCursor = state.ThemeCursor
+	m.listsCursor = state.ListsCursor
 }
 
 func (m *Settings) Init() tea.Cmd {

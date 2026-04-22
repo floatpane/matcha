@@ -54,6 +54,10 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			nextIdx := (currentIdx + 1) % len(langs)
 			m.cfg.Language = langs[nextIdx]
 			_ = config.SaveConfig(m.cfg)
+			// Apply language change immediately
+			i18n.GetManager().SetLanguage(m.cfg.Language)
+			// Trigger full UI rebuild
+			return m, func() tea.Msg { return LanguageChangedMsg{} }
 		case 5: // Edit Signature
 			if msg.String() == "enter" || msg.String() == "right" || msg.String() == "l" {
 				return m, func() tea.Msg { return GoToSignatureEditorMsg{} }
@@ -77,7 +81,7 @@ func (m *Settings) viewGeneral() string {
 		{"settings_general.hide_tips", onOff(m.cfg.HideTips), "Hide helpful hints displayed at the bottom of the screen."},
 		{"settings_general.disable_notifications", onOff(m.cfg.DisableNotifications), "Turn off desktop notifications for new mail."},
 		{"settings_general.date_format", getDateFormatLabel(m.cfg.DateFormat), "Change how dates and times are displayed."},
-		{"settings_general.language", getLanguageLabel(m.cfg.GetLanguage()), "Change the interface language. Restart required."},
+		{"settings_general.language", getLanguageLabel(m.cfg.GetLanguage()), "Change the interface language. Changes apply instantly."},
 		{"settings_general.signature", getSignatureStatus(), "Configure the signature appended to your outgoing emails."},
 	}
 

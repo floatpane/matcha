@@ -870,6 +870,30 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
 
+	case tui.LanguageChangedMsg:
+		// Rebuild all models with new translations
+		// Keep current view type but recreate with fresh i18n
+		switch curr := m.current.(type) {
+		case *tui.Settings:
+			// Preserve settings state when rebuilding
+			newSettings := tui.NewSettings(m.config)
+			newSettings.RestoreState(curr.GetState())
+			m.current = newSettings
+		case *tui.Composer:
+			// Preserve composer state if possible, for now just refresh
+			m.current = tui.NewChoice()
+		case *tui.Inbox:
+			m.current = tui.NewChoice()
+		case *tui.FolderInbox:
+			// Just rebuild settings view, folder inbox will be recreated on next navigation
+			m.current = tui.NewSettings(m.config)
+		default:
+			// For other views, return to choice menu
+			m.current = tui.NewChoice()
+		}
+		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		return m, m.current.Init()
+
 	case tui.GoToSettingsMsg:
 		m.current = tui.NewSettings(m.config)
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
