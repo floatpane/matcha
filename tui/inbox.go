@@ -165,43 +165,34 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 // formatRelativeDate formats a time as relative if within the last week,
 // otherwise as an absolute date using the caller-supplied Go time layout.
 // When layout is empty, falls back to the built-in short/long defaults.
-func formatRelativeDate(t time.Time, layout string) string {
-	if t.IsZero() {
+func formatRelativeDate(timestamp time.Time, layout string) string {
+	if timestamp.IsZero() {
 		return ""
 	}
 	now := time.Now()
-	d := now.Sub(t)
+	d := now.Sub(timestamp)
 
 	switch {
 	case d < time.Minute:
-		return "just now"
+		return t("time.just_now")
 	case d < time.Hour:
 		mins := int(d.Minutes())
-		if mins == 1 {
-			return "1 min ago"
-		}
-		return fmt.Sprintf("%d min ago", mins)
+		return tn("time.minute_ago", mins, map[string]interface{}{"count": mins})
 	case d < 24*time.Hour:
 		hours := int(d.Hours())
-		if hours == 1 {
-			return "1 hour ago"
-		}
-		return fmt.Sprintf("%d hours ago", hours)
+		return tn("time.hour_ago", hours, map[string]interface{}{"count": hours})
 	case d < 7*24*time.Hour:
 		days := int(d.Hours() / 24)
-		if days == 1 {
-			return "1 day ago"
-		}
-		return fmt.Sprintf("%d days ago", days)
+		return tn("time.day_ago", days, map[string]interface{}{"count": days})
 	default:
-		t = t.Local()
+		timestamp = timestamp.Local()
 		if layout != "" {
-			return t.Format(layout)
+			return timestamp.Format(layout)
 		}
-		if t.Year() == now.Year() {
-			return t.Format("Jan 02")
+		if timestamp.Year() == now.Year() {
+			return timestamp.Format("Jan 02")
 		}
-		return t.Format("Jan 02, 2006")
+		return timestamp.Format("Jan 02, 2006")
 	}
 }
 
@@ -413,10 +404,10 @@ func (m *Inbox) updateList() {
 	l.SetStatusBarItemName("email", "emails")
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		bindings := []key.Binding{
-			key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "visual mode")),
-			key.NewBinding(key.WithKeys("d"), key.WithHelp("\uf014 d", "delete")),
-			key.NewBinding(key.WithKeys("a"), key.WithHelp("\uea98 a", "archive")),
-			key.NewBinding(key.WithKeys("r"), key.WithHelp("\ue348 r", "refresh")),
+			key.NewBinding(key.WithKeys("v"), key.WithHelp("v", t("inbox.visual_mode"))),
+			key.NewBinding(key.WithKeys("d"), key.WithHelp("\uf014 d", t("inbox.delete"))),
+			key.NewBinding(key.WithKeys("a"), key.WithHelp("\uea98 a", t("inbox.archive"))),
+			key.NewBinding(key.WithKeys("r"), key.WithHelp("\ue348 r", t("inbox.refresh"))),
 		}
 		if len(m.tabs) > 1 {
 			bindings = append(bindings,
@@ -459,7 +450,7 @@ func (m *Inbox) updateList() {
 func (m *Inbox) getTitle() string {
 	var title string
 	if m.currentAccountID == "" {
-		title = m.getBaseTitle() + " - All Accounts"
+		title = m.getBaseTitle() + " - " + t("inbox.all_accounts")
 	} else {
 		title = m.getBaseTitle()
 		for _, acc := range m.accounts {

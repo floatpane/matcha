@@ -150,3 +150,23 @@ func ItalianPlural(n int) PluralForm {
 	}
 	return Other
 }
+
+// UkrainianPlural implements plural rules for Ukrainian.
+// Rule: one (n mod 10 == 1 and n mod 100 != 11)
+//
+//	few (n mod 10 in 2..4 and n mod 100 not in 12..14)
+//	many (everything else)
+//
+// Same as Russian
+func UkrainianPlural(n int) PluralForm {
+	mod10 := n % 10
+	mod100 := n % 100
+
+	if mod10 == 1 && mod100 != 11 {
+		return One
+	}
+	if mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) {
+		return Few
+	}
+	return Many
+}

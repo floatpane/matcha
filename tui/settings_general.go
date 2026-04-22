@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/config"
+	"github.com/floatpane/matcha/i18n"
 )
 
 func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -15,7 +16,7 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.generalCursor--
 		}
 	case "down", "j":
-		if m.generalCursor < 4 {
+		if m.generalCursor < 5 {
 			m.generalCursor++
 		}
 	case "enter", "space", "right", "l":
@@ -39,7 +40,21 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.cfg.DateFormat = config.DateFormatEU
 			}
 			_ = config.SaveConfig(m.cfg)
-		case 4: // Edit Signature
+		case 4: // Language
+			// Cycle through available languages
+			langs := i18n.LanguageCodes()
+			currentLang := m.cfg.GetLanguage()
+			currentIdx := -1
+			for i, lang := range langs {
+				if lang == currentLang {
+					currentIdx = i
+					break
+				}
+			}
+			nextIdx := (currentIdx + 1) % len(langs)
+			m.cfg.Language = langs[nextIdx]
+			_ = config.SaveConfig(m.cfg)
+		case 5: // Edit Signature
 			if msg.String() == "enter" || msg.String() == "right" || msg.String() == "l" {
 				return m, func() tea.Msg { return GoToSignatureEditorMsg{} }
 			}
@@ -54,15 +69,16 @@ func (m *Settings) viewGeneral() string {
 	b.WriteString(titleStyle.Render("General Settings") + "\n\n")
 
 	options := []struct {
-		label string
-		value string
-		tip   string
+		labelKey string
+		value    string
+		tip      string
 	}{
-		{"Disable Image Display", onOff(m.cfg.DisableImages), "Prevent images from loading automatically in emails."},
-		{"Hide Contextual Tips", onOff(m.cfg.HideTips), "Hide helpful hints displayed at the bottom of the screen."},
-		{"Disable Notifications", onOff(m.cfg.DisableNotifications), "Turn off desktop notifications for new mail."},
-		{"Date Format", getDateFormatLabel(m.cfg.DateFormat), "Change how dates and times are displayed."},
-		{"Signature", getSignatureStatus(), "Configure the signature appended to your outgoing emails."},
+		{"settings_general.disable_images", onOff(m.cfg.DisableImages), "Prevent images from loading automatically in emails."},
+		{"settings_general.hide_tips", onOff(m.cfg.HideTips), "Hide helpful hints displayed at the bottom of the screen."},
+		{"settings_general.disable_notifications", onOff(m.cfg.DisableNotifications), "Turn off desktop notifications for new mail."},
+		{"settings_general.date_format", getDateFormatLabel(m.cfg.DateFormat), "Change how dates and times are displayed."},
+		{"settings_general.language", getLanguageLabel(m.cfg.GetLanguage()), "Change the interface language. Restart required."},
+		{"settings_general.signature", getSignatureStatus(), "Configure the signature appended to your outgoing emails."},
 	}
 
 	for i, opt := range options {
@@ -73,9 +89,10 @@ func (m *Settings) viewGeneral() string {
 			style = selectedAccountItemStyle
 		}
 
-		text := fmt.Sprintf("%s: %s", opt.label, opt.value)
-		if opt.label == "Signature" {
-			text = fmt.Sprintf("Edit Signature (%s)", opt.value)
+		label := t(opt.labelKey)
+		text := fmt.Sprintf("%s: %s", label, opt.value)
+		if opt.labelKey == "settings_general.signature" {
+			text = fmt.Sprintf("%s (%s)", label, opt.value)
 		}
 
 		b.WriteString(style.Render(cursor+text) + "\n")
@@ -92,9 +109,9 @@ func (m *Settings) viewGeneral() string {
 
 func onOff(b bool) string {
 	if b {
-		return "ON"
+		return t("settings_general.on")
 	}
-	return "OFF"
+	return t("settings_general.off")
 }
 
 func getDateFormatLabel(f string) string {
@@ -113,7 +130,14 @@ func getDateFormatLabel(f string) string {
 
 func getSignatureStatus() string {
 	if config.HasSignature() {
-		return "configured"
+		return t("settings_general.signature_configured")
 	}
-	return "not configured"
+	return t("settings_general.signature_not_configured")
+}
+
+func getLanguageLabel(langCode string) string {
+	if locale, ok := i18n.GetLanguage(langCode); ok {
+		return fmt.Sprintf("%s (%s)", locale.NativeName, locale.Code)
+	}
+	return langCode
 }

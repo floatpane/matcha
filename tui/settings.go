@@ -253,9 +253,15 @@ func (m *Settings) updateMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m *Settings) View() tea.View {
 	// Left pane
 	var left strings.Builder
-	left.WriteString(titleStyle.Render("Settings") + "\n\n")
+	left.WriteString(titleStyle.Render(t("settings.title")) + "\n\n")
 
-	categories := []string{"General", "Accounts", "Theme", "Mailing Lists", "App Encryption"}
+	categories := []string{
+		t("settings.category_general"),
+		t("settings.category_accounts"),
+		t("settings.category_theme"),
+		t("settings.category_mailing_lists"),
+		t("settings.category_encryption"),
+	}
 	for i, c := range categories {
 		cursor := "  "
 		if m.menuCursor == i {
@@ -303,9 +309,9 @@ func (m *Settings) View() tea.View {
 
 	content := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 
-	helpText := "esc: back to menu"
+	helpText := t("settings.help_content")
 	if m.activePane == PaneMenu {
-		helpText = "↑/↓: navigate • right/enter: select • esc: go back"
+		helpText = t("settings.help_menu")
 	}
 	helpView := helpStyle.Render(helpText)
 

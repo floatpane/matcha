@@ -37,13 +37,13 @@ func (m *Settings) viewTheme() string {
 	themes := theme.AllThemes()
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("Theme") + "\n\n")
+	b.WriteString(titleStyle.Render(t("settings_theme.title")) + "\n\n")
 
-	for i, t := range themes {
-		isActive := t.Name == theme.ActiveTheme.Name
-		label := t.Name
+	for i, thm := range themes {
+		isActive := thm.Name == theme.ActiveTheme.Name
+		label := thm.Name
 		if isActive {
-			label += " (active)"
+			label += " (" + t("settings_theme.current") + ")"
 		}
 
 		cursor := "  "
@@ -77,7 +77,7 @@ func (m *Settings) viewTheme() string {
 		b.WriteString(TipStyle.Render("Tip: Custom themes can be added as JSON files in ~/.config/matcha/themes/") + "\n\n")
 	}
 
-	b.WriteString(helpStyle.Render("↑/↓: navigate • enter/space: apply theme"))
+	b.WriteString(helpStyle.Render(t("settings_theme.help")))
 
 	return b.String()
 }

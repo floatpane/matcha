@@ -18,12 +18,22 @@
     },
     "composer": {
       "title": "Compose New Email",
+      "from": "From",
       "to_placeholder": "Enter recipient email addresses.",
       "cc_placeholder": "Carbon copy recipients.",
       "bcc_placeholder": "Blind carbon copy recipients.",
       "subject_placeholder": "Subject",
       "body_placeholder": "Compose your message...",
+      "signature": "Signature",
       "signature_placeholder": "Your email signature.",
+      "attachments": "Attachments",
+      "attachments_none": "None",
+      "enter_to_add": "Enter to add",
+      "encrypt_smime": "Encrypt Email (S/MIME)",
+      "send": "Send",
+      "switchable": "switchable",
+      "enter_to_switch": "Enter to switch",
+      "no_account": "no account configured",
       "send_confirm": "Press Enter to send the email.",
       "help": "Markdown/HTML • tab/shift+tab: navigate • ctrl+e: $EDITOR • esc: save draft & exit",
       "exit_confirm": "Are you sure you want to exit? This draft will be saved",
@@ -33,6 +43,10 @@
     },
     "inbox": {
       "title": "Inbox",
+      "all_accounts": "All Accounts",
+      "sent": "Sent",
+      "trash": "Trash",
+      "archive": "Archive",
       "empty": "No emails",
       "loading": "Loading emails...",
       "refreshing": "Refreshing...",
@@ -47,6 +61,18 @@
       "mark_unread": "mark as unread",
       "help_visual": "v: visual mode • d: delete • a: archive",
       "help_navigation": "j/k: navigate • enter: open • r: refresh"
+    },
+    "choice": {
+      "what_to_do": "What would you like to do?",
+      "compose": "Compose Email",
+      "inbox": "View Inbox",
+      "calendar": "View Calendar",
+      "settings": "Settings",
+      "marketplace": "Plugin Marketplace",
+      "drafts": "Drafts",
+      "help": "Use ↑/↓ to navigate, enter to select, and ctrl+c to quit.",
+      "unknown": "unknown",
+      "update_available": "Update available: {latest} (installed: {current}) — run `matcha update` to upgrade"
     },
     "folder_inbox": {
       "folders_title": "Folders",
@@ -91,13 +117,34 @@
       "help_menu": "↑/↓: navigate • right/enter: select • esc: go back",
       "help_content": "esc: back to menu"
     },
+    "settings_accounts": {
+      "title": "Account Settings",
+      "no_accounts": "No accounts configured.",
+      "add_account": "Add New Account",
+      "help": "↑/↓: navigate • enter: edit crypto config • e: edit server • d: delete"
+    },
+    "settings_theme": {
+      "title": "Theme",
+      "current": "active",
+      "help": "↑/↓: navigate • enter/space: apply theme"
+    },
+    "settings_mailing_lists": {
+      "title": "Mailing Lists",
+      "no_lists": "No mailing lists configured",
+      "help": "↑/↓: navigate • enter: edit • a: add • d: delete"
+    },
     "settings_general": {
       "title": "General Settings",
-      "disable_images": "Disable images in emails",
-      "hide_tips": "Hide helpful tips",
-      "disable_notifications": "Disable desktop notifications",
-      "date_format": "Date format",
+      "disable_images": "Disable Image Display",
+      "hide_tips": "Hide Contextual Tips",
+      "disable_notifications": "Disable Notifications",
+      "date_format": "Date Format",
       "language": "Language",
+      "signature": "Edit Signature",
+      "signature_configured": "configured",
+      "signature_not_configured": "not configured",
+      "on": "ON",
+      "off": "OFF",
       "restart_required": "Restart required to apply language change"
     },
     "settings_encryption": {

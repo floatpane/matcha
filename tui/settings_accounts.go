@@ -116,10 +116,10 @@ func (m *Settings) viewAccounts() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Account Settings") + "\n\n")
+	b.WriteString(titleStyle.Render(t("settings_accounts.title")) + "\n\n")
 
 	if len(m.cfg.Accounts) == 0 {
-		b.WriteString(accountEmailStyle.Render("  No accounts configured.\n\n"))
+		b.WriteString(accountEmailStyle.Render("  " + t("settings_accounts.no_accounts") + "\n\n"))
 	}
 
 	for i, account := range m.cfg.Accounts {
@@ -159,9 +159,9 @@ func (m *Settings) viewAccounts() string {
 		cursor = "> "
 		style = selectedAccountItemStyle
 	}
-	b.WriteString(style.Render(cursor+"Add New Account") + "\n\n")
+	b.WriteString(style.Render(cursor+t("settings_accounts.add_account")) + "\n\n")
 
-	b.WriteString(helpStyle.Render("↑/↓: navigate • enter: edit crypto config • e: edit server • d: delete"))
+	b.WriteString(helpStyle.Render(t("settings_accounts.help")))
 
 	if m.confirmingDelete {
 		accountName := m.cfg.Accounts[m.accountsCursor].Email

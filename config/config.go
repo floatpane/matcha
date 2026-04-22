@@ -514,6 +514,7 @@ func LoadConfig() (*Config, error) {
 		Theme                string        `json:"theme,omitempty"`
 		MailingLists         []MailingList `json:"mailing_lists,omitempty"`
 		DateFormat           string        `json:"date_format,omitempty"`
+		Language             string        `json:"language,omitempty"`
 	}
 
 	var raw diskConfig
@@ -547,6 +548,7 @@ func LoadConfig() (*Config, error) {
 	config.Theme = raw.Theme
 	config.MailingLists = raw.MailingLists
 	config.DateFormat = raw.DateFormat
+	config.Language = raw.Language
 	for _, rawAcc := range raw.Accounts {
 		acc := Account{
 			ID:                 rawAcc.ID,

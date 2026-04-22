@@ -35,6 +35,8 @@ import (
 	"github.com/floatpane/matcha/daemonclient"
 	"github.com/floatpane/matcha/daemonrpc"
 	"github.com/floatpane/matcha/fetcher"
+	"github.com/floatpane/matcha/i18n"
+	_ "github.com/floatpane/matcha/i18n/languages"
 	"github.com/floatpane/matcha/notify"
 	"github.com/floatpane/matcha/plugin"
 	"github.com/floatpane/matcha/sender"
@@ -947,9 +949,20 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Password verified — set session key and load config
 		config.SetSessionKey(msg.Key)
 		cfg, err := config.LoadConfig()
-		if err == nil && cfg.Theme != "" {
-			theme.SetTheme(cfg.Theme)
-			tui.RebuildStyles()
+		if err == nil {
+			if cfg.Theme != "" {
+				theme.SetTheme(cfg.Theme)
+				tui.RebuildStyles()
+			}
+			// Set language from config
+			lang := i18n.DetectLanguage(cfg)
+			log.Printf("Detected language: %s", lang)
+			if err := i18n.GetManager().SetLanguage(lang); err != nil {
+				log.Printf("Failed to set language %s: %v", lang, err)
+			} else {
+				log.Printf("Language set to: %s", i18n.GetManager().GetLanguage())
+				log.Printf("Test translation: %s", i18n.GetManager().T("composer.title"))
+			}
 		}
 		_ = config.EnsurePGPDir()
 		if err != nil {
@@ -3433,6 +3446,11 @@ func main() {
 	// Migrate cache files from ~/.config/matcha/ to ~/.cache/matcha/ if needed
 	_ = config.MigrateCacheFiles()
 
+	// Initialize i18n
+	if err := i18n.Init("en"); err != nil {
+		log.Printf("Failed to initialize i18n: %v", err)
+	}
+
 	var initialModel *mainModel
 
 	if config.IsSecureModeEnabled() {
@@ -3442,8 +3460,15 @@ func main() {
 		initialModel.current = tui.NewPasswordPrompt()
 	} else {
 		cfg, err := config.LoadConfig()
-		if err == nil && cfg.Theme != "" {
-			theme.SetTheme(cfg.Theme)
+		if err == nil {
+			if cfg.Theme != "" {
+				theme.SetTheme(cfg.Theme)
+			}
+			// Set language from config
+			lang := i18n.DetectLanguage(cfg)
+			if err := i18n.GetManager().SetLanguage(lang); err != nil {
+				log.Printf("Failed to set language %s: %v", lang, err)
+			}
 		}
 		tui.RebuildStyles()
 
