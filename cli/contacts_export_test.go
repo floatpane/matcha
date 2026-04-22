@@ -111,9 +111,9 @@ func TestExportToCSVNoHeader(t *testing.T) {
 	output := string(data)
 	expectedFields := "name,email,last_used,use_count"
 
-	// Check that header is NOT present
-	if len(output) >= len(expectedFields) && output[:len(expectedFields)] == expectedFields {
-		t.Errorf("expected no CSV header, but found '%s'", expectedFields)
+	// Check that header is NOT present anywhere in the output
+	if strings.Contains(output, expectedFields) {
+		t.Errorf("expected no CSV header, but found '%s' in output", expectedFields)
 	}
 
 	// Check that both contacts are present
@@ -130,8 +130,8 @@ func TestExportToCSVNoHeader(t *testing.T) {
 		t.Fatal("expected at least 2 lines in CSV output")
 	}
 	firstLine := lines[0]
-	if !strings.Contains(firstLine, "John Doe") {
-		t.Errorf("expected first line to contain contact data, got '%s'", firstLine)
+	if !strings.Contains(firstLine, "john@example.com") {
+		t.Errorf("expected first line to contain contact email, got '%s'", firstLine)
 	}
 }
 
