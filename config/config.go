@@ -87,6 +87,7 @@ type Config struct {
 	Theme                string        `json:"theme,omitempty"`
 	MailingLists         []MailingList `json:"mailing_lists,omitempty"`
 	DateFormat           string        `json:"date_format,omitempty"`
+	Language             string        `json:"language,omitempty"` // Language code (e.g., "en", "es", "de")
 }
 
 // GetDateFormat returns the Go time reference layout translated from the
@@ -97,6 +98,14 @@ func (c *Config) GetDateFormat() string {
 		f = DateFormatEU
 	}
 	return translateDateFormat(f)
+}
+
+// GetLanguage returns the configured language code, defaulting to "en".
+func (c *Config) GetLanguage() string {
+	if c.Language == "" {
+		return "en"
+	}
+	return c.Language
 }
 
 // translateDateFormat converts a human-readable format string (e.g.
