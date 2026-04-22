@@ -64,17 +64,16 @@ func (m *Settings) updateMailingLists(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 func (m *Settings) viewMailingLists() string {
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("Mailing Lists") + "\n\n")
+	b.WriteString(titleStyle.Render(t("settings_mailing_lists.title")) + "\n\n")
 
 	if len(m.cfg.MailingLists) == 0 {
-		b.WriteString(accountEmailStyle.Render("  No mailing lists configured.\n\n"))
+		b.WriteString(accountEmailStyle.Render("  " + t("settings_mailing_lists.no_lists") + "\n\n"))
 	}
 
 	for i, list := range m.cfg.MailingLists {
-		addrCount := fmt.Sprintf("%d address", len(list.Addresses))
-		if len(list.Addresses) != 1 {
-			addrCount += "es"
-		}
+		addrCount := tn("settings_mailing_lists.address_count", len(list.Addresses), map[string]interface{}{
+			"count": len(list.Addresses),
+		})
 		line := fmt.Sprintf("%s - %s", list.Name, accountEmailStyle.Render(addrCount))
 
 		cursor := "  "
@@ -92,15 +91,15 @@ func (m *Settings) viewMailingLists() string {
 		cursor = "> "
 		style = selectedAccountItemStyle
 	}
-	b.WriteString(style.Render(cursor+"Add New Mailing List") + "\n\n")
+	b.WriteString(style.Render(cursor+t("settings_mailing_lists.add_list")) + "\n\n")
 
-	b.WriteString(helpStyle.Render("↑/↓: navigate • enter: select • e: edit • d: delete"))
+	b.WriteString(helpStyle.Render(t("settings_mailing_lists.help")))
 
 	if m.confirmingDelete {
 		listName := m.cfg.MailingLists[m.listsCursor].Name
 		dialog := DialogBoxStyle.Render(
 			lipgloss.JoinVertical(lipgloss.Center,
-				dangerStyle.Render("Delete mailing list?"),
+				dangerStyle.Render(t("settings_mailing_lists.delete_confirm")),
 				accountEmailStyle.Render(listName),
 				HelpStyle.Render("\n(y/n)"),
 			),

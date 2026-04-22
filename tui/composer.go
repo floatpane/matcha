@@ -25,8 +25,6 @@ var (
 	blurredStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	noStyle             = lipgloss.NewStyle()
 	helpStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	focusedButton       = focusedStyle.Copy().Render("[ " + t("composer.send") + " ]")
-	blurredButton       = blurredStyle.Copy().Render("[ " + t("composer.send") + " ]")
 	emailRecipientStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 	attachmentStyle     = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("245"))
 	fromSelectorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
@@ -499,9 +497,9 @@ func (m *Composer) View() tea.View {
 	var button string
 
 	if m.focusIndex == focusSend {
-		button = focusedButton
+		button = focusedStyle.Copy().Render("[ " + t("composer.send") + " ]")
 	} else {
-		button = blurredButton
+		button = blurredStyle.Copy().Render("[ " + t("composer.send") + " ]")
 	}
 
 	// From field with account selector
@@ -684,7 +682,7 @@ func (m *Composer) View() tea.View {
 	if m.confirmingExit {
 		dialog := DialogBoxStyle.Render(
 			lipgloss.JoinVertical(lipgloss.Center,
-				"Are you sure you want to exit? This draft will be saved",
+				t("composer.exit_confirm"),
 				HelpStyle.Render("\n(y/n)"),
 			),
 		)

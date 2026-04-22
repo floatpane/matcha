@@ -130,8 +130,14 @@
     },
     "settings_mailing_lists": {
       "title": "Mailing Lists",
-      "no_lists": "No mailing lists configured",
-      "help": "↑/↓: navigate • enter: edit • a: add • d: delete"
+      "no_lists": "No mailing lists configured.",
+      "add_list": "Add New Mailing List",
+      "delete_confirm": "Delete mailing list?",
+      "address_count": {
+        "one": "{count} address",
+        "other": "{count} addresses"
+      },
+      "help": "↑/↓: navigate • enter: select • e: edit • d: delete"
     },
     "settings_general": {
       "title": "General Settings",

@@ -79,11 +79,11 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			password := m.encPasswordInput.Value()
 			confirm := m.encConfirmInput.Value()
 			if password == "" {
-				m.encError = "Password cannot be empty"
+				m.encError = t("settings_encryption.error_empty")
 				return m, nil
 			}
 			if password != confirm {
-				m.encError = "Passwords do not match"
+				m.encError = t("settings_encryption.error_mismatch")
 				return m, nil
 			}
 			m.encEnabling = true
@@ -111,41 +111,41 @@ func (m *Settings) viewEncryption() string {
 	var b strings.Builder
 	isEnabled := config.IsSecureModeEnabled()
 
-	b.WriteString(titleStyle.Render("App Encryption") + "\n\n")
+	b.WriteString(titleStyle.Render(t("settings_encryption.title")) + "\n\n")
 
 	if isEnabled {
 		if m.confirmingDisable {
 			dialog := DialogBoxStyle.Render(
 				lipgloss.JoinVertical(lipgloss.Center,
-					dangerStyle.Render("Disable encryption?"),
-					accountEmailStyle.Render("All data will be stored unencrypted."),
+					dangerStyle.Render(t("settings_encryption.disable_confirm")),
+					accountEmailStyle.Render(t("settings_encryption.disable_warning")),
 					HelpStyle.Render("\n(y/n)"),
 				),
 			)
 			b.WriteString(dialog + "\n")
 		} else {
-			b.WriteString(settingsFocusedStyle.Render("  Encryption is currently enabled.") + "\n\n")
-			b.WriteString(accountEmailStyle.Render("  Press enter to disable encryption.") + "\n\n")
+			b.WriteString(settingsFocusedStyle.Render("  "+t("settings_encryption.enabled")) + "\n\n")
+			b.WriteString(accountEmailStyle.Render("  "+t("settings_encryption.disable_button")) + "\n\n")
 			b.WriteString(helpStyle.Render("enter: disable"))
 		}
 	} else {
-		b.WriteString(accountEmailStyle.Render("Set a password to encrypt all data.") + "\n\n")
+		b.WriteString(accountEmailStyle.Render(t("settings_encryption.disabled")) + "\n\n")
 
 		if m.encFocusIndex == 0 {
-			b.WriteString(settingsFocusedStyle.Render("Password:\n"))
+			b.WriteString(settingsFocusedStyle.Render(t("settings_encryption.password_label") + "\n"))
 		} else {
-			b.WriteString(settingsBlurredStyle.Render("Password:\n"))
+			b.WriteString(settingsBlurredStyle.Render(t("settings_encryption.password_label") + "\n"))
 		}
 		b.WriteString(m.encPasswordInput.View() + "\n\n")
 
 		if m.encFocusIndex == 1 {
-			b.WriteString(settingsFocusedStyle.Render("Confirm Password:\n"))
+			b.WriteString(settingsFocusedStyle.Render(t("settings_encryption.confirm_label") + "\n"))
 		} else {
-			b.WriteString(settingsBlurredStyle.Render("Confirm Password:\n"))
+			b.WriteString(settingsBlurredStyle.Render(t("settings_encryption.confirm_label") + "\n"))
 		}
 		b.WriteString(m.encConfirmInput.View() + "\n\n")
 
-		saveBtn := "[ Enable Encryption ]"
+		saveBtn := "[ " + t("settings_encryption.enable_button") + " ]"
 		if m.encFocusIndex == 2 {
 			b.WriteString(settingsFocusedStyle.Render(saveBtn) + "\n")
 		} else {
@@ -153,10 +153,10 @@ func (m *Settings) viewEncryption() string {
 		}
 
 		if m.encEnabling {
-			b.WriteString("\n" + accountEmailStyle.Render("  Encrypting data...") + "\n")
+			b.WriteString("\n" + accountEmailStyle.Render("  "+t("settings_encryption.encrypting")) + "\n")
 		}
 
-		b.WriteString("\n" + helpStyle.Render("tab: next • enter: save"))
+		b.WriteString("\n" + helpStyle.Render(t("settings_encryption.help")))
 	}
 
 	if m.encError != "" {
