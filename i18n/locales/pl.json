@@ -1,0 +1,275 @@
+{
+  "language": "pl",
+  "messages": {
+    "common": {
+      "yes": "Tak",
+      "no": "Nie",
+      "cancel": "Anuluj",
+      "ok": "OK",
+      "save": "Zapisz",
+      "delete": "Usuń",
+      "archive": "Archiwizuj",
+      "back": "Wstecz",
+      "next": "Dalej",
+      "previous": "Poprzedni",
+      "loading": "Ładowanie...",
+      "error": "Błąd",
+      "success": "Sukces"
+    },
+    "composer": {
+      "title": "Napisz Nową Wiadomość",
+      "from": "Od",
+      "to_placeholder": "Wprowadź adresy e-mail odbiorców.",
+      "cc_placeholder": "Odbiorcy kopii.",
+      "bcc_placeholder": "Odbiorcy ukrytej kopii.",
+      "subject_placeholder": "Temat",
+      "body_placeholder": "Napisz swoją wiadomość...",
+      "signature": "Podpis",
+      "signature_placeholder": "Twój podpis e-mail.",
+      "attachments": "Załączniki",
+      "attachments_none": "Brak",
+      "enter_to_add": "Enter aby dodać",
+      "encrypt_smime": "Zaszyfruj Wiadomość (S/MIME)",
+      "send": "Wyślij",
+      "switchable": "przełączalny",
+      "enter_to_switch": "Enter aby przełączyć",
+      "no_account": "brak skonfigurowanego konta",
+      "send_confirm": "Naciśnij Enter, aby wysłać wiadomość.",
+      "help": "Markdown/HTML • tab/shift+tab: nawigacja • ctrl+e: $EDITOR • esc: zapisz szkic i wyjdź",
+      "exit_confirm": "Czy na pewno chcesz wyjść? Ten szkic zostanie zapisany",
+      "sending": "Wysyłanie wiadomości...",
+      "sent": "Wiadomość wysłana pomyślnie",
+      "draft_saved": "Szkic zapisany"
+    },
+    "inbox": {
+      "title": "Skrzynka odbiorcza",
+      "all_accounts": "Wszystkie Konta",
+      "sent": "Wysłane",
+      "trash": "Kosz",
+      "archive": "Archiwum",
+      "empty": "Brak wiadomości",
+      "loading": "Ładowanie wiadomości...",
+      "refreshing": "Odświeżanie...",
+      "visual_mode": "tryb wizualny",
+      "delete": "usuń",
+      "archive": "archiwizuj",
+      "refresh": "odśwież",
+      "reply": "odpowiedz",
+      "forward": "przekaż",
+      "move": "przenieś",
+      "mark_read": "oznacz jako przeczytane",
+      "mark_unread": "oznacz jako nieprzeczytane",
+      "help_visual": "v: tryb wizualny • d: usuń • a: archiwizuj",
+      "help_navigation": "j/k: nawigacja • enter: otwórz • r: odśwież"
+    },
+    "choice": {
+      "what_to_do": "Co chciałbyś zrobić?",
+      "compose": "Napisz Wiadomość",
+      "inbox": "Zobacz Skrzynkę Odbiorczą",
+      "calendar": "Zobacz Kalendarz",
+      "settings": "Ustawienia",
+      "marketplace": "Sklep z Wtyczkami",
+      "drafts": "Szkice",
+      "help": "Użyj ↑/↓ do nawigacji, enter do wyboru i ctrl+c aby wyjść.",
+      "unknown": "nieznany",
+      "update_available": "Dostępna aktualizacja: {latest} (zainstalowana: {current}) — uruchom `matcha update` aby zaktualizować"
+    },
+    "folder_inbox": {
+      "folders_title": "Foldery",
+      "move_to_folder": "Przenieś do folderu:",
+      "move_single": "Przenieś wiadomość do folderu:",
+      "move_multiple": {
+        "one": "Przenieś {count} wiadomość do folderu:",
+        "few": "Przenieś {count} wiadomości do folderu:",
+        "many": "Przenieś {count} wiadomości do folderu:",
+        "other": "Przenieś {count} wiadomości do folderu:"
+      },
+      "help": "j/k: nawigacja  enter: przenieś  esc: anuluj",
+      "help_folders": "tab: następny folder • shift+tab: poprzedni folder • m: przenieś"
+    },
+    "login": {
+      "title": "Konta E-mail",
+      "add_account": "Dodaj Konto",
+      "edit_account": "Edytuj Konto",
+      "description": "Wprowadź dane logowania do swojego konta e-mail.",
+      "protocol_label": "Protokół",
+      "protocol_placeholder": "Protokół (imap, jmap lub pop3)",
+      "email_label": "E-mail",
+      "email_placeholder": "twoj.email@przyklad.pl",
+      "password_label": "Hasło",
+      "password_placeholder": "Hasło / Hasło Aplikacji",
+      "display_name_label": "Wyświetlana Nazwa",
+      "display_name_placeholder": "Twoje Imię",
+      "imap_server_label": "Serwer IMAP",
+      "smtp_server_label": "Serwer SMTP",
+      "port_label": "Port",
+      "save": "Zapisz Konto",
+      "delete": "Usuń Konto",
+      "delete_confirm": "Usunąć to konto?",
+      "tip_protocol": "Wybierz protokół: imap (domyślny), jmap lub pop3.",
+      "tip_app_password": "Dla Gmaila użyj Hasła Aplikacji zamiast zwykłego hasła."
+    },
+    "settings": {
+      "title": "Ustawienia",
+      "category_general": "Ogólne",
+      "category_accounts": "Konta",
+      "category_theme": "Motyw",
+      "category_mailing_lists": "Listy Mailingowe",
+      "category_encryption": "Szyfrowanie Aplikacji",
+      "help_menu": "↑/↓: nawigacja • prawo/enter: wybierz • esc: wstecz",
+      "help_content": "esc: powrót do menu"
+    },
+    "settings_accounts": {
+      "title": "Ustawienia Kont",
+      "no_accounts": "Brak skonfigurowanych kont.",
+      "add_account": "Dodaj Nowe Konto",
+      "help": "↑/↓: nawigacja • enter: edytuj konfigurację szyfrowania • e: edytuj serwer • d: usuń"
+    },
+    "settings_theme": {
+      "title": "Motyw",
+      "current": "aktywny",
+      "help": "↑/↓: nawigacja • enter/spacja: zastosuj motyw"
+    },
+    "settings_mailing_lists": {
+      "title": "Listy Mailingowe",
+      "no_lists": "Brak skonfigurowanych list mailingowych.",
+      "add_list": "Dodaj Nową Listę Mailingową",
+      "delete_confirm": "Usunąć listę mailingową?",
+      "address_count": {
+        "one": "{count} adres",
+        "few": "{count} adresy",
+        "many": "{count} adresów",
+        "other": "{count} adresu"
+      },
+      "help": "↑/↓: nawigacja • enter: wybierz • e: edytuj • d: usuń"
+    },
+    "settings_general": {
+      "title": "Ustawienia Ogólne",
+      "disable_images": "Wyłącz Wyświetlanie Obrazów",
+      "hide_tips": "Ukryj Wskazówki Kontekstowe",
+      "disable_notifications": "Wyłącz Powiadomienia",
+      "date_format": "Format Daty",
+      "language": "Język",
+      "signature": "Edytuj Podpis",
+      "signature_configured": "skonfigurowany",
+      "signature_not_configured": "nieskonfigurowany",
+      "on": "WŁ",
+      "off": "WYŁ",
+      "restart_required": "Wymagane ponowne uruchomienie w celu zastosowania zmiany języka"
+    },
+    "settings_encryption": {
+      "title": "Szyfrowanie Aplikacji",
+      "enabled": "Szyfrowanie jest obecnie włączone.",
+      "disabled": "Ustaw hasło, aby zaszyfrować wszystkie dane.",
+      "password_label": "Hasło:",
+      "confirm_label": "Potwierdź Hasło:",
+      "enable_button": "Włącz Szyfrowanie",
+      "disable_button": "Naciśnij enter, aby wyłączyć szyfrowanie",
+      "disable_confirm": "Wyłączyć szyfrowanie?",
+      "disable_warning": "Wszystkie dane będą przechowywane bez szyfrowania.",
+      "encrypting": "Szyfrowanie danych...",
+      "error_empty": "Hasło nie może być puste",
+      "error_mismatch": "Hasła nie pasują do siebie",
+      "help": "tab: następny • enter: zapisz"
+    },
+    "password_prompt": {
+      "title": "Matcha jest zablokowana",
+      "enter_password": "Wprowadź swoje hasło",
+      "error_empty": "Hasło nie może być puste",
+      "error_incorrect": "Nieprawidłowe hasło",
+      "help": "enter: odblokuj • ctrl+c: wyjdź"
+    },
+    "email_view": {
+      "from": "Od",
+      "to": "Do",
+      "cc": "DW",
+      "bcc": "UDW",
+      "subject": "Temat",
+      "date": "Data",
+      "attachments": "Załączniki",
+      "download": "Pobierz",
+      "save": "Zapisz",
+      "reply": "Odpowiedz",
+      "reply_all": "Odpowiedz Wszystkim",
+      "forward": "Przekaż",
+      "delete": "Usuń",
+      "archive": "Archiwizuj",
+      "help": "r: odpowiedz • f: przekaż • d: usuń • a: archiwizuj • esc: wstecz"
+    },
+    "calendar": {
+      "title": "Kalendarz",
+      "meeting": "Spotkanie",
+      "event": "Wydarzenie",
+      "accept": "Akceptuj",
+      "decline": "Odrzuć",
+      "tentative": "Wstępnie",
+      "rsvp_sent": "RSVP wysłane: {response}"
+    },
+    "marketplace": {
+      "title": "Sklep z Wtyczkami",
+      "installing": "Instalowanie...",
+      "installed": "Zainstalowane",
+      "install": "Instaluj",
+      "error": "Instalacja nieudana",
+      "help": "j/k: nawigacja • enter: instaluj • esc: wstecz"
+    },
+    "time": {
+      "just_now": "właśnie teraz",
+      "minute_ago": {
+        "one": "1 minutę temu",
+        "few": "{count} minuty temu",
+        "many": "{count} minut temu",
+        "other": "{count} minuty temu"
+      },
+      "hour_ago": {
+        "one": "1 godzinę temu",
+        "few": "{count} godziny temu",
+        "many": "{count} godzin temu",
+        "other": "{count} godziny temu"
+      },
+      "day_ago": {
+        "one": "1 dzień temu",
+        "few": "{count} dni temu",
+        "many": "{count} dni temu",
+        "other": "{count} dnia temu"
+      },
+      "week_ago": {
+        "one": "1 tydzień temu",
+        "few": "{count} tygodnie temu",
+        "many": "{count} tygodni temu",
+        "other": "{count} tygodnia temu"
+      },
+      "month_ago": {
+        "one": "1 miesiąc temu",
+        "few": "{count} miesiące temu",
+        "many": "{count} miesięcy temu",
+        "other": "{count} miesiąca temu"
+      },
+      "year_ago": {
+        "one": "1 rok temu",
+        "few": "{count} lata temu",
+        "many": "{count} lat temu",
+        "other": "{count} roku temu"
+      },
+      "in_moment": "za chwilę",
+      "in_minute": {
+        "one": "za 1 minutę",
+        "few": "za {count} minuty",
+        "many": "za {count} minut",
+        "other": "za {count} minuty"
+      },
+      "in_hour": {
+        "one": "za 1 godzinę",
+        "few": "za {count} godziny",
+        "many": "za {count} godzin",
+        "other": "za {count} godziny"
+      },
+      "in_day": {
+        "one": "za 1 dzień",
+        "few": "za {count} dni",
+        "many": "za {count} dni",
+        "other": "za {count} dnia"
+      }
+    }
+  }
+}

@@ -1,0 +1,275 @@
+{
+  "language": "ru",
+  "messages": {
+    "common": {
+      "yes": "Да",
+      "no": "Нет",
+      "cancel": "Отмена",
+      "ok": "OK",
+      "save": "Сохранить",
+      "delete": "Удалить",
+      "archive": "Архивировать",
+      "back": "Назад",
+      "next": "Далее",
+      "previous": "Предыдущий",
+      "loading": "Загрузка...",
+      "error": "Ошибка",
+      "success": "Успех"
+    },
+    "composer": {
+      "title": "Создать Новое Письмо",
+      "from": "От",
+      "to_placeholder": "Введите адреса электронной почты получателей.",
+      "cc_placeholder": "Получатели копии.",
+      "bcc_placeholder": "Получатели скрытой копии.",
+      "subject_placeholder": "Тема",
+      "body_placeholder": "Напишите сообщение...",
+      "signature": "Подпись",
+      "signature_placeholder": "Ваша подпись электронной почты.",
+      "attachments": "Вложения",
+      "attachments_none": "Нет",
+      "enter_to_add": "Enter для добавления",
+      "encrypt_smime": "Зашифровать Письмо (S/MIME)",
+      "send": "Отправить",
+      "switchable": "переключаемый",
+      "enter_to_switch": "Enter для переключения",
+      "no_account": "учётная запись не настроена",
+      "send_confirm": "Нажмите Enter для отправки письма.",
+      "help": "Markdown/HTML • tab/shift+tab: навигация • ctrl+e: $EDITOR • esc: сохранить черновик и выйти",
+      "exit_confirm": "Вы уверены, что хотите выйти? Этот черновик будет сохранён",
+      "sending": "Отправка письма...",
+      "sent": "Письмо успешно отправлено",
+      "draft_saved": "Черновик сохранён"
+    },
+    "inbox": {
+      "title": "Входящие",
+      "all_accounts": "Все Учётные Записи",
+      "sent": "Отправленные",
+      "trash": "Корзина",
+      "archive": "Архив",
+      "empty": "Нет писем",
+      "loading": "Загрузка писем...",
+      "refreshing": "Обновление...",
+      "visual_mode": "визуальный режим",
+      "delete": "удалить",
+      "archive": "архивировать",
+      "refresh": "обновить",
+      "reply": "ответить",
+      "forward": "переслать",
+      "move": "переместить",
+      "mark_read": "отметить как прочитанное",
+      "mark_unread": "отметить как непрочитанное",
+      "help_visual": "v: визуальный режим • d: удалить • a: архивировать",
+      "help_navigation": "j/k: навигация • enter: открыть • r: обновить"
+    },
+    "choice": {
+      "what_to_do": "Что вы хотите сделать?",
+      "compose": "Создать Письмо",
+      "inbox": "Просмотреть Входящие",
+      "calendar": "Просмотреть Календарь",
+      "settings": "Настройки",
+      "marketplace": "Магазин Плагинов",
+      "drafts": "Черновики",
+      "help": "Используйте ↑/↓ для навигации, enter для выбора и ctrl+c для выхода.",
+      "unknown": "неизвестно",
+      "update_available": "Доступно обновление: {latest} (установлено: {current}) — запустите `matcha update` для обновления"
+    },
+    "folder_inbox": {
+      "folders_title": "Папки",
+      "move_to_folder": "Переместить в папку:",
+      "move_single": "Переместить письмо в папку:",
+      "move_multiple": {
+        "one": "Переместить {count} письмо в папку:",
+        "few": "Переместить {count} письма в папку:",
+        "many": "Переместить {count} писем в папку:",
+        "other": "Переместить {count} письма в папку:"
+      },
+      "help": "j/k: навигация  enter: переместить  esc: отмена",
+      "help_folders": "tab: следующая папка • shift+tab: предыдущая папка • m: переместить"
+    },
+    "login": {
+      "title": "Учётные Записи Электронной Почты",
+      "add_account": "Добавить Учётную Запись",
+      "edit_account": "Редактировать Учётную Запись",
+      "description": "Введите учётные данные вашей учётной записи электронной почты.",
+      "protocol_label": "Протокол",
+      "protocol_placeholder": "Протокол (imap, jmap или pop3)",
+      "email_label": "Электронная Почта",
+      "email_placeholder": "your.email@example.com",
+      "password_label": "Пароль",
+      "password_placeholder": "Пароль / Пароль Приложения",
+      "display_name_label": "Отображаемое Имя",
+      "display_name_placeholder": "Ваше Имя",
+      "imap_server_label": "IMAP Сервер",
+      "smtp_server_label": "SMTP Сервер",
+      "port_label": "Порт",
+      "save": "Сохранить Учётную Запись",
+      "delete": "Удалить Учётную Запись",
+      "delete_confirm": "Удалить эту учётную запись?",
+      "tip_protocol": "Выберите протокол: imap (по умолчанию), jmap или pop3.",
+      "tip_app_password": "Для Gmail используйте Пароль Приложения вместо обычного пароля."
+    },
+    "settings": {
+      "title": "Настройки",
+      "category_general": "Общие",
+      "category_accounts": "Учётные Записи",
+      "category_theme": "Тема",
+      "category_mailing_lists": "Списки Рассылки",
+      "category_encryption": "Шифрование Приложения",
+      "help_menu": "↑/↓: навигация • вправо/enter: выбор • esc: назад",
+      "help_content": "esc: назад в меню"
+    },
+    "settings_accounts": {
+      "title": "Настройки Учётных Записей",
+      "no_accounts": "Учётные записи не настроены.",
+      "add_account": "Добавить Новую Учётную Запись",
+      "help": "↑/↓: навигация • enter: редактировать конфигурацию шифрования • e: редактировать сервер • d: удалить"
+    },
+    "settings_theme": {
+      "title": "Тема",
+      "current": "активная",
+      "help": "↑/↓: навигация • enter/пробел: применить тему"
+    },
+    "settings_mailing_lists": {
+      "title": "Списки Рассылки",
+      "no_lists": "Списки рассылки не настроены.",
+      "add_list": "Добавить Новый Список Рассылки",
+      "delete_confirm": "Удалить список рассылки?",
+      "address_count": {
+        "one": "{count} адрес",
+        "few": "{count} адреса",
+        "many": "{count} адресов",
+        "other": "{count} адреса"
+      },
+      "help": "↑/↓: навигация • enter: выбрать • e: редактировать • d: удалить"
+    },
+    "settings_general": {
+      "title": "Общие Настройки",
+      "disable_images": "Отключить Отображение Изображений",
+      "hide_tips": "Скрыть Контекстные Подсказки",
+      "disable_notifications": "Отключить Уведомления",
+      "date_format": "Формат Даты",
+      "language": "Язык",
+      "signature": "Редактировать Подпись",
+      "signature_configured": "настроена",
+      "signature_not_configured": "не настроена",
+      "on": "ВКЛ",
+      "off": "ВЫКЛ",
+      "restart_required": "Требуется перезапуск для применения изменения языка"
+    },
+    "settings_encryption": {
+      "title": "Шифрование Приложения",
+      "enabled": "Шифрование в настоящее время включено.",
+      "disabled": "Установите пароль для шифрования всех данных.",
+      "password_label": "Пароль:",
+      "confirm_label": "Подтвердите Пароль:",
+      "enable_button": "Включить Шифрование",
+      "disable_button": "Нажмите enter для отключения шифрования",
+      "disable_confirm": "Отключить шифрование?",
+      "disable_warning": "Все данные будут храниться незашифрованными.",
+      "encrypting": "Шифрование данных...",
+      "error_empty": "Пароль не может быть пустым",
+      "error_mismatch": "Пароли не совпадают",
+      "help": "tab: следующий • enter: сохранить"
+    },
+    "password_prompt": {
+      "title": "Matcha заблокирован",
+      "enter_password": "Введите пароль",
+      "error_empty": "Пароль не может быть пустым",
+      "error_incorrect": "Неверный пароль",
+      "help": "enter: разблокировать • ctrl+c: выйти"
+    },
+    "email_view": {
+      "from": "От",
+      "to": "Кому",
+      "cc": "Копия",
+      "bcc": "Скрытая Копия",
+      "subject": "Тема",
+      "date": "Дата",
+      "attachments": "Вложения",
+      "download": "Скачать",
+      "save": "Сохранить",
+      "reply": "Ответить",
+      "reply_all": "Ответить Всем",
+      "forward": "Переслать",
+      "delete": "Удалить",
+      "archive": "Архивировать",
+      "help": "r: ответить • f: переслать • d: удалить • a: архивировать • esc: назад"
+    },
+    "calendar": {
+      "title": "Календарь",
+      "meeting": "Встреча",
+      "event": "Событие",
+      "accept": "Принять",
+      "decline": "Отклонить",
+      "tentative": "Предварительно",
+      "rsvp_sent": "RSVP отправлен: {response}"
+    },
+    "marketplace": {
+      "title": "Магазин Плагинов",
+      "installing": "Установка...",
+      "installed": "Установлено",
+      "install": "Установить",
+      "error": "Не удалось установить",
+      "help": "j/k: навигация • enter: установить • esc: назад"
+    },
+    "time": {
+      "just_now": "только что",
+      "minute_ago": {
+        "one": "1 минуту назад",
+        "few": "{count} минуты назад",
+        "many": "{count} минут назад",
+        "other": "{count} минуты назад"
+      },
+      "hour_ago": {
+        "one": "1 час назад",
+        "few": "{count} часа назад",
+        "many": "{count} часов назад",
+        "other": "{count} часа назад"
+      },
+      "day_ago": {
+        "one": "1 день назад",
+        "few": "{count} дня назад",
+        "many": "{count} дней назад",
+        "other": "{count} дня назад"
+      },
+      "week_ago": {
+        "one": "1 неделю назад",
+        "few": "{count} недели назад",
+        "many": "{count} недель назад",
+        "other": "{count} недели назад"
+      },
+      "month_ago": {
+        "one": "1 месяц назад",
+        "few": "{count} месяца назад",
+        "many": "{count} месяцев назад",
+        "other": "{count} месяца назад"
+      },
+      "year_ago": {
+        "one": "1 год назад",
+        "few": "{count} года назад",
+        "many": "{count} лет назад",
+        "other": "{count} года назад"
+      },
+      "in_moment": "через мгновение",
+      "in_minute": {
+        "one": "через 1 минуту",
+        "few": "через {count} минуты",
+        "many": "через {count} минут",
+        "other": "через {count} минуты"
+      },
+      "in_hour": {
+        "one": "через 1 час",
+        "few": "через {count} часа",
+        "many": "через {count} часов",
+        "other": "через {count} часа"
+      },
+      "in_day": {
+        "one": "через 1 день",
+        "few": "через {count} дня",
+        "many": "через {count} дней",
+        "other": "через {count} дня"
+      }
+    }
+  }
+}

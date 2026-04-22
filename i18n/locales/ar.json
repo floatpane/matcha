@@ -1,0 +1,275 @@
+{
+  "language": "ar",
+  "messages": {
+    "common": {
+      "yes": "نعم",
+      "no": "لا",
+      "cancel": "إلغاء",
+      "ok": "موافق",
+      "save": "حفظ",
+      "delete": "حذف",
+      "archive": "أرشفة",
+      "back": "رجوع",
+      "next": "التالي",
+      "previous": "السابق",
+      "loading": "جاري التحميل...",
+      "error": "خطأ",
+      "success": "نجاح"
+    },
+    "composer": {
+      "title": "إنشاء بريد إلكتروني جديد",
+      "from": "من",
+      "to_placeholder": "أدخل عناوين البريد الإلكتروني للمستلمين.",
+      "cc_placeholder": "مستلمو نسخة كربونية.",
+      "bcc_placeholder": "مستلمو نسخة كربونية مخفية.",
+      "subject_placeholder": "الموضوع",
+      "body_placeholder": "اكتب رسالتك...",
+      "signature": "التوقيع",
+      "signature_placeholder": "توقيع بريدك الإلكتروني.",
+      "attachments": "المرفقات",
+      "attachments_none": "لا يوجد",
+      "enter_to_add": "اضغط Enter للإضافة",
+      "encrypt_smime": "تشفير البريد الإلكتروني (S/MIME)",
+      "send": "إرسال",
+      "switchable": "قابل للتبديل",
+      "enter_to_switch": "اضغط Enter للتبديل",
+      "no_account": "لم يتم تكوين حساب",
+      "send_confirm": "اضغط Enter لإرسال البريد الإلكتروني.",
+      "help": "Markdown/HTML • tab/shift+tab: التنقل • ctrl+e: $EDITOR • esc: حفظ المسودة والخروج",
+      "exit_confirm": "هل أنت متأكد أنك تريد الخروج؟ سيتم حفظ هذه المسودة",
+      "sending": "جاري إرسال البريد الإلكتروني...",
+      "sent": "تم إرسال البريد الإلكتروني بنجاح",
+      "draft_saved": "تم حفظ المسودة"
+    },
+    "inbox": {
+      "title": "صندوق الوارد",
+      "all_accounts": "جميع الحسابات",
+      "sent": "المرسلة",
+      "trash": "سلة المهملات",
+      "archive": "الأرشيف",
+      "empty": "لا توجد رسائل",
+      "loading": "جاري تحميل الرسائل...",
+      "refreshing": "جاري التحديث...",
+      "visual_mode": "الوضع المرئي",
+      "delete": "حذف",
+      "archive": "أرشفة",
+      "refresh": "تحديث",
+      "reply": "رد",
+      "forward": "إعادة توجيه",
+      "move": "نقل",
+      "mark_read": "وضع علامة كمقروء",
+      "mark_unread": "وضع علامة كغير مقروء",
+      "help_visual": "v: الوضع المرئي • d: حذف • a: أرشفة",
+      "help_navigation": "j/k: التنقل • enter: فتح • r: تحديث"
+    },
+    "choice": {
+      "what_to_do": "ماذا تريد أن تفعل؟",
+      "compose": "إنشاء بريد إلكتروني",
+      "inbox": "عرض صندوق الوارد",
+      "calendar": "عرض التقويم",
+      "settings": "الإعدادات",
+      "marketplace": "متجر الإضافات",
+      "drafts": "المسودات",
+      "help": "استخدم ↑/↓ للتنقل، enter للاختيار، وctrl+c للخروج.",
+      "unknown": "غير معروف",
+      "update_available": "تحديث متاح: {latest} (المثبت: {current}) — قم بتشغيل `matcha update` للترقية"
+    },
+    "folder_inbox": {
+      "folders_title": "المجلدات",
+      "move_to_folder": "نقل إلى المجلد:",
+      "move_single": "نقل البريد الإلكتروني إلى المجلد:",
+      "move_multiple": {
+        "one": "نقل بريد إلكتروني {count} إلى المجلد:",
+        "few": "نقل {count} رسائل بريد إلكتروني إلى المجلد:",
+        "many": "نقل {count} رسالة بريد إلكتروني إلى المجلد:",
+        "other": "نقل {count} رسالة بريد إلكتروني إلى المجلد:"
+      },
+      "help": "j/k: التنقل  enter: نقل  esc: إلغاء",
+      "help_folders": "tab: المجلد التالي • shift+tab: المجلد السابق • m: نقل"
+    },
+    "login": {
+      "title": "حسابات البريد الإلكتروني",
+      "add_account": "إضافة حساب",
+      "edit_account": "تعديل الحساب",
+      "description": "أدخل بيانات اعتماد حساب البريد الإلكتروني الخاص بك.",
+      "protocol_label": "البروتوكول",
+      "protocol_placeholder": "البروتوكول (imap أو jmap أو pop3)",
+      "email_label": "البريد الإلكتروني",
+      "email_placeholder": "your.email@example.com",
+      "password_label": "كلمة المرور",
+      "password_placeholder": "كلمة المرور / كلمة مرور التطبيق",
+      "display_name_label": "الاسم المعروض",
+      "display_name_placeholder": "اسمك",
+      "imap_server_label": "خادم IMAP",
+      "smtp_server_label": "خادم SMTP",
+      "port_label": "المنفذ",
+      "save": "حفظ الحساب",
+      "delete": "حذف الحساب",
+      "delete_confirm": "حذف هذا الحساب؟",
+      "tip_protocol": "اختر البروتوكول: imap (افتراضي)، jmap، أو pop3.",
+      "tip_app_password": "بالنسبة لـ Gmail، استخدم كلمة مرور التطبيق بدلاً من كلمة المرور العادية."
+    },
+    "settings": {
+      "title": "الإعدادات",
+      "category_general": "عام",
+      "category_accounts": "الحسابات",
+      "category_theme": "المظهر",
+      "category_mailing_lists": "القوائم البريدية",
+      "category_encryption": "تشفير التطبيق",
+      "help_menu": "↑/↓: التنقل • يمين/enter: اختيار • esc: رجوع",
+      "help_content": "esc: العودة للقائمة"
+    },
+    "settings_accounts": {
+      "title": "إعدادات الحسابات",
+      "no_accounts": "لم يتم تكوين حسابات.",
+      "add_account": "إضافة حساب جديد",
+      "help": "↑/↓: التنقل • enter: تعديل إعدادات التشفير • e: تعديل الخادم • d: حذف"
+    },
+    "settings_theme": {
+      "title": "المظهر",
+      "current": "نشط",
+      "help": "↑/↓: التنقل • enter/مسافة: تطبيق المظهر"
+    },
+    "settings_mailing_lists": {
+      "title": "القوائم البريدية",
+      "no_lists": "لم يتم تكوين قوائم بريدية.",
+      "add_list": "إضافة قائمة بريدية جديدة",
+      "delete_confirm": "حذف القائمة البريدية؟",
+      "address_count": {
+        "one": "عنوان {count}",
+        "few": "{count} عناوين",
+        "many": "{count} عنواناً",
+        "other": "{count} عنوان"
+      },
+      "help": "↑/↓: التنقل • enter: اختيار • e: تعديل • d: حذف"
+    },
+    "settings_general": {
+      "title": "الإعدادات العامة",
+      "disable_images": "تعطيل عرض الصور",
+      "hide_tips": "إخفاء النصائح السياقية",
+      "disable_notifications": "تعطيل الإشعارات",
+      "date_format": "تنسيق التاريخ",
+      "language": "اللغة",
+      "signature": "تعديل التوقيع",
+      "signature_configured": "مكوّن",
+      "signature_not_configured": "غير مكوّن",
+      "on": "تشغيل",
+      "off": "إيقاف",
+      "restart_required": "يتطلب إعادة التشغيل لتطبيق تغيير اللغة"
+    },
+    "settings_encryption": {
+      "title": "تشفير التطبيق",
+      "enabled": "التشفير مفعّل حالياً.",
+      "disabled": "عيّن كلمة مرور لتشفير جميع البيانات.",
+      "password_label": "كلمة المرور:",
+      "confirm_label": "تأكيد كلمة المرور:",
+      "enable_button": "تفعيل التشفير",
+      "disable_button": "اضغط enter لتعطيل التشفير",
+      "disable_confirm": "تعطيل التشفير؟",
+      "disable_warning": "سيتم تخزين جميع البيانات بدون تشفير.",
+      "encrypting": "جاري تشفير البيانات...",
+      "error_empty": "لا يمكن أن تكون كلمة المرور فارغة",
+      "error_mismatch": "كلمات المرور غير متطابقة",
+      "help": "tab: التالي • enter: حفظ"
+    },
+    "password_prompt": {
+      "title": "Matcha مقفل",
+      "enter_password": "أدخل كلمة المرور",
+      "error_empty": "لا يمكن أن تكون كلمة المرور فارغة",
+      "error_incorrect": "كلمة مرور غير صحيحة",
+      "help": "enter: فتح القفل • ctrl+c: خروج"
+    },
+    "email_view": {
+      "from": "من",
+      "to": "إلى",
+      "cc": "نسخة",
+      "bcc": "نسخة مخفية",
+      "subject": "الموضوع",
+      "date": "التاريخ",
+      "attachments": "المرفقات",
+      "download": "تنزيل",
+      "save": "حفظ",
+      "reply": "رد",
+      "reply_all": "رد على الكل",
+      "forward": "إعادة توجيه",
+      "delete": "حذف",
+      "archive": "أرشفة",
+      "help": "r: رد • f: إعادة توجيه • d: حذف • a: أرشفة • esc: رجوع"
+    },
+    "calendar": {
+      "title": "التقويم",
+      "meeting": "اجتماع",
+      "event": "حدث",
+      "accept": "قبول",
+      "decline": "رفض",
+      "tentative": "مؤقت",
+      "rsvp_sent": "تم إرسال RSVP: {response}"
+    },
+    "marketplace": {
+      "title": "متجر الإضافات",
+      "installing": "جاري التثبيت...",
+      "installed": "مثبت",
+      "install": "تثبيت",
+      "error": "فشل التثبيت",
+      "help": "j/k: التنقل • enter: تثبيت • esc: رجوع"
+    },
+    "time": {
+      "just_now": "الآن",
+      "minute_ago": {
+        "one": "منذ دقيقة واحدة",
+        "few": "منذ دقيقتين",
+        "many": "منذ {count} دقيقة",
+        "other": "منذ {count} دقيقة"
+      },
+      "hour_ago": {
+        "one": "منذ ساعة واحدة",
+        "few": "منذ ساعتين",
+        "many": "منذ {count} ساعة",
+        "other": "منذ {count} ساعة"
+      },
+      "day_ago": {
+        "one": "منذ يوم واحد",
+        "few": "منذ يومين",
+        "many": "منذ {count} يوماً",
+        "other": "منذ {count} يوم"
+      },
+      "week_ago": {
+        "one": "منذ أسبوع واحد",
+        "few": "منذ أسبوعين",
+        "many": "منذ {count} أسبوعاً",
+        "other": "منذ {count} أسبوع"
+      },
+      "month_ago": {
+        "one": "منذ شهر واحد",
+        "few": "منذ شهرين",
+        "many": "منذ {count} شهراً",
+        "other": "منذ {count} شهر"
+      },
+      "year_ago": {
+        "one": "منذ سنة واحدة",
+        "few": "منذ سنتين",
+        "many": "منذ {count} سنة",
+        "other": "منذ {count} سنة"
+      },
+      "in_moment": "بعد لحظة",
+      "in_minute": {
+        "one": "بعد دقيقة واحدة",
+        "few": "بعد دقيقتين",
+        "many": "بعد {count} دقيقة",
+        "other": "بعد {count} دقيقة"
+      },
+      "in_hour": {
+        "one": "بعد ساعة واحدة",
+        "few": "بعد ساعتين",
+        "many": "بعد {count} ساعة",
+        "other": "بعد {count} ساعة"
+      },
+      "in_day": {
+        "one": "بعد يوم واحد",
+        "few": "بعد يومين",
+        "many": "بعد {count} يوماً",
+        "other": "بعد {count} يوم"
+      }
+    }
+  }
+}

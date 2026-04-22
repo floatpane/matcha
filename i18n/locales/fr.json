@@ -1,0 +1,253 @@
+{
+  "language": "fr",
+  "messages": {
+    "common": {
+      "yes": "Oui",
+      "no": "Non",
+      "cancel": "Annuler",
+      "ok": "OK",
+      "save": "Enregistrer",
+      "delete": "Supprimer",
+      "archive": "Archiver",
+      "back": "Retour",
+      "next": "Suivant",
+      "previous": "Précédent",
+      "loading": "Chargement...",
+      "error": "Erreur",
+      "success": "Succès"
+    },
+    "composer": {
+      "title": "Rédiger un Nouveau Message",
+      "from": "De",
+      "to_placeholder": "Entrez les adresses e-mail des destinataires.",
+      "cc_placeholder": "Destinataires en copie.",
+      "bcc_placeholder": "Destinataires en copie cachée.",
+      "subject_placeholder": "Objet",
+      "body_placeholder": "Rédigez votre message...",
+      "signature": "Signature",
+      "signature_placeholder": "Votre signature e-mail.",
+      "attachments": "Pièces jointes",
+      "attachments_none": "Aucune",
+      "enter_to_add": "Entrée pour ajouter",
+      "encrypt_smime": "Chiffrer l'E-mail (S/MIME)",
+      "send": "Envoyer",
+      "switchable": "interchangeable",
+      "enter_to_switch": "Entrée pour changer",
+      "no_account": "aucun compte configuré",
+      "send_confirm": "Appuyez sur Entrée pour envoyer l'e-mail.",
+      "help": "Markdown/HTML • tab/shift+tab: naviguer • ctrl+e: $EDITOR • esc: sauvegarder brouillon & quitter",
+      "exit_confirm": "Êtes-vous sûr de vouloir quitter ? Ce brouillon sera sauvegardé",
+      "sending": "Envoi de l'e-mail...",
+      "sent": "E-mail envoyé avec succès",
+      "draft_saved": "Brouillon sauvegardé"
+    },
+    "inbox": {
+      "title": "Boîte de réception",
+      "all_accounts": "Tous les Comptes",
+      "sent": "Envoyés",
+      "trash": "Corbeille",
+      "archive": "Archives",
+      "empty": "Aucun e-mail",
+      "loading": "Chargement des e-mails...",
+      "refreshing": "Actualisation...",
+      "visual_mode": "mode visuel",
+      "delete": "supprimer",
+      "archive": "archiver",
+      "refresh": "actualiser",
+      "reply": "répondre",
+      "forward": "transférer",
+      "move": "déplacer",
+      "mark_read": "marquer comme lu",
+      "mark_unread": "marquer comme non lu",
+      "help_visual": "v: mode visuel • d: supprimer • a: archiver",
+      "help_navigation": "j/k: naviguer • entrée: ouvrir • r: actualiser"
+    },
+    "choice": {
+      "what_to_do": "Que souhaitez-vous faire ?",
+      "compose": "Rédiger un E-mail",
+      "inbox": "Voir la Boîte de Réception",
+      "calendar": "Voir le Calendrier",
+      "settings": "Paramètres",
+      "marketplace": "Marketplace de Plugins",
+      "drafts": "Brouillons",
+      "help": "Utilisez ↑/↓ pour naviguer, entrée pour sélectionner, et ctrl+c pour quitter.",
+      "unknown": "inconnu",
+      "update_available": "Mise à jour disponible : {latest} (installée : {current}) — exécutez `matcha update` pour mettre à jour"
+    },
+    "folder_inbox": {
+      "folders_title": "Dossiers",
+      "move_to_folder": "Déplacer vers le dossier :",
+      "move_single": "Déplacer l'e-mail vers le dossier :",
+      "move_multiple": {
+        "one": "Déplacer {count} e-mail vers le dossier :",
+        "other": "Déplacer {count} e-mails vers le dossier :"
+      },
+      "help": "j/k: naviguer  entrée: déplacer  esc: annuler",
+      "help_folders": "tab: dossier suivant • shift+tab: dossier précédent • m: déplacer"
+    },
+    "login": {
+      "title": "Comptes E-mail",
+      "add_account": "Ajouter un Compte",
+      "edit_account": "Modifier le Compte",
+      "description": "Entrez les identifiants de votre compte e-mail.",
+      "protocol_label": "Protocole",
+      "protocol_placeholder": "Protocole (imap, jmap ou pop3)",
+      "email_label": "E-mail",
+      "email_placeholder": "votre.email@exemple.fr",
+      "password_label": "Mot de passe",
+      "password_placeholder": "Mot de passe / Mot de passe d'application",
+      "display_name_label": "Nom d'Affichage",
+      "display_name_placeholder": "Votre Nom",
+      "imap_server_label": "Serveur IMAP",
+      "smtp_server_label": "Serveur SMTP",
+      "port_label": "Port",
+      "save": "Enregistrer le Compte",
+      "delete": "Supprimer le Compte",
+      "delete_confirm": "Supprimer ce compte ?",
+      "tip_protocol": "Choisissez le protocole : imap (par défaut), jmap ou pop3.",
+      "tip_app_password": "Pour Gmail, utilisez un mot de passe d'application au lieu de votre mot de passe habituel."
+    },
+    "settings": {
+      "title": "Paramètres",
+      "category_general": "Général",
+      "category_accounts": "Comptes",
+      "category_theme": "Thème",
+      "category_mailing_lists": "Listes de Diffusion",
+      "category_encryption": "Chiffrement de l'Application",
+      "help_menu": "↑/↓: naviguer • droite/entrée: sélectionner • esc: retour",
+      "help_content": "esc: retour au menu"
+    },
+    "settings_accounts": {
+      "title": "Paramètres des Comptes",
+      "no_accounts": "Aucun compte configuré.",
+      "add_account": "Ajouter un Nouveau Compte",
+      "help": "↑/↓: naviguer • entrée: modifier config. crypto • e: modifier serveur • d: supprimer"
+    },
+    "settings_theme": {
+      "title": "Thème",
+      "current": "actif",
+      "help": "↑/↓: naviguer • entrée/espace: appliquer le thème"
+    },
+    "settings_mailing_lists": {
+      "title": "Listes de Diffusion",
+      "no_lists": "Aucune liste de diffusion configurée.",
+      "add_list": "Ajouter une Nouvelle Liste de Diffusion",
+      "delete_confirm": "Supprimer la liste de diffusion ?",
+      "address_count": {
+        "one": "{count} adresse",
+        "other": "{count} adresses"
+      },
+      "help": "↑/↓: naviguer • entrée: sélectionner • e: modifier • d: supprimer"
+    },
+    "settings_general": {
+      "title": "Paramètres Généraux",
+      "disable_images": "Désactiver l'Affichage des Images",
+      "hide_tips": "Masquer les Conseils Contextuels",
+      "disable_notifications": "Désactiver les Notifications",
+      "date_format": "Format de Date",
+      "language": "Langue",
+      "signature": "Modifier la Signature",
+      "signature_configured": "configurée",
+      "signature_not_configured": "non configurée",
+      "on": "ACTIVÉ",
+      "off": "DÉSACTIVÉ",
+      "restart_required": "Redémarrage requis pour appliquer le changement de langue"
+    },
+    "settings_encryption": {
+      "title": "Chiffrement de l'Application",
+      "enabled": "Le chiffrement est actuellement activé.",
+      "disabled": "Définissez un mot de passe pour chiffrer toutes les données.",
+      "password_label": "Mot de passe :",
+      "confirm_label": "Confirmer le Mot de Passe :",
+      "enable_button": "Activer le Chiffrement",
+      "disable_button": "Appuyez sur entrée pour désactiver le chiffrement",
+      "disable_confirm": "Désactiver le chiffrement ?",
+      "disable_warning": "Toutes les données seront stockées non chiffrées.",
+      "encrypting": "Chiffrement des données...",
+      "error_empty": "Le mot de passe ne peut pas être vide",
+      "error_mismatch": "Les mots de passe ne correspondent pas",
+      "help": "tab: suivant • entrée: enregistrer"
+    },
+    "password_prompt": {
+      "title": "Matcha est verrouillé",
+      "enter_password": "Entrez votre mot de passe",
+      "error_empty": "Le mot de passe ne peut pas être vide",
+      "error_incorrect": "Mot de passe incorrect",
+      "help": "entrée: déverrouiller • ctrl+c: quitter"
+    },
+    "email_view": {
+      "from": "De",
+      "to": "À",
+      "cc": "Cc",
+      "bcc": "Cci",
+      "subject": "Objet",
+      "date": "Date",
+      "attachments": "Pièces Jointes",
+      "download": "Télécharger",
+      "save": "Enregistrer",
+      "reply": "Répondre",
+      "reply_all": "Répondre à Tous",
+      "forward": "Transférer",
+      "delete": "Supprimer",
+      "archive": "Archiver",
+      "help": "r: répondre • f: transférer • d: supprimer • a: archiver • esc: retour"
+    },
+    "calendar": {
+      "title": "Calendrier",
+      "meeting": "Réunion",
+      "event": "Événement",
+      "accept": "Accepter",
+      "decline": "Refuser",
+      "tentative": "Provisoire",
+      "rsvp_sent": "RSVP envoyé : {response}"
+    },
+    "marketplace": {
+      "title": "Marketplace de Plugins",
+      "installing": "Installation...",
+      "installed": "Installé",
+      "install": "Installer",
+      "error": "Échec de l'installation",
+      "help": "j/k: naviguer • entrée: installer • esc: retour"
+    },
+    "time": {
+      "just_now": "à l'instant",
+      "minute_ago": {
+        "one": "il y a 1 minute",
+        "other": "il y a {count} minutes"
+      },
+      "hour_ago": {
+        "one": "il y a 1 heure",
+        "other": "il y a {count} heures"
+      },
+      "day_ago": {
+        "one": "il y a 1 jour",
+        "other": "il y a {count} jours"
+      },
+      "week_ago": {
+        "one": "il y a 1 semaine",
+        "other": "il y a {count} semaines"
+      },
+      "month_ago": {
+        "one": "il y a 1 mois",
+        "other": "il y a {count} mois"
+      },
+      "year_ago": {
+        "one": "il y a 1 an",
+        "other": "il y a {count} ans"
+      },
+      "in_moment": "dans un instant",
+      "in_minute": {
+        "one": "dans 1 minute",
+        "other": "dans {count} minutes"
+      },
+      "in_hour": {
+        "one": "dans 1 heure",
+        "other": "dans {count} heures"
+      },
+      "in_day": {
+        "one": "dans 1 jour",
+        "other": "dans {count} jours"
+      }
+    }
+  }
+}

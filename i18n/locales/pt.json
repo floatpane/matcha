@@ -1,0 +1,253 @@
+{
+  "language": "pt",
+  "messages": {
+    "common": {
+      "yes": "Sim",
+      "no": "Não",
+      "cancel": "Cancelar",
+      "ok": "OK",
+      "save": "Salvar",
+      "delete": "Excluir",
+      "archive": "Arquivar",
+      "back": "Voltar",
+      "next": "Próximo",
+      "previous": "Anterior",
+      "loading": "Carregando...",
+      "error": "Erro",
+      "success": "Sucesso"
+    },
+    "composer": {
+      "title": "Redigir Novo E-mail",
+      "from": "De",
+      "to_placeholder": "Digite os endereços de e-mail dos destinatários.",
+      "cc_placeholder": "Destinatários em cópia.",
+      "bcc_placeholder": "Destinatários em cópia oculta.",
+      "subject_placeholder": "Assunto",
+      "body_placeholder": "Redija sua mensagem...",
+      "signature": "Assinatura",
+      "signature_placeholder": "Sua assinatura de e-mail.",
+      "attachments": "Anexos",
+      "attachments_none": "Nenhum",
+      "enter_to_add": "Enter para adicionar",
+      "encrypt_smime": "Criptografar E-mail (S/MIME)",
+      "send": "Enviar",
+      "switchable": "alterável",
+      "enter_to_switch": "Enter para trocar",
+      "no_account": "nenhuma conta configurada",
+      "send_confirm": "Pressione Enter para enviar o e-mail.",
+      "help": "Markdown/HTML • tab/shift+tab: navegar • ctrl+e: $EDITOR • esc: salvar rascunho & sair",
+      "exit_confirm": "Tem certeza de que deseja sair? Este rascunho será salvo",
+      "sending": "Enviando e-mail...",
+      "sent": "E-mail enviado com sucesso",
+      "draft_saved": "Rascunho salvo"
+    },
+    "inbox": {
+      "title": "Caixa de entrada",
+      "all_accounts": "Todas as Contas",
+      "sent": "Enviados",
+      "trash": "Lixeira",
+      "archive": "Arquivo",
+      "empty": "Sem e-mails",
+      "loading": "Carregando e-mails...",
+      "refreshing": "Atualizando...",
+      "visual_mode": "modo visual",
+      "delete": "excluir",
+      "archive": "arquivar",
+      "refresh": "atualizar",
+      "reply": "responder",
+      "forward": "encaminhar",
+      "move": "mover",
+      "mark_read": "marcar como lido",
+      "mark_unread": "marcar como não lido",
+      "help_visual": "v: modo visual • d: excluir • a: arquivar",
+      "help_navigation": "j/k: navegar • enter: abrir • r: atualizar"
+    },
+    "choice": {
+      "what_to_do": "O que você gostaria de fazer?",
+      "compose": "Redigir E-mail",
+      "inbox": "Ver Caixa de Entrada",
+      "calendar": "Ver Calendário",
+      "settings": "Configurações",
+      "marketplace": "Loja de Plugins",
+      "drafts": "Rascunhos",
+      "help": "Use ↑/↓ para navegar, enter para selecionar e ctrl+c para sair.",
+      "unknown": "desconhecido",
+      "update_available": "Atualização disponível: {latest} (instalada: {current}) — execute `matcha update` para atualizar"
+    },
+    "folder_inbox": {
+      "folders_title": "Pastas",
+      "move_to_folder": "Mover para pasta:",
+      "move_single": "Mover e-mail para pasta:",
+      "move_multiple": {
+        "one": "Mover {count} e-mail para pasta:",
+        "other": "Mover {count} e-mails para pasta:"
+      },
+      "help": "j/k: navegar  enter: mover  esc: cancelar",
+      "help_folders": "tab: próxima pasta • shift+tab: pasta anterior • m: mover"
+    },
+    "login": {
+      "title": "Contas de E-mail",
+      "add_account": "Adicionar Conta",
+      "edit_account": "Editar Conta",
+      "description": "Digite as credenciais da sua conta de e-mail.",
+      "protocol_label": "Protocolo",
+      "protocol_placeholder": "Protocolo (imap, jmap ou pop3)",
+      "email_label": "E-mail",
+      "email_placeholder": "seu.email@exemplo.com",
+      "password_label": "Senha",
+      "password_placeholder": "Senha / Senha de Aplicativo",
+      "display_name_label": "Nome de Exibição",
+      "display_name_placeholder": "Seu Nome",
+      "imap_server_label": "Servidor IMAP",
+      "smtp_server_label": "Servidor SMTP",
+      "port_label": "Porta",
+      "save": "Salvar Conta",
+      "delete": "Excluir Conta",
+      "delete_confirm": "Excluir esta conta?",
+      "tip_protocol": "Escolha o protocolo: imap (padrão), jmap ou pop3.",
+      "tip_app_password": "Para Gmail, use uma Senha de Aplicativo em vez de sua senha normal."
+    },
+    "settings": {
+      "title": "Configurações",
+      "category_general": "Geral",
+      "category_accounts": "Contas",
+      "category_theme": "Tema",
+      "category_mailing_lists": "Listas de E-mail",
+      "category_encryption": "Criptografia do Aplicativo",
+      "help_menu": "↑/↓: navegar • direita/enter: selecionar • esc: voltar",
+      "help_content": "esc: voltar ao menu"
+    },
+    "settings_accounts": {
+      "title": "Configurações de Contas",
+      "no_accounts": "Nenhuma conta configurada.",
+      "add_account": "Adicionar Nova Conta",
+      "help": "↑/↓: navegar • enter: editar config. de criptografia • e: editar servidor • d: excluir"
+    },
+    "settings_theme": {
+      "title": "Tema",
+      "current": "ativo",
+      "help": "↑/↓: navegar • enter/espaço: aplicar tema"
+    },
+    "settings_mailing_lists": {
+      "title": "Listas de E-mail",
+      "no_lists": "Nenhuma lista de e-mail configurada.",
+      "add_list": "Adicionar Nova Lista de E-mail",
+      "delete_confirm": "Excluir lista de e-mail?",
+      "address_count": {
+        "one": "{count} endereço",
+        "other": "{count} endereços"
+      },
+      "help": "↑/↓: navegar • enter: selecionar • e: editar • d: excluir"
+    },
+    "settings_general": {
+      "title": "Configurações Gerais",
+      "disable_images": "Desativar Exibição de Imagens",
+      "hide_tips": "Ocultar Dicas Contextuais",
+      "disable_notifications": "Desativar Notificações",
+      "date_format": "Formato de Data",
+      "language": "Idioma",
+      "signature": "Editar Assinatura",
+      "signature_configured": "configurada",
+      "signature_not_configured": "não configurada",
+      "on": "ATIVADO",
+      "off": "DESATIVADO",
+      "restart_required": "Reinicialização necessária para aplicar a mudança de idioma"
+    },
+    "settings_encryption": {
+      "title": "Criptografia do Aplicativo",
+      "enabled": "A criptografia está atualmente ativada.",
+      "disabled": "Defina uma senha para criptografar todos os dados.",
+      "password_label": "Senha:",
+      "confirm_label": "Confirmar Senha:",
+      "enable_button": "Ativar Criptografia",
+      "disable_button": "Pressione enter para desativar a criptografia",
+      "disable_confirm": "Desativar criptografia?",
+      "disable_warning": "Todos os dados serão armazenados sem criptografia.",
+      "encrypting": "Criptografando dados...",
+      "error_empty": "A senha não pode estar vazia",
+      "error_mismatch": "As senhas não coincidem",
+      "help": "tab: próximo • enter: salvar"
+    },
+    "password_prompt": {
+      "title": "Matcha está bloqueado",
+      "enter_password": "Digite sua senha",
+      "error_empty": "A senha não pode estar vazia",
+      "error_incorrect": "Senha incorreta",
+      "help": "enter: desbloquear • ctrl+c: sair"
+    },
+    "email_view": {
+      "from": "De",
+      "to": "Para",
+      "cc": "Cc",
+      "bcc": "Cco",
+      "subject": "Assunto",
+      "date": "Data",
+      "attachments": "Anexos",
+      "download": "Baixar",
+      "save": "Salvar",
+      "reply": "Responder",
+      "reply_all": "Responder a Todos",
+      "forward": "Encaminhar",
+      "delete": "Excluir",
+      "archive": "Arquivar",
+      "help": "r: responder • f: encaminhar • d: excluir • a: arquivar • esc: voltar"
+    },
+    "calendar": {
+      "title": "Calendário",
+      "meeting": "Reunião",
+      "event": "Evento",
+      "accept": "Aceitar",
+      "decline": "Recusar",
+      "tentative": "Provisório",
+      "rsvp_sent": "RSVP enviado: {response}"
+    },
+    "marketplace": {
+      "title": "Loja de Plugins",
+      "installing": "Instalando...",
+      "installed": "Instalado",
+      "install": "Instalar",
+      "error": "Falha na instalação",
+      "help": "j/k: navegar • enter: instalar • esc: voltar"
+    },
+    "time": {
+      "just_now": "agora mesmo",
+      "minute_ago": {
+        "one": "há 1 minuto",
+        "other": "há {count} minutos"
+      },
+      "hour_ago": {
+        "one": "há 1 hora",
+        "other": "há {count} horas"
+      },
+      "day_ago": {
+        "one": "há 1 dia",
+        "other": "há {count} dias"
+      },
+      "week_ago": {
+        "one": "há 1 semana",
+        "other": "há {count} semanas"
+      },
+      "month_ago": {
+        "one": "há 1 mês",
+        "other": "há {count} meses"
+      },
+      "year_ago": {
+        "one": "há 1 ano",
+        "other": "há {count} anos"
+      },
+      "in_moment": "em um momento",
+      "in_minute": {
+        "one": "em 1 minuto",
+        "other": "em {count} minutos"
+      },
+      "in_hour": {
+        "one": "em 1 hora",
+        "other": "em {count} horas"
+      },
+      "in_day": {
+        "one": "em 1 dia",
+        "other": "em {count} dias"
+      }
+    }
+  }
+}

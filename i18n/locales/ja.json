@@ -1,0 +1,242 @@
+{
+  "language": "ja",
+  "messages": {
+    "common": {
+      "yes": "はい",
+      "no": "いいえ",
+      "cancel": "キャンセル",
+      "ok": "OK",
+      "save": "保存",
+      "delete": "削除",
+      "archive": "アーカイブ",
+      "back": "戻る",
+      "next": "次へ",
+      "previous": "前へ",
+      "loading": "読み込み中...",
+      "error": "エラー",
+      "success": "成功"
+    },
+    "composer": {
+      "title": "新規メール作成",
+      "from": "差出人",
+      "to_placeholder": "受信者のメールアドレスを入力してください。",
+      "cc_placeholder": "CCの受信者。",
+      "bcc_placeholder": "BCCの受信者。",
+      "subject_placeholder": "件名",
+      "body_placeholder": "メッセージを作成...",
+      "signature": "署名",
+      "signature_placeholder": "メール署名。",
+      "attachments": "添付ファイル",
+      "attachments_none": "なし",
+      "enter_to_add": "Enterで追加",
+      "encrypt_smime": "メールを暗号化 (S/MIME)",
+      "send": "送信",
+      "switchable": "切替可能",
+      "enter_to_switch": "Enterで切替",
+      "no_account": "アカウントが設定されていません",
+      "send_confirm": "Enterキーを押してメールを送信します。",
+      "help": "Markdown/HTML • tab/shift+tab: 移動 • ctrl+e: $EDITOR • esc: 下書きを保存して終了",
+      "exit_confirm": "終了してもよろしいですか?この下書きは保存されます",
+      "sending": "メール送信中...",
+      "sent": "メールが正常に送信されました",
+      "draft_saved": "下書きを保存しました"
+    },
+    "inbox": {
+      "title": "受信トレイ",
+      "all_accounts": "すべてのアカウント",
+      "sent": "送信済み",
+      "trash": "ゴミ箱",
+      "archive": "アーカイブ",
+      "empty": "メールがありません",
+      "loading": "メールを読み込み中...",
+      "refreshing": "更新中...",
+      "visual_mode": "ビジュアルモード",
+      "delete": "削除",
+      "archive": "アーカイブ",
+      "refresh": "更新",
+      "reply": "返信",
+      "forward": "転送",
+      "move": "移動",
+      "mark_read": "既読にする",
+      "mark_unread": "未読にする",
+      "help_visual": "v: ビジュアルモード • d: 削除 • a: アーカイブ",
+      "help_navigation": "j/k: 移動 • enter: 開く • r: 更新"
+    },
+    "choice": {
+      "what_to_do": "何をしますか?",
+      "compose": "メール作成",
+      "inbox": "受信トレイを表示",
+      "calendar": "カレンダーを表示",
+      "settings": "設定",
+      "marketplace": "プラグインマーケットプレイス",
+      "drafts": "下書き",
+      "help": "↑/↓で移動、Enterで選択、ctrl+cで終了します。",
+      "unknown": "不明",
+      "update_available": "アップデート利用可能: {latest} (インストール済み: {current}) — `matcha update`を実行してアップグレード"
+    },
+    "folder_inbox": {
+      "folders_title": "フォルダ",
+      "move_to_folder": "フォルダに移動:",
+      "move_single": "メールをフォルダに移動:",
+      "move_multiple": {
+        "other": "{count}件のメールをフォルダに移動:"
+      },
+      "help": "j/k: 移動  enter: 移動  esc: キャンセル",
+      "help_folders": "tab: 次のフォルダ • shift+tab: 前のフォルダ • m: 移動"
+    },
+    "login": {
+      "title": "メールアカウント",
+      "add_account": "アカウントを追加",
+      "edit_account": "アカウントを編集",
+      "description": "メールアカウントの認証情報を入力してください。",
+      "protocol_label": "プロトコル",
+      "protocol_placeholder": "プロトコル (imap, jmap, または pop3)",
+      "email_label": "メール",
+      "email_placeholder": "your.email@example.com",
+      "password_label": "パスワード",
+      "password_placeholder": "パスワード / アプリパスワード",
+      "display_name_label": "表示名",
+      "display_name_placeholder": "あなたの名前",
+      "imap_server_label": "IMAPサーバー",
+      "smtp_server_label": "SMTPサーバー",
+      "port_label": "ポート",
+      "save": "アカウントを保存",
+      "delete": "アカウントを削除",
+      "delete_confirm": "このアカウントを削除しますか?",
+      "tip_protocol": "プロトコルを選択: imap (デフォルト)、jmap、または pop3。",
+      "tip_app_password": "Gmailの場合、通常のパスワードではなくアプリパスワードを使用してください。"
+    },
+    "settings": {
+      "title": "設定",
+      "category_general": "一般",
+      "category_accounts": "アカウント",
+      "category_theme": "テーマ",
+      "category_mailing_lists": "メーリングリスト",
+      "category_encryption": "アプリの暗号化",
+      "help_menu": "↑/↓: 移動 • 右/enter: 選択 • esc: 戻る",
+      "help_content": "esc: メニューに戻る"
+    },
+    "settings_accounts": {
+      "title": "アカウント設定",
+      "no_accounts": "アカウントが設定されていません。",
+      "add_account": "新しいアカウントを追加",
+      "help": "↑/↓: 移動 • enter: 暗号化設定を編集 • e: サーバーを編集 • d: 削除"
+    },
+    "settings_theme": {
+      "title": "テーマ",
+      "current": "アクティブ",
+      "help": "↑/↓: 移動 • enter/スペース: テーマを適用"
+    },
+    "settings_mailing_lists": {
+      "title": "メーリングリスト",
+      "no_lists": "メーリングリストが設定されていません。",
+      "add_list": "新しいメーリングリストを追加",
+      "delete_confirm": "メーリングリストを削除しますか?",
+      "address_count": {
+        "other": "{count}個のアドレス"
+      },
+      "help": "↑/↓: 移動 • enter: 選択 • e: 編集 • d: 削除"
+    },
+    "settings_general": {
+      "title": "一般設定",
+      "disable_images": "画像表示を無効化",
+      "hide_tips": "コンテキストヒントを非表示",
+      "disable_notifications": "通知を無効化",
+      "date_format": "日付形式",
+      "language": "言語",
+      "signature": "署名を編集",
+      "signature_configured": "設定済み",
+      "signature_not_configured": "未設定",
+      "on": "オン",
+      "off": "オフ",
+      "restart_required": "言語変更を適用するには再起動が必要です"
+    },
+    "settings_encryption": {
+      "title": "アプリの暗号化",
+      "enabled": "暗号化は現在有効です。",
+      "disabled": "すべてのデータを暗号化するにはパスワードを設定してください。",
+      "password_label": "パスワード:",
+      "confirm_label": "パスワード確認:",
+      "enable_button": "暗号化を有効にする",
+      "disable_button": "Enterを押して暗号化を無効にする",
+      "disable_confirm": "暗号化を無効にしますか?",
+      "disable_warning": "すべてのデータは暗号化されずに保存されます。",
+      "encrypting": "データを暗号化中...",
+      "error_empty": "パスワードを空にすることはできません",
+      "error_mismatch": "パスワードが一致しません",
+      "help": "tab: 次へ • enter: 保存"
+    },
+    "password_prompt": {
+      "title": "Matchaはロックされています",
+      "enter_password": "パスワードを入力してください",
+      "error_empty": "パスワードを空にすることはできません",
+      "error_incorrect": "パスワードが正しくありません",
+      "help": "enter: ロック解除 • ctrl+c: 終了"
+    },
+    "email_view": {
+      "from": "差出人",
+      "to": "宛先",
+      "cc": "CC",
+      "bcc": "BCC",
+      "subject": "件名",
+      "date": "日付",
+      "attachments": "添付ファイル",
+      "download": "ダウンロード",
+      "save": "保存",
+      "reply": "返信",
+      "reply_all": "全員に返信",
+      "forward": "転送",
+      "delete": "削除",
+      "archive": "アーカイブ",
+      "help": "r: 返信 • f: 転送 • d: 削除 • a: アーカイブ • esc: 戻る"
+    },
+    "calendar": {
+      "title": "カレンダー",
+      "meeting": "会議",
+      "event": "イベント",
+      "accept": "承諾",
+      "decline": "辞退",
+      "tentative": "仮承諾",
+      "rsvp_sent": "RSVP送信済み: {response}"
+    },
+    "marketplace": {
+      "title": "プラグインマーケットプレイス",
+      "installing": "インストール中...",
+      "installed": "インストール済み",
+      "install": "インストール",
+      "error": "インストール失敗",
+      "help": "j/k: 移動 • enter: インストール • esc: 戻る"
+    },
+    "time": {
+      "just_now": "たった今",
+      "minute_ago": {
+        "other": "{count}分前"
+      },
+      "hour_ago": {
+        "other": "{count}時間前"
+      },
+      "day_ago": {
+        "other": "{count}日前"
+      },
+      "week_ago": {
+        "other": "{count}週間前"
+      },
+      "month_ago": {
+        "other": "{count}ヶ月前"
+      },
+      "year_ago": {
+        "other": "{count}年前"
+      },
+      "in_moment": "まもなく",
+      "in_minute": {
+        "other": "{count}分後"
+      },
+      "in_hour": {
+        "other": "{count}時間後"
+      },
+      "in_day": {
+        "other": "{count}日後"
+      }
+    }
+  }
+}
