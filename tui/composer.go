@@ -240,13 +240,19 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case FileSelectedMsg:
-		// Avoid duplicates
-		for _, p := range m.attachmentPaths {
-			if p == msg.Path {
-				return m, nil
+		// Avoid duplicates and add all selected paths
+		for _, newPath := range msg.Paths {
+			exists := false
+			for _, p := range m.attachmentPaths {
+				if p == newPath {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				m.attachmentPaths = append(m.attachmentPaths, newPath)
 			}
 		}
-		m.attachmentPaths = append(m.attachmentPaths, msg.Path)
 		return m, nil
 
 	case tea.KeyPressMsg:

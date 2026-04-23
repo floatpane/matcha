@@ -169,9 +169,27 @@ var CatppuccinMocha = Theme{
 	Contrast:   lipgloss.Color("#1E1E2E"),
 }
 
+var Native = Theme{
+	Name:       "Native",
+	Accent:     lipgloss.Color("42"),
+	AccentDark: lipgloss.Color("#25A065"),
+	AccentText: lipgloss.Color("#FFFDF5"),
+	Secondary:  lipgloss.Color("244"),
+	SubtleText: lipgloss.Color("245"),
+	MutedText:  lipgloss.Color("247"),
+	DimText:    lipgloss.Color("250"),
+	Danger:     lipgloss.Color("196"),
+	Warning:    lipgloss.Color("208"),
+	Tip:        lipgloss.Color("214"),
+	Link:       lipgloss.Color("#9BC4FF"),
+	Directory:  lipgloss.Color("34"),
+	Contrast:   lipgloss.Color("#000000"),
+}
+
 // BuiltinThemes lists all built-in themes in display order.
 var BuiltinThemes = []Theme{
 	Matcha,
+	Native,
 	Rose,
 	Lavender,
 	Ocean,

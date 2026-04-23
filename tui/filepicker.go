@@ -151,7 +151,7 @@ func (m *FilePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.readDir()
 			} else {
 				return m, func() tea.Msg {
-					return FileSelectedMsg{Path: newPath}
+					return FileSelectedMsg{Paths: []string{newPath}}
 				}
 			}
 		case "backspace":

@@ -134,7 +134,7 @@ type SetComposerCursorToStartMsg struct{}
 type GoToFilePickerMsg struct{}
 
 type FileSelectedMsg struct {
-	Path string
+	Paths []string
 }
 
 type CancelFilePickerMsg struct{}

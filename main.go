@@ -31,6 +31,7 @@ import (
 	"github.com/floatpane/matcha/calendar"
 	matchaCli "github.com/floatpane/matcha/cli"
 	"github.com/floatpane/matcha/clib"
+	"github.com/floatpane/matcha/clib/macos"
 	"github.com/floatpane/matcha/config"
 	matchaDaemon "github.com/floatpane/matcha/daemon"
 	"github.com/floatpane/matcha/daemonclient"
@@ -177,6 +178,30 @@ func (m *mainModel) getProvider(acct *config.Account) backend.Provider {
 
 func (m *mainModel) Init() tea.Cmd {
 	return tea.Batch(m.current.Init(), checkForUpdatesCmd())
+}
+
+func (m *mainModel) syncUnreadBadge() {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	count := 0
+	// Count unread across all accounts (cached/loaded emails)
+	for _, emails := range m.emailsByAcct {
+		for _, e := range emails {
+			if !e.IsRead {
+				count++
+			}
+		}
+	}
+	// Also check folderEmails for unread status
+	for _, emails := range m.folderEmails {
+		for _, e := range emails {
+			if !e.IsRead {
+				count++
+			}
+		}
+	}
+	_ = macos.SetBadge(count)
 }
 
 func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -775,6 +800,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.emailsByAcct[accID] = refreshed
 		}
 		m.emails = flattenAndSort(m.emailsByAcct)
+		m.syncUnreadBadge()
 
 		// Update folder inbox if it exists
 		if m.folderInbox != nil {
@@ -786,6 +812,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tui.AllEmailsFetchedMsg:
 		m.emailsByAcct = msg.EmailsByAccount
 		m.emails = flattenAndSort(msg.EmailsByAccount)
+		m.syncUnreadBadge()
 
 		if m.folderInbox != nil {
 			m.folderInbox.SetEmails(m.emails, m.config.Accounts)
@@ -799,6 +826,8 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.emailsByAcct[msg.AccountID] = msg.Emails
 		m.emails = flattenAndSort(m.emailsByAcct)
+		m.syncUnreadBadge()
+
 		if m.folderInbox != nil {
 			m.folderInbox.SetEmails(m.emails, m.config.Accounts)
 		}
@@ -832,6 +861,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		unique := filterUnique(m.emailsByAcct[msg.AccountID], msg.Emails)
 		m.emailsByAcct[msg.AccountID] = append(m.emailsByAcct[msg.AccountID], unique...)
 		m.emails = append(m.emails, unique...)
+		m.syncUnreadBadge()
 		return m, nil
 
 	case tui.GoToSendMsg:
@@ -1284,6 +1314,16 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tui.GoToFilePickerMsg:
+		if runtime.GOOS == "darwin" {
+			return m, func() tea.Msg {
+				wd, _ := os.Getwd()
+				paths, err := macos.OpenFilePicker(wd)
+				if err != nil || len(paths) == 0 {
+					return tui.CancelFilePickerMsg{}
+				}
+				return tui.FileSelectedMsg{Paths: paths}
+			}
+		}
 		m.previousModel = m.current
 		wd, _ := os.Getwd()
 		m.current = tui.NewFilePicker(wd)
@@ -1438,6 +1478,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != nil {
 			log.Printf("Error marking email as read: %v", msg.Err)
 		}
+		m.syncUnreadBadge()
 		return m, nil
 
 	case tui.EmailActionDoneMsg:
@@ -3471,13 +3512,22 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Contacts export CLI subcommand: matcha contacts export [flags]
-	if len(os.Args) > 1 && os.Args[1] == "contacts" && len(os.Args) > 2 && os.Args[2] == "export" {
-		if err := matchaCli.RunContactsExport(os.Args[3:]); err != nil {
-			fmt.Fprintf(os.Stderr, "contacts export failed: %v\n", err)
-			os.Exit(1)
+	// Contacts CLI subcommand: matcha contacts <export|sync> [flags]
+	if len(os.Args) > 1 && os.Args[1] == "contacts" && len(os.Args) > 2 {
+		switch os.Args[2] {
+		case "export":
+			if err := matchaCli.RunContactsExport(os.Args[3:]); err != nil {
+				fmt.Fprintf(os.Stderr, "contacts export failed: %v\n", err)
+				os.Exit(1)
+			}
+			os.Exit(0)
+		case "sync":
+			if err := matchaCli.RunContactsSync(os.Args[3:]); err != nil {
+				fmt.Fprintf(os.Stderr, "contacts sync failed: %v\n", err)
+				os.Exit(1)
+			}
+			os.Exit(0)
 		}
-		os.Exit(0)
 	}
 
 	// setup-mailto CLI subcommand: matcha setup-mailto
@@ -3551,6 +3601,14 @@ func main() {
 	plugins.LoadPlugins()
 	initialModel.plugins = plugins
 	plugins.CallHook(plugin.HookStartup)
+
+	// Background sync macOS features
+	if runtime.GOOS == "darwin" && !initialModel.config.DisableNotifications {
+		go func() {
+			_ = config.SyncMacOSContacts()
+			_ = theme.SyncWithMacOS()
+		}()
+	}
 
 	p := tea.NewProgram(initialModel)
 
