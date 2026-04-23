@@ -1,1 +1,3 @@
 clib/stb_image.h linguist-vendored
+*.html linguist-detectable=false
+public/** linguist-documentation
