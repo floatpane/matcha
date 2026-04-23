@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Matcha
+Comment=Terminal email client
+Exec=bash -c 'matcha "%u"; exec bash'
+MimeType=x-scheme-handler/mailto;
+Type=Application
+Terminal=true
+Categories=Network;Email;
+Keywords=email;mail;terminal;

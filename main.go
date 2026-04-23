@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -96,6 +97,13 @@ type mainModel struct {
 	service daemonclient.Service
 	// Plugin prompt waiting for user input
 	pendingPrompt *plugin.PendingPrompt
+}
+
+type MailtoData struct {
+	To      string
+	Subject string
+	Body    string
+	CC      string
 }
 
 func newInitialModel(cfg *config.Config) *mainModel {
@@ -3307,6 +3315,23 @@ func filterUnique(existing, incoming []fetcher.Email) []fetcher.Email {
 	return unique
 }
 
+func parseMailto(raw string) *MailtoData {
+	if !strings.HasPrefix(raw, "mailto:") {
+		return nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return nil
+	}
+	q := parsed.Query()
+	return &MailtoData{
+		To:      parsed.Opaque,
+		Subject: q.Get("subject"),
+		Body:    q.Get("body"),
+		CC:      q.Get("cc"),
+	}
+}
+
 func main() {
 	// If invoked with version flag, print version and exit
 	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version" || os.Args[1] == "version") {
@@ -3414,11 +3439,32 @@ func main() {
 		}
 	}
 
+	var mailto *MailtoData
+	for _, arg := range os.Args[1:] {
+		if strings.HasPrefix(arg, "mailto:") {
+			mailto = parseMailto(arg)
+			break
+		}
+	}
+
 	// Initialize plugin system
 	plugins := plugin.NewManager()
 	plugins.LoadPlugins()
 	initialModel.plugins = plugins
 	plugins.CallHook(plugin.HookStartup)
+
+	if mailto != nil && initialModel.config != nil && initialModel.config.HasAccounts() {
+		firstAccount := initialModel.config.GetFirstAccount()
+		composer := tui.NewComposerWithAccounts(
+			initialModel.config.Accounts,
+			firstAccount.ID,
+			mailto.To,
+			mailto.Subject,
+			mailto.Body,
+			initialModel.config.HideTips,
+		)
+		initialModel.current = composer
+	}
 
 	p := tea.NewProgram(initialModel)
 
