@@ -1,13 +1,29 @@
 import Cocoa
+import AppleEvents
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory) // hide from dock initially
+        NSApp.setActivationPolicy(.accessory)
+        
+        // Register for the 'getURL' event
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
     }
-    func application(_ application: NSApplication, open urls: [URL]) {
-        guard let url = urls.first else { return }
+    
+    @objc func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+              let url = URL(string: urlString) else {
+            return
+        }
 
         let matchaPath = "{{MATCHA_PATH}}"
+        
+        // Use AppleScript to tell Terminal to run matcha with the URL
+        // We escape the URL and path for shell safety
         let script = """
         tell application "Terminal"
             activate
@@ -20,7 +36,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             appleScript.executeAndReturnError(&error)
         }
 
-        NSApplication.shared.terminate(nil)
+        // Exit after handling the event
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            NSApplication.shared.terminate(nil)
+        }
     }
 }
 
