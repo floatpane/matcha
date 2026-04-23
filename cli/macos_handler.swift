@@ -14,7 +14,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             andEventID: AEEventID(1196711500)
         )
         
-        // If nothing handled in 2 seconds, assume failure/no event and quit
+        // Timeout
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             if !self.handled {
                 self.log("No URL event received within 2s, terminating.")
@@ -33,7 +33,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     // Legacy Apple Event handling
     @objc func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
-        // keyDirectObject = 757935405
         if let urlString = event.paramDescriptor(forKeyword: AEKeyword(757935405))?.stringValue {
             log("Legacy API received URL: \(urlString)")
             launchMatcha(with: urlString)
@@ -45,28 +44,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         handled = true
         
         let matchaPath = "{{MATCHA_PATH}}"
-        log("Launching Matcha at \(matchaPath) with URL \(url)")
+        log("Launching Matcha via .command file at \(matchaPath) with URL \(url)")
         
-        // Use AppleScript to tell Terminal to run matcha
-        // We use a more robust script that ensures Terminal is active
-        let scriptSource = """
-        tell application "Terminal"
-            activate
-            do script "'\(matchaPath)' '\(url)'"
-        end tell
+        // Use a .command file to open in the DEFAULT terminal
+        let tempDir = NSTemporaryDirectory()
+        let commandFileName = "matcha-mailto-\(UUID().uuidString).command"
+        let commandFileUrl = URL(fileURLWithPath: tempDir).appendingPathComponent(commandFileName)
+        
+        // We use a bash script that opens matcha and then removes itself
+        let scriptContent = """
+        #!/bin/bash
+        '\(matchaPath)' '\(url)'
+        # Clean up this temporary script
+        rm -- "$0"
+        exit
         """
         
-        if let appleScript = NSAppleScript(source: scriptSource) {
-            var error: NSDictionary?
-            appleScript.executeAndReturnError(&error)
-            if let err = error {
-                log("AppleScript Error: \(err)")
-            } else {
-                log("AppleScript executed successfully")
-            }
+        do {
+            try scriptContent.write(to: commandFileUrl, atomically: true, encoding: .utf8)
+            
+            // Make the file executable
+            let attributes = [FileAttributeKey.posixPermissions: 0o755]
+            try FileManager.default.setAttributes(attributes, ofItemAtPath: commandFileUrl.path)
+            
+            // Open the file with NSWorkspace. 
+            // Since it's a .command file, macOS will open it in the default terminal.
+            NSWorkspace.shared.open(commandFileUrl)
+            log("Successfully requested macOS to open .command file")
+            
+        } catch {
+            log("Failed to create/open .command file: \(error.localizedDescription)")
         }
         
-        // Small delay to ensure handoff
+        // Small delay to ensure launch
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             NSApp.terminate(nil)
         }
@@ -76,7 +86,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let logPath = "/tmp/matcha-handler.log"
         let timestamp = Date().description
         let line = "[\(timestamp)] \(message)\n"
-        
         if let data = line.data(using: .utf8) {
             if let fileHandle = FileHandle(forWritingAtPath: logPath) {
                 fileHandle.seekToEndOfFile()

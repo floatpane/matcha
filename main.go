@@ -135,7 +135,11 @@ func newInitialModel(cfg *config.Config, mailtoURL *url.URL) *mainModel {
 		initialModel.current = tui.NewLogin(hideTips)
 	} else {
 		if mailtoURL != nil {
+			// mailto:addr@example.com?subject=test
 			to := mailtoURL.Opaque
+			if to == "" {
+				to = mailtoURL.Path
+			}
 			if to == "" {
 				to = mailtoURL.Query().Get("to")
 			}
@@ -143,6 +147,7 @@ func newInitialModel(cfg *config.Config, mailtoURL *url.URL) *mainModel {
 			body := mailtoURL.Query().Get("body")
 			initialModel.current = tui.NewComposerWithAccounts(cfg.Accounts, cfg.Accounts[0].ID, to, subject, body, cfg.HideTips)
 		} else {
+
 			initialModel.current = tui.NewChoice()
 		}
 		initialModel.config = cfg
@@ -1041,6 +1046,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.config = cfg
 			if m.mailtoURL != nil {
 				to := m.mailtoURL.Opaque
+				if to == "" {
+					to = m.mailtoURL.Path
+				}
 				if to == "" {
 					to = m.mailtoURL.Query().Get("to")
 				}
