@@ -128,8 +128,12 @@ func setupMailtoDarwin(exe string) error {
 	<string>MatchaMail</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
-	<key>LSBackgroundOnly</key>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>LSUIElement</key>
+	<true/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -162,9 +166,13 @@ func setupMailtoDarwin(exe string) error {
 	exeDest := filepath.Join(macosDir, "MatchaMail")
 
 	// Compile the Swift file
-	cmd := exec.Command("swiftc", tmpSwiftFile, "-o", exeDest)
+	cmd := exec.Command("swiftc", "-sdk", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk", tmpSwiftFile, "-o", exeDest)
+	// If the above hardcoded path fails (e.g. command line tools only), try simple swiftc
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to compile Swift handler app: %w. Do you have Xcode command line tools installed?", err)
+		cmd = exec.Command("swiftc", tmpSwiftFile, "-o", exeDest)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to compile Swift handler app: %w. Do you have Xcode command line tools installed?", err)
+		}
 	}
 
 	// Register the application
