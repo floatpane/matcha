@@ -1,0 +1,4 @@
+*.html linguist-detectable=false
+public/** linguist-documentation
+clib/stb_image.h linguist-detectable=false
+clib/stb_image.h linguist-documentation
