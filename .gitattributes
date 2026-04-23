@@ -1,6 +1,7 @@
 clib/stb_image.h linguist-vendored
-**.jsx linguist-language=Go
-**.css linguist-language=Go
-**.html linguist-language=Go
-**.js linguist-language=Go
-**.json linguist-language=Go
+**.jsx linguist-detectable=false
+**.css linguist-detectable=false
+**.js linguist-detectable=false
+**.json linguist-detectable=false
+*.html linguist-detectable=false
+public/** linguist-documentation
