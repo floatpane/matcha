@@ -36,7 +36,7 @@ func FetchContacts() ([]MacOSContact, error) {
 	}
 
 	binFile := filepath.Join(tmpDir, "contacts")
-	
+
 	// Compile the Swift helper
 	cmd := exec.Command("swiftc", swiftFile, "-o", binFile)
 	if out, err := cmd.CombinedOutput(); err != nil {

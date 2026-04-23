@@ -32,7 +32,7 @@ func OpenFilePicker(initialPath string) ([]string, error) {
 	}
 
 	binFile := filepath.Join(tmpDir, "file_picker")
-	
+
 	// Compile
 	cmd := exec.Command("swiftc", swiftFile, "-o", binFile)
 	if out, err := cmd.CombinedOutput(); err != nil {

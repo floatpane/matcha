@@ -31,7 +31,7 @@ func SetBadge(count int) error {
 	}
 
 	binFile := filepath.Join(tmpDir, "badge")
-	
+
 	// Compile
 	cmd := exec.Command("swiftc", swiftFile, "-o", binFile)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -41,9 +41,9 @@ func SetBadge(count int) error {
 	// Run
 	// If we want to target our specific app, we might need a different approach,
 	// but for now, this will set the badge for the process that runs it.
-	// To set it for the 'MatchaMail.app', we'd need that app to be running and 
+	// To set it for the 'MatchaMail.app', we'd need that app to be running and
 	// listen for a notification, OR we run this compiled tool *inside* the app bundle context.
-	
+
 	err = exec.Command(binFile, strconv.Itoa(count)).Run()
 	if err != nil {
 		return fmt.Errorf("failed to set badge: %w", err)

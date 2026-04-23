@@ -36,7 +36,7 @@ func GetAppearance() (*MacOSAppearance, error) {
 	}
 
 	binFile := filepath.Join(tmpDir, "appearance")
-	
+
 	// Compile
 	cmd := exec.Command("swiftc", swiftFile, "-o", binFile)
 	if out, err := cmd.CombinedOutput(); err != nil {

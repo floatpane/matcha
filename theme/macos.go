@@ -3,8 +3,8 @@ package theme
 import (
 	"runtime"
 
-	"github.com/floatpane/matcha/clib/macos"
 	"charm.land/lipgloss/v2"
+	"github.com/floatpane/matcha/clib/macos"
 )
 
 // SyncWithMacOS updates the 'Native' theme with current macOS system appearance.
@@ -21,7 +21,7 @@ func SyncWithMacOS() error {
 	// Update Native theme
 	Native.Accent = lipgloss.Color(appearance.AccentColor)
 	Native.Directory = lipgloss.Color(appearance.AccentColor)
-	
+
 	if appearance.DarkMode {
 		// Dark mode specifics if needed
 		Native.AccentText = lipgloss.Color("#FFFDF5")
