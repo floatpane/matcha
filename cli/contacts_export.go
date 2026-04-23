@@ -17,6 +17,7 @@ func RunContactsExport(args []string) error {
 	fs := flag.NewFlagSet("contacts export", flag.ExitOnError)
 	format := fs.String("f", "json", "output format: json or csv")
 	output := fs.String("o", "", "output file path (default: stdout)")
+	noHeader := fs.Bool("no-header", false, "omit CSV header row")
 	help := fs.Bool("h", false, "show help")
 
 	if err := fs.Parse(args); err != nil {
@@ -35,6 +36,7 @@ func RunContactsExport(args []string) error {
 		fmt.Println("  matcha contacts export              # JSON to stdout")
 		fmt.Println("  matcha contacts export -f csv       # CSV to stdout")
 		fmt.Println("  matcha contacts export -o out.json  # JSON to file")
+		fmt.Println("  matcha contacts export -f csv --no-header  # CSV without headers")
 		return nil
 	}
 
@@ -43,10 +45,10 @@ func RunContactsExport(args []string) error {
 		return fmt.Errorf("invalid format '%s': must be 'json' or 'csv'", *format)
 	}
 
-	return runExportContacts(formatStr, *output)
+	return runExportContacts(formatStr, *output, *noHeader)
 }
 
-func runExportContacts(format, outputPath string) error {
+func runExportContacts(format, outputPath string, noHeader bool) error {
 	var contacts []config.Contact
 	var err error
 
@@ -82,12 +84,15 @@ func runExportContacts(format, outputPath string) error {
 
 	var outputData []byte
 	if format == "json" {
+		if noHeader {
+			return fmt.Errorf("the --no-header flag is only valid with CSV format")
+		}
 		outputData, err = exportToJSON(contacts)
 		if err != nil {
 			return fmt.Errorf("failed to export to JSON: %w", err)
 		}
 	} else {
-		outputData, err = exportToCSV(contacts)
+		outputData, err = exportToCSV(contacts, noHeader)
 		if err != nil {
 			return fmt.Errorf("failed to export to CSV: %w", err)
 		}
@@ -115,12 +120,14 @@ func exportToJSON(contacts []config.Contact) ([]byte, error) {
 	return json.MarshalIndent(contacts, "", "  ")
 }
 
-func exportToCSV(contacts []config.Contact) ([]byte, error) {
+func exportToCSV(contacts []config.Contact, noHeader bool) ([]byte, error) {
 	var buf strings.Builder
 	writer := csv.NewWriter(&buf)
 
-	if err := writer.Write([]string{"name", "email", "last_used", "use_count"}); err != nil {
-		return nil, err
+	if !noHeader {
+		if err := writer.Write([]string{"name", "email", "last_used", "use_count"}); err != nil {
+			return nil, err
+		}
 	}
 
 	for _, c := range contacts {

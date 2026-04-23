@@ -5,6 +5,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"charm.land/lipgloss/v2"
@@ -759,5 +761,46 @@ func TestRemoteImageCache_EvictsOldestWhenFull(t *testing.T) {
 		if _, ok := remoteImageCache.Get(keptURL); !ok {
 			t.Errorf("expected %q to still be in cache", keptURL)
 		}
+	}
+}
+
+func TestAllocImageID_NoRace(t *testing.T) {
+	// Reset the counter so IDs start from a known value.
+	atomic.StoreUint32(&nextImageID, 1000)
+
+	const goroutines = 100
+	const idsPerGoroutine = 100
+
+	results := make(chan uint32, goroutines*idsPerGoroutine)
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			for range idsPerGoroutine {
+				results <- allocImageID()
+			}
+		}()
+	}
+
+	// Close channel once all writers are done.
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect all IDs and verify uniqueness.
+	seen := make(map[uint32]bool, goroutines*idsPerGoroutine)
+	for id := range results {
+		if seen[id] {
+			t.Fatalf("duplicate image ID allocated: %d (race condition detected)", id)
+		}
+		seen[id] = true
+	}
+
+	expected := uint32(goroutines * idsPerGoroutine)
+	if uint32(len(seen)) != expected {
+		t.Errorf("expected %d unique IDs, got %d", expected, len(seen))
 	}
 }

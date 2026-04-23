@@ -1,0 +1,242 @@
+{
+  "language": "zh",
+  "messages": {
+    "common": {
+      "yes": "是",
+      "no": "否",
+      "cancel": "取消",
+      "ok": "确定",
+      "save": "保存",
+      "delete": "删除",
+      "archive": "存档",
+      "back": "返回",
+      "next": "下一步",
+      "previous": "上一步",
+      "loading": "加载中...",
+      "error": "错误",
+      "success": "成功"
+    },
+    "composer": {
+      "title": "撰写新邮件",
+      "from": "发件人",
+      "to_placeholder": "输入收件人电子邮件地址。",
+      "cc_placeholder": "抄送收件人。",
+      "bcc_placeholder": "密送收件人。",
+      "subject_placeholder": "主题",
+      "body_placeholder": "撰写您的消息...",
+      "signature": "签名",
+      "signature_placeholder": "您的电子邮件签名。",
+      "attachments": "附件",
+      "attachments_none": "无",
+      "enter_to_add": "按Enter添加",
+      "encrypt_smime": "加密邮件 (S/MIME)",
+      "send": "发送",
+      "switchable": "可切换",
+      "enter_to_switch": "按Enter切换",
+      "no_account": "未配置账户",
+      "send_confirm": "按Enter发送邮件。",
+      "help": "Markdown/HTML • tab/shift+tab: 导航 • ctrl+e: $EDITOR • esc: 保存草稿并退出",
+      "exit_confirm": "确定要退出吗?此草稿将被保存",
+      "sending": "正在发送邮件...",
+      "sent": "邮件发送成功",
+      "draft_saved": "草稿已保存"
+    },
+    "inbox": {
+      "title": "收件箱",
+      "all_accounts": "所有账户",
+      "sent": "已发送",
+      "trash": "垃圾箱",
+      "archive": "存档",
+      "empty": "没有邮件",
+      "loading": "正在加载邮件...",
+      "refreshing": "正在刷新...",
+      "visual_mode": "视觉模式",
+      "delete": "删除",
+      "archive": "存档",
+      "refresh": "刷新",
+      "reply": "回复",
+      "forward": "转发",
+      "move": "移动",
+      "mark_read": "标记为已读",
+      "mark_unread": "标记为未读",
+      "help_visual": "v: 视觉模式 • d: 删除 • a: 存档",
+      "help_navigation": "j/k: 导航 • enter: 打开 • r: 刷新"
+    },
+    "choice": {
+      "what_to_do": "您想做什么?",
+      "compose": "撰写邮件",
+      "inbox": "查看收件箱",
+      "calendar": "查看日历",
+      "settings": "设置",
+      "marketplace": "插件市场",
+      "drafts": "草稿",
+      "help": "使用 ↑/↓ 导航,按 enter 选择,按 ctrl+c 退出。",
+      "unknown": "未知",
+      "update_available": "可用更新: {latest} (已安装: {current}) — 运行 `matcha update` 进行升级"
+    },
+    "folder_inbox": {
+      "folders_title": "文件夹",
+      "move_to_folder": "移动到文件夹:",
+      "move_single": "将邮件移动到文件夹:",
+      "move_multiple": {
+        "other": "将 {count} 封邮件移动到文件夹:"
+      },
+      "help": "j/k: 导航  enter: 移动  esc: 取消",
+      "help_folders": "tab: 下一个文件夹 • shift+tab: 上一个文件夹 • m: 移动"
+    },
+    "login": {
+      "title": "电子邮件账户",
+      "add_account": "添加账户",
+      "edit_account": "编辑账户",
+      "description": "输入您的电子邮件账户凭据。",
+      "protocol_label": "协议",
+      "protocol_placeholder": "协议 (imap, jmap 或 pop3)",
+      "email_label": "电子邮件",
+      "email_placeholder": "your.email@example.com",
+      "password_label": "密码",
+      "password_placeholder": "密码 / 应用专用密码",
+      "display_name_label": "显示名称",
+      "display_name_placeholder": "您的姓名",
+      "imap_server_label": "IMAP服务器",
+      "smtp_server_label": "SMTP服务器",
+      "port_label": "端口",
+      "save": "保存账户",
+      "delete": "删除账户",
+      "delete_confirm": "删除此账户?",
+      "tip_protocol": "选择协议: imap (默认), jmap 或 pop3。",
+      "tip_app_password": "对于Gmail,请使用应用专用密码而不是常规密码。"
+    },
+    "settings": {
+      "title": "设置",
+      "category_general": "常规",
+      "category_accounts": "账户",
+      "category_theme": "主题",
+      "category_mailing_lists": "邮件列表",
+      "category_encryption": "应用加密",
+      "help_menu": "↑/↓: 导航 • 右/enter: 选择 • esc: 返回",
+      "help_content": "esc: 返回菜单"
+    },
+    "settings_accounts": {
+      "title": "账户设置",
+      "no_accounts": "未配置账户。",
+      "add_account": "添加新账户",
+      "help": "↑/↓: 导航 • enter: 编辑加密配置 • e: 编辑服务器 • d: 删除"
+    },
+    "settings_theme": {
+      "title": "主题",
+      "current": "活动",
+      "help": "↑/↓: 导航 • enter/空格: 应用主题"
+    },
+    "settings_mailing_lists": {
+      "title": "邮件列表",
+      "no_lists": "未配置邮件列表。",
+      "add_list": "添加新邮件列表",
+      "delete_confirm": "删除邮件列表?",
+      "address_count": {
+        "other": "{count} 个地址"
+      },
+      "help": "↑/↓: 导航 • enter: 选择 • e: 编辑 • d: 删除"
+    },
+    "settings_general": {
+      "title": "常规设置",
+      "disable_images": "禁用图片显示",
+      "hide_tips": "隐藏上下文提示",
+      "disable_notifications": "禁用通知",
+      "date_format": "日期格式",
+      "language": "语言",
+      "signature": "编辑签名",
+      "signature_configured": "已配置",
+      "signature_not_configured": "未配置",
+      "on": "开",
+      "off": "关",
+      "restart_required": "需要重新启动以应用语言更改"
+    },
+    "settings_encryption": {
+      "title": "应用加密",
+      "enabled": "加密当前已启用。",
+      "disabled": "设置密码以加密所有数据。",
+      "password_label": "密码:",
+      "confirm_label": "确认密码:",
+      "enable_button": "启用加密",
+      "disable_button": "按Enter禁用加密",
+      "disable_confirm": "禁用加密?",
+      "disable_warning": "所有数据将以未加密方式存储。",
+      "encrypting": "正在加密数据...",
+      "error_empty": "密码不能为空",
+      "error_mismatch": "密码不匹配",
+      "help": "tab: 下一项 • enter: 保存"
+    },
+    "password_prompt": {
+      "title": "Matcha已锁定",
+      "enter_password": "输入您的密码",
+      "error_empty": "密码不能为空",
+      "error_incorrect": "密码错误",
+      "help": "enter: 解锁 • ctrl+c: 退出"
+    },
+    "email_view": {
+      "from": "发件人",
+      "to": "收件人",
+      "cc": "抄送",
+      "bcc": "密送",
+      "subject": "主题",
+      "date": "日期",
+      "attachments": "附件",
+      "download": "下载",
+      "save": "保存",
+      "reply": "回复",
+      "reply_all": "全部回复",
+      "forward": "转发",
+      "delete": "删除",
+      "archive": "存档",
+      "help": "r: 回复 • f: 转发 • d: 删除 • a: 存档 • esc: 返回"
+    },
+    "calendar": {
+      "title": "日历",
+      "meeting": "会议",
+      "event": "事件",
+      "accept": "接受",
+      "decline": "拒绝",
+      "tentative": "暂定",
+      "rsvp_sent": "已发送RSVP: {response}"
+    },
+    "marketplace": {
+      "title": "插件市场",
+      "installing": "正在安装...",
+      "installed": "已安装",
+      "install": "安装",
+      "error": "安装失败",
+      "help": "j/k: 导航 • enter: 安装 • esc: 返回"
+    },
+    "time": {
+      "just_now": "刚刚",
+      "minute_ago": {
+        "other": "{count} 分钟前"
+      },
+      "hour_ago": {
+        "other": "{count} 小时前"
+      },
+      "day_ago": {
+        "other": "{count} 天前"
+      },
+      "week_ago": {
+        "other": "{count} 周前"
+      },
+      "month_ago": {
+        "other": "{count} 个月前"
+      },
+      "year_ago": {
+        "other": "{count} 年前"
+      },
+      "in_moment": "即将",
+      "in_minute": {
+        "other": "{count} 分钟后"
+      },
+      "in_hour": {
+        "other": "{count} 小时后"
+      },
+      "in_day": {
+        "other": "{count} 天后"
+      }
+    }
+  }
+}

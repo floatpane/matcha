@@ -1,0 +1,253 @@
+{
+  "language": "en",
+  "messages": {
+    "common": {
+      "yes": "Yes",
+      "no": "No",
+      "cancel": "Cancel",
+      "ok": "OK",
+      "save": "Save",
+      "delete": "Delete",
+      "archive": "Archive",
+      "back": "Back",
+      "next": "Next",
+      "previous": "Previous",
+      "loading": "Loading...",
+      "error": "Error",
+      "success": "Success"
+    },
+    "composer": {
+      "title": "Compose New Email",
+      "from": "From",
+      "to_placeholder": "Enter recipient email addresses.",
+      "cc_placeholder": "Carbon copy recipients.",
+      "bcc_placeholder": "Blind carbon copy recipients.",
+      "subject_placeholder": "Subject",
+      "body_placeholder": "Compose your message...",
+      "signature": "Signature",
+      "signature_placeholder": "Your email signature.",
+      "attachments": "Attachments",
+      "attachments_none": "None",
+      "enter_to_add": "Enter to add",
+      "encrypt_smime": "Encrypt Email (S/MIME)",
+      "send": "Send",
+      "switchable": "switchable",
+      "enter_to_switch": "Enter to switch",
+      "no_account": "no account configured",
+      "send_confirm": "Press Enter to send the email.",
+      "help": "Markdown/HTML • tab/shift+tab: navigate • ctrl+e: $EDITOR • esc: save draft & exit",
+      "exit_confirm": "Are you sure you want to exit? This draft will be saved",
+      "sending": "Sending email...",
+      "sent": "Email sent successfully",
+      "draft_saved": "Draft saved"
+    },
+    "inbox": {
+      "title": "Inbox",
+      "all_accounts": "All Accounts",
+      "sent": "Sent",
+      "trash": "Trash",
+      "archive": "Archive",
+      "empty": "No emails",
+      "loading": "Loading emails...",
+      "refreshing": "Refreshing...",
+      "visual_mode": "visual mode",
+      "delete": "delete",
+      "archive": "archive",
+      "refresh": "refresh",
+      "reply": "reply",
+      "forward": "forward",
+      "move": "move",
+      "mark_read": "mark as read",
+      "mark_unread": "mark as unread",
+      "help_visual": "v: visual mode • d: delete • a: archive",
+      "help_navigation": "j/k: navigate • enter: open • r: refresh"
+    },
+    "choice": {
+      "what_to_do": "What would you like to do?",
+      "compose": "Compose Email",
+      "inbox": "View Inbox",
+      "calendar": "View Calendar",
+      "settings": "Settings",
+      "marketplace": "Plugin Marketplace",
+      "drafts": "Drafts",
+      "help": "Use ↑/↓ to navigate, enter to select, and ctrl+c to quit.",
+      "unknown": "unknown",
+      "update_available": "Update available: {latest} (installed: {current}) — run `matcha update` to upgrade"
+    },
+    "folder_inbox": {
+      "folders_title": "Folders",
+      "move_to_folder": "Move to folder:",
+      "move_single": "Move email to folder:",
+      "move_multiple": {
+        "one": "Move {count} email to folder:",
+        "other": "Move {count} emails to folder:"
+      },
+      "help": "j/k: navigate  enter: move  esc: cancel",
+      "help_folders": "tab: next folder • shift+tab: prev folder • m: move"
+    },
+    "login": {
+      "title": "Email Accounts",
+      "add_account": "Add Account",
+      "edit_account": "Edit Account",
+      "description": "Enter your email account credentials.",
+      "protocol_label": "Protocol",
+      "protocol_placeholder": "Protocol (imap, jmap, or pop3)",
+      "email_label": "Email",
+      "email_placeholder": "your.email@example.com",
+      "password_label": "Password",
+      "password_placeholder": "Password / App Password",
+      "display_name_label": "Display Name",
+      "display_name_placeholder": "Your Name",
+      "imap_server_label": "IMAP Server",
+      "smtp_server_label": "SMTP Server",
+      "port_label": "Port",
+      "save": "Save Account",
+      "delete": "Delete Account",
+      "delete_confirm": "Delete this account?",
+      "tip_protocol": "Choose the protocol: imap (default), jmap, or pop3.",
+      "tip_app_password": "For Gmail, use an App Password instead of your regular password."
+    },
+    "settings": {
+      "title": "Settings",
+      "category_general": "General",
+      "category_accounts": "Accounts",
+      "category_theme": "Theme",
+      "category_mailing_lists": "Mailing Lists",
+      "category_encryption": "App Encryption",
+      "help_menu": "↑/↓: navigate • right/enter: select • esc: go back",
+      "help_content": "esc: back to menu"
+    },
+    "settings_accounts": {
+      "title": "Account Settings",
+      "no_accounts": "No accounts configured.",
+      "add_account": "Add New Account",
+      "help": "↑/↓: navigate • enter: edit crypto config • e: edit server • d: delete"
+    },
+    "settings_theme": {
+      "title": "Theme",
+      "current": "active",
+      "help": "↑/↓: navigate • enter/space: apply theme"
+    },
+    "settings_mailing_lists": {
+      "title": "Mailing Lists",
+      "no_lists": "No mailing lists configured.",
+      "add_list": "Add New Mailing List",
+      "delete_confirm": "Delete mailing list?",
+      "address_count": {
+        "one": "{count} address",
+        "other": "{count} addresses"
+      },
+      "help": "↑/↓: navigate • enter: select • e: edit • d: delete"
+    },
+    "settings_general": {
+      "title": "General Settings",
+      "disable_images": "Disable Image Display",
+      "hide_tips": "Hide Contextual Tips",
+      "disable_notifications": "Disable Notifications",
+      "date_format": "Date Format",
+      "language": "Language",
+      "signature": "Edit Signature",
+      "signature_configured": "configured",
+      "signature_not_configured": "not configured",
+      "on": "ON",
+      "off": "OFF",
+      "restart_required": "Restart required to apply language change"
+    },
+    "settings_encryption": {
+      "title": "App Encryption",
+      "enabled": "Encryption is currently enabled.",
+      "disabled": "Set a password to encrypt all data.",
+      "password_label": "Password:",
+      "confirm_label": "Confirm Password:",
+      "enable_button": "Enable Encryption",
+      "disable_button": "Press enter to disable encryption",
+      "disable_confirm": "Disable encryption?",
+      "disable_warning": "All data will be stored unencrypted.",
+      "encrypting": "Encrypting data...",
+      "error_empty": "Password cannot be empty",
+      "error_mismatch": "Passwords do not match",
+      "help": "tab: next • enter: save"
+    },
+    "password_prompt": {
+      "title": "Matcha is locked",
+      "enter_password": "Enter your password",
+      "error_empty": "Password cannot be empty",
+      "error_incorrect": "Incorrect password",
+      "help": "enter: unlock • ctrl+c: quit"
+    },
+    "email_view": {
+      "from": "From",
+      "to": "To",
+      "cc": "Cc",
+      "bcc": "Bcc",
+      "subject": "Subject",
+      "date": "Date",
+      "attachments": "Attachments",
+      "download": "Download",
+      "save": "Save",
+      "reply": "Reply",
+      "reply_all": "Reply All",
+      "forward": "Forward",
+      "delete": "Delete",
+      "archive": "Archive",
+      "help": "r: reply • f: forward • d: delete • a: archive • esc: back"
+    },
+    "calendar": {
+      "title": "Calendar",
+      "meeting": "Meeting",
+      "event": "Event",
+      "accept": "Accept",
+      "decline": "Decline",
+      "tentative": "Tentative",
+      "rsvp_sent": "RSVP sent: {response}"
+    },
+    "marketplace": {
+      "title": "Plugin Marketplace",
+      "installing": "Installing...",
+      "installed": "Installed",
+      "install": "Install",
+      "error": "Installation failed",
+      "help": "j/k: navigate • enter: install • esc: back"
+    },
+    "time": {
+      "just_now": "just now",
+      "minute_ago": {
+        "one": "1 minute ago",
+        "other": "{count} minutes ago"
+      },
+      "hour_ago": {
+        "one": "1 hour ago",
+        "other": "{count} hours ago"
+      },
+      "day_ago": {
+        "one": "1 day ago",
+        "other": "{count} days ago"
+      },
+      "week_ago": {
+        "one": "1 week ago",
+        "other": "{count} weeks ago"
+      },
+      "month_ago": {
+        "one": "1 month ago",
+        "other": "{count} months ago"
+      },
+      "year_ago": {
+        "one": "1 year ago",
+        "other": "{count} years ago"
+      },
+      "in_moment": "in a moment",
+      "in_minute": {
+        "one": "in 1 minute",
+        "other": "in {count} minutes"
+      },
+      "in_hour": {
+        "one": "in 1 hour",
+        "other": "in {count} hours"
+      },
+      "in_day": {
+        "one": "in 1 day",
+        "other": "in {count} days"
+      }
+    }
+  }
+}

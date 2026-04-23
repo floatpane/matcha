@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"mime"
 	"mime/quotedprintable"
 	"net/textproto"
@@ -134,7 +135,10 @@ func deliveryHeadersMatch(data []byte, fetchEmail string) bool {
 func decodePart(reader io.Reader, header mail.PartHeader) (string, error) {
 	mediaType, params, err := mime.ParseMediaType(header.Get("Content-Type"))
 	if err != nil {
-		body, _ := ioutil.ReadAll(reader)
+		body, readErr := io.ReadAll(reader)
+		if readErr != nil {
+			return string(body), fmt.Errorf("fallback read after Content-Type parse error (%v): %w", err, readErr)
+		}
 		return string(body), nil
 	}
 
@@ -263,6 +267,7 @@ func connectWithOptions(account *config.Account, extraOpts *imapclient.Options) 
 		TLSConfig: &tls.Config{
 			ServerName:         imapServer,
 			InsecureSkipVerify: account.Insecure,
+			MinVersion:         tls.VersionTLS12,
 		},
 	}
 	if extraOpts != nil {
@@ -737,7 +742,11 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 								}
 								cType, _, _ := mime.ParseMediaType(p.Header.Get("Content-Type"))
 								disp, dParams, _ := mime.ParseMediaType(p.Header.Get("Content-Disposition"))
-								b, _ := ioutil.ReadAll(p.Body) // Auto-decodes quoted-printable/base64
+								b, readErr := io.ReadAll(p.Body) // Auto-decodes quoted-printable/base64
+								if readErr != nil {
+									log.Printf("fetcher: reading inner MIME part body: %v", readErr)
+									continue
+								}
 
 								if disp == "attachment" || disp == "inline" || (!strings.HasPrefix(cType, "multipart/") && cType != "text/plain" && cType != "text/html") {
 									fn := dParams["filename"]
@@ -1022,7 +1031,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 	}
 	if os.Getenv("DEBUG_KITTY_IMAGES") != "" {
 		msg := fmt.Sprintf("[kitty-img] body selection html=%s plain=%s chosen=%s\n", htmlPartID, plainPartID, textPartID)
-		fmt.Print(msg)
+		log.Print(msg)
 		if path := os.Getenv("DEBUG_KITTY_LOG"); path != "" {
 			if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
 				_, _ = f.WriteString(msg)

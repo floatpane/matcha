@@ -21,7 +21,7 @@ type PasswordPrompt struct {
 // NewPasswordPrompt creates a new password prompt screen.
 func NewPasswordPrompt() *PasswordPrompt {
 	ti := textinput.New()
-	ti.Placeholder = "Enter your password"
+	ti.Placeholder = t("password_prompt.enter_password")
 	ti.EchoMode = textinput.EchoPassword
 	ti.EchoCharacter = '*'
 	ti.Prompt = "> "
@@ -50,7 +50,7 @@ func (m *PasswordPrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			password := m.input.Value()
 			if password == "" {
-				m.err = "Password cannot be empty"
+				m.err = t("password_prompt.error_empty")
 				return m, nil
 			}
 			m.verifying = true
@@ -90,7 +90,7 @@ func (m *PasswordPrompt) View() tea.View {
 		Foreground(lipgloss.Color("#FFFDF5")).
 		Background(lipgloss.Color("#25A065")).
 		Padding(0, 1).
-		Render("Matcha is locked")
+		Render(t("password_prompt.title"))
 
 	b.WriteString(lockTitle)
 	b.WriteString("\n\n")
@@ -107,7 +107,7 @@ func (m *PasswordPrompt) View() tea.View {
 	}
 
 	mainContent := b.String()
-	helpView := helpStyle.Render("enter: unlock • ctrl+c: quit")
+	helpView := helpStyle.Render(t("password_prompt.help"))
 
 	if m.height > 0 {
 		currentHeight := lipgloss.Height(docStyle.Render(mainContent + helpView))

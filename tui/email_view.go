@@ -478,6 +478,8 @@ func renderCalendarInvite(event *calendar.Event) string {
 
 // formatEventTime formats event start/end times
 func formatEventTime(start, end time.Time) string {
+	start = start.Local()
+	end = end.Local()
 	if start.Format("2006-01-02") == end.Format("2006-01-02") {
 		// Same day
 		return fmt.Sprintf("%s, %s - %s",

@@ -36,6 +36,8 @@ import (
 	"github.com/floatpane/matcha/daemonclient"
 	"github.com/floatpane/matcha/daemonrpc"
 	"github.com/floatpane/matcha/fetcher"
+	"github.com/floatpane/matcha/i18n"
+	_ "github.com/floatpane/matcha/i18n/languages"
 	"github.com/floatpane/matcha/notify"
 	"github.com/floatpane/matcha/plugin"
 	"github.com/floatpane/matcha/sender"
@@ -57,6 +59,18 @@ var (
 	version = "dev"
 	commit  = ""
 	date    = ""
+
+	// httpClient is used for all outbound HTTP requests (update checks, asset downloads).
+	// Configured with a 30s timeout to prevent indefinite hangs on slow/unresponsive servers.
+	httpClient = &http.Client{
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("stopped after 5 redirects")
+			}
+			return nil
+		},
+	}
 )
 
 // UpdateAvailableMsg is sent into the TUI when a newer release is detected.
@@ -395,8 +409,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		if len(cachedFolders) == 0 {
-			cachedFolders = []string{"INBOX"}
+		// Always ensure INBOX is present, even if cache is empty or stale
+		if !seen["INBOX"] {
+			cachedFolders = append([]string{"INBOX"}, cachedFolders...)
 		}
 		m.folderInbox = tui.NewFolderInbox(cachedFolders, m.config.Accounts)
 		m.folderInbox.SetDateFormat(m.config.GetDateFormat())
@@ -863,6 +878,30 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
 
+	case tui.LanguageChangedMsg:
+		// Rebuild all models with new translations
+		// Keep current view type but recreate with fresh i18n
+		switch curr := m.current.(type) {
+		case *tui.Settings:
+			// Preserve settings state when rebuilding
+			newSettings := tui.NewSettings(m.config)
+			newSettings.RestoreState(curr.GetState())
+			m.current = newSettings
+		case *tui.Composer:
+			// Preserve composer state if possible, for now just refresh
+			m.current = tui.NewChoice()
+		case *tui.Inbox:
+			m.current = tui.NewChoice()
+		case *tui.FolderInbox:
+			// Just rebuild settings view, folder inbox will be recreated on next navigation
+			m.current = tui.NewSettings(m.config)
+		default:
+			// For other views, return to choice menu
+			m.current = tui.NewChoice()
+		}
+		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		return m, m.current.Init()
+
 	case tui.GoToSettingsMsg:
 		m.current = tui.NewSettings(m.config)
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
@@ -942,9 +981,20 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Password verified — set session key and load config
 		config.SetSessionKey(msg.Key)
 		cfg, err := config.LoadConfig()
-		if err == nil && cfg.Theme != "" {
-			theme.SetTheme(cfg.Theme)
-			tui.RebuildStyles()
+		if err == nil {
+			if cfg.Theme != "" {
+				theme.SetTheme(cfg.Theme)
+				tui.RebuildStyles()
+			}
+			// Set language from config
+			lang := i18n.DetectLanguage(cfg)
+			log.Printf("Detected language: %s", lang)
+			if err := i18n.GetManager().SetLanguage(lang); err != nil {
+				log.Printf("Failed to set language %s: %v", lang, err)
+			} else {
+				log.Printf("Language set to: %s", i18n.GetManager().GetLanguage())
+				log.Printf("Test translation: %s", i18n.GetManager().T("composer.title"))
+			}
 		}
 		_ = config.EnsurePGPDir()
 		if err != nil {
@@ -1135,7 +1185,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !strings.HasPrefix(normalizedSubject, "re:") {
 			subject = "Re: " + subject
 		}
-		quotedText := fmt.Sprintf("\n\nOn %s, %s wrote:\n> %s", msg.Email.Date.Format("Jan 2, 2006 at 3:04 PM"), msg.Email.From, strings.ReplaceAll(msg.Email.Body, "\n", "\n> "))
+		quotedText := fmt.Sprintf("\n\nOn %s, %s wrote:\n> %s", msg.Email.Date.Local().Format("Jan 2, 2006 at 3:04 PM"), msg.Email.From, strings.ReplaceAll(msg.Email.Body, "\n", "\n> "))
 
 		var composer *tui.Composer
 		hideTips := false
@@ -1172,7 +1222,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		forwardHeader := fmt.Sprintf("\n\n---------- Forwarded message ----------\nFrom: %s\nDate: %s\nSubject: %s\nTo: %s\n\n",
 			msg.Email.From,
-			msg.Email.Date.Format("Mon, Jan 2, 2006 at 3:04 PM"),
+			msg.Email.Date.Local().Format("Mon, Jan 2, 2006 at 3:04 PM"),
 			msg.Email.Subject,
 			msg.Email.To,
 		)
@@ -2168,7 +2218,7 @@ func sendRSVP(account *config.Account, msg tui.SendRSVPMsg) tea.Cmd {
 		bodyText := fmt.Sprintf("%s: %s\n\n%s",
 			msg.Response,
 			msg.Event.Summary,
-			msg.Event.Start.Format("Mon Jan 2, 2006 3:04 PM"))
+			msg.Event.Start.Local().Format("Mon Jan 2, 2006 3:04 PM"))
 		if msg.Event.Location != "" {
 			bodyText += " at " + msg.Event.Location
 		}
@@ -2576,6 +2626,35 @@ func moveEmailToFolderCmd(account *config.Account, uid uint32, accountID string,
 	}
 }
 
+// sanitizeFilename prevents path traversal attacks on attachment downloads.
+// Email attachment filenames come from untrusted email headers and could
+// contain path separators or ".." sequences to escape the Downloads directory.
+func sanitizeFilename(name string) string {
+	// Normalize backslashes to forward slashes so filepath.Base works
+	// correctly on all platforms (Linux doesn't treat \ as a separator)
+	name = strings.ReplaceAll(name, "\\", "/")
+	// Strip any path components, keep only the base filename
+	name = filepath.Base(name)
+	// Replace any remaining path separators (defensive)
+	name = strings.ReplaceAll(name, "/", "_")
+	name = strings.ReplaceAll(name, "..", "_")
+	// Reject hidden files and empty names
+	if name == "" || name == "." || strings.HasPrefix(name, ".") {
+		name = "attachment"
+	}
+	// Sanitize filename: enforce length limit to prevent filesystem errors
+	// with extremely long names from untrusted email headers.
+	const maxFilenameLen = 255
+	if len(name) > maxFilenameLen {
+		ext := filepath.Ext(name)
+		if len(ext) > maxFilenameLen {
+			ext = ext[:maxFilenameLen]
+		}
+		name = name[:maxFilenameLen-len(ext)] + ext
+	}
+	return name
+}
+
 func downloadAttachmentCmd(account *config.Account, uid uint32, msg tui.DownloadAttachmentMsg) tea.Cmd {
 	return func() tea.Msg {
 		// Download and decode the attachment using encoding provided in msg.Encoding.
@@ -2591,6 +2670,7 @@ func downloadAttachmentCmd(account *config.Account, uid uint32, msg tui.Download
 		default:
 			data, err = fetcher.FetchAttachment(account, uid, msg.PartID, msg.Encoding)
 		}
+
 		if err != nil {
 			return tui.AttachmentDownloadedMsg{Err: err}
 		}
@@ -2608,7 +2688,7 @@ func downloadAttachmentCmd(account *config.Account, uid uint32, msg tui.Download
 
 		// Save the attachment using an exclusive create so we never overwrite an existing file.
 		// If the filename already exists, append \" (n)\" before the extension.
-		origName := msg.Filename
+		origName := sanitizeFilename(msg.Filename)
 		ext := filepath.Ext(origName)
 		base := strings.TrimSuffix(origName, ext)
 		candidate := origName
@@ -2761,7 +2841,7 @@ func checkForUpdatesCmd() tea.Cmd {
 	return func() tea.Msg {
 		// Non-fatal: if anything goes wrong we just don't show the update message.
 		const api = "https://api.github.com/repos/floatpane/matcha/releases/latest"
-		resp, err := http.Get(api)
+		resp, err := httpClient.Get(api)
 		if err != nil {
 			return nil
 		}
@@ -3005,7 +3085,7 @@ func isFlagSet(fs *flag.FlagSet, name string) bool {
 
 func runUpdateCLI() error {
 	const api = "https://api.github.com/repos/floatpane/matcha/releases/latest"
-	resp, err := http.Get(api)
+	resp, err := httpClient.Get(api)
 	if err != nil {
 		return fmt.Errorf("could not query releases: %w", err)
 	}
@@ -3143,7 +3223,7 @@ func runUpdateCLI() error {
 	fmt.Println("Downloading...")
 
 	// Download asset
-	respAsset, err := http.Get(assetURL)
+	respAsset, err := httpClient.Get(assetURL)
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
@@ -3415,6 +3495,11 @@ func main() {
 	// Migrate cache files from ~/.config/matcha/ to ~/.cache/matcha/ if needed
 	_ = config.MigrateCacheFiles()
 
+	// Initialize i18n
+	if err := i18n.Init("en"); err != nil {
+		log.Printf("Failed to initialize i18n: %v", err)
+	}
+
 	var initialModel *mainModel
 
 	if config.IsSecureModeEnabled() {
@@ -3424,8 +3509,15 @@ func main() {
 		initialModel.current = tui.NewPasswordPrompt()
 	} else {
 		cfg, err := config.LoadConfig()
-		if err == nil && cfg.Theme != "" {
-			theme.SetTheme(cfg.Theme)
+		if err == nil {
+			if cfg.Theme != "" {
+				theme.SetTheme(cfg.Theme)
+			}
+			// Set language from config
+			lang := i18n.DetectLanguage(cfg)
+			if err := i18n.GetManager().SetLanguage(lang); err != nil {
+				log.Printf("Failed to set language %s: %v", lang, err)
+			}
 		}
 		tui.RebuildStyles()
 

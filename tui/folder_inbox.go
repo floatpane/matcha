@@ -383,7 +383,7 @@ func (m *FolderInbox) renderSidebar() string {
 	var b strings.Builder
 
 	// Account name as title
-	title := "Folders"
+	title := t("folder_inbox.folders_title")
 	if len(m.accounts) > 0 {
 		acc := m.accounts[0]
 		if acc.Name != "" {
@@ -435,9 +435,11 @@ func (m *FolderInbox) renderWithMoveOverlay(content string) string {
 	}
 
 	var b strings.Builder
-	title := "Move to folder:"
+	title := t("folder_inbox.move_to_folder")
 	if len(m.moveUIDs) > 1 {
-		title = fmt.Sprintf("Move %d emails to folder:", len(m.moveUIDs))
+		title = tn("folder_inbox.move_multiple", len(m.moveUIDs), map[string]interface{}{
+			"count": len(m.moveUIDs),
+		})
 	}
 	b.WriteString(moveOverlayTitleStyle.Render(title))
 	b.WriteString("\n")
@@ -455,7 +457,7 @@ func (m *FolderInbox) renderWithMoveOverlay(content string) string {
 	}
 
 	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render("j/k: navigate  enter: move  esc: cancel"))
+	b.WriteString(helpStyle.Render(t("folder_inbox.help")))
 
 	overlay := moveOverlayStyle.Render(b.String())
 

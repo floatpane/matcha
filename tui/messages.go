@@ -526,6 +526,8 @@ type SendRSVPMsg struct {
 }
 
 // RSVPResultMsg signals that RSVP was sent (or failed)
+type LanguageChangedMsg struct{}
+
 type RSVPResultMsg struct {
 	Err       error
 	Response  string // "ACCEPTED", "DECLINED", "TENTATIVE"

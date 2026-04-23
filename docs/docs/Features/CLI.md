@@ -144,6 +144,7 @@ matcha contacts export [flags]
 |------|-------------|
 | `-f` | Output format: `json` or `csv` (default: `json`) |
 | `-o` | Output file path. If omitted, prints to stdout |
+| `--no-header` | Omit CSV header row (CSV format only) |
 | `-h` | Show help |
 
 ### Examples
@@ -167,13 +168,19 @@ matcha contacts export -o ~/contacts.json
 matcha contacts export -f csv -o ~/contacts.csv
 ```
 
+**Export CSV without headers:**
+
+```bash
+matcha contacts export -f csv --no-header
+```
+
 If encryption is enabled, you will be prompted for your password before the contacts can be read.
 
 ### Output Format
 
 **JSON** exports an array of contact objects with `name`, `email`, `last_used`, and `use_count` fields.
 
-**CSV** exports a header row (`name,email,last_used,use_count`) followed by one row per contact.
+**CSV** exports a header row (`name,email,last_used,use_count`) followed by one row per contact. Use `--no-header` to omit the header row.
 
 ## matcha config
 

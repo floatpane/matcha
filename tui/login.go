@@ -176,6 +176,18 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
 
+		case "ctrl+v":
+			// Toggle password visibility while focused on the password field,
+			// so typos in app-passwords are catchable without retyping.
+			if m.focusIndex == inputPassword {
+				if m.inputs[inputPassword].EchoMode == textinput.EchoPassword {
+					m.inputs[inputPassword].EchoMode = textinput.EchoNormal
+				} else {
+					m.inputs[inputPassword].EchoMode = textinput.EchoPassword
+				}
+				return m, nil
+			}
+
 		case "enter":
 			m.updateFlags()
 			visible := m.visibleFields()
@@ -244,26 +256,25 @@ func (m *Login) updateFlags() {
 	m.useOAuth2 = m.inputs[inputAuthMethod].Value() == "oauth2"
 }
 
+// validPort parses a port string and returns the integer value if it is within
+// the valid TCP/UDP port range (1-65535). Returns the fallback if the string is
+// empty or invalid.
+func validPort(s string, fallback int) int {
+	if s == "" {
+		return fallback
+	}
+	p, err := strconv.Atoi(s)
+	if err != nil || p < 1 || p > 65535 {
+		return fallback
+	}
+	return p
+}
+
 // submitForm builds and returns a Credentials message from the current inputs.
 func (m *Login) submitForm() func() tea.Msg {
-	imapPort := 993
-	smtpPort := 587
-	pop3Port := 995
-	if m.inputs[inputIMAPPort].Value() != "" {
-		if p, err := strconv.Atoi(m.inputs[inputIMAPPort].Value()); err == nil {
-			imapPort = p
-		}
-	}
-	if m.inputs[inputSMTPPort].Value() != "" {
-		if p, err := strconv.Atoi(m.inputs[inputSMTPPort].Value()); err == nil {
-			smtpPort = p
-		}
-	}
-	if m.inputs[inputPOP3Port].Value() != "" {
-		if p, err := strconv.Atoi(m.inputs[inputPOP3Port].Value()); err == nil {
-			pop3Port = p
-		}
-	}
+	imapPort := validPort(m.inputs[inputIMAPPort].Value(), 993)
+	smtpPort := validPort(m.inputs[inputSMTPPort].Value(), 587)
+	pop3Port := validPort(m.inputs[inputPOP3Port].Value(), 995)
 
 	authMethod := "password"
 	if m.useOAuth2 {
@@ -417,7 +428,11 @@ func (m *Login) View() tea.View {
 	if !m.hideTips && tip != "" {
 		views = append(views, TipStyle.Render("Tip: "+tip))
 	}
-	views = append(views, helpStyle.Render("\nenter: save • tab: next field • esc: back to menu"))
+	helpLine := "enter: save • tab: next field • esc: back to menu"
+	if m.focusIndex == inputPassword {
+		helpLine += " • ctrl+v: toggle password visibility"
+	}
+	views = append(views, helpStyle.Render("\n"+helpLine))
 
 	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, views...))
 }

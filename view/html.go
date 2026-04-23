@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"charm.land/lipgloss/v2"
@@ -282,9 +283,7 @@ var nextImageID uint32 = 1000
 
 // allocImageID returns a unique Kitty image ID.
 func allocImageID() uint32 {
-	id := nextImageID
-	nextImageID++
-	return id
+	return atomic.AddUint32(&nextImageID, 1)
 }
 
 func fetchRemoteBase64(url string) string {

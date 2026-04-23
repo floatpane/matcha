@@ -1,0 +1,253 @@
+{
+  "language": "es",
+  "messages": {
+    "common": {
+      "yes": "Sí",
+      "no": "No",
+      "cancel": "Cancelar",
+      "ok": "Aceptar",
+      "save": "Guardar",
+      "delete": "Eliminar",
+      "archive": "Archivar",
+      "back": "Atrás",
+      "next": "Siguiente",
+      "previous": "Anterior",
+      "loading": "Cargando...",
+      "error": "Error",
+      "success": "Éxito"
+    },
+    "composer": {
+      "title": "Redactar Nuevo Correo",
+      "from": "De",
+      "to_placeholder": "Ingrese direcciones de correo de los destinatarios.",
+      "cc_placeholder": "Destinatarios con copia.",
+      "bcc_placeholder": "Destinatarios con copia oculta.",
+      "subject_placeholder": "Asunto",
+      "body_placeholder": "Redacte su mensaje...",
+      "signature": "Firma",
+      "signature_placeholder": "Su firma de correo.",
+      "attachments": "Archivos adjuntos",
+      "attachments_none": "Ninguno",
+      "enter_to_add": "Enter para agregar",
+      "encrypt_smime": "Cifrar Correo (S/MIME)",
+      "send": "Enviar",
+      "switchable": "intercambiable",
+      "enter_to_switch": "Enter para cambiar",
+      "no_account": "ninguna cuenta configurada",
+      "send_confirm": "Presione Enter para enviar el correo.",
+      "help": "Markdown/HTML • tab/shift+tab: navegar • ctrl+e: $EDITOR • esc: guardar borrador y salir",
+      "exit_confirm": "¿Está seguro de que desea salir? Este borrador se guardará",
+      "sending": "Enviando correo...",
+      "sent": "Correo enviado exitosamente",
+      "draft_saved": "Borrador guardado"
+    },
+    "inbox": {
+      "title": "Bandeja de entrada",
+      "all_accounts": "Todas las Cuentas",
+      "sent": "Enviados",
+      "trash": "Papelera",
+      "archive": "Archivo",
+      "empty": "Sin correos",
+      "loading": "Cargando correos...",
+      "refreshing": "Actualizando...",
+      "visual_mode": "modo visual",
+      "delete": "eliminar",
+      "archive": "archivar",
+      "refresh": "actualizar",
+      "reply": "responder",
+      "forward": "reenviar",
+      "move": "mover",
+      "mark_read": "marcar como leído",
+      "mark_unread": "marcar como no leído",
+      "help_visual": "v: modo visual • d: eliminar • a: archivar",
+      "help_navigation": "j/k: navegar • enter: abrir • r: actualizar"
+    },
+    "choice": {
+      "what_to_do": "¿Qué le gustaría hacer?",
+      "compose": "Redactar Correo",
+      "inbox": "Ver Bandeja de Entrada",
+      "calendar": "Ver Calendario",
+      "settings": "Configuración",
+      "marketplace": "Tienda de Plugins",
+      "drafts": "Borradores",
+      "help": "Use ↑/↓ para navegar, enter para seleccionar, y ctrl+c para salir.",
+      "unknown": "desconocido",
+      "update_available": "Actualización disponible: {latest} (instalada: {current}) — ejecute `matcha update` para actualizar"
+    },
+    "folder_inbox": {
+      "folders_title": "Carpetas",
+      "move_to_folder": "Mover a carpeta:",
+      "move_single": "Mover correo a carpeta:",
+      "move_multiple": {
+        "one": "Mover {count} correo a carpeta:",
+        "other": "Mover {count} correos a carpeta:"
+      },
+      "help": "j/k: navegar  enter: mover  esc: cancelar",
+      "help_folders": "tab: siguiente carpeta • shift+tab: carpeta anterior • m: mover"
+    },
+    "login": {
+      "title": "Cuentas de Correo",
+      "add_account": "Agregar Cuenta",
+      "edit_account": "Editar Cuenta",
+      "description": "Ingrese las credenciales de su cuenta de correo.",
+      "protocol_label": "Protocolo",
+      "protocol_placeholder": "Protocolo (imap, jmap, o pop3)",
+      "email_label": "Correo",
+      "email_placeholder": "su.correo@ejemplo.com",
+      "password_label": "Contraseña",
+      "password_placeholder": "Contraseña / Contraseña de Aplicación",
+      "display_name_label": "Nombre a Mostrar",
+      "display_name_placeholder": "Su Nombre",
+      "imap_server_label": "Servidor IMAP",
+      "smtp_server_label": "Servidor SMTP",
+      "port_label": "Puerto",
+      "save": "Guardar Cuenta",
+      "delete": "Eliminar Cuenta",
+      "delete_confirm": "¿Eliminar esta cuenta?",
+      "tip_protocol": "Elija el protocolo: imap (predeterminado), jmap, o pop3.",
+      "tip_app_password": "Para Gmail, use una Contraseña de Aplicación en lugar de su contraseña normal."
+    },
+    "settings": {
+      "title": "Configuración",
+      "category_general": "General",
+      "category_accounts": "Cuentas",
+      "category_theme": "Tema",
+      "category_mailing_lists": "Listas de Correo",
+      "category_encryption": "Cifrado de Aplicación",
+      "help_menu": "↑/↓: navegar • derecha/enter: seleccionar • esc: volver",
+      "help_content": "esc: volver al menú"
+    },
+    "settings_accounts": {
+      "title": "Configuración de Cuentas",
+      "no_accounts": "No hay cuentas configuradas.",
+      "add_account": "Agregar Nueva Cuenta",
+      "help": "↑/↓: navegar • enter: editar config. de cifrado • e: editar servidor • d: eliminar"
+    },
+    "settings_theme": {
+      "title": "Tema",
+      "current": "activo",
+      "help": "↑/↓: navegar • enter/espacio: aplicar tema"
+    },
+    "settings_mailing_lists": {
+      "title": "Listas de Correo",
+      "no_lists": "No hay listas de correo configuradas.",
+      "add_list": "Agregar Nueva Lista de Correo",
+      "delete_confirm": "¿Eliminar lista de correo?",
+      "address_count": {
+        "one": "{count} dirección",
+        "other": "{count} direcciones"
+      },
+      "help": "↑/↓: navegar • enter: seleccionar • e: editar • d: eliminar"
+    },
+    "settings_general": {
+      "title": "Configuración General",
+      "disable_images": "Deshabilitar Visualización de Imágenes",
+      "hide_tips": "Ocultar Consejos Contextuales",
+      "disable_notifications": "Deshabilitar Notificaciones",
+      "date_format": "Formato de Fecha",
+      "language": "Idioma",
+      "signature": "Editar Firma",
+      "signature_configured": "configurada",
+      "signature_not_configured": "no configurada",
+      "on": "ACTIVADO",
+      "off": "DESACTIVADO",
+      "restart_required": "Se requiere reiniciar para aplicar el cambio de idioma"
+    },
+    "settings_encryption": {
+      "title": "Cifrado de Aplicación",
+      "enabled": "El cifrado está actualmente habilitado.",
+      "disabled": "Establezca una contraseña para cifrar todos los datos.",
+      "password_label": "Contraseña:",
+      "confirm_label": "Confirmar Contraseña:",
+      "enable_button": "Habilitar Cifrado",
+      "disable_button": "Presione enter para deshabilitar el cifrado",
+      "disable_confirm": "¿Deshabilitar cifrado?",
+      "disable_warning": "Todos los datos se almacenarán sin cifrar.",
+      "encrypting": "Cifrando datos...",
+      "error_empty": "La contraseña no puede estar vacía",
+      "error_mismatch": "Las contraseñas no coinciden",
+      "help": "tab: siguiente • enter: guardar"
+    },
+    "password_prompt": {
+      "title": "Matcha está bloqueado",
+      "enter_password": "Ingrese su contraseña",
+      "error_empty": "La contraseña no puede estar vacía",
+      "error_incorrect": "Contraseña incorrecta",
+      "help": "enter: desbloquear • ctrl+c: salir"
+    },
+    "email_view": {
+      "from": "De",
+      "to": "Para",
+      "cc": "Cc",
+      "bcc": "Cco",
+      "subject": "Asunto",
+      "date": "Fecha",
+      "attachments": "Archivos Adjuntos",
+      "download": "Descargar",
+      "save": "Guardar",
+      "reply": "Responder",
+      "reply_all": "Responder a Todos",
+      "forward": "Reenviar",
+      "delete": "Eliminar",
+      "archive": "Archivar",
+      "help": "r: responder • f: reenviar • d: eliminar • a: archivar • esc: atrás"
+    },
+    "calendar": {
+      "title": "Calendario",
+      "meeting": "Reunión",
+      "event": "Evento",
+      "accept": "Aceptar",
+      "decline": "Rechazar",
+      "tentative": "Provisional",
+      "rsvp_sent": "RSVP enviado: {response}"
+    },
+    "marketplace": {
+      "title": "Tienda de Plugins",
+      "installing": "Instalando...",
+      "installed": "Instalado",
+      "install": "Instalar",
+      "error": "Falló la instalación",
+      "help": "j/k: navegar • enter: instalar • esc: atrás"
+    },
+    "time": {
+      "just_now": "justo ahora",
+      "minute_ago": {
+        "one": "hace 1 minuto",
+        "other": "hace {count} minutos"
+      },
+      "hour_ago": {
+        "one": "hace 1 hora",
+        "other": "hace {count} horas"
+      },
+      "day_ago": {
+        "one": "hace 1 día",
+        "other": "hace {count} días"
+      },
+      "week_ago": {
+        "one": "hace 1 semana",
+        "other": "hace {count} semanas"
+      },
+      "month_ago": {
+        "one": "hace 1 mes",
+        "other": "hace {count} meses"
+      },
+      "year_ago": {
+        "one": "hace 1 año",
+        "other": "hace {count} años"
+      },
+      "in_moment": "en un momento",
+      "in_minute": {
+        "one": "en 1 minuto",
+        "other": "en {count} minutos"
+      },
+      "in_hour": {
+        "one": "en 1 hora",
+        "other": "en {count} horas"
+      },
+      "in_day": {
+        "one": "en 1 día",
+        "other": "en {count} días"
+      }
+    }
+  }
+}

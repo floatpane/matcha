@@ -1,0 +1,253 @@
+{
+  "language": "de",
+  "messages": {
+    "common": {
+      "yes": "Ja",
+      "no": "Nein",
+      "cancel": "Abbrechen",
+      "ok": "OK",
+      "save": "Speichern",
+      "delete": "Löschen",
+      "archive": "Archivieren",
+      "back": "Zurück",
+      "next": "Weiter",
+      "previous": "Vorherige",
+      "loading": "Lädt...",
+      "error": "Fehler",
+      "success": "Erfolg"
+    },
+    "composer": {
+      "title": "Neue E-Mail Verfassen",
+      "from": "Von",
+      "to_placeholder": "E-Mail-Adressen der Empfänger eingeben.",
+      "cc_placeholder": "Kopie-Empfänger.",
+      "bcc_placeholder": "Blindkopie-Empfänger.",
+      "subject_placeholder": "Betreff",
+      "body_placeholder": "Verfassen Sie Ihre Nachricht...",
+      "signature": "Signatur",
+      "signature_placeholder": "Ihre E-Mail-Signatur.",
+      "attachments": "Anhänge",
+      "attachments_none": "Keine",
+      "enter_to_add": "Enter zum Hinzufügen",
+      "encrypt_smime": "E-Mail Verschlüsseln (S/MIME)",
+      "send": "Senden",
+      "switchable": "wechselbar",
+      "enter_to_switch": "Enter zum Wechseln",
+      "no_account": "kein Konto konfiguriert",
+      "send_confirm": "Drücken Sie Enter, um die E-Mail zu senden.",
+      "help": "Markdown/HTML • tab/shift+tab: navigieren • ctrl+e: $EDITOR • esc: Entwurf speichern & beenden",
+      "exit_confirm": "Sind Sie sicher, dass Sie beenden möchten? Dieser Entwurf wird gespeichert",
+      "sending": "E-Mail wird gesendet...",
+      "sent": "E-Mail erfolgreich gesendet",
+      "draft_saved": "Entwurf gespeichert"
+    },
+    "inbox": {
+      "title": "Posteingang",
+      "all_accounts": "Alle Konten",
+      "sent": "Gesendet",
+      "trash": "Papierkorb",
+      "archive": "Archiv",
+      "empty": "Keine E-Mails",
+      "loading": "E-Mails werden geladen...",
+      "refreshing": "Wird aktualisiert...",
+      "visual_mode": "visueller Modus",
+      "delete": "löschen",
+      "archive": "archivieren",
+      "refresh": "aktualisieren",
+      "reply": "antworten",
+      "forward": "weiterleiten",
+      "move": "verschieben",
+      "mark_read": "als gelesen markieren",
+      "mark_unread": "als ungelesen markieren",
+      "help_visual": "v: visueller Modus • d: löschen • a: archivieren",
+      "help_navigation": "j/k: navigieren • enter: öffnen • r: aktualisieren"
+    },
+    "choice": {
+      "what_to_do": "Was möchten Sie tun?",
+      "compose": "E-Mail Verfassen",
+      "inbox": "Posteingang Anzeigen",
+      "calendar": "Kalender Anzeigen",
+      "settings": "Einstellungen",
+      "marketplace": "Plugin-Marktplatz",
+      "drafts": "Entwürfe",
+      "help": "Verwenden Sie ↑/↓ zum Navigieren, Enter zum Auswählen und ctrl+c zum Beenden.",
+      "unknown": "unbekannt",
+      "update_available": "Update verfügbar: {latest} (installiert: {current}) — führen Sie `matcha update` aus, um zu aktualisieren"
+    },
+    "folder_inbox": {
+      "folders_title": "Ordner",
+      "move_to_folder": "In Ordner verschieben:",
+      "move_single": "E-Mail in Ordner verschieben:",
+      "move_multiple": {
+        "one": "{count} E-Mail in Ordner verschieben:",
+        "other": "{count} E-Mails in Ordner verschieben:"
+      },
+      "help": "j/k: navigieren  enter: verschieben  esc: abbrechen",
+      "help_folders": "tab: nächster Ordner • shift+tab: vorheriger Ordner • m: verschieben"
+    },
+    "login": {
+      "title": "E-Mail-Konten",
+      "add_account": "Konto Hinzufügen",
+      "edit_account": "Konto Bearbeiten",
+      "description": "Geben Sie Ihre E-Mail-Kontodaten ein.",
+      "protocol_label": "Protokoll",
+      "protocol_placeholder": "Protokoll (imap, jmap oder pop3)",
+      "email_label": "E-Mail",
+      "email_placeholder": "ihre.email@beispiel.de",
+      "password_label": "Passwort",
+      "password_placeholder": "Passwort / App-Passwort",
+      "display_name_label": "Anzeigename",
+      "display_name_placeholder": "Ihr Name",
+      "imap_server_label": "IMAP-Server",
+      "smtp_server_label": "SMTP-Server",
+      "port_label": "Port",
+      "save": "Konto Speichern",
+      "delete": "Konto Löschen",
+      "delete_confirm": "Dieses Konto löschen?",
+      "tip_protocol": "Wählen Sie das Protokoll: imap (Standard), jmap oder pop3.",
+      "tip_app_password": "Für Gmail verwenden Sie ein App-Passwort anstelle Ihres regulären Passworts."
+    },
+    "settings": {
+      "title": "Einstellungen",
+      "category_general": "Allgemein",
+      "category_accounts": "Konten",
+      "category_theme": "Design",
+      "category_mailing_lists": "Mailinglisten",
+      "category_encryption": "App-Verschlüsselung",
+      "help_menu": "↑/↓: navigieren • rechts/enter: auswählen • esc: zurück",
+      "help_content": "esc: zurück zum Menü"
+    },
+    "settings_accounts": {
+      "title": "Kontoeinstellungen",
+      "no_accounts": "Keine Konten konfiguriert.",
+      "add_account": "Neues Konto Hinzufügen",
+      "help": "↑/↓: navigieren • enter: Krypto-Konfig. bearbeiten • e: Server bearbeiten • d: löschen"
+    },
+    "settings_theme": {
+      "title": "Design",
+      "current": "aktiv",
+      "help": "↑/↓: navigieren • enter/Leertaste: Design anwenden"
+    },
+    "settings_mailing_lists": {
+      "title": "Mailinglisten",
+      "no_lists": "Keine Mailinglisten konfiguriert.",
+      "add_list": "Neue Mailingliste Hinzufügen",
+      "delete_confirm": "Mailingliste löschen?",
+      "address_count": {
+        "one": "{count} Adresse",
+        "other": "{count} Adressen"
+      },
+      "help": "↑/↓: navigieren • enter: auswählen • e: bearbeiten • d: löschen"
+    },
+    "settings_general": {
+      "title": "Allgemeine Einstellungen",
+      "disable_images": "Bildanzeige Deaktivieren",
+      "hide_tips": "Kontextuelle Tipps Ausblenden",
+      "disable_notifications": "Benachrichtigungen Deaktivieren",
+      "date_format": "Datumsformat",
+      "language": "Sprache",
+      "signature": "Signatur Bearbeiten",
+      "signature_configured": "konfiguriert",
+      "signature_not_configured": "nicht konfiguriert",
+      "on": "AN",
+      "off": "AUS",
+      "restart_required": "Neustart erforderlich, um die Sprachänderung anzuwenden"
+    },
+    "settings_encryption": {
+      "title": "App-Verschlüsselung",
+      "enabled": "Verschlüsselung ist derzeit aktiviert.",
+      "disabled": "Legen Sie ein Passwort fest, um alle Daten zu verschlüsseln.",
+      "password_label": "Passwort:",
+      "confirm_label": "Passwort Bestätigen:",
+      "enable_button": "Verschlüsselung Aktivieren",
+      "disable_button": "Drücken Sie Enter, um die Verschlüsselung zu deaktivieren",
+      "disable_confirm": "Verschlüsselung deaktivieren?",
+      "disable_warning": "Alle Daten werden unverschlüsselt gespeichert.",
+      "encrypting": "Daten werden verschlüsselt...",
+      "error_empty": "Passwort darf nicht leer sein",
+      "error_mismatch": "Passwörter stimmen nicht überein",
+      "help": "tab: nächstes • enter: speichern"
+    },
+    "password_prompt": {
+      "title": "Matcha ist gesperrt",
+      "enter_password": "Geben Sie Ihr Passwort ein",
+      "error_empty": "Passwort darf nicht leer sein",
+      "error_incorrect": "Falsches Passwort",
+      "help": "enter: entsperren • ctrl+c: beenden"
+    },
+    "email_view": {
+      "from": "Von",
+      "to": "An",
+      "cc": "Cc",
+      "bcc": "Bcc",
+      "subject": "Betreff",
+      "date": "Datum",
+      "attachments": "Anhänge",
+      "download": "Herunterladen",
+      "save": "Speichern",
+      "reply": "Antworten",
+      "reply_all": "Allen Antworten",
+      "forward": "Weiterleiten",
+      "delete": "Löschen",
+      "archive": "Archivieren",
+      "help": "r: antworten • f: weiterleiten • d: löschen • a: archivieren • esc: zurück"
+    },
+    "calendar": {
+      "title": "Kalender",
+      "meeting": "Besprechung",
+      "event": "Ereignis",
+      "accept": "Annehmen",
+      "decline": "Ablehnen",
+      "tentative": "Mit Vorbehalt",
+      "rsvp_sent": "RSVP gesendet: {response}"
+    },
+    "marketplace": {
+      "title": "Plugin-Marktplatz",
+      "installing": "Wird installiert...",
+      "installed": "Installiert",
+      "install": "Installieren",
+      "error": "Installation fehlgeschlagen",
+      "help": "j/k: navigieren • enter: installieren • esc: zurück"
+    },
+    "time": {
+      "just_now": "gerade eben",
+      "minute_ago": {
+        "one": "vor 1 Minute",
+        "other": "vor {count} Minuten"
+      },
+      "hour_ago": {
+        "one": "vor 1 Stunde",
+        "other": "vor {count} Stunden"
+      },
+      "day_ago": {
+        "one": "vor 1 Tag",
+        "other": "vor {count} Tagen"
+      },
+      "week_ago": {
+        "one": "vor 1 Woche",
+        "other": "vor {count} Wochen"
+      },
+      "month_ago": {
+        "one": "vor 1 Monat",
+        "other": "vor {count} Monaten"
+      },
+      "year_ago": {
+        "one": "vor 1 Jahr",
+        "other": "vor {count} Jahren"
+      },
+      "in_moment": "in einem Moment",
+      "in_minute": {
+        "one": "in 1 Minute",
+        "other": "in {count} Minuten"
+      },
+      "in_hour": {
+        "one": "in 1 Stunde",
+        "other": "in {count} Stunden"
+      },
+      "in_day": {
+        "one": "in 1 Tag",
+        "other": "in {count} Tagen"
+      }
+    }
+  }
+}

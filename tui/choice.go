@@ -43,12 +43,15 @@ type Choice struct {
 
 func NewChoice() Choice {
 	hasSavedDrafts := config.HasDrafts()
-	choices := []string{"\ueb1c Inbox", "\ueb1b Compose Email"}
-	if hasSavedDrafts {
-		choices = append(choices, "\uec0e Drafts")
+	choices := []string{
+		"\ueb1c " + t("choice.inbox"),
+		"\ueb1b " + t("choice.compose"),
 	}
-	choices = append(choices, "\uf487 Marketplace")
-	choices = append(choices, "\uf013 Settings")
+	if hasSavedDrafts {
+		choices = append(choices, "\uec0e "+t("choice.drafts"))
+	}
+	choices = append(choices, "\uf487 "+t("choice.marketplace"))
+	choices = append(choices, "\uf013 "+t("choice.settings"))
 	return Choice{
 		choices:         choices,
 		hasSavedDrafts:  hasSavedDrafts,
@@ -80,17 +83,22 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor++
 			}
 		case "enter":
-			selectedChoice := m.choices[m.cursor]
-			switch selectedChoice {
-			case "\ueb1c Inbox":
+			// Use cursor index instead of string comparison
+			idx := m.cursor
+			if idx == 0 {
+				// Inbox
 				return m, func() tea.Msg { return GoToInboxMsg{} }
-			case "\ueb1b Compose Email":
+			} else if idx == 1 {
+				// Compose
 				return m, func() tea.Msg { return GoToSendMsg{} }
-			case "\uec0e Drafts":
+			} else if m.hasSavedDrafts && idx == 2 {
+				// Drafts
 				return m, func() tea.Msg { return GoToDraftsMsg{} }
-			case "\uf487 Marketplace":
+			} else if (m.hasSavedDrafts && idx == 3) || (!m.hasSavedDrafts && idx == 2) {
+				// Marketplace
 				return m, func() tea.Msg { return GoToMarketplaceMsg{} }
-			case "\uf013 Settings":
+			} else if (m.hasSavedDrafts && idx == 4) || (!m.hasSavedDrafts && idx == 3) {
+				// Settings
 				return m, func() tea.Msg { return GoToSettingsMsg{} }
 			}
 
@@ -126,7 +134,7 @@ func (m Choice) View() tea.View {
 
 	b.WriteString(logoStyle.Render(choiceLogo))
 	b.WriteString("\n")
-	b.WriteString(listHeader.Render("What would you like to do?"))
+	b.WriteString(listHeader.Render(t("choice.what_to_do")))
 	b.WriteString("\n\n")
 
 	// If we detected an update, show a short message under the header.
@@ -134,9 +142,12 @@ func (m Choice) View() tea.View {
 		updateStyle := lipgloss.NewStyle().Foreground(theme.ActiveTheme.Warning).Padding(0, 1)
 		cur := m.CurrentVersion
 		if cur == "" {
-			cur = "unknown"
+			cur = t("choice.unknown")
 		}
-		msg := fmt.Sprintf("Update available: %s (installed: %s) — run `matcha update` to upgrade", m.LatestVersion, cur)
+		msg := tpl("choice.update_available", map[string]interface{}{
+			"latest":  m.LatestVersion,
+			"current": cur,
+		})
 		b.WriteString(updateStyle.Render(msg))
 		b.WriteString("\n\n")
 	}
@@ -151,7 +162,7 @@ func (m Choice) View() tea.View {
 	}
 
 	mainContent := b.String()
-	helpView := helpStyle.Render("Use ↑/↓ to navigate, enter to select, and ctrl+c to quit.")
+	helpView := helpStyle.Render(t("choice.help"))
 
 	if m.height > 0 {
 		currentHeight := lipgloss.Height(docStyle.Render(mainContent + helpView))

@@ -75,6 +75,16 @@ type Settings struct {
 	confirmingDisable bool
 }
 
+type SettingsState struct {
+	ActivePane     SettingsPane
+	ActiveCategory SettingsCategory
+	MenuCursor     int
+	GeneralCursor  int
+	AccountsCursor int
+	ThemeCursor    int
+	ListsCursor    int
+}
+
 func NewSettings(cfg *config.Config) *Settings {
 	if cfg == nil {
 		cfg = &config.Config{}
@@ -108,6 +118,28 @@ func NewSettings(cfg *config.Config) *Settings {
 		encPasswordInput:   newInput("Password", "> ", true),
 		encConfirmInput:    newInput("Confirm Password", "> ", true),
 	}
+}
+
+func (m *Settings) GetState() SettingsState {
+	return SettingsState{
+		ActivePane:     m.activePane,
+		ActiveCategory: m.activeCategory,
+		MenuCursor:     m.menuCursor,
+		GeneralCursor:  m.generalCursor,
+		AccountsCursor: m.accountsCursor,
+		ThemeCursor:    m.themeCursor,
+		ListsCursor:    m.listsCursor,
+	}
+}
+
+func (m *Settings) RestoreState(state SettingsState) {
+	m.activePane = state.ActivePane
+	m.activeCategory = state.ActiveCategory
+	m.menuCursor = state.MenuCursor
+	m.generalCursor = state.GeneralCursor
+	m.accountsCursor = state.AccountsCursor
+	m.themeCursor = state.ThemeCursor
+	m.listsCursor = state.ListsCursor
 }
 
 func (m *Settings) Init() tea.Cmd {
@@ -253,9 +285,15 @@ func (m *Settings) updateMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m *Settings) View() tea.View {
 	// Left pane
 	var left strings.Builder
-	left.WriteString(titleStyle.Render("Settings") + "\n\n")
+	left.WriteString(titleStyle.Render(t("settings.title")) + "\n\n")
 
-	categories := []string{"General", "Accounts", "Theme", "Mailing Lists", "App Encryption"}
+	categories := []string{
+		t("settings.category_general"),
+		t("settings.category_accounts"),
+		t("settings.category_theme"),
+		t("settings.category_mailing_lists"),
+		t("settings.category_encryption"),
+	}
 	for i, c := range categories {
 		cursor := "  "
 		if m.menuCursor == i {
@@ -303,9 +341,9 @@ func (m *Settings) View() tea.View {
 
 	content := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 
-	helpText := "esc: back to menu"
+	helpText := t("settings.help_content")
 	if m.activePane == PaneMenu {
-		helpText = "↑/↓: navigate • right/enter: select • esc: go back"
+		helpText = t("settings.help_menu")
 	}
 	helpView := helpStyle.Render(helpText)
 

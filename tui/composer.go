@@ -25,8 +25,6 @@ var (
 	blurredStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	noStyle             = lipgloss.NewStyle()
 	helpStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	focusedButton       = focusedStyle.Copy().Render("[ Send ]")
-	blurredButton       = blurredStyle.Copy().Render("[ Send ]")
 	emailRecipientStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 	attachmentStyle     = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("245"))
 	fromSelectorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
@@ -104,40 +102,40 @@ func NewComposer(from, to, subject, body string, hideTips bool) *Composer {
 	taStyles := ThemedTextAreaStyles()
 
 	m.toInput = textinput.New()
-	m.toInput.Placeholder = "To"
+	m.toInput.Placeholder = t("composer.to_placeholder")
 	m.toInput.SetValue(to)
 	m.toInput.Prompt = "> "
 	m.toInput.CharLimit = 256
 	m.toInput.SetStyles(tiStyles)
 
 	m.ccInput = textinput.New()
-	m.ccInput.Placeholder = "Cc"
+	m.ccInput.Placeholder = t("composer.cc_placeholder")
 	m.ccInput.Prompt = "> "
 	m.ccInput.CharLimit = 256
 	m.ccInput.SetStyles(tiStyles)
 
 	m.bccInput = textinput.New()
-	m.bccInput.Placeholder = "Bcc"
+	m.bccInput.Placeholder = t("composer.bcc_placeholder")
 	m.bccInput.Prompt = "> "
 	m.bccInput.CharLimit = 256
 	m.bccInput.SetStyles(tiStyles)
 
 	m.subjectInput = textinput.New()
-	m.subjectInput.Placeholder = "Subject"
+	m.subjectInput.Placeholder = t("composer.subject_placeholder")
 	m.subjectInput.SetValue(subject)
 	m.subjectInput.Prompt = "> "
 	m.subjectInput.CharLimit = 256
 	m.subjectInput.SetStyles(tiStyles)
 
 	m.bodyInput = textarea.New()
-	m.bodyInput.Placeholder = "Body (Markdown supported)..."
+	m.bodyInput.Placeholder = t("composer.body_placeholder")
 	m.bodyInput.SetValue(body)
 	m.bodyInput.Prompt = "> "
 	m.bodyInput.SetHeight(10)
 	m.bodyInput.SetStyles(taStyles)
 
 	m.signatureInput = textarea.New()
-	m.signatureInput.Placeholder = "Signature (optional)..."
+	m.signatureInput.Placeholder = t("composer.signature_placeholder")
 	m.signatureInput.Prompt = "> "
 	m.signatureInput.SetHeight(3)
 	m.signatureInput.SetStyles(taStyles)
@@ -499,9 +497,9 @@ func (m *Composer) View() tea.View {
 	var button string
 
 	if m.focusIndex == focusSend {
-		button = focusedButton
+		button = focusedStyle.Copy().Render("[ " + t("composer.send") + " ]")
 	} else {
-		button = blurredButton
+		button = blurredStyle.Copy().Render("[ " + t("composer.send") + " ]")
 	}
 
 	// From field with account selector
@@ -509,23 +507,23 @@ func (m *Composer) View() tea.View {
 	var fromField string
 	if len(m.accounts) > 1 {
 		if m.focusIndex == focusFrom {
-			fromField = focusedStyle.Render(fmt.Sprintf("> From: %s [Enter to switch]", fromAddr))
+			fromField = focusedStyle.Render(fmt.Sprintf("> %s %s [%s]", t("composer.from"), fromAddr, t("composer.enter_to_switch")))
 		} else {
-			fromField = blurredStyle.Render(fmt.Sprintf("  From: %s [switchable]", fromAddr))
+			fromField = blurredStyle.Render(fmt.Sprintf("  %s %s [%s]", t("composer.from"), fromAddr, t("composer.switchable")))
 		}
 	} else if fromAddr != "" {
-		fromField = "  From: " + emailRecipientStyle.Render(fromAddr)
+		fromField = "  " + t("composer.from") + " " + emailRecipientStyle.Render(fromAddr)
 	} else {
-		fromField = blurredStyle.Render("  From: (no account configured)")
+		fromField = blurredStyle.Render(fmt.Sprintf("  %s (%s)", t("composer.from"), t("composer.no_account")))
 	}
 
 	var attachmentField string
 	if len(m.attachmentPaths) == 0 {
-		attachmentText := "None (Enter to add)"
+		attachmentText := fmt.Sprintf("%s (%s)", t("composer.attachments_none"), t("composer.enter_to_add"))
 		if m.focusIndex == focusAttachment {
-			attachmentField = focusedStyle.Render(fmt.Sprintf("> Attachments: %s", attachmentText))
+			attachmentField = focusedStyle.Render(fmt.Sprintf("> %s %s", t("composer.attachments"), attachmentText))
 		} else {
-			attachmentField = blurredStyle.Render(fmt.Sprintf("  Attachments: %s", attachmentText))
+			attachmentField = blurredStyle.Render(fmt.Sprintf("  %s %s", t("composer.attachments"), attachmentText))
 		}
 	} else {
 		var names []string
@@ -534,9 +532,9 @@ func (m *Composer) View() tea.View {
 		}
 		attachmentText := strings.Join(names, ", ")
 		if m.focusIndex == focusAttachment {
-			attachmentField = focusedStyle.Render(fmt.Sprintf("> Attachments (%d): %s", len(m.attachmentPaths), attachmentText))
+			attachmentField = focusedStyle.Render(fmt.Sprintf("> %s (%d): %s", t("composer.attachments"), len(m.attachmentPaths), attachmentText))
 		} else {
-			attachmentField = blurredStyle.Render(fmt.Sprintf("  Attachments (%d): %s", len(m.attachmentPaths), attachmentText))
+			attachmentField = blurredStyle.Render(fmt.Sprintf("  %s (%d): %s", t("composer.attachments"), len(m.attachmentPaths), attachmentText))
 		}
 	}
 
@@ -544,9 +542,9 @@ func (m *Composer) View() tea.View {
 	if m.encryptSMIME {
 		encToggle = "[x]"
 	}
-	encField := blurredStyle.Render(fmt.Sprintf("  Encrypt Email (S/MIME): %s", encToggle))
+	encField := blurredStyle.Render(fmt.Sprintf("  %s %s", t("composer.encrypt_smime"), encToggle))
 	if m.focusIndex == focusEncryptSMIME {
-		encField = focusedStyle.Render(fmt.Sprintf("> Encrypt Email (S/MIME): %s", encToggle))
+		encField = focusedStyle.Render(fmt.Sprintf("> %s %s", t("composer.encrypt_smime"), encToggle))
 	}
 
 	// Build To field with suggestions
@@ -570,9 +568,9 @@ func (m *Composer) View() tea.View {
 	// Signature field label
 	var signatureLabel string
 	if m.focusIndex == focusSignature {
-		signatureLabel = focusedStyle.Render("Signature:")
+		signatureLabel = focusedStyle.Render(t("composer.signature") + ":")
 	} else {
-		signatureLabel = blurredStyle.Render("Signature:")
+		signatureLabel = blurredStyle.Render(t("composer.signature") + ":")
 	}
 
 	tip := ""
@@ -600,7 +598,7 @@ func (m *Composer) View() tea.View {
 	}
 
 	composerViewElements := []string{
-		"Compose New Email",
+		t("composer.title"),
 		fromField,
 		toFieldView,
 		m.ccInput.View(),
@@ -620,7 +618,7 @@ func (m *Composer) View() tea.View {
 	}
 
 	mainContent := lipgloss.JoinVertical(lipgloss.Left, composerViewElements...)
-	helpText := "Markdown/HTML • tab/shift+tab: navigate • ctrl+e: $EDITOR • esc: save draft & exit"
+	helpText := t("composer.help")
 	for _, pk := range m.pluginKeyBindings {
 		helpText += " • " + pk.Key + ": " + pk.Description
 	}
@@ -684,7 +682,7 @@ func (m *Composer) View() tea.View {
 	if m.confirmingExit {
 		dialog := DialogBoxStyle.Render(
 			lipgloss.JoinVertical(lipgloss.Center,
-				"Are you sure you want to exit? This draft will be saved",
+				t("composer.exit_confirm"),
 				HelpStyle.Render("\n(y/n)"),
 			),
 		)

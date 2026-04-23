@@ -1,0 +1,264 @@
+{
+  "language": "uk",
+  "messages": {
+    "common": {
+      "yes": "Так",
+      "no": "Ні",
+      "cancel": "Скасувати",
+      "ok": "Гаразд",
+      "save": "Зберегти",
+      "delete": "Видалити",
+      "archive": "Архівувати",
+      "back": "Назад",
+      "next": "Далі",
+      "previous": "Попередній",
+      "loading": "Завантаження...",
+      "error": "Помилка",
+      "success": "Успіх"
+    },
+    "composer": {
+      "title": "Написати новий лист",
+      "from": "Від",
+      "to_placeholder": "Введіть адреси отримувачів.",
+      "cc_placeholder": "Копія.",
+      "bcc_placeholder": "Прихована копія.",
+      "subject_placeholder": "Тема",
+      "body_placeholder": "Напишіть своє повідомлення...",
+      "signature": "Підпис",
+      "signature_placeholder": "Ваш підпис електронної пошти.",
+      "attachments": "Вкладення",
+      "attachments_none": "Немає",
+      "enter_to_add": "Enter щоб додати",
+      "encrypt_smime": "Зашифрувати лист (S/MIME)",
+      "send": "Надіслати",
+      "switchable": "можна змінити",
+      "enter_to_switch": "Enter щоб змінити",
+      "no_account": "обліковий запис не налаштовано",
+      "send_confirm": "Натисніть Enter, щоб надіслати лист.",
+      "help": "Markdown/HTML • tab/shift+tab: навігація • ctrl+e: $EDITOR • esc: зберегти чернетку та вийти",
+      "exit_confirm": "Ви впевнені, що хочете вийти? Цей чернетку буде збережено",
+      "sending": "Відправлення листа...",
+      "sent": "Лист успішно надіслано",
+      "draft_saved": "Чернетку збережено"
+    },
+    "inbox": {
+      "title": "Вхідні",
+      "all_accounts": "Всі облікові записи",
+      "sent": "Відправлені",
+      "trash": "Кошик",
+      "archive": "Архів",
+      "empty": "Немає листів",
+      "loading": "Завантаження листів...",
+      "refreshing": "Оновлення...",
+      "visual_mode": "візуальний режим",
+      "delete": "видалити",
+      "archive": "архівувати",
+      "refresh": "оновити",
+      "reply": "відповісти",
+      "forward": "переслати",
+      "move": "перемістити",
+      "mark_read": "позначити як прочитане",
+      "mark_unread": "позначити як непрочитане",
+      "help_visual": "v: візуальний режим • d: видалити • a: архівувати",
+      "help_navigation": "j/k: навігація • enter: відкрити • r: оновити"
+    },
+    "choice": {
+      "what_to_do": "Що б ви хотіли зробити?",
+      "compose": "Написати лист",
+      "inbox": "Переглянути вхідні",
+      "calendar": "Переглянути календар",
+      "settings": "Налаштування",
+      "marketplace": "Магазин плагінів",
+      "drafts": "Чернетки",
+      "help": "Використовуйте ↑/↓ для навігації, enter для вибору, та ctrl+c щоб вийти.",
+      "unknown": "невідомо",
+      "update_available": "Доступне оновлення: {latest} (встановлено: {current}) — виконайте `matcha update` для оновлення"
+    },
+    "folder_inbox": {
+      "folders_title": "Теки",
+      "move_to_folder": "Перемістити до теки:",
+      "move_single": "Перемістити лист до теки:",
+      "move_multiple": {
+        "one": "Перемістити {count} лист до теки:",
+        "few": "Перемістити {count} листи до теки:",
+        "other": "Перемістити {count} листів до теки:"
+      },
+      "help": "j/k: навігація  enter: перемістити  esc: скасувати",
+      "help_folders": "tab: наступна тека • shift+tab: попередня тека • m: перемістити"
+    },
+    "login": {
+      "title": "Облікові записи електронної пошти",
+      "add_account": "Додати обліковий запис",
+      "edit_account": "Редагувати обліковий запис",
+      "description": "Введіть облікові дані вашого облікового запису електронної пошти.",
+      "protocol_label": "Протокол",
+      "protocol_placeholder": "Протокол (imap, jmap або pop3)",
+      "email_label": "Електронна пошта",
+      "email_placeholder": "your.email@example.com",
+      "password_label": "Пароль",
+      "password_placeholder": "Пароль / Пароль додатка",
+      "display_name_label": "Відображуване ім'я",
+      "display_name_placeholder": "Ваше ім'я",
+      "imap_server_label": "IMAP сервер",
+      "smtp_server_label": "SMTP сервер",
+      "port_label": "Порт",
+      "save": "Зберегти обліковий запис",
+      "delete": "Видалити обліковий запис",
+      "delete_confirm": "Видалити цей обліковий запис?",
+      "tip_protocol": "Виберіть протокол: imap (за замовчуванням), jmap або pop3.",
+      "tip_app_password": "Для Gmail використовуйте пароль додатка замість звичайного пароля."
+    },
+    "settings": {
+      "title": "Налаштування",
+      "category_general": "Загальні",
+      "category_accounts": "Облікові записи",
+      "category_theme": "Тема",
+      "category_mailing_lists": "Списки розсилки",
+      "category_encryption": "Шифрування додатка",
+      "help_menu": "↑/↓: навігація • right/enter: вибрати • esc: назад",
+      "help_content": "esc: назад до меню"
+    },
+    "settings_accounts": {
+      "title": "Налаштування облікових записів",
+      "no_accounts": "Облікові записи не налаштовано.",
+      "add_account": "Додати новий обліковий запис",
+      "help": "↑/↓: навігація • enter: редагувати криптоконфіг • e: редагувати сервер • d: видалити"
+    },
+    "settings_theme": {
+      "title": "Тема",
+      "current": "активна",
+      "help": "↑/↓: навігація • enter/пробіл: застосувати тему"
+    },
+    "settings_mailing_lists": {
+      "title": "Списки розсилки",
+      "no_lists": "Списки розсилки не налаштовано.",
+      "add_list": "Додати новий список розсилки",
+      "delete_confirm": "Видалити список розсилки?",
+      "address_count": {
+        "one": "{count} адреса",
+        "few": "{count} адреси",
+        "other": "{count} адрес"
+      },
+      "help": "↑/↓: навігація • enter: вибрати • e: редагувати • d: видалити"
+    },
+    "settings_general": {
+      "title": "Загальні налаштування",
+      "disable_images": "Вимкнути показ зображень",
+      "hide_tips": "Приховати контекстні підказки",
+      "disable_notifications": "Вимкнути сповіщення",
+      "date_format": "Формат дати",
+      "language": "Мова",
+      "signature": "Редагувати підпис",
+      "signature_configured": "налаштовано",
+      "signature_not_configured": "не налаштовано",
+      "on": "УВІМК",
+      "off": "ВИМК",
+      "restart_required": "Для застосування зміни мови потрібен перезапуск"
+    },
+    "settings_encryption": {
+      "title": "Шифрування додатка",
+      "enabled": "Шифрування наразі ввімкнено.",
+      "disabled": "Встановіть пароль для шифрування всіх даних.",
+      "password_label": "Пароль:",
+      "confirm_label": "Підтвердіть пароль:",
+      "enable_button": "Увімкнути шифрування",
+      "disable_button": "Натисніть enter, щоб вимкнути шифрування",
+      "disable_confirm": "Вимкнути шифрування?",
+      "disable_warning": "Всі дані будуть зберігатися без шифрування.",
+      "encrypting": "Шифрування даних...",
+      "error_empty": "Пароль не може бути порожнім",
+      "error_mismatch": "Паролі не співпадають",
+      "help": "tab: далі • enter: зберегти"
+    },
+    "password_prompt": {
+      "title": "Matcha заблоковано",
+      "enter_password": "Введіть ваш пароль",
+      "error_empty": "Пароль не може бути порожнім",
+      "error_incorrect": "Неправильний пароль",
+      "help": "enter: розблокувати • ctrl+c: вийти"
+    },
+    "email_view": {
+      "from": "Від",
+      "to": "Кому",
+      "cc": "Копія",
+      "bcc": "Прихована копія",
+      "subject": "Тема",
+      "date": "Дата",
+      "attachments": "Вкладення",
+      "download": "Завантажити",
+      "save": "Зберегти",
+      "reply": "Відповісти",
+      "reply_all": "Відповісти всім",
+      "forward": "Переслати",
+      "delete": "Видалити",
+      "archive": "Архівувати",
+      "help": "r: відповісти • f: переслати • d: видалити • a: архівувати • esc: назад"
+    },
+    "calendar": {
+      "title": "Календар",
+      "meeting": "Зустріч",
+      "event": "Подія",
+      "accept": "Прийняти",
+      "decline": "Відхилити",
+      "tentative": "Можливо",
+      "rsvp_sent": "RSVP надіслано: {response}"
+    },
+    "marketplace": {
+      "title": "Магазин плагінів",
+      "installing": "Встановлення...",
+      "installed": "Встановлено",
+      "install": "Встановити",
+      "error": "Не вдалося встановити",
+      "help": "j/k: навігація • enter: встановити • esc: назад"
+    },
+    "time": {
+      "just_now": "щойно",
+      "minute_ago": {
+        "one": "1 хвилину тому",
+        "few": "{count} хвилини тому",
+        "other": "{count} хвилин тому"
+      },
+      "hour_ago": {
+        "one": "1 годину тому",
+        "few": "{count} години тому",
+        "other": "{count} годин тому"
+      },
+      "day_ago": {
+        "one": "1 день тому",
+        "few": "{count} дні тому",
+        "other": "{count} днів тому"
+      },
+      "week_ago": {
+        "one": "1 тиждень тому",
+        "few": "{count} тижні тому",
+        "other": "{count} тижнів тому"
+      },
+      "month_ago": {
+        "one": "1 місяць тому",
+        "few": "{count} місяці тому",
+        "other": "{count} місяців тому"
+      },
+      "year_ago": {
+        "one": "1 рік тому",
+        "few": "{count} роки тому",
+        "other": "{count} років тому"
+      },
+      "in_moment": "через мить",
+      "in_minute": {
+        "one": "через 1 хвилину",
+        "few": "через {count} хвилини",
+        "other": "через {count} хвилин"
+      },
+      "in_hour": {
+        "one": "через 1 годину",
+        "few": "через {count} години",
+        "other": "через {count} годин"
+      },
+      "in_day": {
+        "one": "через 1 день",
+        "few": "через {count} дні",
+        "other": "через {count} днів"
+      }
+    }
+  }
+}

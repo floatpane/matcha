@@ -61,8 +61,6 @@ func RebuildStyles() {
 	blurredStyle = lipgloss.NewStyle().Foreground(t.Secondary)
 	noStyle = lipgloss.NewStyle()
 	helpStyle = lipgloss.NewStyle().Foreground(t.SubtleText)
-	focusedButton = focusedStyle.Render("[ Send ]")
-	blurredButton = blurredStyle.Render("[ Send ]")
 	emailRecipientStyle = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	attachmentStyle = lipgloss.NewStyle().PaddingLeft(4).Foreground(t.Secondary)
 	fromSelectorStyle = lipgloss.NewStyle().Foreground(t.Accent)

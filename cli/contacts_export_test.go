@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,7 +62,7 @@ func TestExportToCSV(t *testing.T) {
 		},
 	}
 
-	data, err := exportToCSV(contacts)
+	data, err := exportToCSV(contacts, false)
 	if err != nil {
 		t.Fatalf("exportToCSV failed: %v", err)
 	}
@@ -83,6 +84,54 @@ func TestExportToCSV(t *testing.T) {
 	}
 	if !contains(output, "jane@test.com") {
 		t.Error("expected jane@test.com in CSV output")
+	}
+}
+
+func TestExportToCSVNoHeader(t *testing.T) {
+	contacts := []config.Contact{
+		{
+			Name:     "John Doe",
+			Email:    "john@example.com",
+			LastUsed: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
+			UseCount: 5,
+		},
+		{
+			Name:     "Jane Smith",
+			Email:    "jane@test.com",
+			LastUsed: time.Date(2024, 2, 20, 14, 0, 0, 0, time.UTC),
+			UseCount: 10,
+		},
+	}
+
+	data, err := exportToCSV(contacts, true)
+	if err != nil {
+		t.Fatalf("exportToCSV failed: %v", err)
+	}
+
+	output := string(data)
+	expectedFields := "name,email,last_used,use_count"
+
+	// Check that header is NOT present anywhere in the output
+	if strings.Contains(output, expectedFields) {
+		t.Errorf("expected no CSV header, but found '%s' in output", expectedFields)
+	}
+
+	// Check that both contacts are present
+	if !contains(output, "john@example.com") {
+		t.Error("expected john@example.com in CSV output")
+	}
+	if !contains(output, "jane@test.com") {
+		t.Error("expected jane@test.com in CSV output")
+	}
+
+	// Check that the first line is data, not header
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) < 2 {
+		t.Fatal("expected at least 2 lines in CSV output")
+	}
+	firstLine := lines[0]
+	if !strings.Contains(firstLine, "john@example.com") {
+		t.Errorf("expected first line to contain contact email, got '%s'", firstLine)
 	}
 }
 
@@ -121,7 +170,7 @@ func TestExportToCSVWithSpecialChars(t *testing.T) {
 		},
 	}
 
-	data, err := exportToCSV(contacts)
+	data, err := exportToCSV(contacts, false)
 	if err != nil {
 		t.Fatalf("exportToCSV failed: %v", err)
 	}
@@ -192,7 +241,7 @@ func TestExportCSVToFile(t *testing.T) {
 		},
 	}
 
-	data, err := exportToCSV(contacts)
+	data, err := exportToCSV(contacts, false)
 	if err != nil {
 		t.Fatalf("exportToCSV failed: %v", err)
 	}

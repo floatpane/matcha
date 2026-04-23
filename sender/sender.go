@@ -637,6 +637,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	tlsConfig := &tls.Config{
 		ServerName:         smtpServer,
 		InsecureSkipVerify: account.Insecure,
+		MinVersion:         tls.VersionTLS12,
 	}
 
 	var c *smtp.Client
@@ -834,6 +835,7 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 	tlsConfig := &tls.Config{
 		ServerName:         smtpServer,
 		InsecureSkipVerify: account.Insecure,
+		MinVersion:         tls.VersionTLS12,
 	}
 
 	var c *smtp.Client
