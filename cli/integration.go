@@ -95,6 +95,9 @@ func setupMailtoDarwin(exe string) error {
 	}
 
 	appDir := filepath.Join(home, "Applications", "MatchaMail.app")
+	// Cleanup old version to avoid conflicts
+	os.RemoveAll(appDir)
+
 	contentsDir := filepath.Join(appDir, "Contents")
 	macosDir := filepath.Join(contentsDir, "MacOS")
 	resourcesDir := filepath.Join(contentsDir, "Resources")
@@ -123,13 +126,13 @@ func setupMailtoDarwin(exe string) error {
 	<key>CFBundleIconFile</key>
 	<string>MatchaMail.icns</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.floatpane.matcha.handler</string>
+	<string>com.floatpane.matcha.mailto-handler</string>
 	<key>CFBundleName</key>
 	<string>MatchaMail</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>1.1</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSUIElement</key>
@@ -144,7 +147,7 @@ func setupMailtoDarwin(exe string) error {
 				<string>mailto</string>
 			</array>
 			<key>LSHandlerRank</key>
-			<string>Default</string>
+			<string>Owner</string>
 		</dict>
 	</array>
 </dict>
@@ -166,21 +169,16 @@ func setupMailtoDarwin(exe string) error {
 	exeDest := filepath.Join(macosDir, "MatchaMail")
 
 	// Compile the Swift file
-	cmd := exec.Command("swiftc", "-sdk", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk", tmpSwiftFile, "-o", exeDest)
-	// If the above hardcoded path fails (e.g. command line tools only), try simple swiftc
+	cmd := exec.Command("swiftc", "-O", tmpSwiftFile, "-o", exeDest)
 	if err := cmd.Run(); err != nil {
-		cmd = exec.Command("swiftc", tmpSwiftFile, "-o", exeDest)
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to compile Swift handler app: %w. Do you have Xcode command line tools installed?", err)
-		}
+		return fmt.Errorf("failed to compile Swift handler app: %w", err)
 	}
 
 	// Register the application
 	lsregister := "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
-	regCmd := exec.Command(lsregister, "-f", appDir)
-	if err := regCmd.Run(); err != nil {
-		return fmt.Errorf("failed to register app with LaunchServices: %w", err)
-	}
+	_ = exec.Command(lsregister, "-f", appDir).Run()
+
+	fmt.Printf("Successfully created %s.\n", appDir)
 
 	// Set as default handler
 	// macOS does not provide a straightforward CLI to change default handler without 3rd party tools (like duti).
