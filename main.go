@@ -3603,11 +3603,17 @@ func main() {
 	plugins.CallHook(plugin.HookStartup)
 
 	// Background sync macOS features
-	if runtime.GOOS == "darwin" && !initialModel.config.DisableNotifications {
-		go func() {
-			_ = config.SyncMacOSContacts()
-			_ = theme.SyncWithMacOS()
-		}()
+	if runtime.GOOS == "darwin" {
+		disableNotifications := false
+		if initialModel.config != nil {
+			disableNotifications = initialModel.config.DisableNotifications
+		}
+		if !disableNotifications {
+			go func() {
+				_ = config.SyncMacOSContacts()
+				_ = theme.SyncWithMacOS()
+			}()
+		}
 	}
 
 	p := tea.NewProgram(initialModel)
