@@ -1,7 +1,7 @@
 clib/stb_image.h linguist-vendored
-**.jsx linguist-detectable=false
-**.css linguist-detectable=false
-**.js linguist-detectable=false
-**.json linguist-detectable=false
+*.jsx linguist-detectable=false
+*.css linguist-detectable=false
+*.js linguist-detectable=false
+*.json linguist-detectable=false
 *.html linguist-detectable=false
 public/** linguist-documentation
