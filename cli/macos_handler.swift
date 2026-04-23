@@ -1,24 +1,30 @@
 import Cocoa
-import AppleEvents
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        
+
+        // kInternetEventClass = 'GURL' (0x4755524c)
+        // kAEGetURL = 'GURL' (0x4755524c)
+        let eventClass = AEEventClass(0x4755524c)
+        let eventID = AEEventID(0x4755524c)
+
         // Register for the 'getURL' event
         NSAppleEventManager.shared().setEventHandler(
             self,
             andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
-            forEventClass: AEEventClass(kInternetEventClass),
-            andEventID: AEEventID(kAEGetURL)
+            forEventClass: eventClass,
+            andEventID: eventID
         )
     }
-    
+
     @objc func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
-        guard let urlString = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+        // keyDirectObject = '----' (0x2d2d2d2d)
+        guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(0x2d2d2d2d))?.stringValue,
               let url = URL(string: urlString) else {
             return
         }
+...
 
         let matchaPath = "{{MATCHA_PATH}}"
         

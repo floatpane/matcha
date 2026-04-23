@@ -126,16 +126,10 @@ func setupMailtoDarwin(exe string) error {
 	<string>com.floatpane.matcha.handler</string>
 	<key>CFBundleName</key>
 	<string>MatchaMail</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
-	<key>CFBundleVersion</key>
+	<key>LSBackgroundOnly</key>
 	<string>1</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>10.15</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -145,6 +139,8 @@ func setupMailtoDarwin(exe string) error {
 			<array>
 				<string>mailto</string>
 			</array>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
 		</dict>
 	</array>
 </dict>
