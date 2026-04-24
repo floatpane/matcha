@@ -1041,10 +1041,16 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 		msg := fmt.Sprintf("[kitty-img] body selection html=%s plain=%s chosen=%s\n", htmlPartID, plainPartID, textPartID)
 		log.Print(msg)
 		if path := os.Getenv("DEBUG_KITTY_LOG"); path != "" {
-			if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+			// Use a closure with defer so a panic between open and
+			// WriteString doesn't leak the file descriptor (#894).
+			func() {
+				f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+				if err != nil {
+					return
+				}
+				defer f.Close()
 				_, _ = f.WriteString(msg)
-				_ = f.Close()
-			}
+			}()
 		}
 	}
 	if textPartID != "" {
