@@ -1,0 +1,62 @@
+# GoReleaser configuration for PR preview builds.
+# Triggered by /build command on PRs.
+# Uses --snapshot mode (no semver tag required).
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: matcha
+    main: .
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -buildid= -X main.version=preview-{{.ShortCommit}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+    env:
+      - CGO_ENABLED=1
+      - >-
+        {{- if eq .Os "darwin" }}SDKROOT={{ .Env.SDK_PATH }}{{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}MACOSX_DEPLOYMENT_TARGET=11.0{{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}CGO_CFLAGS=-isysroot {{ .Env.SDK_PATH }} -mmacosx-version-min=11.0{{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}CGO_LDFLAGS=-isysroot {{ .Env.SDK_PATH }}
+        {{- else if eq .Os "linux" }}CGO_LDFLAGS=-L{{ .Env.PCSC_DIR }}/lib/{{ .Arch }}
+        {{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}
+          {{- if eq .Arch "amd64"}}CC=clang -arch x86_64 -isysroot {{ .Env.SDK_PATH }}{{- end }}
+          {{- if eq .Arch "arm64"}}CC=clang -arch arm64 -isysroot {{ .Env.SDK_PATH }}{{- end }}
+        {{- else if eq .Os "linux" }}
+          {{- if eq .Arch "amd64" }}CC=zig cc -target x86_64-linux-musl -lc{{- end }}
+          {{- if eq .Arch "arm64"}}CC=zig cc -target aarch64-linux-musl -lc{{- end }}
+        {{- else if eq .Os "windows" }}
+          {{- if eq .Arch "amd64" }}CC=zig cc -target x86_64-windows-gnu -lc{{- end }}
+          {{- if eq .Arch "arm64"}}CC=zig cc -target aarch64-windows-gnu -lc{{- end }}
+        {{- end }}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_preview_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: ["zip"]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "preview-{{ .ShortCommit }}"
