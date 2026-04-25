@@ -29,6 +29,7 @@ On first launch, Matcha will prompt you to configure an email account. You'll ne
 - `Enter` - Open selected email
 - `/` - Filter/search emails
 - `r` - Refresh inbox
+- `[` / `]` - Switch focus between inbox and split pane (when split pane is enabled)
 - `d` - Delete selected email
 - `a` - Archive selected email
 - `v` - Enter visual mode (multi-select)

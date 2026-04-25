@@ -43,12 +43,15 @@ Configuration is stored in `~/.config/matcha/config.json`.
     }
   ],
   "theme": "Matcha",
+  "enable_split_pane": true,
   "disable_images": true,
   "hide_tips": true
 }
 ```
 
 `send_as_email` is optional. When set, Matcha uses it for the outgoing `From` header while continuing to authenticate with the account's login address.
+
+`enable_split_pane` enables a side-by-side view where the email list and the selected email are shown on the same screen.
 
 ## Data Locations
 
