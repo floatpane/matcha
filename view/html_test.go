@@ -173,6 +173,112 @@ func TestGhosttySupported(t *testing.T) {
 	}
 }
 
+func TestZellijDetection(t *testing.T) {
+	tests := []struct {
+		name     string
+		env      map[string]string
+		expected bool
+	}{
+		{"ZELLIJ set", map[string]string{"ZELLIJ": "1"}, true},
+		{"ZELLIJ_SESSION_NAME set", map[string]string{"ZELLIJ_SESSION_NAME": "test"}, true},
+		{"No Zellij", map[string]string{}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Save and restore env
+			origZellij := os.Getenv("ZELLIJ")
+			origZellijSession := os.Getenv("ZELLIJ_SESSION_NAME")
+			defer func() {
+				if origZellij != "" {
+					os.Setenv("ZELLIJ", origZellij)
+				} else {
+					os.Unsetenv("ZELLIJ")
+				}
+				if origZellijSession != "" {
+					os.Setenv("ZELLIJ_SESSION_NAME", origZellijSession)
+				} else {
+					os.Unsetenv("ZELLIJ_SESSION_NAME")
+				}
+			}()
+
+			// Clear first
+			os.Unsetenv("ZELLIJ")
+			os.Unsetenv("ZELLIJ_SESSION_NAME")
+
+			// Set test env
+			for k, v := range tt.env {
+				os.Setenv(k, v)
+			}
+
+			if got := zellijSupported(); got != tt.expected {
+				t.Errorf("zellijSupported() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSixelDetection(t *testing.T) {
+	tests := []struct {
+		name     string
+		env      map[string]string
+		expected bool
+	}{
+		{"Zellij", map[string]string{"ZELLIJ": "1"}, true},
+		{"MLterm", map[string]string{"TERM": "mlterm"}, true},
+		{"foot", map[string]string{"TERM": "foot"}, true},
+		{"xterm with SIXEL", map[string]string{"TERM": "xterm", "SIXEL": "1"}, true},
+		{"plain xterm", map[string]string{"TERM": "xterm"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Save and restore env
+			origZellij := os.Getenv("ZELLIJ")
+			origZellijSession := os.Getenv("ZELLIJ_SESSION_NAME")
+			origTerm := os.Getenv("TERM")
+			origSixel := os.Getenv("SIXEL")
+			defer func() {
+				if origZellij != "" {
+					os.Setenv("ZELLIJ", origZellij)
+				} else {
+					os.Unsetenv("ZELLIJ")
+				}
+				if origZellijSession != "" {
+					os.Setenv("ZELLIJ_SESSION_NAME", origZellijSession)
+				} else {
+					os.Unsetenv("ZELLIJ_SESSION_NAME")
+				}
+				if origTerm != "" {
+					os.Setenv("TERM", origTerm)
+				} else {
+					os.Unsetenv("TERM")
+				}
+				if origSixel != "" {
+					os.Setenv("SIXEL", origSixel)
+				} else {
+					os.Unsetenv("SIXEL")
+				}
+			}()
+
+			// Clear all env first
+			os.Unsetenv("ZELLIJ")
+			os.Unsetenv("ZELLIJ_SESSION_NAME")
+			os.Unsetenv("TERM")
+			os.Unsetenv("SIXEL")
+
+			// Set test env
+			for k, v := range tt.env {
+				os.Setenv(k, v)
+			}
+
+			if got := sixelSupported(); got != tt.expected {
+				t.Errorf("sixelSupported() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestImageProtocolSupported(t *testing.T) {
 	// Save original environment variables
 	origTerm := os.Getenv("TERM")

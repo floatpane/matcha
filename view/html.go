@@ -235,6 +235,23 @@ func konsoleSupported() bool {
 	return false
 }
 
+func zellijSupported() bool {
+	return os.Getenv("ZELLIJ") != "" || os.Getenv("ZELLIJ_SESSION_NAME") != ""
+}
+
+func sixelSupported() bool {
+	// Zellij always supports Sixel
+	if zellijSupported() {
+		return true
+	}
+
+	// Native Sixel terminals
+	term := strings.ToLower(os.Getenv("TERM"))
+	return strings.Contains(term, "mlterm") ||
+		strings.Contains(term, "foot") ||
+		(strings.Contains(term, "xterm") && os.Getenv("SIXEL") == "1")
+}
+
 // ImageProtocolSupported checks if any supported image protocol terminal is detected.
 func ImageProtocolSupported() bool {
 	return imageProtocolSupported()
@@ -242,7 +259,7 @@ func ImageProtocolSupported() bool {
 
 // imageProtocolSupported checks if any supported image protocol terminal is detected.
 func imageProtocolSupported() bool {
-	return kittySupported() || ghosttySupported() || iterm2Supported() ||
+	return sixelSupported() || kittySupported() || ghosttySupported() || iterm2Supported() ||
 		weztermSupported() || waystSupported() || warpSupported() || konsoleSupported()
 }
 
@@ -422,10 +439,52 @@ func iterm2InlineImage(payload string) string {
 	return result
 }
 
+// sixelInlineImage returns Sixel escape sequence + newline placeholders
+func sixelInlineImage(base64PNG string) string {
+	data, err := base64.StdEncoding.DecodeString(base64PNG)
+	if err != nil {
+		return ""
+	}
+
+	cellHeight := getTerminalCellSize()
+	sixel, rows, err := clib.EncodePNGToSixel(data, cellHeight)
+	if err != nil {
+		debugImageProtocol("Sixel encoding failed: %v", err)
+		return ""
+	}
+
+	debugImageProtocol("Sixel: encoded %d bytes, %d rows", len(sixel), rows)
+
+	// Sixel sequences don't auto-advance cursor
+	// Add newlines to preserve layout
+	return sixel + strings.Repeat("\n", rows)
+}
+
+// sixelImageEscapeOnly returns raw Sixel for out-of-band rendering
+func sixelImageEscapeOnly(base64PNG string) string {
+	data, err := base64.StdEncoding.DecodeString(base64PNG)
+	if err != nil {
+		return ""
+	}
+
+	cellHeight := getTerminalCellSize()
+	sixel, _, err := clib.EncodePNGToSixel(data, cellHeight)
+	if err != nil {
+		return ""
+	}
+
+	return sixel
+}
+
 // renderInlineImage renders an image using the appropriate protocol for the detected terminal
 func renderInlineImage(payload string) string {
 	if payload == "" {
 		return ""
+	}
+
+	// Priority: Sixel in multiplexers overrides native protocols
+	if sixelSupported() {
+		return sixelInlineImage(payload)
 	}
 
 	if kittySupported() || ghosttySupported() || weztermSupported() || waystSupported() || konsoleSupported() {
@@ -517,6 +576,23 @@ func RenderImageToStdout(placement *ImagePlacement, screenRow int, screenCol ...
 	col := 1
 	if len(screenCol) > 0 && screenCol[0] > 0 {
 		col = screenCol[0]
+	}
+
+	// Priority: Sixel in multiplexers
+	if sixelSupported() {
+		debugImageProtocol("Sixel: RenderImageToStdout row=%d col=%d base64len=%d", screenRow, col, len(placement.Base64))
+		seq := sixelImageEscapeOnly(placement.Base64)
+		if seq == "" {
+			debugImageProtocol("Sixel: sixelImageEscapeOnly returned empty")
+			return
+		}
+
+		debugImageProtocol("Sixel: rendering %d bytes at row=%d col=%d", len(seq), screenRow+1, col)
+		// Position cursor + render Sixel
+		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u",
+			screenRow+1, col, seq)
+		os.Stdout.Sync()
+		return
 	}
 
 	useKitty := kittySupported() || ghosttySupported() || weztermSupported() || waystSupported() || konsoleSupported()
