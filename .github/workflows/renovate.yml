@@ -1,0 +1,13 @@
+name: Renovate
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: renovatebot/github-action@v41
+        with:
+          token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          configurationFile: renovate.json
