@@ -451,7 +451,6 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.folderInbox = tui.NewFolderInbox(cachedFolders, m.config.Accounts)
 		m.folderInbox.SetDateFormat(m.config.GetDateFormat())
-		m.folderInbox.SetSplitPaneEnabled(m.config.EnableSplitPane)
 		// Use cached INBOX emails for instant display (memory first, then disk)
 		if cached, ok := m.folderEmails["INBOX"]; ok && len(cached) > 0 {
 			m.folderInbox.SetEmails(cached, m.config.Accounts)
@@ -696,6 +695,36 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		folderName := m.folderInbox.GetCurrentFolder()
+		// Check cache first
+		if cached := config.GetCachedEmailBody(folderName, msg.UID, msg.AccountID); cached != nil {
+			var attachments []fetcher.Attachment
+			for _, ca := range cached.Attachments {
+				att := fetcher.Attachment{
+					Filename:         ca.Filename,
+					PartID:           ca.PartID,
+					Encoding:         ca.Encoding,
+					MIMEType:         ca.MIMEType,
+					ContentID:        ca.ContentID,
+					Inline:           ca.Inline,
+					IsSMIMESignature: ca.IsSMIMESignature,
+					SMIMEVerified:    ca.SMIMEVerified,
+					IsSMIMEEncrypted: ca.IsSMIMEEncrypted,
+					IsCalendarInvite: ca.IsCalendarInvite,
+				}
+				if ca.IsCalendarInvite && len(ca.CalendarData) > 0 {
+					att.Data = ca.CalendarData
+				}
+				attachments = append(attachments, att)
+			}
+			return m, func() tea.Msg {
+				return tui.PreviewBodyFetchedMsg{
+					UID:         msg.UID,
+					Body:        cached.Body,
+					Attachments: attachments,
+					AccountID:   msg.AccountID,
+				}
+			}
+		}
 		return m, fetchPreviewBodyCmd(m.config, msg.UID, msg.AccountID, folderName)
 
 	case tui.PreviewBodyFetchedMsg:
@@ -725,11 +754,6 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.current, cmd = m.current.Update(msg)
 			return m, cmd
 		}
-		return m, nil
-
-	case tui.SaveSplitPaneConfigMsg:
-		m.config.EnableSplitPane = msg.Enabled
-		_ = config.SaveConfig(m.config)
 		return m, nil
 
 	case tui.EmailMovedMsg:
@@ -1156,6 +1180,23 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.plugins != nil {
 			t := m.plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, folderName)
 			m.plugins.CallHook(plugin.HookEmailViewed, t)
+		}
+		// Split pane mode: open in split view instead of full screen
+		if m.config.EnableSplitPane && m.folderInbox != nil {
+			m.folderInbox.OpenSplitPreview(msg.UID, msg.AccountID)
+			m.current = m.folderInbox
+			// Mark as read
+			if !email.IsRead {
+				m.markEmailAsReadInStores(msg.UID, msg.AccountID)
+				account := m.config.GetAccountByID(msg.AccountID)
+				if account != nil {
+					cmd = markEmailAsReadCmd(account, msg.UID, msg.AccountID, folderName)
+				}
+			}
+			// Fetch body
+			return m, tea.Batch(cmd, func() tea.Msg {
+				return tui.UpdatePreviewMsg{UID: msg.UID, AccountID: msg.AccountID}
+			})
 		}
 		// Check body cache first
 		if cached := config.GetCachedEmailBody(folderName, msg.UID, msg.AccountID); cached != nil {

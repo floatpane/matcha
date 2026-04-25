@@ -51,6 +51,7 @@ type EmailView struct {
 	calendarEvent      *calendar.Event
 	originalICSData    []byte
 	isPreviewMode      bool
+	columnOffset       int // horizontal offset for image rendering in split pane
 }
 
 func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox MailboxKind, disableImages bool) *EmailView {
@@ -157,10 +158,11 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 	}
 }
 
-// NewEmailViewPreview creates EmailView in preview mode (disables certain actions)
-func NewEmailViewPreview(email fetcher.Email, width, height int, disableImages bool) *EmailView {
+// NewEmailViewPreview creates EmailView in preview mode with column offset for images
+func NewEmailViewPreview(email fetcher.Email, width, height, colOffset int, disableImages bool) *EmailView {
 	ev := NewEmailView(email, 0, width, height, MailboxInbox, disableImages)
 	ev.isPreviewMode = true
+	ev.columnOffset = colOffset
 	return ev
 }
 
@@ -408,7 +410,11 @@ func (m *EmailView) View() tea.View {
 			// their start line scrolls above the viewport.
 			if p.Line >= yOffset && p.Line < yOffset+vpHeight {
 				screenRow := headerLines + (p.Line - yOffset)
-				view.RenderImageToStdout(p, screenRow)
+				if m.columnOffset > 0 {
+					view.RenderImageToStdout(p, screenRow, m.columnOffset+1)
+				} else {
+					view.RenderImageToStdout(p, screenRow)
+				}
 			}
 		}
 	}

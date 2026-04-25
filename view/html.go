@@ -509,9 +509,14 @@ func iterm2ImageEscapeOnly(payload string) string {
 //
 // For Kitty-protocol terminals, images are uploaded once and then displayed by
 // ID on subsequent calls, making scroll rendering nearly instant.
-func RenderImageToStdout(placement *ImagePlacement, screenRow int) {
+func RenderImageToStdout(placement *ImagePlacement, screenRow int, screenCol ...int) {
 	if placement.Base64 == "" {
 		return
+	}
+
+	col := 1
+	if len(screenCol) > 0 && screenCol[0] > 0 {
+		col = screenCol[0]
 	}
 
 	useKitty := kittySupported() || ghosttySupported() || weztermSupported() || waystSupported() || konsoleSupported()
@@ -525,11 +530,11 @@ func RenderImageToStdout(placement *ImagePlacement, screenRow int) {
 			placement.Uploaded = true
 		}
 		seq := kittyDisplayImage(placement.ID)
-		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;1H%s\x1b[u", screenRow+1, seq)
+		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", screenRow+1, col, seq)
 		os.Stdout.Sync()
 	} else if useIterm2 {
 		seq := iterm2ImageEscapeOnly(placement.Base64)
-		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;1H%s\x1b[u", screenRow+1, seq)
+		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", screenRow+1, col, seq)
 		os.Stdout.Sync()
 	}
 }

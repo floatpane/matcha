@@ -99,10 +99,6 @@ type PreviewBodyFetchedMsg struct {
 	Err         error
 }
 
-type SaveSplitPaneConfigMsg struct {
-	Enabled bool
-}
-
 type FetchErr error
 
 type GoToInboxMsg struct{}
