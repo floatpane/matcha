@@ -28,6 +28,7 @@ var dateStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
 var unreadEmailStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 var readEmailStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 var visualSelectedStyle lipgloss.Style
+var selectedDateStyle lipgloss.Style
 
 type item struct {
 	title, desc   string
@@ -79,12 +80,12 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		layout = d.inbox.dateFormat
 	}
 	dateStr := formatRelativeDate(i.date, layout)
-	listWidth := m.Width()
+	listWidth := m.Width() - 2 // account for PaddingLeft(2) in itemStyle
 	isSelected := index == m.Index()
 
 	styledDate := dateStyle.Render(dateStr)
 	if isSelected {
-		styledDate = selectedItemStyle.Render(dateStr)
+		styledDate = selectedDateStyle.Render(dateStr)
 	} else {
 		styledDate = statusStyle.Render(dateStr)
 	}
@@ -102,8 +103,24 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	prefixWidth := lipgloss.Width(prefix)
 	iconWidth := lipgloss.Width(styledIcon) + 1
-	senderWidth := lipgloss.Width(styledSender)
 	sepWidth := len(separator)
+
+	availableForText := maxLeft - prefixWidth - iconWidth - sepWidth
+	if availableForText < 10 {
+		availableForText = 10
+	}
+
+	maxSenderWidth := availableForText / 2
+	if lipgloss.Width(sender) > maxSenderWidth {
+		runes := []rune(sender)
+		for lipgloss.Width(string(runes)) > maxSenderWidth-1 && len(runes) > 0 {
+			runes = runes[:len(runes)-1]
+		}
+		sender = string(runes) + "…"
+		styledSender = statusStyle.Render(sender)
+	}
+
+	senderWidth := lipgloss.Width(styledSender)
 	subjectBudget := maxLeft - prefixWidth - iconWidth - senderWidth - sepWidth
 
 	subject := i.title
@@ -111,10 +128,11 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		subjectBudget = 4
 	}
 	if lipgloss.Width(subject) > subjectBudget {
-		for lipgloss.Width(subject) > subjectBudget-1 && len(subject) > 0 {
-			subject = subject[:len(subject)-1]
+		runes := []rune(subject)
+		for lipgloss.Width(string(runes)) > subjectBudget-1 && len(runes) > 0 {
+			runes = runes[:len(runes)-1]
 		}
-		subject += "…"
+		subject = string(runes) + "…"
 	}
 	styledSubject := statusStyle.Render(subject)
 
