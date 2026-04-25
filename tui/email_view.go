@@ -323,27 +323,28 @@ func (m *EmailView) View() tea.View {
 	os.Stdout.WriteString("\x1b_Ga=d,d=a\x1b\\")
 	os.Stdout.Sync()
 
-	cryptoStatus := ""
+	var cryptoStatus strings.Builder
+
 	if m.isEncrypted {
-		cryptoStatus = lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [S/MIME: 🔒 Encrypted]")
+		cryptoStatus.WriteString(lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [S/MIME: 🔒 Encrypted]"))
 	} else if m.isSMIME {
 		if m.smimeTrusted {
-			cryptoStatus = lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [S/MIME: ✅ Trusted]")
+			cryptoStatus.WriteString(lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [S/MIME: ✅ Trusted]"))
 		} else {
-			cryptoStatus = lipgloss.NewStyle().Foreground(theme.ActiveTheme.Danger).Render(" [S/MIME: ❌ Untrusted]")
+			cryptoStatus.WriteString(lipgloss.NewStyle().Foreground(theme.ActiveTheme.Danger).Render(" [S/MIME: ❌ Untrusted]"))
 		}
 	}
 	if m.isPGPEncrypted {
-		cryptoStatus += lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [PGP: 🔒 Encrypted]")
+		cryptoStatus.WriteString(lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [PGP: 🔒 Encrypted]"))
 	} else if m.isPGP {
 		if m.pgpTrusted {
-			cryptoStatus += lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [PGP: ✅ Verified]")
+			cryptoStatus.WriteString(lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [PGP: ✅ Verified]"))
 		} else {
-			cryptoStatus += lipgloss.NewStyle().Foreground(theme.ActiveTheme.Danger).Render(" [PGP: ⚠️ Unverified]")
+			cryptoStatus.WriteString(lipgloss.NewStyle().Foreground(theme.ActiveTheme.Danger).Render(" [PGP: ⚠️ Unverified]"))
 		}
 	}
 
-	header := fmt.Sprintf("To: %s | From: %s | Subject: %s%s", strings.Join(m.email.To, ", "), m.email.From, m.email.Subject, cryptoStatus)
+	header := fmt.Sprintf("To: %s | From: %s | Subject: %s%s", strings.Join(m.email.To, ", "), m.email.From, m.email.Subject, cryptoStatus.String())
 	styledHeader := emailHeaderStyle.Width(m.viewport.Width()).Render(header)
 
 	var help string
@@ -354,17 +355,22 @@ func (m *EmailView) View() tea.View {
 		}
 		help = helpStyle.Render(helpText)
 	} else {
-		shortcuts := "\uf112 r: reply • \uf064 f: forward • \uea81 d: delete • \uea98 a: archive • \uf435 tab: focus attachments • \ueb06 esc: back to inbox"
+		var shortcuts strings.Builder
+		shortcuts.WriteString("\uf112 r: reply • \uf064 f: forward • \uea81 d: delete • \uea98 a: archive • \uf435 tab: focus attachments • \ueb06 esc: back to inbox")
 		if view.ImageProtocolSupported() {
-			shortcuts = shortcuts + "• \uf03e i: toggle images"
+			shortcuts.WriteString("• \uf03e i: toggle images")
 		}
 		for _, pk := range m.pluginKeyBindings {
-			shortcuts += " • " + pk.Key + ": " + pk.Description
+			shortcuts.WriteString(" • ")
+			shortcuts.WriteString(pk.Key)
+			shortcuts.WriteString(": ")
+			shortcuts.WriteString(pk.Description)
 		}
 		if m.pluginStatus != "" {
-			shortcuts += " • " + m.pluginStatus
+			shortcuts.WriteString(" • ")
+			shortcuts.WriteString(m.pluginStatus)
 		}
-		help = helpStyle.Render(shortcuts)
+		help = helpStyle.Render(shortcuts.String())
 	}
 
 	var attachmentView string
