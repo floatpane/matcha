@@ -65,10 +65,12 @@ jobs:
             });
             core.setOutput('ref', pr.head.ref);
             core.setOutput('sha', pr.head.sha);
+            core.setOutput('repo', pr.head.repo.full_name);
 
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          repository: ${{ steps.pr.outputs.repo }}
           ref: ${{ steps.pr.outputs.ref }}
           fetch-depth: 0
 
