@@ -142,6 +142,7 @@
       "disable_images": "画像表示を無効化",
       "hide_tips": "コンテキストヒントを非表示",
       "disable_notifications": "通知を無効化",
+      "enable_split_pane": "分割ビュー",
       "date_format": "日付形式",
       "language": "言語",
       "signature": "署名を編集",

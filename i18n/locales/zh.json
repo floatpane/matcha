@@ -142,6 +142,7 @@
       "disable_images": "禁用图片显示",
       "hide_tips": "隐藏上下文提示",
       "disable_notifications": "禁用通知",
+      "enable_split_pane": "分屏视图",
       "date_format": "日期格式",
       "language": "语言",
       "signature": "编辑签名",
