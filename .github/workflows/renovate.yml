@@ -7,7 +7,14 @@ jobs:
   renovate:
     runs-on: ubuntu-latest
     steps:
-      - uses: renovatebot/github-action@v41
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Run Renovate
+        uses: renovatebot/github-action@v46.1.10
         with:
           token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
           configurationFile: renovate.json
+        env:
+          RENOVATE_REPOSITORIES: floatpane/matcha
