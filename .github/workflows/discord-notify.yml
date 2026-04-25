@@ -8,7 +8,7 @@ jobs:
   notify-discord:
     name: Notify Discord Channel
     runs-on: ubuntu-latest
-    if: github.event.release.tag_name != 'nightlyv0'
+    if: github.event.release.prerelease == false
 
     steps:
       - name: Send Discord Message
