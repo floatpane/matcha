@@ -172,12 +172,11 @@ jobs:
           # Delete existing preview release for this PR
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
 
-          # Create draft release
+          # Create prerelease
           gh release create "$TAG" dist/*.tar.gz dist/*.zip dist/checksums.txt \
             --title "Preview Build (PR #${{ github.event.issue.number }} @ ${SHORT_SHA})" \
             --notes "Preview build from PR #${{ github.event.issue.number }} at commit ${SHORT_SHA}. **Not for production use.**" \
-            --prerelease \
-            --target "$SHA"
+            --prerelease
 
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
