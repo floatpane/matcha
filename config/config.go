@@ -380,6 +380,7 @@ type secureDiskConfig struct {
 	DisableImages        bool                `json:"disable_images,omitempty"`
 	HideTips             bool                `json:"hide_tips,omitempty"`
 	DisableNotifications bool                `json:"disable_notifications,omitempty"`
+	EnableSplitPane      bool                `json:"enable_split_pane,omitempty"`
 	Theme                string              `json:"theme,omitempty"`
 	MailingLists         []MailingList       `json:"mailing_lists,omitempty"`
 	DateFormat           string              `json:"date_format,omitempty"`
@@ -423,6 +424,7 @@ func SaveConfig(config *Config) error {
 			DisableImages:        config.DisableImages,
 			HideTips:             config.HideTips,
 			DisableNotifications: config.DisableNotifications,
+			EnableSplitPane:      config.EnableSplitPane,
 			Theme:                config.Theme,
 			MailingLists:         config.MailingLists,
 			DateFormat:           config.DateFormat,
@@ -515,6 +517,7 @@ func LoadConfig() (*Config, error) {
 		DisableImages        bool          `json:"disable_images,omitempty"`
 		HideTips             bool          `json:"hide_tips,omitempty"`
 		DisableNotifications bool          `json:"disable_notifications,omitempty"`
+		EnableSplitPane      bool          `json:"enable_split_pane,omitempty"`
 		Theme                string        `json:"theme,omitempty"`
 		MailingLists         []MailingList `json:"mailing_lists,omitempty"`
 		DateFormat           string        `json:"date_format,omitempty"`
@@ -549,6 +552,7 @@ func LoadConfig() (*Config, error) {
 	config.DisableImages = raw.DisableImages
 	config.HideTips = raw.HideTips
 	config.DisableNotifications = raw.DisableNotifications
+	config.EnableSplitPane = raw.EnableSplitPane
 	config.Theme = raw.Theme
 	config.MailingLists = raw.MailingLists
 	config.DateFormat = raw.DateFormat
