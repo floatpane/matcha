@@ -1,0 +1,222 @@
+name: "Bot - /build"
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  build:
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/build')
+    runs-on: macos-latest
+    steps:
+      - name: Check org membership
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          script: |
+            const user = context.payload.comment.user.login;
+            try {
+              const { status } = await github.rest.orgs.checkMembershipForUser({
+                org: 'floatpane',
+                username: user
+              });
+              if (status !== 204 && status !== 302) {
+                core.setFailed(`@${user} is not a member of the floatpane org.`);
+              }
+            } catch (e) {
+              await github.rest.reactions.createForIssueComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: context.payload.comment.id,
+                content: '-1'
+              });
+              core.setFailed(`@${user} is not a member of the floatpane org.`);
+            }
+
+      - name: React to comment
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+
+      - name: Get PR ref
+        id: pr
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            core.setOutput('ref', pr.head.ref);
+            core.setOutput('sha', pr.head.sha);
+            core.setOutput('repo', pr.head.repo.full_name);
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ steps.pr.outputs.repo }}
+          ref: ${{ steps.pr.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.2"
+
+      - name: Set up Zig
+        uses: goto-bus-stop/setup-zig@v2
+
+      - name: Set up libpcsclite for Linux cross-compilation
+        run: |
+          PCSC_DIR="$RUNNER_TEMP/pcsclite"
+          mkdir -p "$PCSC_DIR/include" "$PCSC_DIR/lib/pkgconfig"
+
+          # Download pcsc-lite headers from upstream
+          PCSC_URL="https://raw.githubusercontent.com/LudovicRousseau/PCSC/master/src/PCSC"
+          for header in winscard.h wintypes.h; do
+            curl -fsSL "$PCSC_URL/$header" -o "$PCSC_DIR/include/$header"
+          done
+          curl -fsSL "$PCSC_URL/pcsclite.h.in" -o "$PCSC_DIR/include/pcsclite.h"
+          sed -i '' 's/@VERSION@/1.9.0/' "$PCSC_DIR/include/pcsclite.h"
+
+          # Build stub library
+          cat > "$RUNNER_TEMP/pcsclite_stub.c" << 'STUB'
+          #include <stddef.h>
+          typedef long LONG;
+          typedef unsigned long DWORD;
+          typedef void *LPCVOID;
+          typedef char *LPSTR;
+          typedef const char *LPCSTR;
+          typedef unsigned char *LPBYTE;
+          typedef unsigned char BYTE;
+          typedef LONG SCARDCONTEXT;
+          typedef LONG SCARDHANDLE;
+          typedef struct { DWORD dwProtocol; DWORD cbPciLength; } SCARD_IO_REQUEST;
+          typedef struct { LPCSTR szReader; DWORD dwCurrentState; DWORD dwEventState; DWORD cbAtr; unsigned char rgbAtr[36]; void *pvUserData; } SCARD_READERSTATE;
+          LONG SCardEstablishContext(DWORD s, LPCVOID r1, LPCVOID r2, SCARDCONTEXT *c) { return 0; }
+          LONG SCardReleaseContext(SCARDCONTEXT c) { return 0; }
+          LONG SCardIsValidContext(SCARDCONTEXT c) { return 0; }
+          LONG SCardCancel(SCARDCONTEXT c) { return 0; }
+          LONG SCardConnect(SCARDCONTEXT c, LPCSTR r, DWORD s, DWORD p, SCARDHANDLE *h, DWORD *ap) { return 0; }
+          LONG SCardReconnect(SCARDHANDLE h, DWORD s, DWORD p, DWORD d, DWORD *ap) { return 0; }
+          LONG SCardDisconnect(SCARDHANDLE h, DWORD d) { return 0; }
+          LONG SCardBeginTransaction(SCARDHANDLE h) { return 0; }
+          LONG SCardEndTransaction(SCARDHANDLE h, DWORD d) { return 0; }
+          LONG SCardStatus(SCARDHANDLE h, LPSTR r, DWORD *rl, DWORD *s, DWORD *p, LPBYTE a, DWORD *al) { return 0; }
+          LONG SCardTransmit(SCARDHANDLE h, const SCARD_IO_REQUEST *si, const BYTE *s, DWORD sl, SCARD_IO_REQUEST *ri, BYTE *r, DWORD *rl) { return 0; }
+          LONG SCardControl(SCARDHANDLE h, DWORD c, LPCVOID i, DWORD il, void *o, DWORD ol, DWORD *br) { return 0; }
+          LONG SCardGetAttrib(SCARDHANDLE h, DWORD a, LPBYTE b, DWORD *bl) { return 0; }
+          LONG SCardSetAttrib(SCARDHANDLE h, DWORD a, const BYTE *b, DWORD bl) { return 0; }
+          LONG SCardListReaders(SCARDCONTEXT c, LPCSTR g, LPSTR r, DWORD *rl) { return 0; }
+          LONG SCardListReaderGroups(SCARDCONTEXT c, LPSTR g, DWORD *gl) { return 0; }
+          LONG SCardGetStatusChange(SCARDCONTEXT c, DWORD t, SCARD_READERSTATE *s, DWORD n) { return 0; }
+          LONG SCardFreeMemory(SCARDCONTEXT c, LPCVOID m) { return 0; }
+          const char *pcsc_stringify_error(LONG e) { return "stub"; }
+          STUB
+
+          zig cc -c -target x86_64-linux-musl -o "$RUNNER_TEMP/pcsclite_stub_amd64.o" "$RUNNER_TEMP/pcsclite_stub.c"
+          zig cc -c -target aarch64-linux-musl -o "$RUNNER_TEMP/pcsclite_stub_arm64.o" "$RUNNER_TEMP/pcsclite_stub.c"
+
+          mkdir -p "$PCSC_DIR/lib/amd64" "$PCSC_DIR/lib/arm64"
+          ar rcs "$PCSC_DIR/lib/amd64/libpcsclite.a" "$RUNNER_TEMP/pcsclite_stub_amd64.o"
+          ar rcs "$PCSC_DIR/lib/arm64/libpcsclite.a" "$RUNNER_TEMP/pcsclite_stub_arm64.o"
+
+          cat > "$PCSC_DIR/lib/pkgconfig/libpcsclite.pc" << EOF
+          Name: libpcsclite
+          Description: PC/SC Lite
+          Version: 1.9.0
+          Cflags: -I$PCSC_DIR/include
+          Libs: -L$PCSC_DIR/lib/amd64 -lpcsclite
+          EOF
+
+          echo "PKG_CONFIG_PATH=$PCSC_DIR/lib/pkgconfig" >> $GITHUB_ENV
+          echo "PCSC_DIR=$PCSC_DIR" >> $GITHUB_ENV
+
+      - name: Get macOS SDK path
+        id: macos_sdk
+        run: echo "path=$(xcrun --show-sdk-path)" >> $GITHUB_OUTPUT
+
+      - name: Build with GoReleaser (snapshot)
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: latest
+          args: release --snapshot --clean --config .goreleaser.preview.yml
+        env:
+          SDK_PATH: ${{ steps.macos_sdk.outputs.path }}
+
+      - name: Create preview release and upload assets
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+        run: |
+          TAG="preview-pr${{ github.event.issue.number }}"
+          SHA="${{ steps.pr.outputs.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+
+          # Delete existing preview release for this PR
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+
+          # Create draft release
+          gh release create "$TAG" dist/*.tar.gz dist/*.zip dist/checksums.txt \
+            --title "Preview Build (PR #${{ github.event.issue.number }} @ ${SHORT_SHA})" \
+            --notes "Preview build from PR #${{ github.event.issue.number }} at commit ${SHORT_SHA}. **Not for production use.**" \
+            --prerelease \
+            --target "$SHA"
+
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Post comment with download links
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          script: |
+            const sha = '${{ steps.pr.outputs.sha }}'.slice(0, 7);
+            const tag = '${{ steps.release.outputs.tag }}';
+            const base = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/releases/download/${tag}`;
+
+            const files = [
+              ['Linux', 'amd64', 'matcha_preview_linux_amd64.tar.gz'],
+              ['Linux', 'arm64', 'matcha_preview_linux_arm64.tar.gz'],
+              ['macOS', 'amd64', 'matcha_preview_darwin_amd64.tar.gz'],
+              ['macOS', 'arm64', 'matcha_preview_darwin_arm64.tar.gz'],
+              ['Windows', 'amd64', 'matcha_preview_windows_amd64.zip'],
+              ['Windows', 'arm64', 'matcha_preview_windows_arm64.zip'],
+            ];
+
+            const rows = files.map(([os, arch, file]) =>
+              `| ${os} | ${arch} | [${file}](${base}/${file}) |`
+            ).join('\n');
+
+            const body = [
+              `### Build complete (\`${sha}\`)`,
+              '',
+              '> [!WARNING]',
+              '> This is an **unreviewed PR build** and has not been security audited. It may contain bugs, vulnerabilities, or malicious code. **Do not use for daily use.** Only use for testing purposes.',
+              '',
+              '| OS | Arch | Download |',
+              '|---|---|---|',
+              rows,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
