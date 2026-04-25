@@ -50,6 +50,7 @@ type EmailView struct {
 	hasCalendarInvite  bool
 	calendarEvent      *calendar.Event
 	originalICSData    []byte
+	isPreviewMode      bool
 }
 
 func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox MailboxKind, disableImages bool) *EmailView {
@@ -152,7 +153,15 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 		hasCalendarInvite: calendarEvent != nil,
 		calendarEvent:     calendarEvent,
 		originalICSData:   originalICSData,
+		isPreviewMode:     false,
 	}
+}
+
+// NewEmailViewPreview creates EmailView in preview mode (disables certain actions)
+func NewEmailViewPreview(email fetcher.Email, width, height int, disableImages bool) *EmailView {
+	ev := NewEmailView(email, 0, width, height, MailboxInbox, disableImages)
+	ev.isPreviewMode = true
+	return ev
 }
 
 func (m *EmailView) Init() tea.Cmd {
@@ -165,6 +174,16 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
+		// In preview mode, disable certain actions
+		if m.isPreviewMode {
+			switch msg.String() {
+			case "esc", "r", "f", "d", "a", "tab", "1", "2", "3", "i":
+				// Disable: esc (let parent handle), reply, forward, delete, archive,
+				// tab (attachment focus), calendar RSVP, image toggle
+				return m, nil
+			}
+		}
+
 		// Handle 'esc' key locally
 		if msg.String() == "esc" {
 			if m.focusOnAttachments {

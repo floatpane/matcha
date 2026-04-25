@@ -86,6 +86,23 @@ type EmailsFetchedMsg struct {
 	Mailbox   MailboxKind
 }
 
+type UpdatePreviewMsg struct {
+	UID       uint32
+	AccountID string
+}
+
+type PreviewBodyFetchedMsg struct {
+	UID         uint32
+	AccountID   string
+	Body        string
+	Attachments []fetcher.Attachment
+	Err         error
+}
+
+type SaveSplitPaneConfigMsg struct {
+	Enabled bool
+}
+
 type FetchErr error
 
 type GoToInboxMsg struct{}

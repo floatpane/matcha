@@ -451,6 +451,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.folderInbox = tui.NewFolderInbox(cachedFolders, m.config.Accounts)
 		m.folderInbox.SetDateFormat(m.config.GetDateFormat())
+		m.folderInbox.SetSplitPaneEnabled(m.config.EnableSplitPane)
 		// Use cached INBOX emails for instant display (memory first, then disk)
 		if cached, ok := m.folderEmails["INBOX"]; ok && len(cached) > 0 {
 			m.folderInbox.SetEmails(cached, m.config.Accounts)
@@ -688,6 +689,48 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.previousModel = m.current
 		m.current = tui.NewStatus("Moving email...")
 		return m, tea.Batch(m.current.Init(), moveEmailToFolderCmd(account, msg.UID, msg.AccountID, msg.SourceFolder, msg.DestFolder))
+
+	case tui.UpdatePreviewMsg:
+		// Trigger preview body fetch
+		if m.folderInbox == nil {
+			return m, nil
+		}
+		folderName := m.folderInbox.GetCurrentFolder()
+		return m, fetchPreviewBodyCmd(m.config, msg.UID, msg.AccountID, folderName)
+
+	case tui.PreviewBodyFetchedMsg:
+		// Cache body and forward to FolderInbox
+		if msg.Err == nil && m.folderInbox != nil {
+			folderName := m.folderInbox.GetCurrentFolder()
+			var cachedAttachments []config.CachedAttachment
+			for _, a := range msg.Attachments {
+				cachedAttachments = append(cachedAttachments, config.CachedAttachment{
+					Filename:  a.Filename,
+					PartID:    a.PartID,
+					Encoding:  a.Encoding,
+					MIMEType:  a.MIMEType,
+					ContentID: a.ContentID,
+					Inline:    a.Inline,
+				})
+			}
+			go config.SaveEmailBody(folderName, config.CachedEmailBody{
+				UID:         msg.UID,
+				AccountID:   msg.AccountID,
+				Body:        msg.Body,
+				Attachments: cachedAttachments,
+			})
+		}
+		// Forward to FolderInbox for rendering
+		if m.folderInbox != nil {
+			m.current, cmd = m.current.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+
+	case tui.SaveSplitPaneConfigMsg:
+		m.config.EnableSplitPane = msg.Enabled
+		_ = config.SaveConfig(m.config)
+		return m, nil
 
 	case tui.EmailMovedMsg:
 		if msg.Err != nil {
@@ -2539,6 +2582,27 @@ func fetchFolderEmailBodyCmd(cfg *config.Config, uid uint32, accountID string, f
 			Attachments: attachments,
 			AccountID:   accountID,
 			Mailbox:     mailbox,
+		}
+	}
+}
+
+func fetchPreviewBodyCmd(cfg *config.Config, uid uint32, accountID string, folderName string) tea.Cmd {
+	return func() tea.Msg {
+		account := cfg.GetAccountByID(accountID)
+		if account == nil {
+			return tui.PreviewBodyFetchedMsg{UID: uid, AccountID: accountID, Err: fmt.Errorf("account not found")}
+		}
+
+		body, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
+		if err != nil {
+			return tui.PreviewBodyFetchedMsg{UID: uid, AccountID: accountID, Err: err}
+		}
+
+		return tui.PreviewBodyFetchedMsg{
+			UID:         uid,
+			Body:        body,
+			Attachments: attachments,
+			AccountID:   accountID,
 		}
 	}
 }
