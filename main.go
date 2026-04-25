@@ -3559,7 +3559,9 @@ func main() {
 	}
 
 	// Migrate cache files from ~/.config/matcha/ to ~/.cache/matcha/ if needed
-	_ = config.MigrateCacheFiles()
+	if err := config.MigrateCacheFiles(); err != nil {
+		log.Printf("warning: cache migration failed: %v", err)
+	}
 
 	// Initialize i18n
 	if err := i18n.Init("en"); err != nil {
