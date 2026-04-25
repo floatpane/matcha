@@ -167,6 +167,17 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.inbox.list.FilterState() == list.Filtering {
 			break
 		}
+
+		// Route input to preview pane when focused
+		if m.previewPane != nil && m.focusedPane == FocusPreview {
+			s := msg.String()
+			if s != "[" && s != "]" && s != "esc" && s != "q" {
+				var cmd tea.Cmd
+				_, cmd = m.previewPane.Update(msg)
+				return m, cmd
+			}
+		}
+
 		switch msg.String() {
 		case "]":
 			// Switch focus to preview pane
@@ -199,14 +210,6 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			// Otherwise let inbox handle (or parent)
-		case "j", "k", "down", "up":
-			// Route based on focus
-			if m.previewPane != nil && m.focusedPane == FocusPreview {
-				// Forward to preview pane for scrolling
-				var cmd tea.Cmd
-				_, cmd = m.previewPane.Update(msg)
-				return m, cmd
-			}
 		case "m":
 			// Start move-to-folder flow
 			if m.inbox.visualMode && len(m.inbox.selectedUIDs) > 0 {

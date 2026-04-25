@@ -176,16 +176,6 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		// In preview mode, disable certain actions
-		if m.isPreviewMode {
-			switch msg.String() {
-			case "esc", "r", "f", "d", "a", "tab", "1", "2", "3", "i":
-				// Disable: esc (let parent handle), reply, forward, delete, archive,
-				// tab (attachment focus), calendar RSVP, image toggle
-				return m, nil
-			}
-		}
-
 		// Handle 'esc' key locally
 		if msg.String() == "esc" {
 			if m.focusOnAttachments {
