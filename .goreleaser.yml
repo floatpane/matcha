@@ -6,6 +6,7 @@ version: 2
 git:
   ignore_tags:
     - nightly*
+    - preview*
 
 # The 'before' hook runs commands before the build process starts.
 before:
