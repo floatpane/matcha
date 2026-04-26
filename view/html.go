@@ -257,6 +257,11 @@ func ImageProtocolSupported() bool {
 	return imageProtocolSupported()
 }
 
+// SixelSupported returns true if the terminal uses the Sixel graphics protocol.
+func SixelSupported() bool {
+	return sixelSupported()
+}
+
 // imageProtocolSupported checks if any supported image protocol terminal is detected.
 func imageProtocolSupported() bool {
 	return sixelSupported() || kittySupported() || ghosttySupported() || iterm2Supported() ||
@@ -581,16 +586,20 @@ func RenderImageToStdout(placement *ImagePlacement, screenRow int, screenCol ...
 	// Priority: Sixel in multiplexers
 	if sixelSupported() {
 		debugImageProtocol("Sixel: RenderImageToStdout row=%d col=%d base64len=%d", screenRow, col, len(placement.Base64))
-		seq := sixelImageEscapeOnly(placement.Base64)
-		if seq == "" {
-			debugImageProtocol("Sixel: sixelImageEscapeOnly returned empty")
-			return
+
+		// Encode once, reuse cached Sixel on subsequent renders (like Kitty's upload-once pattern)
+		if placement.SixelEncoded == "" {
+			placement.SixelEncoded = sixelImageEscapeOnly(placement.Base64)
+			if placement.SixelEncoded == "" {
+				debugImageProtocol("Sixel: sixelImageEscapeOnly returned empty")
+				return
+			}
 		}
 
-		debugImageProtocol("Sixel: rendering %d bytes at row=%d col=%d", len(seq), screenRow+1, col)
+		debugImageProtocol("Sixel: rendering %d bytes at row=%d col=%d", len(placement.SixelEncoded), screenRow+1, col)
 		// Position cursor + render Sixel
 		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u",
-			screenRow+1, col, seq)
+			screenRow+1, col, placement.SixelEncoded)
 		os.Stdout.Sync()
 		return
 	}
@@ -640,11 +649,12 @@ type InlineImage struct {
 // line in the email body. Images are rendered directly to stdout (bypassing
 // bubbletea's cell-based renderer which cannot handle graphics protocols).
 type ImagePlacement struct {
-	Line     int    // Line number in the processed body text where the image starts
-	Base64   string // Base64-encoded image data (PNG)
-	Rows     int    // Number of terminal rows the image occupies
-	Uploaded bool   // Whether the image has been uploaded to the terminal via Kitty ID
-	ID       uint32 // Kitty image ID for display-by-reference
+	Line         int    // Line number in the processed body text where the image starts
+	Base64       string // Base64-encoded image data (PNG)
+	Rows         int    // Number of terminal rows the image occupies
+	Uploaded     bool   // Whether the image has been uploaded to the terminal via Kitty ID
+	ID           uint32 // Kitty image ID for display-by-reference
+	SixelEncoded string // Cached Sixel escape sequence (encode once, reuse on scroll)
 }
 
 // ProcessBodyWithInline renders the body and resolves CID inline images when provided.
