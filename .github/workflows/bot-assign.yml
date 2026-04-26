@@ -1,0 +1,49 @@
+name: "Bot - /assign"
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+
+jobs:
+  assign:
+    if: >-
+      !github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/assign')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assign issue
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          script: |
+            const user = context.payload.comment.user.login;
+            const issue = context.issue.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            try {
+              await github.rest.issues.addAssignees({
+                owner,
+                repo,
+                issue_number: issue,
+                assignees: [user]
+              });
+
+              await github.rest.reactions.createForIssueComment({
+                owner,
+                repo,
+                comment_id: context.payload.comment.id,
+                content: '+1'
+              });
+            } catch (e) {
+              await github.rest.reactions.createForIssueComment({
+                owner,
+                repo,
+                comment_id: context.payload.comment.id,
+                content: '-1'
+              });
+              core.setFailed(`Failed to assign @${user}: ${e.message}`);
+            }
