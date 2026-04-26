@@ -17,6 +17,16 @@ Full support is provided for terminals implementing the Kitty Graphics Protocol.
 - [Wayst](https://github.com/91861/wayst)
 - [Konsole](https://konsole.kde.org/)
 
+### 🖼️ Sixel
+
+Support for the Sixel graphics format, a bitmap protocol widely supported across terminal emulators and multiplexers.
+
+**Supported Terminals:**
+- [Foot](https://codeberg.org/dnkl/foot)
+- [mlterm](https://github.com/arakiken/mlterm)
+- [Zellij](https://zellij.dev/) (multiplexer — works on top of any terminal)
+- Any terminal with `TERM` containing `xterm` and `SIXEL=1` environment variable set
+
 ### 🖼️ iTerm2 Inline Images
 
 Native support is included for the iTerm2 inline image protocol.
