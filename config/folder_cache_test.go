@@ -10,11 +10,14 @@ import (
 
 // folderCacheTestSetup redirects HOME to a per-test temp directory so
 // cacheDir() resolves under the temp tree and the cache file does not
-// collide with the user's real ~/.cache/matcha state.
+// collide with the user's real ~/.cache/matcha state. USERPROFILE is set
+// for the same reason on Windows, where os.UserHomeDir() reads it instead
+// of HOME.
 func folderCacheTestSetup(t *testing.T) string {
 	t.Helper()
 	tempDir := t.TempDir()
 	t.Setenv("HOME", tempDir)
+	t.Setenv("USERPROFILE", tempDir)
 	return tempDir
 }
 
