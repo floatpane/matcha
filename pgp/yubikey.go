@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/big"
 	"os"
+	"strings"
 	"time"
 
 	pgpcrypto "github.com/ProtonMail/go-crypto/openpgp"
@@ -478,29 +479,29 @@ func GetYubiKeyInfo() (string, error) {
 	}
 	defer card.Close()
 
-	var info string
+	var info strings.Builder
 
 	aid := card.ApplicationRelated.AID
-	info += fmt.Sprintf("Manufacturer: %s\n", aid.Manufacturer)
-	info += fmt.Sprintf("Serial:       %X\n", aid.Serial)
-	info += fmt.Sprintf("Version:      %s\n", aid.Version)
+	info.WriteString(fmt.Sprintf("Manufacturer: %s\n", aid.Manufacturer))
+	info.WriteString(fmt.Sprintf("Serial:       %X\n", aid.Serial))
+	info.WriteString(fmt.Sprintf("Version:      %s\n", aid.Version))
 
 	ch, err := card.GetCardholder()
 	if err == nil && ch.Name != "" {
-		info += fmt.Sprintf("Cardholder:   %s\n", ch.Name)
+		info.WriteString(fmt.Sprintf("Cardholder:   %s\n", ch.Name))
 	}
 
 	if keys := card.ApplicationRelated.Keys; keys != nil {
 		if ki, ok := keys[openpgp.KeySign]; ok {
-			info += fmt.Sprintf("Sign Key:     %s", ki.AlgAttrs)
+			info.WriteString(fmt.Sprintf("Sign Key:     %s", ki.AlgAttrs))
 			if ki.Status == openpgp.KeyGenerated {
-				info += " (generated)"
+				info.WriteString(" (generated)")
 			} else if ki.Status == openpgp.KeyImported {
-				info += " (imported)"
+				info.WriteString(" (imported)")
 			}
-			info += "\n"
+			info.WriteString("\n")
 		}
 	}
 
-	return info, nil
+	return info.String(), nil
 }
