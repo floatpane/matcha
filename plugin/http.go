@@ -4,19 +4,15 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	lua "github.com/yuin/gopher-lua"
+
+	"github.com/floatpane/matcha/internal/httpclient"
 )
 
-const (
-	httpTimeout     = 10 * time.Second
-	httpMaxBodySize = 1 << 20 // 1 MB
-)
+const httpMaxBodySize = 1 << 20 // 1 MB
 
-var httpClient = &http.Client{
-	Timeout: httpTimeout,
-}
+var httpClient = httpclient.New(httpclient.PluginCallTimeout)
 
 // luaHTTP implements matcha.http(options) — make an HTTP request.
 //

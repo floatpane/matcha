@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -39,6 +38,7 @@ import (
 	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/i18n"
 	_ "github.com/floatpane/matcha/i18n/languages"
+	"github.com/floatpane/matcha/internal/httpclient"
 	"github.com/floatpane/matcha/notify"
 	"github.com/floatpane/matcha/plugin"
 	"github.com/floatpane/matcha/sender"
@@ -62,16 +62,7 @@ var (
 	date    = ""
 
 	// httpClient is used for all outbound HTTP requests (update checks, asset downloads).
-	// Configured with a 30s timeout to prevent indefinite hangs on slow/unresponsive servers.
-	httpClient = &http.Client{
-		Timeout: 30 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return fmt.Errorf("stopped after 5 redirects")
-			}
-			return nil
-		},
-	}
+	httpClient = httpclient.NewWithRedirectCap(httpclient.UpdateCheckTimeout, 5)
 )
 
 // UpdateAvailableMsg is sent into the TUI when a newer release is detected.

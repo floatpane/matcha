@@ -7,7 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
+
+	"github.com/floatpane/matcha/internal/httpclient"
 )
 
 // RunInstall handles `matcha install <url_or_file>`.
@@ -22,7 +23,7 @@ func RunInstall(args []string) error {
 
 	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
 		// Download from URL
-		client := &http.Client{Timeout: 30 * time.Second}
+		client := httpclient.New(httpclient.InstallTimeout)
 		resp, err := client.Get(source)
 		if err != nil {
 			return fmt.Errorf("failed to download: %w", err)

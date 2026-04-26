@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
+
+	"github.com/floatpane/matcha/internal/httpclient"
 )
 
 const RegistryURL = "https://raw.githubusercontent.com/floatpane/matcha/master/plugins/registry.json"
@@ -22,7 +23,7 @@ type PluginEntry struct {
 
 // FetchRegistry fetches the plugin registry from GitHub.
 func FetchRegistry() ([]PluginEntry, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := httpclient.New(httpclient.RegistryFetchTimeout)
 	resp, err := client.Get(RegistryURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch registry: %w", err)
@@ -53,7 +54,7 @@ func FetchPlugin(entry PluginEntry) ([]byte, error) {
 		url = RawPluginBaseURL + entry.File
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := httpclient.New(httpclient.RegistryFetchTimeout)
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch plugin: %w", err)

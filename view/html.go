@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"mime/quotedprintable"
-	"net/http"
 	"os"
 	"regexp"
 	"strings"
@@ -14,6 +13,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/clib"
+	"github.com/floatpane/matcha/internal/httpclient"
 	"github.com/floatpane/matcha/theme"
 	lru "github.com/hashicorp/golang-lru/v2"
 )
@@ -297,7 +297,7 @@ func fetchRemoteBase64(url string) string {
 		return cached
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := httpclient.New(httpclient.RemoteImageTimeout)
 	resp, err := client.Get(url)
 	if err != nil {
 		debugImageProtocol("remote fetch failed url=%s err=%v", url, err)
