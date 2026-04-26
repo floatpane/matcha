@@ -3,6 +3,7 @@ package i18n
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // ValidationResult contains the results of validating translation files.
@@ -117,43 +118,43 @@ func (v *ValidationResult) String() string {
 		return "✓ All translations are valid"
 	}
 
-	var report string
+	var report strings.Builder
 
 	// Report errors
 	if len(v.Errors) > 0 {
-		report += "Errors:\n"
+		report.WriteString("Errors:\n")
 		for _, err := range v.Errors {
 			if err.Key != "" {
-				report += fmt.Sprintf("  [%s] %s: %s\n", err.Language, err.Key, err.Message)
+				report.WriteString(fmt.Sprintf("  [%s] %s: %s\n", err.Language, err.Key, err.Message))
 			} else {
-				report += fmt.Sprintf("  [%s] %s\n", err.Language, err.Message)
+				report.WriteString(fmt.Sprintf("  [%s] %s\n", err.Language, err.Message))
 			}
 		}
-		report += "\n"
+		report.WriteString("\n")
 	}
 
 	// Report missing keys
 	if len(v.Missing) > 0 {
-		report += "Missing translations:\n"
+		report.WriteString("Missing translations:\n")
 		for lang, keys := range v.Missing {
-			report += fmt.Sprintf("  [%s] %d missing keys:\n", lang, len(keys))
+			report.WriteString(fmt.Sprintf("  [%s] %d missing keys:\n", lang, len(keys)))
 			for _, key := range keys {
-				report += fmt.Sprintf("    - %s\n", key)
+				report.WriteString(fmt.Sprintf("    - %s\n", key))
 			}
 		}
-		report += "\n"
+		report.WriteString("\n")
 	}
 
 	// Report extra keys
 	if len(v.Extra) > 0 {
-		report += "Extra translations (not in base):\n"
+		report.WriteString("Extra translations (not in base):\n")
 		for lang, keys := range v.Extra {
-			report += fmt.Sprintf("  [%s] %d extra keys:\n", lang, len(keys))
+			report.WriteString(fmt.Sprintf("  [%s] %d extra keys:\n", lang, len(keys)))
 			for _, key := range keys {
-				report += fmt.Sprintf("    - %s\n", key)
+				report.WriteString(fmt.Sprintf("    - %s\n", key))
 			}
 		}
 	}
 
-	return report
+	return report.String()
 }
