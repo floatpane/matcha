@@ -468,6 +468,10 @@ func (m *EmailView) GetEmail() fetcher.Email {
 
 // renderCalendarInvite renders a calendar invite card
 func renderCalendarInvite(event *calendar.Event) string {
+	if event == nil {
+		return ""
+	}
+
 	style := lipgloss.NewStyle().
 		Border(lipgloss.DoubleBorder()).
 		BorderForeground(theme.ActiveTheme.Accent).
