@@ -11,6 +11,15 @@ import (
 	"github.com/floatpane/matcha/daemonrpc"
 )
 
+// Per-handler timeouts. fetchTimeout covers reads against the upstream IMAP
+// provider, which can return large bodies and so are given more headroom.
+// mutateTimeout covers state-changing operations and folder listings, which
+// are bounded by IMAP command latency rather than payload size.
+const (
+	fetchTimeout  = 60 * time.Second
+	mutateTimeout = 30 * time.Second
+)
+
 func (d *Daemon) handleRequest(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	switch req.Method {
 	case daemonrpc.MethodPing:
@@ -117,7 +126,7 @@ func (d *Daemon) handleFetchEmails(conn *daemonrpc.Conn, req *daemonrpc.Request)
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
 
 	emails, err := p.FetchEmails(ctx, params.Folder, params.Limit, params.Offset)
@@ -142,7 +151,7 @@ func (d *Daemon) handleFetchEmailBody(conn *daemonrpc.Conn, req *daemonrpc.Reque
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
 
 	body, attachments, err := p.FetchEmailBody(ctx, params.Folder, params.UID)
@@ -181,7 +190,7 @@ func (d *Daemon) handleDeleteEmails(conn *daemonrpc.Conn, req *daemonrpc.Request
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), mutateTimeout)
 	defer cancel()
 
 	if err := p.DeleteEmails(ctx, params.Folder, params.UIDs); err != nil {
@@ -204,7 +213,7 @@ func (d *Daemon) handleArchiveEmails(conn *daemonrpc.Conn, req *daemonrpc.Reques
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), mutateTimeout)
 	defer cancel()
 
 	if err := p.ArchiveEmails(ctx, params.Folder, params.UIDs); err != nil {
@@ -227,7 +236,7 @@ func (d *Daemon) handleMoveEmails(conn *daemonrpc.Conn, req *daemonrpc.Request) 
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), mutateTimeout)
 	defer cancel()
 
 	if err := p.MoveEmails(ctx, params.UIDs, params.SourceFolder, params.DestFolder); err != nil {
@@ -250,7 +259,7 @@ func (d *Daemon) handleMarkRead(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), mutateTimeout)
 	defer cancel()
 
 	// MarkAsRead only supports one UID at a time in the Provider interface.
@@ -275,7 +284,7 @@ func (d *Daemon) handleFetchFolders(conn *daemonrpc.Conn, req *daemonrpc.Request
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), mutateTimeout)
 	defer cancel()
 
 	folders, err := p.FetchFolders(ctx)
@@ -306,7 +315,7 @@ func (d *Daemon) handleRefreshFolder(conn *daemonrpc.Conn, req *daemonrpc.Reques
 			Folder:    params.Folder,
 		})
 
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
 
 		emails, err := p.FetchEmails(ctx, params.Folder, 50, 0)
