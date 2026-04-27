@@ -118,7 +118,7 @@ jobs:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
         run: |
           SHORT_SHA="$(git rev-parse --short HEAD)"
-          LATEST_TAG="$(git describe --tags --abbrev=0 --exclude='nightlyv*' 2>/dev/null || echo '')"
+          LATEST_TAG="$(git describe --tags --abbrev=0 --exclude='nightlyv*' --exclude='preview*' 2>/dev/null || echo '')"
 
           NOTES_FILE="$RUNNER_TEMP/release_notes.md"
           {
