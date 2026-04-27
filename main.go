@@ -3244,7 +3244,7 @@ func isFlagSet(fs *flag.FlagSet, name string) bool {
 	return found
 }
 
-func runUpdateCLI() error {
+func runUpdateCLI() (err error) {
 	const api = "https://api.github.com/repos/floatpane/matcha/releases/latest"
 	resp, err := httpClient.Get(api)
 	if err != nil {
@@ -3511,18 +3511,22 @@ func runUpdateCLI() error {
 	if err != nil {
 		return fmt.Errorf("could not open new binary: %w", err)
 	}
+	defer in.Close()
 	out, err := os.OpenFile(tmpNew, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 	if err != nil {
-		in.Close()
 		return fmt.Errorf("could not create temp binary in target dir: %w", err)
 	}
-	if _, err := io.Copy(out, in); err != nil {
-		in.Close()
-		out.Close()
+
+	defer func() {
+		cerr := out.Close()
+		if err == nil && cerr != nil {
+			err = fmt.Errorf("could not flush new binary to disk: %w", cerr)
+		}
+	}()
+
+	if _, err = io.Copy(out, in); err != nil {
 		return fmt.Errorf("could not write new binary to disk: %w", err)
 	}
-	in.Close()
-	out.Close()
 
 	// On Windows, a running executable cannot be overwritten directly.
 	// Move the old binary out of the way first, then rename the new one in.
