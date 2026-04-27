@@ -17,6 +17,7 @@ import (
 	"net/textproto"
 	"os"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -502,13 +503,9 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 		}
 
 		// Sort batch Newest -> Oldest by UID desc
-		for i := 0; i < len(batchEmails); i++ {
-			for j := i + 1; j < len(batchEmails); j++ {
-				if batchEmails[j].UID > batchEmails[i].UID {
-					batchEmails[i], batchEmails[j] = batchEmails[j], batchEmails[i]
-				}
-			}
-		}
+		sort.Slice(batchEmails, func(i, j int) bool {
+			return batchEmails[i].UID > batchEmails[j].UID
+		})
 
 		allEmails = append(allEmails, batchEmails...)
 		cursor = from - 1
