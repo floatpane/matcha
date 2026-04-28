@@ -31,14 +31,15 @@ const choiceLogo = `
 `
 
 type Choice struct {
-	cursor          int
-	choices         []string
-	hasSavedDrafts  bool
-	UpdateAvailable bool
-	LatestVersion   string
-	CurrentVersion  string
-	width           int
-	height          int
+	cursor           int
+	choices          []string
+	hasSavedDrafts   bool
+	UpdateAvailable  bool
+	LatestVersion    string
+	CurrentVersion   string
+	width            int
+	height           int
+	keybindWarnings  []string
 }
 
 func NewChoice() Choice {
@@ -53,13 +54,13 @@ func NewChoice() Choice {
 	choices = append(choices, "\uf487 "+t("choice.marketplace"))
 	choices = append(choices, "\uf013 "+t("choice.settings"))
 	return Choice{
-		choices:         choices,
-		hasSavedDrafts:  hasSavedDrafts,
-		UpdateAvailable: false,
-		LatestVersion:   "",
-		CurrentVersion:  "",
+		choices:          choices,
+		hasSavedDrafts:   hasSavedDrafts,
+		UpdateAvailable:  false,
+		LatestVersion:    "",
+		CurrentVersion:   "",
+		keybindWarnings:  config.ValidateKeybinds(config.Keybinds),
 	}
-
 }
 
 func (m Choice) Init() tea.Cmd {
@@ -73,12 +74,13 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 	case tea.KeyPressMsg:
+		kb := config.Keybinds
 		switch msg.String() {
-		case "up", "k":
+		case "up", kb.Global.NavUp:
 			if m.cursor > 0 {
 				m.cursor--
 			}
-		case "down", "j":
+		case "down", kb.Global.NavDown:
 			if m.cursor < len(m.choices)-1 {
 				m.cursor++
 			}
@@ -134,6 +136,16 @@ func (m Choice) View() tea.View {
 
 	b.WriteString(logoStyle.Render(choiceLogo))
 	b.WriteString("\n")
+
+	if len(m.keybindWarnings) > 0 {
+		warnStyle := lipgloss.NewStyle().Foreground(theme.ActiveTheme.Warning).Padding(0, 1)
+		for _, w := range m.keybindWarnings {
+			b.WriteString(warnStyle.Render("⚠ keybind " + w))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
 	b.WriteString(listHeader.Render(t("choice.what_to_do")))
 	b.WriteString("\n\n")
 

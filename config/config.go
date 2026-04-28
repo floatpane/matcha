@@ -475,6 +475,12 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	if dir, err := configDir(); err == nil {
+		if err := LoadKeybindsFromDir(dir); err != nil {
+			log.Printf("matcha: keybinds load error (using defaults): %v", err)
+		}
+	}
 	data, err := SecureReadFile(path)
 	if err != nil {
 		return nil, err

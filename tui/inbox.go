@@ -529,8 +529,9 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			break
 		}
+		kb := config.Keybinds
 		switch keypress := msg.String(); keypress {
-		case "v":
+		case kb.Inbox.VisualMode:
 			if !m.visualMode {
 				// Enter visual mode
 				m.visualMode = true
@@ -551,16 +552,16 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateListTitle()
 			}
 			return m, nil
-		case "esc":
+		case kb.Global.Cancel:
 			if m.visualMode {
-				// Exit visual mode on ESC
+				// Exit visual mode on cancel key
 				m.visualMode = false
 				m.selectedUIDs = make(map[uint32]string)
 				m.selectionOrder = []uint32{}
 				m.updateListTitle()
 				return m, nil
 			}
-		case "j", "down", "k", "up":
+		case kb.Global.NavDown, "down", kb.Global.NavUp, "up":
 			if m.visualMode {
 				// Let the list handle navigation first
 				var cmd tea.Cmd
@@ -569,7 +570,7 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateVisualSelection()
 				return m, cmd
 			}
-		case "left", "h":
+		case "left", kb.Inbox.PrevTab:
 			if len(m.tabs) > 1 {
 				m.activeTabIndex--
 				if m.activeTabIndex < 0 {
@@ -583,7 +584,7 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateList()
 				return m, nil
 			}
-		case "right", "l":
+		case "right", kb.Inbox.NextTab:
 			if len(m.tabs) > 1 {
 				m.activeTabIndex++
 				if m.activeTabIndex >= len(m.tabs) {
@@ -597,7 +598,7 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateList()
 				return m, nil
 			}
-		case "d":
+		case kb.Inbox.Delete:
 			if m.visualMode && len(m.selectedUIDs) > 0 {
 				// Batch delete
 				uids := make([]uint32, len(m.selectionOrder))
@@ -626,7 +627,7 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		case "a":
+		case kb.Inbox.Archive:
 			if m.visualMode && len(m.selectedUIDs) > 0 {
 				// Batch archive
 				uids := make([]uint32, len(m.selectionOrder))
@@ -655,7 +656,7 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		case "r":
+		case kb.Inbox.Refresh:
 			m.isRefreshing = true
 			m.list.Title = m.getTitle()
 			// Copy counts to avoid race conditions if used elsewhere (though here it's just passing data)
@@ -666,7 +667,7 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg {
 				return RequestRefreshMsg{Mailbox: m.mailbox, Counts: counts}
 			}
-		case "enter":
+		case kb.Inbox.Open:
 			selectedItem, ok := m.list.SelectedItem().(item)
 			if ok {
 				idx := selectedItem.originalIndex

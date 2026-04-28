@@ -130,7 +130,7 @@ func (m *Drafts) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return DeleteSavedDraftMsg{DraftID: draftID}
 					}
 				}
-			case "n", "N", "esc":
+			case "n", "N", config.Keybinds.Global.Cancel:
 				m.confirmDelete = false
 				m.selectedDraft = nil
 			}
@@ -142,16 +142,17 @@ func (m *Drafts) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 
+		kb := config.Keybinds
 		switch msg.String() {
-		case "esc":
+		case kb.Global.Cancel:
 			return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
-		case "enter":
+		case kb.Drafts.Open:
 			if item, ok := m.list.SelectedItem().(draftItem); ok {
 				return m, func() tea.Msg {
 					return OpenDraftMsg{Draft: item.draft}
 				}
 			}
-		case "d":
+		case kb.Drafts.Delete:
 			if item, ok := m.list.SelectedItem().(draftItem); ok {
 				m.confirmDelete = true
 				m.selectedDraft = &item.draft

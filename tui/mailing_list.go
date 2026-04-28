@@ -6,6 +6,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/floatpane/matcha/config"
 )
 
 // MailingListEditor displays the screen to add or edit a mailing list.
@@ -66,10 +67,11 @@ func (m *MailingListEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		kb := config.Keybinds
 		switch msg.String() {
-		case "ctrl+c":
+		case kb.Global.Quit:
 			return m, tea.Quit
-		case "esc":
+		case kb.Global.Cancel:
 			return m, func() tea.Msg { return GoToSettingsMsg{} }
 		case "tab", "shift+tab", "up", "down":
 			if m.focus == 0 {

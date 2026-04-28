@@ -310,8 +310,8 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.suggestions = nil
 				return m, nil
 			}
-			// For shift+tab, close suggestions and let it fall through to normal handling
-			if msg.String() == "shift+tab" {
+			// For prev-field key, close suggestions and let it fall through to normal handling
+			if msg.String() == config.Keybinds.Composer.PrevField {
 				m.showSuggestions = false
 				m.suggestions = nil
 			}
@@ -366,17 +366,18 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		kb := config.Keybinds
 		switch msg.String() {
-		case "ctrl+c":
+		case kb.Global.Quit:
 			return m, tea.Quit
-		case "ctrl+e":
+		case kb.Composer.ExternalEditor:
 			return m, func() tea.Msg { return OpenEditorMsg{} }
-		case "esc":
+		case kb.Global.Cancel:
 			m.confirmingExit = true
 			return m, nil
 
-		case "tab", "shift+tab":
-			if msg.String() == "shift+tab" {
+		case kb.Composer.NextField, kb.Composer.PrevField:
+			if msg.String() == kb.Composer.PrevField {
 				m.focusIndex--
 			} else {
 				m.focusIndex++

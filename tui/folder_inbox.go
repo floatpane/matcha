@@ -168,10 +168,12 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 
+		kb := config.Keybinds
+
 		// Route input to preview pane when focused
 		if m.previewPane != nil && m.focusedPane == FocusPreview {
 			s := msg.String()
-			if s != "[" && s != "]" && s != "esc" && s != "q" {
+			if s != kb.Folder.FocusInbox && s != kb.Folder.FocusPreview && s != kb.Global.Cancel && s != "q" {
 				var cmd tea.Cmd
 				_, cmd = m.previewPane.Update(msg)
 				return m, cmd
@@ -179,38 +181,38 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
-		case "]":
+		case kb.Folder.FocusPreview:
 			// Switch focus to preview pane
 			if m.previewPane != nil && m.focusedPane == FocusInbox {
 				m.focusedPane = FocusPreview
 				return m, nil
 			}
-		case "[":
+		case kb.Folder.FocusInbox:
 			// Switch focus to inbox pane
 			if m.previewPane != nil && m.focusedPane == FocusPreview {
 				m.focusedPane = FocusInbox
 				return m, nil
 			}
-		case "tab":
+		case kb.Folder.NextFolder:
 			m.activeFolderIdx++
 			if m.activeFolderIdx >= len(m.folders) {
 				m.activeFolderIdx = 0
 			}
 			return m, m.switchFolder()
-		case "shift+tab":
+		case kb.Folder.PrevFolder:
 			m.activeFolderIdx--
 			if m.activeFolderIdx < 0 {
 				m.activeFolderIdx = len(m.folders) - 1
 			}
 			return m, m.switchFolder()
-		case "esc":
+		case kb.Global.Cancel:
 			// Close split preview if open
 			if m.previewPane != nil {
 				m.closeSplitPreview()
 				return m, nil
 			}
 			// Otherwise let inbox handle (or parent)
-		case "m":
+		case kb.Folder.Move:
 			// Start move-to-folder flow
 			if m.inbox.visualMode && len(m.inbox.selectedUIDs) > 0 {
 				// Batch move
@@ -377,19 +379,20 @@ func (m *FolderInbox) wrapInboxCmd(cmd tea.Cmd) tea.Cmd {
 }
 
 func (m *FolderInbox) updateMoveOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
+	kb := config.Keybinds
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "esc":
+		case kb.Global.Cancel:
 			m.movingEmail = false
 			return m, nil
-		case "up", "k":
+		case "up", kb.Global.NavUp:
 			m.moveTargetIdx--
 			if m.moveTargetIdx < 0 {
 				m.moveTargetIdx = len(m.moveFolderChoices()) - 1
 			}
 			return m, nil
-		case "down", "j":
+		case "down", kb.Global.NavDown:
 			m.moveTargetIdx++
 			choices := m.moveFolderChoices()
 			if m.moveTargetIdx >= len(choices) {

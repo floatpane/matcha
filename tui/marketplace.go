@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/plugins"
 	"github.com/floatpane/matcha/theme"
 )
@@ -115,8 +116,9 @@ func (m Marketplace) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		kb := config.Keybinds
 		if m.state != marketplaceReady {
-			if msg.String() == "q" || msg.String() == "esc" || msg.String() == "ctrl+c" {
+			if msg.String() == "q" || msg.String() == kb.Global.Cancel || msg.String() == kb.Global.Quit {
 				if m.standalone {
 					return m, tea.Quit
 				}
@@ -126,21 +128,21 @@ func (m Marketplace) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
-		case "q", "esc":
+		case "q", kb.Global.Cancel:
 			if m.standalone {
 				return m, tea.Quit
 			}
 			return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
-		case "ctrl+c":
+		case kb.Global.Quit:
 			return m, tea.Quit
-		case "up", "k":
+		case "up", kb.Global.NavUp:
 			if m.cursor > 0 {
 				m.cursor--
 				if m.cursor < m.offset {
 					m.offset = m.cursor
 				}
 			}
-		case "down", "j":
+		case "down", kb.Global.NavDown:
 			if m.cursor < len(m.entries)-1 {
 				m.cursor++
 				visible := m.visibleRows()

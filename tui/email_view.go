@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/calendar"
+	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/theme"
 	"github.com/floatpane/matcha/view"
@@ -176,8 +177,9 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		// Handle 'esc' key locally
-		if msg.String() == "esc" {
+		kb := config.Keybinds
+		// Handle cancel key locally
+		if msg.String() == kb.Global.Cancel {
 			if m.focusOnAttachments {
 				m.focusOnAttachments = false
 				return m, nil
@@ -189,11 +191,11 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.focusOnAttachments {
 			switch msg.String() {
-			case "up", "k":
+			case "up", kb.Global.NavUp:
 				if m.attachmentCursor > 0 {
 					m.attachmentCursor--
 				}
-			case "down", "j":
+			case "down", kb.Global.NavDown:
 				if m.attachmentCursor < len(m.email.Attachments)-1 {
 					m.attachmentCursor++
 				}
@@ -213,12 +215,12 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 				}
-			case "tab":
+			case kb.Email.FocusAttachments:
 				m.focusOnAttachments = false
 			}
 		} else {
 			switch msg.String() {
-			case "i":
+			case kb.Email.ToggleImages:
 				if view.ImageProtocolSupported() {
 					m.showImages = !m.showImages
 					ClearKittyGraphics()
@@ -233,15 +235,15 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.viewport.SetContent(wrapped + "\n")
 					return m, nil
 				}
-			case "r":
+			case kb.Email.Reply:
 				// Clear Kitty graphics before opening composer
 				ClearKittyGraphics()
 				return m, func() tea.Msg { return ReplyToEmailMsg{Email: m.email} }
-			case "f":
+			case kb.Email.Forward:
 				// Clear Kitty graphics before opening composer
 				ClearKittyGraphics()
 				return m, func() tea.Msg { return ForwardEmailMsg{Email: m.email} }
-			case "d":
+			case kb.Email.Delete:
 				accountID := m.accountID
 				uid := m.email.UID
 				// Clear Kitty graphics before transitioning
@@ -249,7 +251,7 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg {
 					return DeleteEmailMsg{UID: uid, AccountID: accountID, Mailbox: m.mailbox}
 				}
-			case "a":
+			case kb.Email.Archive:
 				accountID := m.accountID
 				uid := m.email.UID
 				// Clear Kitty graphics before transitioning
@@ -257,15 +259,15 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg {
 					return ArchiveEmailMsg{UID: uid, AccountID: accountID, Mailbox: m.mailbox}
 				}
-			case "1", "2", "3":
+			case kb.Email.RsvpAccept, kb.Email.RsvpDecline, kb.Email.RsvpTentative:
 				if m.hasCalendarInvite && m.calendarEvent != nil {
 					var response string
 					switch msg.String() {
-					case "1":
+					case kb.Email.RsvpAccept:
 						response = "ACCEPTED"
-					case "2":
+					case kb.Email.RsvpDecline:
 						response = "DECLINED"
-					case "3":
+					case kb.Email.RsvpTentative:
 						response = "TENTATIVE"
 					}
 
@@ -280,7 +282,7 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 				}
-			case "tab":
+			case kb.Email.FocusAttachments:
 				if len(m.email.Attachments) > 0 {
 					m.focusOnAttachments = true
 				}
