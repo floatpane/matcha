@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"io"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -49,6 +50,13 @@ func searchKey() string {
 		return config.Keybinds.Inbox.Search
 	}
 	return "/"
+}
+
+func filterKey() string {
+	if config.Keybinds.Inbox.Filter != "" {
+		return config.Keybinds.Inbox.Filter
+	}
+	return "f"
 }
 
 type itemDelegate struct {
@@ -336,10 +344,7 @@ func NewInboxWithMailbox(emails []fetcher.Email, accounts []config.Account, mail
 		tabs = []AccountTab{{ID: "", Label: "ALL", Email: ""}}
 		for _, acc := range accounts {
 			// Use FetchEmail for display, fall back to Email if not set
-			displayEmail := acc.FetchEmail
-			if displayEmail == "" {
-				displayEmail = acc.Email
-			}
+			displayEmail := accountDisplayEmail(acc)
 			tabs = append(tabs, AccountTab{ID: acc.ID, Label: displayEmail, Email: displayEmail})
 		}
 	}
@@ -383,20 +388,14 @@ func (m *Inbox) updateList() {
 	// Capture current index to restore later
 	currentIndex := m.list.Index()
 
-	var displayEmails []fetcher.Email
+	displayEmails := m.displayEmails()
 	var showAccountLabel bool
 
 	if m.searchActive {
-		displayEmails = m.searchResults
 		showAccountLabel = !(len(m.accounts) <= 1)
 	} else if m.currentAccountID == "" {
 		// "ALL" view - show all emails sorted by date
-		displayEmails = m.allEmails
 		showAccountLabel = !(len(m.accounts) <= 1)
-	} else {
-		// Specific account view
-		displayEmails = m.emailsByAccount[m.currentAccountID]
-		showAccountLabel = false
 	}
 
 	m.emailsCount = len(displayEmails)
@@ -405,13 +404,7 @@ func (m *Inbox) updateList() {
 	for i, email := range displayEmails {
 		accountEmail := ""
 		if showAccountLabel {
-			// Find the account email for display
-			for _, acc := range m.accounts {
-				if acc.ID == email.AccountID {
-					accountEmail = acc.FetchEmail
-					break
-				}
-			}
+			accountEmail = m.accountLabelForEmail(email)
 		}
 
 		items[i] = item{
@@ -456,6 +449,7 @@ func (m *Inbox) updateList() {
 	}
 
 	l.KeyMap.Quit.SetEnabled(false)
+	l.KeyMap.Filter = key.NewBinding(key.WithKeys(filterKey()), key.WithHelp(filterKey(), "filter"))
 
 	// Disable default help to render it manually at the bottom
 	l.SetShowHelp(false)
@@ -480,6 +474,67 @@ func (m *Inbox) updateList() {
 	m.list = l
 }
 
+func (m *Inbox) displayEmails() []fetcher.Email {
+	if m.searchActive {
+		return m.filteredSearchResults()
+	}
+	if m.currentAccountID == "" {
+		return m.allEmails
+	}
+	return m.emailsByAccount[m.currentAccountID]
+}
+
+func (m *Inbox) filteredSearchResults() []fetcher.Email {
+	if m.currentAccountID == "" {
+		return m.searchResults
+	}
+	filtered := make([]fetcher.Email, 0, len(m.searchResults))
+	for _, email := range m.searchResults {
+		if email.AccountID == m.currentAccountID {
+			filtered = append(filtered, email)
+		}
+	}
+	return filtered
+}
+
+func (m *Inbox) accountLabelForEmail(email fetcher.Email) string {
+	for _, acc := range m.accounts {
+		if acc.ID != email.AccountID {
+			continue
+		}
+		fetchEmail := accountDisplayEmail(acc)
+		for _, recipient := range email.To {
+			if sameEmailAddress(recipient, fetchEmail) {
+				return extractEmailAddress(recipient)
+			}
+		}
+		return fetchEmail
+	}
+	return ""
+}
+
+func accountDisplayEmail(acc config.Account) string {
+	if acc.FetchEmail != "" {
+		return acc.FetchEmail
+	}
+	return acc.Email
+}
+
+func sameEmailAddress(a, b string) bool {
+	return strings.EqualFold(extractEmailAddress(a), extractEmailAddress(b))
+}
+
+func extractEmailAddress(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if addr, err := mail.ParseAddress(value); err == nil {
+		return strings.TrimSpace(addr.Address)
+	}
+	return strings.Trim(value, "<>")
+}
+
 func (m *Inbox) getTitle() string {
 	var title string
 	if m.searchActive {
@@ -493,7 +548,7 @@ func (m *Inbox) getTitle() string {
 				if acc.Name != "" {
 					title = fmt.Sprintf("%s - %s", m.getBaseTitle(), acc.Name)
 				} else {
-					title = fmt.Sprintf("%s - %s", m.getBaseTitle(), acc.FetchEmail)
+					title = fmt.Sprintf("%s - %s", m.getBaseTitle(), accountDisplayEmail(acc))
 				}
 				break
 			}
@@ -944,14 +999,7 @@ func (m *Inbox) IsSearchActive() bool {
 
 // GetEmailAtIndex returns the email at the given index for the current view
 func (m *Inbox) GetEmailAtIndex(index int) *fetcher.Email {
-	var displayEmails []fetcher.Email
-	if m.searchActive {
-		displayEmails = m.searchResults
-	} else if m.currentAccountID == "" {
-		displayEmails = m.allEmails
-	} else {
-		displayEmails = m.emailsByAccount[m.currentAccountID]
-	}
+	displayEmails := m.displayEmails()
 
 	if index >= 0 && index < len(displayEmails) {
 		return &displayEmails[index]
@@ -1135,7 +1183,8 @@ func (m *Inbox) SetEmails(emails []fetcher.Email, accounts []config.Account) {
 	} else {
 		tabs = []AccountTab{{ID: "", Label: "ALL", Email: ""}}
 		for _, acc := range accounts {
-			tabs = append(tabs, AccountTab{ID: acc.ID, Label: acc.FetchEmail, Email: acc.Email})
+			displayEmail := accountDisplayEmail(acc)
+			tabs = append(tabs, AccountTab{ID: acc.ID, Label: displayEmail, Email: displayEmail})
 		}
 	}
 	m.tabs = tabs

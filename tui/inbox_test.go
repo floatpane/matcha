@@ -4,7 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
+	"github.com/floatpane/matcha/backend"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
 )
@@ -88,8 +90,8 @@ func TestInboxUpdate(t *testing.T) {
 // TestInboxMultiAccountTabs verifies that tabs are created for multiple accounts.
 func TestInboxMultiAccountTabs(t *testing.T) {
 	accounts := []config.Account{
-		{ID: "account-1", Email: "test1@example.com", Name: "User 1"},
-		{ID: "account-2", Email: "test2@example.com", Name: "User 2"},
+		{ID: "account-1", Email: "mail.example.com", FetchEmail: "test1@example.com", Name: "User 1"},
+		{ID: "account-2", Email: "mail.example.com", FetchEmail: "test2@example.com", Name: "User 2"},
 	}
 
 	emails := []fetcher.Email{
@@ -109,6 +111,86 @@ func TestInboxMultiAccountTabs(t *testing.T) {
 	}
 	if inbox.tabs[0].Label != "ALL" {
 		t.Errorf("Expected first tab label to be 'ALL', got %q", inbox.tabs[0].Label)
+	}
+	if inbox.tabs[1].Label != "test1@example.com" {
+		t.Errorf("Expected first account tab to use FetchEmail, got %q", inbox.tabs[1].Label)
+	}
+
+	inbox.SetEmails(emails, accounts)
+	if inbox.tabs[1].Label != "test1@example.com" || inbox.tabs[1].Email != "test1@example.com" {
+		t.Errorf("Expected SetEmails to preserve FetchEmail tab display, got label=%q email=%q", inbox.tabs[1].Label, inbox.tabs[1].Email)
+	}
+}
+
+func TestInboxSearchResultsFilterByActiveAccountTab(t *testing.T) {
+	accounts := []config.Account{
+		{ID: "account-1", Email: "mail.example.com", FetchEmail: "first@example.com"},
+		{ID: "account-2", Email: "mail.example.com", FetchEmail: "second@example.com"},
+	}
+
+	inbox := NewInbox(nil, accounts)
+	query := backend.ParseSearchQuery("quarterly")
+	results := []fetcher.Email{
+		{UID: 1, From: "a@example.com", To: []string{"first@example.com"}, Subject: "First", AccountID: "account-1"},
+		{UID: 2, From: "b@example.com", To: []string{"second@example.com"}, Subject: "Second", AccountID: "account-2"},
+	}
+
+	model, _ := inbox.Update(ApplySearchResultsMsg{Query: query, Emails: results})
+	inbox = model.(*Inbox)
+	if got := len(inbox.list.Items()); got != 2 {
+		t.Fatalf("expected all search results initially, got %d", got)
+	}
+
+	model, _ = inbox.Update(tea.KeyPressMsg{Code: tea.KeyRight, Text: "right"})
+	inbox = model.(*Inbox)
+	if got := len(inbox.list.Items()); got != 1 {
+		t.Fatalf("expected account-filtered search results after tab switch, got %d", got)
+	}
+	item, ok := inbox.list.Items()[0].(item)
+	if !ok {
+		t.Fatalf("expected inbox item, got %T", inbox.list.Items()[0])
+	}
+	if item.accountID != "account-1" {
+		t.Fatalf("expected account-1 result after first account tab, got %q", item.accountID)
+	}
+
+	email := inbox.GetEmailAtIndex(0)
+	if email == nil || email.UID != 1 {
+		t.Fatalf("GetEmailAtIndex should use filtered search results, got %#v", email)
+	}
+}
+
+func TestInboxAccountLabelUsesMatchingRecipient(t *testing.T) {
+	accounts := []config.Account{
+		{ID: "account-1", Email: "mail.example.com", FetchEmail: "first@example.com"},
+		{ID: "account-2", Email: "mail.example.com", FetchEmail: "second@example.com"},
+	}
+	emails := []fetcher.Email{
+		{UID: 1, From: "a@example.com", To: []string{"Shared <shared@example.com>", "First <first@example.com>"}, Subject: "First", AccountID: "account-1"},
+		{UID: 2, From: "b@example.com", To: []string{"shared@example.com"}, Subject: "Fallback", AccountID: "account-2"},
+	}
+
+	inbox := NewInbox(emails, accounts)
+	first := inbox.list.Items()[0].(item)
+	if first.accountEmail != "first@example.com" {
+		t.Fatalf("expected matching To recipient for account label, got %q", first.accountEmail)
+	}
+	second := inbox.list.Items()[1].(item)
+	if second.accountEmail != "second@example.com" {
+		t.Fatalf("expected FetchEmail fallback for unmatched recipient, got %q", second.accountEmail)
+	}
+}
+
+func TestInboxClientSideFilterKeyStartsListFilter(t *testing.T) {
+	accounts := []config.Account{{ID: "account-1", Email: "test@example.com"}}
+	emails := []fetcher.Email{{UID: 1, From: "sender@example.com", Subject: "Test", AccountID: "account-1"}}
+
+	inbox := NewInbox(emails, accounts)
+	model, _ := inbox.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
+	inbox = model.(*Inbox)
+
+	if inbox.list.FilterState() != list.Filtering {
+		t.Fatalf("expected client-side filter state %s, got %s", list.Filtering, inbox.list.FilterState())
 	}
 }
 
