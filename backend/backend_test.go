@@ -22,7 +22,55 @@ func TestParseSearchQueryBareTerms(t *testing.T) {
 	if got := ParseSearchQuery("quarterly revenue update").Body; got != "quarterly revenue update" {
 		t.Fatalf("Body = %q", got)
 	}
-	if got := ParseSearchQuery("from:alice@example.com quarterly revenue").Body; got != "" {
-		t.Fatalf("fielded search Body = %q, want empty", got)
+	if got := ParseSearchQuery("from:alice@example.com quarterly revenue").Body; got != "quarterly revenue" {
+		t.Fatalf("fielded search Body = %q, want quarterly revenue", got)
+	}
+}
+
+func TestParseSearchQueryQuotedValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		from    string
+		subject string
+		body    string
+	}{
+		{
+			name:    "double quoted subject",
+			input:   `subject:"quarterly report"`,
+			subject: "quarterly report",
+		},
+		{
+			name:  "bare terms after field",
+			input: `from:alice quarterly revenue`,
+			from:  "alice",
+			body:  "quarterly revenue",
+		},
+		{
+			name:  "body prefix wins over bare terms",
+			input: `body:foo bar baz`,
+			body:  "foo",
+		},
+		{
+			name:    "single quoted subject",
+			input:   `subject:'quarterly report'`,
+			subject: "quarterly report",
+		},
+		{
+			name:    "mixed quoted and unquoted",
+			input:   `from:alice subject:"quarterly report" revenue`,
+			from:    "alice",
+			subject: "quarterly report",
+			body:    "revenue",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := ParseSearchQuery(tt.input)
+			if q.From != tt.from || q.Subject != tt.subject || q.Body != tt.body {
+				t.Fatalf("ParseSearchQuery(%q) = From:%q Subject:%q Body:%q, want From:%q Subject:%q Body:%q", tt.input, q.From, q.Subject, q.Body, tt.from, tt.subject, tt.body)
+			}
+		})
 	}
 }

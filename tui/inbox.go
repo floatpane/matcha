@@ -938,6 +938,10 @@ func (m *Inbox) GetCurrentAccountID() string {
 	return m.currentAccountID
 }
 
+func (m *Inbox) IsSearchActive() bool {
+	return m != nil && (m.searchOverlay != nil || m.searchActive)
+}
+
 // GetEmailAtIndex returns the email at the given index for the current view
 func (m *Inbox) GetEmailAtIndex(index int) *fetcher.Email {
 	var displayEmails []fetcher.Email

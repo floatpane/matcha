@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -204,6 +205,18 @@ func (m *mainModel) syncUnreadBadge() {
 func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
+	searchWasActive := false
+
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == "esc" {
+		switch current := m.current.(type) {
+		case *tui.Inbox:
+			searchWasActive = current.IsSearchActive()
+		case *tui.FolderInbox:
+			if inbox := current.GetInbox(); inbox != nil {
+				searchWasActive = inbox.IsSearchActive()
+			}
+		}
+	}
 
 	m.current, cmd = m.current.Update(msg)
 	cmds = append(cmds, cmd)
@@ -241,6 +254,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case *tui.FilePicker:
 				return m, func() tea.Msg { return tui.CancelFilePickerMsg{} }
 			case *tui.FolderInbox, *tui.Inbox, *tui.Login:
+				if searchWasActive {
+					return m, tea.Batch(cmds...)
+				}
 				m.idleWatcher.StopAll()
 				m.current = tui.NewChoice()
 				m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
@@ -2105,17 +2121,32 @@ func (m *mainModel) searchEmailsCmd(query backend.SearchQuery, folderName, accou
 		}
 
 		var results []fetcher.Email
+		var firstErr error
+		succeeded := false
 		for i := range accounts {
 			acc := &accounts[i]
 			p := m.getProvider(acc)
 			if p == nil {
-				return tui.SearchResultsMsg{Query: query, Err: fmt.Errorf("provider not found for account %s", acc.ID)}
+				if firstErr == nil {
+					firstErr = fmt.Errorf("provider not found for account %s", acc.ID)
+				}
+				continue
 			}
 			emails, err := p.Search(ctx, folderName, query)
 			if err != nil {
-				return tui.SearchResultsMsg{Query: query, Err: err}
+				if errors.Is(err, backend.ErrNotSupported) {
+					continue
+				}
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
 			}
+			succeeded = true
 			results = append(results, backendEmailsToFetcher(emails)...)
+		}
+		if !succeeded && firstErr != nil {
+			return tui.SearchResultsMsg{Query: query, Err: firstErr}
 		}
 		sortFetcherEmails(results)
 

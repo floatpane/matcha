@@ -43,7 +43,7 @@ func (o *SearchOverlay) Update(msg tea.Msg, mailbox MailboxKind, accountID strin
 		o.width = msg.Width
 		return nil
 	case SearchResultsMsg:
-		o.loading, o.done, o.err = false, true, ""
+		o.loading, o.done, o.err = false, msg.Err == nil, ""
 		o.query = msg.Query
 		if msg.Err != nil {
 			o.err = msg.Err.Error()

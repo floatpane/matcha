@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // ErrNotSupported is returned when a provider does not support an operation.
@@ -119,9 +120,8 @@ func ParseSearchQuery(s string) SearchQuery {
 	query := SearchQuery{Raw: s}
 	var bodyTerms []string
 
-	for _, term := range strings.Fields(s) {
+	for _, term := range tokenizeSearchQuery(s) {
 		key, value, ok := strings.Cut(term, ":")
-		value = strings.Trim(value, `"'`)
 		if !ok || value == "" {
 			bodyTerms = append(bodyTerms, term)
 			continue
@@ -153,11 +153,46 @@ func ParseSearchQuery(s string) SearchQuery {
 		}
 	}
 
-	if query.Body == "" && query.From == "" && query.To == "" && query.Subject == "" && len(bodyTerms) > 0 {
+	if query.Body == "" && len(bodyTerms) > 0 {
 		query.Body = strings.Join(bodyTerms, " ")
 	}
 
 	return query
+}
+
+func tokenizeSearchQuery(s string) []string {
+	var tokens []string
+	var b strings.Builder
+	var quote rune
+
+	for _, r := range s {
+		if quote != 0 {
+			if r == quote {
+				quote = 0
+				continue
+			}
+			b.WriteRune(r)
+			continue
+		}
+		if r == '"' || r == '\'' {
+			quote = r
+			continue
+		}
+		if unicode.IsSpace(r) {
+			if b.Len() > 0 {
+				tokens = append(tokens, b.String())
+				b.Reset()
+			}
+			continue
+		}
+		b.WriteRune(r)
+	}
+
+	if b.Len() > 0 {
+		tokens = append(tokens, b.String())
+	}
+
+	return tokens
 }
 
 func parseSearchDate(value string) (time.Time, bool) {
