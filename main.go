@@ -3538,7 +3538,7 @@ func runUpdateCLI() (err error) {
 		}
 	}
 
-	if err := os.Rename(tmpNew, execPath); err != nil {
+	if err = os.Rename(tmpNew, execPath); err != nil {
 		return fmt.Errorf("could not replace executable: %w", err)
 	}
 
