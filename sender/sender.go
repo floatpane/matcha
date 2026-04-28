@@ -800,8 +800,12 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 		return nil, err
 	}
 	qp := quotedprintable.NewWriter(plainPart)
-	fmt.Fprint(qp, plainBody)
-	qp.Close()
+	if _, err := fmt.Fprint(qp, plainBody); err != nil {
+		return nil, err
+	}
+	if err := qp.Close(); err != nil {
+		return nil, err
+	}
 
 	// text/calendar inline part (Outlook/Mac Mail use this)
 	calHeader := textproto.MIMEHeader{}
@@ -811,10 +815,16 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 	if err != nil {
 		return nil, err
 	}
-	calPart.Write([]byte(clib.WrapBase64(base64.StdEncoding.EncodeToString(icsData))))
+	if _, err := calPart.Write([]byte(clib.WrapBase64(base64.StdEncoding.EncodeToString(icsData)))); err != nil {
+		return nil, err
+	}
 
-	altWriter.Close()
-	altPart.Write(altMsg.Bytes())
+	if err := altWriter.Close(); err != nil {
+		return nil, err
+	}
+	if _, err := altPart.Write(altMsg.Bytes()); err != nil {
+		return nil, err
+	}
 
 	// .ics file attachment (Gmail uses this)
 	attachHeader := textproto.MIMEHeader{}
@@ -825,10 +835,16 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 	if err != nil {
 		return nil, err
 	}
-	attachPart.Write([]byte(clib.WrapBase64(base64.StdEncoding.EncodeToString(icsData))))
+	if _, err := attachPart.Write([]byte(clib.WrapBase64(base64.StdEncoding.EncodeToString(icsData)))); err != nil {
+		return nil, err
+	}
 
-	outerWriter.Close()
-	msg.Write(outerMsg.Bytes())
+	if err := outerWriter.Close(); err != nil {
+		return nil, err
+	}
+	if _, err := msg.Write(outerMsg.Bytes()); err != nil {
+		return nil, err
+	}
 
 	// Send via SMTP
 	addr := fmt.Sprintf("%s:%d", smtpServer, smtpPort)
