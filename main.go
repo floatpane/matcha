@@ -733,12 +733,17 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Inline:    a.Inline,
 				})
 			}
-			go config.SaveEmailBody(folderName, config.CachedEmailBody{
-				UID:         msg.UID,
-				AccountID:   msg.AccountID,
-				Body:        msg.Body,
-				Attachments: cachedAttachments,
-			})
+			go func() {
+				err := config.SaveEmailBody(folderName, config.CachedEmailBody{
+					UID:         msg.UID,
+					AccountID:   msg.AccountID,
+					Body:        msg.Body,
+					Attachments: cachedAttachments,
+				})
+				if err != nil {
+					log.Printf("debug: error caching email body fails (disk full, permission denied) for UID: %d: %v", msg.UID, err)
+				}
+			}()
 		}
 		// Forward to FolderInbox for rendering
 		if m.folderInbox != nil {
