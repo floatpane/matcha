@@ -10,7 +10,7 @@ import (
 )
 
 func TestLuaStoreRoundTrip(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t)
 
 	m := newTestManager()
 	defer m.Close()
@@ -31,7 +31,7 @@ func TestLuaStoreRoundTrip(t *testing.T) {
 }
 
 func TestLuaStoreSetWithoutPluginContext(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t)
 
 	m := newTestManager()
 	defer m.Close()
@@ -49,7 +49,7 @@ func TestLuaStoreSetWithoutPluginContext(t *testing.T) {
 }
 
 func TestLuaStorePluginsAreIsolated(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t)
 
 	m := newTestManager()
 	defer m.Close()
@@ -92,7 +92,7 @@ func TestLuaStorePluginsAreIsolated(t *testing.T) {
 }
 
 func TestLuaStoreHookUsesRegisteredPluginContext(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t)
 
 	m := newTestManager()
 	defer m.Close()
@@ -119,7 +119,7 @@ func TestLuaStoreHookUsesRegisteredPluginContext(t *testing.T) {
 }
 
 func TestLuaStoreKeyBindingUsesRegisteredPluginContext(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t)
 
 	m := newTestManager()
 	defer m.Close()
@@ -153,7 +153,7 @@ func TestLuaStoreKeyBindingUsesRegisteredPluginContext(t *testing.T) {
 }
 
 func TestLuaStoreKeysAndDelete(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t)
 
 	m := newTestManager()
 	defer m.Close()

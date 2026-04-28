@@ -5,13 +5,27 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 )
 
+// setTestHome makes t.TempDir() the effective home directory for the duration
+// of the test on both Unix and Windows. Go's os.UserHomeDir() reads $HOME on
+// Unix but %USERPROFILE% on Windows, so we set both.
+func setTestHome(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", dir)
+	}
+	return dir
+}
+
 func TestPluginStoreSetGet(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t)
 
 	store, err := newPluginStore("test_plugin")
 	if err != nil {
@@ -32,7 +46,7 @@ func TestPluginStoreSetGet(t *testing.T) {
 }
 
 func TestPluginStoreDelete(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t)
 
 	store, err := newPluginStore("test_plugin")
 	if err != nil {
@@ -51,7 +65,7 @@ func TestPluginStoreDelete(t *testing.T) {
 }
 
 func TestPluginStoreKeys(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t)
 
 	store, err := newPluginStore("test_plugin")
 	if err != nil {
@@ -76,7 +90,7 @@ func TestPluginStoreKeys(t *testing.T) {
 }
 
 func TestPluginStoreKeysEmpty(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t)
 
 	store, err := newPluginStore("test_plugin")
 	if err != nil {
@@ -89,7 +103,7 @@ func TestPluginStoreKeysEmpty(t *testing.T) {
 }
 
 func TestPluginStoreConcurrentSets(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t)
 
 	store, err := newPluginStore("test_plugin")
 	if err != nil {
@@ -122,7 +136,7 @@ func TestPluginStoreConcurrentSets(t *testing.T) {
 }
 
 func TestPluginStorePersistence(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t)
 
 	store, err := newPluginStore("test_plugin")
 	if err != nil {
@@ -147,7 +161,7 @@ func TestPluginStorePersistence(t *testing.T) {
 }
 
 func TestPluginStoreFileMode(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t)
 
 	store, err := newPluginStore("test_plugin")
 	if err != nil {
@@ -161,13 +175,15 @@ func TestPluginStoreFileMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("expected mode 0600, got %o", got)
+	if runtime.GOOS != "windows" {
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Fatalf("expected mode 0600, got %o", got)
+		}
 	}
 }
 
 func TestPluginStoreFileModeAfterOverwrite(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t)
 
 	store, err := newPluginStore("test_plugin")
 	if err != nil {
@@ -187,13 +203,15 @@ func TestPluginStoreFileModeAfterOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("expected mode 0600 after overwrite, got %o", got)
+	if runtime.GOOS != "windows" {
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Fatalf("expected mode 0600 after overwrite, got %o", got)
+		}
 	}
 }
 
 func TestNewPluginStoreRejectsInvalidPluginName(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t)
 
 	for _, name := range []string{"", ".", "..", "../etc", "foo/bar", `foo\bar`, "foo.bar"} {
 		t.Run(name, func(t *testing.T) {
@@ -205,8 +223,7 @@ func TestNewPluginStoreRejectsInvalidPluginName(t *testing.T) {
 }
 
 func TestLuaStoreInitErrorPropagates(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := setTestHome(t)
 
 	dir := filepath.Join(home, ".config", "matcha", "plugins", "test_plugin")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
