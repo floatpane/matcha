@@ -509,6 +509,9 @@ func imageRows(payload string) int {
 	if data, err := base64.StdEncoding.DecodeString(payload); err == nil {
 		if _, h, ok := clib.ImageDimensions(data); ok {
 			cellHeight := getTerminalCellSize()
+			if cellHeight == 0 {
+				cellHeight = 16
+			}
 			rows = (h + cellHeight - 1) / cellHeight
 			if rows < 1 {
 				rows = 1
