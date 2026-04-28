@@ -48,6 +48,14 @@ func (p *Provider) FetchAttachment(_ context.Context, folder string, uid uint32,
 	return fetcher.FetchAttachmentFromMailbox(p.account, folder, uid, partID, encoding)
 }
 
+func (p *Provider) Search(_ context.Context, folder string, query backend.SearchQuery) ([]backend.Email, error) {
+	emails, err := fetcher.SearchMailbox(p.account, folder, query)
+	if err != nil {
+		return nil, err
+	}
+	return toBackendEmails(emails), nil
+}
+
 func (p *Provider) MarkAsRead(_ context.Context, folder string, uid uint32) error {
 	return fetcher.MarkEmailAsReadInMailbox(p.account, folder, uid)
 }

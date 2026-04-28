@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -921,6 +922,13 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			func() tea.Msg { return tui.FetchingMoreEmailsMsg{} },
 			fetchFolderEmailsPaginatedCmd(account, folderName, limit, msg.Offset),
 		)
+
+	case tui.SearchRequestedMsg:
+		folderName := msg.FolderName
+		if folderName == "" {
+			folderName = "INBOX"
+		}
+		return m, m.searchEmailsCmd(msg.Query, folderName, msg.AccountID)
 
 	case tui.EmailsAppendedMsg:
 		if m.emailsByAcct == nil {
@@ -2082,6 +2090,58 @@ func fetchEmailsForMailbox(account *config.Account, limit, offset uint32, mailbo
 		}
 		return tui.EmailsAppendedMsg{Emails: emails, AccountID: account.ID, Mailbox: mailbox}
 	}
+}
+
+func (m *mainModel) searchEmailsCmd(query backend.SearchQuery, folderName, accountID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		var accounts []config.Account
+		for _, acc := range m.config.Accounts {
+			if accountID == "" || acc.ID == accountID {
+				accounts = append(accounts, acc)
+			}
+		}
+
+		var results []fetcher.Email
+		for i := range accounts {
+			acc := &accounts[i]
+			p := m.getProvider(acc)
+			if p == nil {
+				return tui.SearchResultsMsg{Query: query, Err: fmt.Errorf("provider not found for account %s", acc.ID)}
+			}
+			emails, err := p.Search(ctx, folderName, query)
+			if err != nil {
+				return tui.SearchResultsMsg{Query: query, Err: err}
+			}
+			results = append(results, backendEmailsToFetcher(emails)...)
+		}
+		sortFetcherEmails(results)
+
+		return tui.SearchResultsMsg{Query: query, Emails: results}
+	}
+}
+
+func backendEmailsToFetcher(emails []backend.Email) []fetcher.Email {
+	result := make([]fetcher.Email, len(emails))
+	for i, e := range emails {
+		result[i] = fetcher.Email{
+			UID: e.UID, From: e.From, To: e.To, ReplyTo: e.ReplyTo,
+			Subject: e.Subject, Body: e.Body, Date: e.Date, IsRead: e.IsRead,
+			MessageID: e.MessageID, References: e.References, AccountID: e.AccountID,
+		}
+	}
+	return result
+}
+
+func sortFetcherEmails(emails []fetcher.Email) {
+	sort.Slice(emails, func(i, j int) bool {
+		if emails[i].Date.Equal(emails[j].Date) {
+			return emails[i].UID > emails[j].UID
+		}
+		return emails[i].Date.After(emails[j].Date)
+	})
 }
 
 func loadCachedEmails() tea.Cmd {

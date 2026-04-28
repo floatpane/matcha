@@ -1,9 +1,12 @@
 package pop3
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/emersion/go-message"
+	"github.com/floatpane/matcha/backend"
 	pop3client "github.com/knadh/go-pop3"
 )
 
@@ -105,5 +108,13 @@ func TestEntityToEmail_To(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSearchNotSupported(t *testing.T) {
+	p := &Provider{}
+	_, err := p.Search(context.Background(), "INBOX", backend.SearchQuery{Raw: "subject:test"})
+	if !errors.Is(err, backend.ErrNotSupported) {
+		t.Fatalf("Search error = %v, want ErrNotSupported", err)
 	}
 }

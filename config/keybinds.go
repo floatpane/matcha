@@ -37,6 +37,7 @@ type InboxKeys struct {
 	Delete     string `json:"delete"`
 	Archive    string `json:"archive"`
 	Refresh    string `json:"refresh"`
+	Search     string `json:"search"`
 	Open       string `json:"open"`
 	NextTab    string `json:"next_tab"`
 	PrevTab    string `json:"prev_tab"`
@@ -142,6 +143,7 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 		"delete":      kb.Inbox.Delete,
 		"archive":     kb.Inbox.Archive,
 		"refresh":     kb.Inbox.Refresh,
+		"search":      kb.Inbox.Search,
 		"open":        kb.Inbox.Open,
 		"next_tab":    kb.Inbox.NextTab,
 		"prev_tab":    kb.Inbox.PrevTab,

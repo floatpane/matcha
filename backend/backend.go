@@ -4,6 +4,8 @@ package backend
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -15,6 +17,7 @@ type Provider interface {
 	EmailReader
 	EmailWriter
 	EmailSender
+	EmailSearcher
 	FolderManager
 	Notifier
 	Close() error
@@ -43,6 +46,11 @@ type EmailWriter interface {
 // EmailSender sends outgoing email.
 type EmailSender interface {
 	SendEmail(ctx context.Context, msg *OutgoingEmail) error
+}
+
+// EmailSearcher searches emails server-side.
+type EmailSearcher interface {
+	Search(ctx context.Context, folder string, query SearchQuery) ([]Email, error)
 }
 
 // FolderManager lists folders/mailboxes.
@@ -91,6 +99,74 @@ type Attachment struct {
 	IsPGPSignature   bool
 	PGPVerified      bool
 	IsPGPEncrypted   bool
+}
+
+// SearchQuery is the parsed form of a user query string.
+type SearchQuery struct {
+	Raw        string
+	From       string
+	To         string
+	Subject    string
+	Body       string
+	Since      time.Time
+	Before     time.Time
+	LargerThan int
+	Limit      uint32
+}
+
+// ParseSearchQuery parses a compact search DSL into a SearchQuery.
+func ParseSearchQuery(s string) SearchQuery {
+	query := SearchQuery{Raw: s}
+	var bodyTerms []string
+
+	for _, term := range strings.Fields(s) {
+		key, value, ok := strings.Cut(term, ":")
+		value = strings.Trim(value, `"'`)
+		if !ok || value == "" {
+			bodyTerms = append(bodyTerms, term)
+			continue
+		}
+
+		switch strings.ToLower(key) {
+		case "from":
+			query.From = value
+		case "to":
+			query.To = value
+		case "subject":
+			query.Subject = value
+		case "body":
+			query.Body = value
+		case "since":
+			if t, ok := parseSearchDate(value); ok {
+				query.Since = t
+			}
+		case "before":
+			if t, ok := parseSearchDate(value); ok {
+				query.Before = t
+			}
+		case "larger":
+			if n, err := strconv.Atoi(value); err == nil && n > 0 {
+				query.LargerThan = n
+			}
+		default:
+			bodyTerms = append(bodyTerms, term)
+		}
+	}
+
+	if query.Body == "" && query.From == "" && query.To == "" && query.Subject == "" && len(bodyTerms) > 0 {
+		query.Body = strings.Join(bodyTerms, " ")
+	}
+
+	return query
+}
+
+func parseSearchDate(value string) (time.Time, bool) {
+	for _, layout := range []string{"2006-01-02", time.RFC3339} {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
 
 // Folder represents a mailbox/folder.

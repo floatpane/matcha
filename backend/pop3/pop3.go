@@ -171,6 +171,10 @@ func (p *Provider) FetchAttachment(_ context.Context, _ string, uid uint32, part
 	return findAttachmentData(raw, partID)
 }
 
+func (p *Provider) Search(_ context.Context, _ string, _ backend.SearchQuery) ([]backend.Email, error) {
+	return nil, backend.ErrNotSupported
+}
+
 func (p *Provider) MarkAsRead(_ context.Context, _ string, _ uint32) error {
 	// POP3 has no concept of read/unread flags — this is a no-op
 	return nil

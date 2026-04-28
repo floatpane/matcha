@@ -373,6 +373,9 @@ func (m *FolderInbox) wrapInboxCmd(cmd tea.Cmd) tea.Cmd {
 		case RequestRefreshMsg:
 			inner.FolderName = m.currentFolder
 			return inner
+		case SearchRequestedMsg:
+			inner.FolderName = m.currentFolder
+			return inner
 		}
 		return msg
 	}

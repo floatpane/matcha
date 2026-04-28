@@ -44,6 +44,13 @@ func (i item) Title() string       { return i.title }
 func (i item) Description() string { return i.desc }
 func (i item) FilterValue() string { return i.title + " " + i.desc }
 
+func searchKey() string {
+	if config.Keybinds.Inbox.Search != "" {
+		return config.Keybinds.Inbox.Search
+	}
+	return "/"
+}
+
 type itemDelegate struct {
 	inbox *Inbox
 }
@@ -281,6 +288,10 @@ type Inbox struct {
 	extraShortHelpKeys []key.Binding
 	pluginStatus       string // Persistent status text set by plugins
 	pluginKeyBindings  []PluginKeyBinding
+	searchOverlay      *SearchOverlay
+	searchActive       bool
+	searchQuery        string
+	searchResults      []fetcher.Email
 
 	// Visual mode state (Vim-style multi-select)
 	visualMode     bool              // Whether visual mode is active
@@ -375,7 +386,10 @@ func (m *Inbox) updateList() {
 	var displayEmails []fetcher.Email
 	var showAccountLabel bool
 
-	if m.currentAccountID == "" {
+	if m.searchActive {
+		displayEmails = m.searchResults
+		showAccountLabel = !(len(m.accounts) <= 1)
+	} else if m.currentAccountID == "" {
 		// "ALL" view - show all emails sorted by date
 		displayEmails = m.allEmails
 		showAccountLabel = !(len(m.accounts) <= 1)
@@ -426,6 +440,7 @@ func (m *Inbox) updateList() {
 			key.NewBinding(key.WithKeys("d"), key.WithHelp("\uf014 d", t("inbox.delete"))),
 			key.NewBinding(key.WithKeys("a"), key.WithHelp("\uea98 a", t("inbox.archive"))),
 			key.NewBinding(key.WithKeys("r"), key.WithHelp("\ue348 r", t("inbox.refresh"))),
+			key.NewBinding(key.WithKeys(searchKey()), key.WithHelp(searchKey(), "search")),
 		}
 		if len(m.tabs) > 1 {
 			bindings = append(bindings,
@@ -467,7 +482,9 @@ func (m *Inbox) updateList() {
 
 func (m *Inbox) getTitle() string {
 	var title string
-	if m.currentAccountID == "" {
+	if m.searchActive {
+		title = fmt.Sprintf("Search Results - %s", m.searchQuery)
+	} else if m.currentAccountID == "" {
 		title = m.getBaseTitle() + " - " + t("inbox.all_accounts")
 	} else {
 		title = m.getBaseTitle()
@@ -519,6 +536,14 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
+		if m.searchOverlay != nil {
+			if msg.String() == config.Keybinds.Global.Cancel {
+				m.searchOverlay = nil
+				return m, nil
+			}
+			cmd := m.searchOverlay.Update(msg, m.mailbox, m.currentAccountID)
+			return m, cmd
+		}
 		if m.list.FilterState() == list.Filtering {
 			// Don't allow visual mode while filtering
 			if m.visualMode {
@@ -530,7 +555,11 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		kb := config.Keybinds
+		searchBinding := searchKey()
 		switch keypress := msg.String(); keypress {
+		case searchBinding:
+			m.searchOverlay = NewSearchOverlay(m.width, m.height)
+			return m, m.searchOverlay.Init()
 		case kb.Inbox.VisualMode:
 			if !m.visualMode {
 				// Enter visual mode
@@ -553,6 +582,13 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case kb.Global.Cancel:
+			if m.searchActive {
+				m.searchActive = false
+				m.searchQuery = ""
+				m.searchResults = nil
+				m.updateList()
+				return m, nil
+			}
 			if m.visualMode {
 				// Exit visual mode on cancel key
 				m.visualMode = false
@@ -683,9 +719,29 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.list.SetWidth(msg.Width)
 		m.list.SetHeight(msg.Height / 2)
+		if m.searchOverlay != nil {
+			return m, m.searchOverlay.Update(msg, m.mailbox, m.currentAccountID)
+		}
 		if m.shouldFetchMore() {
 			return m, tea.Batch(m.fetchMoreCmds()...)
 		}
+		return m, nil
+
+	case SearchResultsMsg:
+		if m.searchOverlay == nil {
+			return m, nil
+		}
+		return m, m.searchOverlay.Update(msg, m.mailbox, m.currentAccountID)
+
+	case ApplySearchResultsMsg:
+		m.searchOverlay = nil
+		m.searchActive = true
+		m.searchQuery = msg.Query.Raw
+		m.searchResults = msg.Emails
+		m.visualMode = false
+		m.selectedUIDs = make(map[uint32]string)
+		m.selectionOrder = []uint32{}
+		m.updateList()
 		return m, nil
 
 	case FetchingMoreEmailsMsg:
@@ -750,6 +806,9 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Inbox) shouldFetchMore() bool {
 	if m.isFetching || m.isRefreshing {
+		return false
+	}
+	if m.searchActive {
 		return false
 	}
 	if m.allAccountsExhausted() {
@@ -845,6 +904,11 @@ func (m *Inbox) View() tea.View {
 
 	b.WriteString(m.list.View())
 
+	if m.searchOverlay != nil {
+		b.WriteString("\n")
+		b.WriteString(m.searchOverlay.View())
+	}
+
 	// Ensure we don't start gap calculation on the same line as the list
 	if !strings.HasSuffix(b.String(), "\n") {
 		b.WriteString("\n")
@@ -877,7 +941,9 @@ func (m *Inbox) GetCurrentAccountID() string {
 // GetEmailAtIndex returns the email at the given index for the current view
 func (m *Inbox) GetEmailAtIndex(index int) *fetcher.Email {
 	var displayEmails []fetcher.Email
-	if m.currentAccountID == "" {
+	if m.searchActive {
+		displayEmails = m.searchResults
+	} else if m.currentAccountID == "" {
 		displayEmails = m.allEmails
 	} else {
 		displayEmails = m.emailsByAccount[m.currentAccountID]
