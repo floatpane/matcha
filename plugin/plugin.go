@@ -15,13 +15,16 @@ type KeyBinding struct {
 	Area        string // "inbox", "email_view", or "composer"
 	Description string
 	Fn          *lua.LFunction
+	Plugin      string
 }
 
 // Manager manages the Lua VM and loaded plugins.
 type Manager struct {
-	state   *lua.LState
-	hooks   map[string][]*lua.LFunction
-	plugins []string
+	state         *lua.LState
+	hooks         map[string][]registeredHook
+	plugins       []string
+	currentPlugin string
+	stores        map[string]*pluginStore
 	// statuses holds persistent status strings per view area, shown in the UI.
 	statuses map[string]string
 	// pendingNotification is set by matcha.notify() and consumed by the orchestrator.
@@ -38,7 +41,7 @@ type Manager struct {
 // NewManager creates a new plugin manager with a Lua VM.
 func NewManager() *Manager {
 	m := &Manager{
-		hooks:         make(map[string][]*lua.LFunction),
+		hooks:         make(map[string][]registeredHook),
 		statuses:      make(map[string]string),
 		pendingFields: make(map[string]string),
 	}
@@ -100,6 +103,12 @@ func (m *Manager) LoadPlugins() {
 }
 
 func (m *Manager) loadPlugin(name, path string) {
+	previousPlugin := m.currentPlugin
+	m.currentPlugin = name
+	defer func() {
+		m.currentPlugin = previousPlugin
+	}()
+
 	if err := m.state.DoFile(path); err != nil {
 		log.Printf("plugin %q: load error: %v", name, err)
 		return

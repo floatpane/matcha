@@ -26,9 +26,14 @@ const (
 	StatusEmailView = "email_view"
 )
 
+type registeredHook struct {
+	fn     *lua.LFunction
+	plugin string
+}
+
 // registerHook adds a callback for the given event.
 func (m *Manager) registerHook(event string, fn *lua.LFunction) {
-	m.hooks[event] = append(m.hooks[event], fn)
+	m.hooks[event] = append(m.hooks[event], registeredHook{fn: fn, plugin: m.currentPlugin})
 }
 
 // CallHook invokes all callbacks registered for the given event.
@@ -38,9 +43,15 @@ func (m *Manager) CallHook(event string, args ...lua.LValue) {
 		return
 	}
 
-	for _, fn := range callbacks {
+	previousPlugin := m.currentPlugin
+	defer func() {
+		m.currentPlugin = previousPlugin
+	}()
+
+	for _, hook := range callbacks {
+		m.currentPlugin = hook.plugin
 		if err := m.state.CallByParam(lua.P{
-			Fn:      fn,
+			Fn:      hook.fn,
 			NRet:    0,
 			Protect: true,
 		}, args...); err != nil {
@@ -63,9 +74,15 @@ func (m *Manager) CallSendHook(event string, to, cc, subject, accountID string) 
 	t.RawSetString("subject", lua.LString(subject))
 	t.RawSetString("account_id", lua.LString(accountID))
 
-	for _, fn := range callbacks {
+	previousPlugin := m.currentPlugin
+	defer func() {
+		m.currentPlugin = previousPlugin
+	}()
+
+	for _, hook := range callbacks {
+		m.currentPlugin = hook.plugin
 		if err := L.CallByParam(lua.P{
-			Fn:      fn,
+			Fn:      hook.fn,
 			NRet:    0,
 			Protect: true,
 		}, t); err != nil {
@@ -81,9 +98,15 @@ func (m *Manager) CallFolderHook(event string, folderName string) {
 		return
 	}
 
-	for _, fn := range callbacks {
+	previousPlugin := m.currentPlugin
+	defer func() {
+		m.currentPlugin = previousPlugin
+	}()
+
+	for _, hook := range callbacks {
+		m.currentPlugin = hook.plugin
 		if err := m.state.CallByParam(lua.P{
-			Fn:      fn,
+			Fn:      hook.fn,
 			NRet:    0,
 			Protect: true,
 		}, lua.LString(folderName)); err != nil {
@@ -108,9 +131,15 @@ func (m *Manager) CallComposerHook(event string, body, subject, to, cc, bcc stri
 	t.RawSetString("cc", lua.LString(cc))
 	t.RawSetString("bcc", lua.LString(bcc))
 
-	for _, fn := range callbacks {
+	previousPlugin := m.currentPlugin
+	defer func() {
+		m.currentPlugin = previousPlugin
+	}()
+
+	for _, hook := range callbacks {
+		m.currentPlugin = hook.plugin
 		if err := L.CallByParam(lua.P{
-			Fn:      fn,
+			Fn:      hook.fn,
 			NRet:    0,
 			Protect: true,
 		}, t); err != nil {
@@ -121,6 +150,12 @@ func (m *Manager) CallComposerHook(event string, body, subject, to, cc, bcc stri
 
 // CallKeyBinding invokes a plugin key binding callback with the given arguments.
 func (m *Manager) CallKeyBinding(binding KeyBinding, args ...lua.LValue) {
+	previousPlugin := m.currentPlugin
+	m.currentPlugin = binding.Plugin
+	defer func() {
+		m.currentPlugin = previousPlugin
+	}()
+
 	if err := m.state.CallByParam(lua.P{
 		Fn:      binding.Fn,
 		NRet:    0,

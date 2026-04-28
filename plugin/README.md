@@ -29,6 +29,10 @@ end)
 | `matcha.bind_key(key, area, description, callback)` | Register a custom keyboard shortcut for a view area (`"inbox"`, `"email_view"`, `"composer"`) |
 | `matcha.http(options)` | Make an HTTP request (see below) |
 | `matcha.prompt(placeholder, callback)` | Open a text input overlay in the composer (see below) |
+| `matcha.store_set(key, value)` | Store a string value for this plugin |
+| `matcha.store_get(key)` | Retrieve a stored string value, or `nil` |
+| `matcha.store_delete(key)` | Delete a stored key for this plugin |
+| `matcha.store_keys()` | Return a table of stored keys for this plugin |
 
 ## Hook events
 
@@ -69,6 +73,22 @@ if err then
 end
 matcha.log("status: " .. res.status)
 ```
+
+## Persistent storage
+
+Plugins can store string key-value data between sessions. Storage is scoped per plugin and written to `~/.config/matcha/plugins/<plugin_name>/data.json`. Plugins that need structured values can encode them as strings.
+
+```lua
+local matcha = require("matcha")
+
+-- Store a value
+matcha.store_set("api_key", "sk-...")
+
+-- Retrieve a value
+local key = matcha.store_get("api_key")
+```
+
+Use `matcha.store_delete("api_key")` to remove a value. `matcha.store_keys()` returns a 1-indexed table of all keys stored by the current plugin.
 
 ## User input prompts
 
