@@ -360,14 +360,16 @@ func (d *Daemon) syncAllAccounts(ctx context.Context) {
 		var cached []config.CachedEmail
 		for _, e := range emails {
 			cached = append(cached, config.CachedEmail{
-				UID:       e.UID,
-				From:      e.From,
-				To:        e.To,
-				Subject:   e.Subject,
-				Date:      e.Date,
-				MessageID: e.MessageID,
-				AccountID: e.AccountID,
-				IsRead:    e.IsRead,
+				UID:        e.UID,
+				From:       e.From,
+				To:         e.To,
+				Subject:    e.Subject,
+				Date:       e.Date,
+				MessageID:  e.MessageID,
+				InReplyTo:  e.InReplyTo,
+				References: e.References,
+				AccountID:  e.AccountID,
+				IsRead:     e.IsRead,
 			})
 		}
 		if err := d.updateFolderCache("INBOX", acct.ID, cached); err != nil {
@@ -474,14 +476,16 @@ func (d *Daemon) fetchAndCache(accountID, folder string) {
 	var cached []config.CachedEmail
 	for _, e := range emails {
 		cached = append(cached, config.CachedEmail{
-			UID:       e.UID,
-			From:      e.From,
-			To:        e.To,
-			Subject:   e.Subject,
-			Date:      e.Date,
-			MessageID: e.MessageID,
-			AccountID: e.AccountID,
-			IsRead:    e.IsRead,
+			UID:        e.UID,
+			From:       e.From,
+			To:         e.To,
+			Subject:    e.Subject,
+			Date:       e.Date,
+			MessageID:  e.MessageID,
+			InReplyTo:  e.InReplyTo,
+			References: e.References,
+			AccountID:  e.AccountID,
+			IsRead:     e.IsRead,
 		})
 	}
 

@@ -80,6 +80,7 @@ type Email struct {
 	Date        time.Time
 	IsRead      bool
 	MessageID   string
+	InReplyTo   string
 	References  []string
 	Attachments []Attachment
 	AccountID   string

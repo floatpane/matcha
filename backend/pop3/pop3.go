@@ -15,6 +15,7 @@ import (
 	"io"
 	"mime"
 	"net/mail"
+	"regexp"
 	"strings"
 	"time"
 
@@ -26,6 +27,8 @@ import (
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/sender"
 )
+
+var pop3MessageIDRE = regexp.MustCompile(`<[^>]+>`)
 
 func init() {
 	backend.RegisterBackend("pop3", func(account *config.Account) (backend.Provider, error) {
@@ -298,6 +301,8 @@ func entityToEmail(header *message.Header, msgInfo pop3client.MessageID, account
 	subject := header.Get("Subject")
 	dateStr := header.Get("Date")
 	messageID := header.Get("Message-ID")
+	inReplyTo := firstMessageID(header.Get("In-Reply-To"))
+	references := messageIDList(header.Get("References"))
 
 	var to []string
 	if toHeader := header.Get("To"); toHeader != "" {
@@ -339,16 +344,34 @@ func entityToEmail(header *message.Header, msgInfo pop3client.MessageID, account
 	}
 
 	return backend.Email{
-		UID:       hashUID(uidStr),
-		From:      from,
-		To:        to,
-		ReplyTo:   replyTo,
-		Subject:   subject,
-		Date:      date,
-		IsRead:    false,
-		MessageID: messageID,
-		AccountID: accountID,
+		UID:        hashUID(uidStr),
+		From:       from,
+		To:         to,
+		ReplyTo:    replyTo,
+		Subject:    subject,
+		Date:       date,
+		IsRead:     false,
+		MessageID:  messageID,
+		InReplyTo:  inReplyTo,
+		References: references,
+		AccountID:  accountID,
 	}
+}
+
+func firstMessageID(value string) string {
+	ids := messageIDList(value)
+	if len(ids) == 0 {
+		return ""
+	}
+	return ids[0]
+}
+
+func messageIDList(value string) []string {
+	matches := pop3MessageIDRE.FindAllString(value, -1)
+	if len(matches) == 0 {
+		return strings.Fields(value)
+	}
+	return matches
 }
 
 // parseMessageBody extracts the body text and attachments from a raw message.

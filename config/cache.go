@@ -11,14 +11,16 @@ import (
 
 // CachedEmail stores essential email data for caching.
 type CachedEmail struct {
-	UID       uint32    `json:"uid"`
-	From      string    `json:"from"`
-	To        []string  `json:"to"`
-	Subject   string    `json:"subject"`
-	Date      time.Time `json:"date"`
-	MessageID string    `json:"message_id"`
-	AccountID string    `json:"account_id"`
-	IsRead    bool      `json:"is_read"`
+	UID        uint32    `json:"uid"`
+	From       string    `json:"from"`
+	To         []string  `json:"to"`
+	Subject    string    `json:"subject"`
+	Date       time.Time `json:"date"`
+	MessageID  string    `json:"message_id"`
+	InReplyTo  string    `json:"in_reply_to,omitempty"`
+	References []string  `json:"references,omitempty"`
+	AccountID  string    `json:"account_id"`
+	IsRead     bool      `json:"is_read"`
 }
 
 // EmailCache stores cached emails for all accounts.

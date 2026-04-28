@@ -16,6 +16,7 @@ import (
 	"mime/quotedprintable"
 	"net/textproto"
 	"os"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -84,10 +85,13 @@ type Email struct {
 	Date        time.Time
 	IsRead      bool
 	MessageID   string
+	InReplyTo   string
 	References  []string
 	Attachments []Attachment
 	AccountID   string // ID of the account this email belongs to
 }
+
+var headerMessageIDRE = regexp.MustCompile(`<[^>]+>`)
 
 // Folder represents an IMAP mailbox/folder.
 type Folder struct {
@@ -165,6 +169,38 @@ func deliveryHeadersMatch(data []byte, fetchEmail string, account *config.Accoun
 		}
 	}
 	return false
+}
+
+func headerMessageIDs(data []byte, key string) []string {
+	if len(data) == 0 {
+		return nil
+	}
+	reader := textproto.NewReader(bufio.NewReader(bytes.NewReader(data)))
+	headers, err := reader.ReadMIMEHeader()
+	if err != nil && len(headers) == 0 {
+		return nil
+	}
+	var ids []string
+	for _, value := range headers.Values(key) {
+		matches := headerMessageIDRE.FindAllString(value, -1)
+		if len(matches) == 0 {
+			for _, field := range strings.Fields(value) {
+				ids = append(ids, strings.TrimSpace(field))
+			}
+			continue
+		}
+		for _, match := range matches {
+			ids = append(ids, strings.TrimSpace(match))
+		}
+	}
+	return ids
+}
+
+func firstEnvelopeInReplyTo(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
 }
 
 func decodePart(reader io.Reader, header mail.PartHeader) (string, error) {
@@ -456,7 +492,7 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 	// Delivery header section for matching auto-forwarded emails
 	deliveryHeaderSection := &imap.FetchItemBodySection{
 		Specifier:    imap.PartSpecifierHeader,
-		HeaderFields: []string{"Delivered-To", "X-Forwarded-To", "X-Original-To"},
+		HeaderFields: []string{"Delivered-To", "X-Forwarded-To", "X-Original-To", "References"},
 		Peek:         true,
 	}
 
@@ -542,15 +578,19 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 				continue
 			}
 
+			headerData := msg.FindBodySection(deliveryHeaderSection)
 			batchEmails = append(batchEmails, Email{
-				UID:       uint32(msg.UID),
-				From:      fromAddr,
-				To:        toAddrList,
-				ReplyTo:   replyToAddrList,
-				Subject:   decodeHeader(msg.Envelope.Subject),
-				Date:      msg.Envelope.Date,
-				IsRead:    hasSeenFlag(msg.Flags),
-				AccountID: account.ID,
+				UID:        uint32(msg.UID),
+				From:       fromAddr,
+				To:         toAddrList,
+				ReplyTo:    replyToAddrList,
+				Subject:    decodeHeader(msg.Envelope.Subject),
+				Date:       msg.Envelope.Date,
+				IsRead:     hasSeenFlag(msg.Flags),
+				MessageID:  msg.Envelope.MessageID,
+				InReplyTo:  firstEnvelopeInReplyTo(msg.Envelope.InReplyTo),
+				References: headerMessageIDs(headerData, "References"),
+				AccountID:  account.ID,
 			})
 		}
 
@@ -1494,7 +1534,7 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 	// Delivery header section for matching auto-forwarded emails
 	deliveryHeaderSection := &imap.FetchItemBodySection{
 		Specifier:    imap.PartSpecifierHeader,
-		HeaderFields: []string{"Delivered-To", "X-Forwarded-To", "X-Original-To"},
+		HeaderFields: []string{"Delivered-To", "X-Forwarded-To", "X-Original-To", "References"},
 		Peek:         true,
 	}
 
@@ -1563,14 +1603,18 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 			continue
 		}
 
+		headerData := msg.FindBodySection(deliveryHeaderSection)
 		emails = append(emails, Email{
-			UID:       uint32(msg.UID),
-			From:      fromAddr,
-			To:        toAddrList,
-			Subject:   decodeHeader(msg.Envelope.Subject),
-			Date:      msg.Envelope.Date,
-			IsRead:    hasSeenFlag(msg.Flags),
-			AccountID: account.ID,
+			UID:        uint32(msg.UID),
+			From:       fromAddr,
+			To:         toAddrList,
+			Subject:    decodeHeader(msg.Envelope.Subject),
+			Date:       msg.Envelope.Date,
+			IsRead:     hasSeenFlag(msg.Flags),
+			MessageID:  msg.Envelope.MessageID,
+			InReplyTo:  firstEnvelopeInReplyTo(msg.Envelope.InReplyTo),
+			References: headerMessageIDs(headerData, "References"),
+			AccountID:  account.ID,
 		})
 	}
 

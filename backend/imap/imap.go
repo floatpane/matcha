@@ -144,6 +144,7 @@ func toBackendEmails(emails []fetcher.Email) []backend.Email {
 			Date:        e.Date,
 			IsRead:      e.IsRead,
 			MessageID:   e.MessageID,
+			InReplyTo:   e.InReplyTo,
 			References:  e.References,
 			Attachments: toBackendAttachments(e.Attachments),
 			AccountID:   e.AccountID,

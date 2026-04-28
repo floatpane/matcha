@@ -695,6 +695,10 @@ func jmapEmailToBackend(eml *email.Email, uid uint32, accountID string) backend.
 	if len(eml.MessageID) > 0 {
 		e.MessageID = eml.MessageID[0]
 	}
+	if len(eml.InReplyTo) > 0 {
+		e.InReplyTo = eml.InReplyTo[0]
+	}
+	e.References = append(e.References, eml.References...)
 	return e
 }
 

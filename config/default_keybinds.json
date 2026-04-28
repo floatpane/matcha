@@ -7,6 +7,7 @@
   },
   "inbox": {
     "visual_mode": "v",
+    "toggle_threaded": "T",
     "delete": "d",
     "archive": "a",
     "refresh": "r",
