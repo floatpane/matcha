@@ -165,7 +165,11 @@ func (p *Provider) FetchEmails(_ context.Context, folder string, limit, offset u
 			Name:     "Email/query",
 			Path:     "/ids",
 		},
-		Properties: []string{"id", "subject", "from", "to", "replyTo", "receivedAt", "preview", "keywords", "mailboxIds", "hasAttachment", "messageId"},
+		Properties: []string{
+			"id", "subject", "from", "to", "replyTo", "receivedAt",
+			"preview", "keywords", "mailboxIds", "hasAttachment",
+			"messageId", "inReplyTo", "references",
+		},
 	})
 
 	resp, err := p.client.Do(req)

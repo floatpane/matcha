@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-var subjectPrefixRE = regexp.MustCompile(`(?i)^(Re|Fwd|Fw|AW|WG|Tr|Reé|Resp)\s*:\s*`)
+var subjectPrefixRE = regexp.MustCompile(`(?i)^(Re|Fwd|Fw|AW|WG|Tr|Reé|Resp|SV|VS|RV|ENC|Antw|Odp|R|I)\s*:\s*`)
 
 func canonicalSubject(s string) string {
 	s = strings.TrimSpace(s)

@@ -86,6 +86,26 @@ func TestBuildSubjectFallbackGroupingForOrphans(t *testing.T) {
 	}
 }
 
+func TestBuildSubjectFallbackGroupsLocalePrefixes(t *testing.T) {
+	base := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
+	threads := Build([]EmailHeader{
+		{ID: "<a@example>", Subject: "Foo", Date: base, EmailID: "1"},
+		{ID: "<b@example>", Subject: "SV: Foo", Date: base.Add(time.Minute), EmailID: "2"},
+		{ID: "<c@example>", Subject: "RV: Foo", Date: base.Add(2 * time.Minute), EmailID: "3"},
+		{ID: "<d@example>", Subject: "Antw: Foo", Date: base.Add(3 * time.Minute), EmailID: "4"},
+	})
+
+	if len(threads) != 1 {
+		t.Fatalf("got %d threads, want 1", len(threads))
+	}
+	if threads[0].Subject != "foo" {
+		t.Fatalf("got subject %q, want foo", threads[0].Subject)
+	}
+	if threads[0].Count != 4 {
+		t.Fatalf("got grouped count %d, want 4", threads[0].Count)
+	}
+}
+
 func TestBuildEmptyReferencesList(t *testing.T) {
 	threads := Build([]EmailHeader{
 		{ID: "<a@example>", References: nil, Subject: "Foo", Date: time.Now(), EmailID: "1"},
@@ -120,6 +140,9 @@ func TestCanonicalSubjectNormalizesReplyAndForwardPrefixes(t *testing.T) {
 		"Fwd: FW: Foo":    "foo",
 		"AW: WG: Tr: Foo": "foo",
 		"Reé: Resp: Foo":  "foo",
+		"SV: VS: RV: Foo": "foo",
+		"ENC: Antw: Foo":  "foo",
+		"Odp: R: I: Foo":  "foo",
 		"  Foo  ":         "foo",
 	}
 
