@@ -60,6 +60,7 @@ Configuration and persistent data are stored in `~/.config/matcha/`:
 | File | Description |
 |------|-------------|
 | `config.json` | Account settings, preferences |
+| `keybinds.json` | Custom keyboard shortcuts (see [Keybinds](/docs/Features/Keybinds)) |
 | `signatures/` | Email signatures |
 | `pgp/` | PGP keys |
 | `plugins/` | Installed Lua plugins |
