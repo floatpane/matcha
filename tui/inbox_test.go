@@ -160,24 +160,118 @@ func TestInboxSearchResultsFilterByActiveAccountTab(t *testing.T) {
 	}
 }
 
+func TestInboxAllAccountsDedupesSharedMailboxByMessageID(t *testing.T) {
+	accounts := []config.Account{
+		{ID: "account-1", Email: "mail.example.com", FetchEmail: "edu@andrinoff.com"},
+		{ID: "account-2", Email: "mail.example.com", FetchEmail: "me@andrinoff.com"},
+		{ID: "account-3", Email: "mail.example.com", FetchEmail: "business@andrinoff.com"},
+	}
+	emails := []fetcher.Email{
+		{UID: 81, MessageID: "<shared@example.com>", From: "drew@example.com", To: []string{"business@andrinoff.com"}, Subject: "Hey", AccountID: "account-1"},
+		{UID: 82, MessageID: "<shared@example.com>", From: "drew@example.com", To: []string{"business@andrinoff.com"}, Subject: "Hey", AccountID: "account-2"},
+		{UID: 83, MessageID: "<shared@example.com>", From: "drew@example.com", To: []string{"business@andrinoff.com"}, Subject: "Hey", AccountID: "account-3"},
+	}
+
+	inbox := NewInbox(emails, accounts)
+	if got := len(inbox.allEmails); got != 1 {
+		t.Fatalf("expected all accounts view to dedupe shared mailbox copies, got %d", got)
+	}
+	if got := len(inbox.emailsByAccount["account-1"]); got != 1 {
+		t.Fatalf("expected per-account bucket to remain unchanged, got %d", got)
+	}
+	row := inbox.list.Items()[0].(item)
+	if row.accountEmail != "business@andrinoff.com" {
+		t.Fatalf("expected deduped row label to match recipient account, got %q", row.accountEmail)
+	}
+	if row.accountID != "account-3" {
+		t.Fatalf("expected canonical row to use matching account copy, got %q", row.accountID)
+	}
+}
+
+func TestInboxSearchResultsDedupedAcrossAccounts(t *testing.T) {
+	accounts := []config.Account{
+		{ID: "account-1", Email: "mail.example.com", FetchEmail: "edu@andrinoff.com"},
+		{ID: "account-2", Email: "mail.example.com", FetchEmail: "business@andrinoff.com"},
+	}
+	inbox := NewInbox(nil, accounts)
+	query := backend.ParseSearchQuery("osc8")
+	results := []fetcher.Email{
+		{UID: 81, MessageID: "<shared@example.com>", From: "drew@example.com", To: []string{"business@andrinoff.com"}, Subject: "Hey", AccountID: "account-1"},
+		{UID: 82, MessageID: "<shared@example.com>", From: "drew@example.com", To: []string{"business@andrinoff.com"}, Subject: "Hey", AccountID: "account-2"},
+	}
+
+	model, _ := inbox.Update(ApplySearchResultsMsg{Query: query, Emails: results})
+	inbox = model.(*Inbox)
+	if got := len(inbox.searchResults); got != 1 {
+		t.Fatalf("expected search results to dedupe shared mailbox copies, got %d", got)
+	}
+	row := inbox.list.Items()[0].(item)
+	if row.accountEmail != "business@andrinoff.com" {
+		t.Fatalf("expected search result label to match recipient account, got %q", row.accountEmail)
+	}
+}
+
+func TestInboxAllAccountsDoesNotDedupeWhenMessageIDDiffers(t *testing.T) {
+	date := time.Now()
+	accounts := []config.Account{
+		{ID: "account-1", Email: "mail.example.com", FetchEmail: "first@example.com"},
+		{ID: "account-2", Email: "mail.example.com", FetchEmail: "second@example.com"},
+	}
+	emails := []fetcher.Email{
+		{UID: 1, MessageID: "<one@example.com>", From: "sender@example.com", To: []string{"first@example.com"}, Subject: "Same", Date: date, AccountID: "account-1"},
+		{UID: 2, MessageID: "<two@example.com>", From: "sender@example.com", To: []string{"second@example.com"}, Subject: "Same", Date: date, AccountID: "account-2"},
+	}
+
+	inbox := NewInbox(emails, accounts)
+	if got := len(inbox.allEmails); got != 2 {
+		t.Fatalf("expected distinct Message-ID emails to remain visible, got %d", got)
+	}
+}
+
 func TestInboxAccountLabelUsesMatchingRecipient(t *testing.T) {
 	accounts := []config.Account{
 		{ID: "account-1", Email: "mail.example.com", FetchEmail: "first@example.com"},
 		{ID: "account-2", Email: "mail.example.com", FetchEmail: "second@example.com"},
 	}
 	emails := []fetcher.Email{
-		{UID: 1, From: "a@example.com", To: []string{"Shared <shared@example.com>", "First <first@example.com>"}, Subject: "First", AccountID: "account-1"},
+		{UID: 1, MessageID: "<first@example.com>", From: "a@example.com", To: []string{"Shared <shared@example.com>", "Second <second@example.com>"}, Subject: "First", AccountID: "account-1"},
 		{UID: 2, From: "b@example.com", To: []string{"shared@example.com"}, Subject: "Fallback", AccountID: "account-2"},
 	}
 
 	inbox := NewInbox(emails, accounts)
 	first := inbox.list.Items()[0].(item)
-	if first.accountEmail != "first@example.com" {
-		t.Fatalf("expected matching To recipient for account label, got %q", first.accountEmail)
+	if first.accountEmail != "second@example.com" {
+		t.Fatalf("expected cross-account matching To recipient for account label, got %q", first.accountEmail)
 	}
 	second := inbox.list.Items()[1].(item)
 	if second.accountEmail != "second@example.com" {
 		t.Fatalf("expected FetchEmail fallback for unmatched recipient, got %q", second.accountEmail)
+	}
+}
+
+func TestInboxOpenSearchResultEmbedsEmailInViewMsg(t *testing.T) {
+	accounts := []config.Account{
+		{ID: "account-1", Email: "mail.example.com", FetchEmail: "first@example.com"},
+	}
+	inbox := NewInbox(nil, accounts)
+	searchResult := fetcher.Email{UID: 42, MessageID: "<search@example.com>", From: "sender@example.com", To: []string{"first@example.com"}, Subject: "Search", AccountID: "account-1"}
+	model, _ := inbox.Update(ApplySearchResultsMsg{Query: backend.ParseSearchQuery("search"), Emails: []fetcher.Email{searchResult}})
+	inbox = model.(*Inbox)
+
+	_, cmd := inbox.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected open command")
+	}
+	msg := cmd()
+	viewMsg, ok := msg.(ViewEmailMsg)
+	if !ok {
+		t.Fatalf("expected ViewEmailMsg, got %T", msg)
+	}
+	if viewMsg.Email == nil {
+		t.Fatal("expected search result email to be embedded")
+	}
+	if viewMsg.Email.UID != searchResult.UID || viewMsg.Email.MessageID != searchResult.MessageID {
+		t.Fatalf("embedded email mismatch: %#v", viewMsg.Email)
 	}
 }
 

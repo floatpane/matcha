@@ -364,7 +364,7 @@ func NewInboxWithMailbox(emails []fetcher.Email, accounts []config.Account, mail
 	inbox := &Inbox{
 		accounts:         accounts,
 		emailsByAccount:  emailsByAccount,
-		allEmails:        emails,
+		allEmails:        dedupeEmailsForAccounts(emails, accounts),
 		tabs:             tabs,
 		activeTabIndex:   0,
 		currentAccountID: "",
@@ -499,18 +499,68 @@ func (m *Inbox) filteredSearchResults() []fetcher.Email {
 
 func (m *Inbox) accountLabelForEmail(email fetcher.Email) string {
 	for _, acc := range m.accounts {
-		if acc.ID != email.AccountID {
-			continue
-		}
 		fetchEmail := accountDisplayEmail(acc)
 		for _, recipient := range email.To {
 			if sameEmailAddress(recipient, fetchEmail) {
 				return extractEmailAddress(recipient)
 			}
 		}
-		return fetchEmail
+	}
+	for _, acc := range m.accounts {
+		if acc.ID == email.AccountID {
+			return accountDisplayEmail(acc)
+		}
 	}
 	return ""
+}
+
+func dedupeEmailsForAccounts(emails []fetcher.Email, accounts []config.Account) []fetcher.Email {
+	if len(emails) <= 1 {
+		return emails
+	}
+
+	accountByID := make(map[string]config.Account, len(accounts))
+	for _, acc := range accounts {
+		accountByID[acc.ID] = acc
+	}
+
+	deduped := make([]fetcher.Email, 0, len(emails))
+	indexByKey := make(map[string]int, len(emails))
+	for _, email := range emails {
+		key := emailDedupKey(email)
+		if existingIndex, ok := indexByKey[key]; ok {
+			existing := deduped[existingIndex]
+			if !emailMatchesOwningAccount(existing, accountByID) && emailMatchesOwningAccount(email, accountByID) {
+				deduped[existingIndex] = email
+			}
+			continue
+		}
+		indexByKey[key] = len(deduped)
+		deduped = append(deduped, email)
+	}
+	return deduped
+}
+
+func emailDedupKey(email fetcher.Email) string {
+	if email.MessageID != "" {
+		return email.MessageID
+	}
+	// Malformed messages can omit Message-ID, so fall back to stable visible metadata.
+	return fmt.Sprintf("%s|%s|%d", email.From, email.Subject, email.Date.UnixNano())
+}
+
+func emailMatchesOwningAccount(email fetcher.Email, accountByID map[string]config.Account) bool {
+	acc, ok := accountByID[email.AccountID]
+	if !ok {
+		return false
+	}
+	fetchEmail := accountDisplayEmail(acc)
+	for _, recipient := range email.To {
+		if sameEmailAddress(recipient, fetchEmail) {
+			return true
+		}
+	}
+	return false
 }
 
 func accountDisplayEmail(acc config.Account) string {
@@ -764,8 +814,12 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				idx := selectedItem.originalIndex
 				uid := selectedItem.uid
 				accountID := selectedItem.accountID
+				var email *fetcher.Email
+				if m.searchActive {
+					email = m.GetEmailAtIndex(idx)
+				}
 				return m, func() tea.Msg {
-					return ViewEmailMsg{Index: idx, UID: uid, AccountID: accountID, Mailbox: m.mailbox}
+					return ViewEmailMsg{Index: idx, UID: uid, AccountID: accountID, Mailbox: m.mailbox, Email: email}
 				}
 			}
 		}
@@ -792,7 +846,7 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.searchOverlay = nil
 		m.searchActive = true
 		m.searchQuery = msg.Query.Raw
-		m.searchResults = msg.Emails
+		m.searchResults = dedupeEmailsForAccounts(msg.Emails, m.accounts)
 		m.visualMode = false
 		m.selectedUIDs = make(map[uint32]string)
 		m.selectionOrder = []uint32{}
@@ -1173,7 +1227,7 @@ func (m *Inbox) SetPluginKeyBindings(bindings []PluginKeyBinding) {
 // SetEmails updates all emails (used after fetch)
 func (m *Inbox) SetEmails(emails []fetcher.Email, accounts []config.Account) {
 	m.accounts = accounts
-	m.allEmails = emails
+	m.allEmails = dedupeEmailsForAccounts(emails, accounts)
 	m.noMoreByAccount = make(map[string]bool)
 
 	// Rebuild tabs: empty for single account, "ALL" + accounts for multiple

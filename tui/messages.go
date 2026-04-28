@@ -22,6 +22,7 @@ type ViewEmailMsg struct {
 	UID       uint32
 	AccountID string
 	Mailbox   MailboxKind
+	Email     *fetcher.Email
 }
 
 type SendEmailMsg struct {

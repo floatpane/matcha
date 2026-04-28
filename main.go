@@ -1189,7 +1189,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.current.Init()
 
 	case tui.ViewEmailMsg:
-		email := m.getEmailByUIDAndAccount(msg.UID, msg.AccountID, msg.Mailbox)
+		email := msg.Email
+		if email == nil {
+			email = m.getEmailByUIDAndAccount(msg.UID, msg.AccountID, msg.Mailbox)
+		} else {
+			m.addEmailToStoresIfMissing(*email, msg.Mailbox)
+		}
 		if email == nil {
 			return m, nil
 		}
@@ -1820,6 +1825,17 @@ func (m *mainModel) updateEmailBodyByUID(uid uint32, accountID string, mailbox t
 			}
 		}
 	}
+}
+
+func (m *mainModel) addEmailToStoresIfMissing(email fetcher.Email, mailbox tui.MailboxKind) {
+	if m.getEmailByUIDAndAccount(email.UID, email.AccountID, mailbox) != nil {
+		return
+	}
+	if m.emailsByAcct == nil {
+		m.emailsByAcct = make(map[string][]fetcher.Email)
+	}
+	m.emailsByAcct[email.AccountID] = append(m.emailsByAcct[email.AccountID], email)
+	m.emails = flattenAndSort(m.emailsByAcct)
 }
 
 func (m *mainModel) markEmailAsReadInStores(uid uint32, accountID string) {
