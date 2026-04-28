@@ -31,15 +31,15 @@ const choiceLogo = `
 `
 
 type Choice struct {
-	cursor           int
-	choices          []string
-	hasSavedDrafts   bool
-	UpdateAvailable  bool
-	LatestVersion    string
-	CurrentVersion   string
-	width            int
-	height           int
-	keybindWarnings  []string
+	cursor          int
+	choices         []string
+	hasSavedDrafts  bool
+	UpdateAvailable bool
+	LatestVersion   string
+	CurrentVersion  string
+	width           int
+	height          int
+	keybindWarnings []string
 }
 
 func NewChoice() Choice {
@@ -54,12 +54,12 @@ func NewChoice() Choice {
 	choices = append(choices, "\uf487 "+t("choice.marketplace"))
 	choices = append(choices, "\uf013 "+t("choice.settings"))
 	return Choice{
-		choices:          choices,
-		hasSavedDrafts:   hasSavedDrafts,
-		UpdateAvailable:  false,
-		LatestVersion:    "",
-		CurrentVersion:   "",
-		keybindWarnings:  config.ValidateKeybinds(config.Keybinds),
+		choices:         choices,
+		hasSavedDrafts:  hasSavedDrafts,
+		UpdateAvailable: false,
+		LatestVersion:   "",
+		CurrentVersion:  "",
+		keybindWarnings: config.ValidateKeybinds(config.Keybinds),
 	}
 }
 
