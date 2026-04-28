@@ -4,13 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 
 	lua "github.com/yuin/gopher-lua"
 )
+
+var validPluginStoreName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 type pluginStore struct {
 	path string
@@ -19,6 +21,10 @@ type pluginStore struct {
 }
 
 func newPluginStore(pluginName string) (*pluginStore, error) {
+	if !validPluginStoreName.MatchString(pluginName) {
+		return nil, errors.New("invalid plugin name for storage")
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
@@ -62,11 +68,25 @@ func (s *pluginStore) flush() error {
 		return err
 	}
 
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".data-*.json")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmp.Write(raw); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, s.path)
 }
 
 func (s *pluginStore) Get(k string) (string, bool) {
@@ -104,31 +124,34 @@ func (s *pluginStore) Keys() []string {
 	return out
 }
 
-func (m *Manager) currentStore() *pluginStore {
+func (m *Manager) currentStore() (*pluginStore, error) {
 	if m.currentPlugin == "" {
-		return nil
+		return nil, nil
 	}
 	if m.stores == nil {
 		m.stores = make(map[string]*pluginStore)
 	}
 	if s, ok := m.stores[m.currentPlugin]; ok {
-		return s
+		return s, nil
 	}
 
 	s, err := newPluginStore(m.currentPlugin)
 	if err != nil {
-		log.Printf("plugin %q: store init: %v", m.currentPlugin, err)
-		return nil
+		return nil, err
 	}
 	m.stores[m.currentPlugin] = s
-	return s
+	return s, nil
 }
 
 func (m *Manager) luaStoreSet(L *lua.LState) int {
 	key := L.CheckString(1)
 	val := L.CheckString(2)
 
-	s := m.currentStore()
+	s, err := m.currentStore()
+	if err != nil {
+		L.RaiseError("store_set: %v", err)
+		return 0
+	}
 	if s == nil {
 		L.RaiseError("store_set: no plugin context")
 		return 0
@@ -142,7 +165,11 @@ func (m *Manager) luaStoreSet(L *lua.LState) int {
 func (m *Manager) luaStoreGet(L *lua.LState) int {
 	key := L.CheckString(1)
 
-	s := m.currentStore()
+	s, err := m.currentStore()
+	if err != nil {
+		L.RaiseError("store_get: %v", err)
+		return 0
+	}
 	if s == nil {
 		L.Push(lua.LNil)
 		return 1
@@ -158,7 +185,11 @@ func (m *Manager) luaStoreGet(L *lua.LState) int {
 func (m *Manager) luaStoreDelete(L *lua.LState) int {
 	key := L.CheckString(1)
 
-	s := m.currentStore()
+	s, err := m.currentStore()
+	if err != nil {
+		L.RaiseError("store_delete: %v", err)
+		return 0
+	}
 	if s == nil {
 		L.RaiseError("store_delete: no plugin context")
 		return 0
@@ -170,7 +201,11 @@ func (m *Manager) luaStoreDelete(L *lua.LState) int {
 }
 
 func (m *Manager) luaStoreKeys(L *lua.LState) int {
-	s := m.currentStore()
+	s, err := m.currentStore()
+	if err != nil {
+		L.RaiseError("store_keys: %v", err)
+		return 0
+	}
 	if s == nil {
 		L.Push(L.NewTable())
 		return 1

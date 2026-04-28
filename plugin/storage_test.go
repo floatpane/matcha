@@ -3,7 +3,9 @@ package plugin
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -161,5 +163,71 @@ func TestPluginStoreFileMode(t *testing.T) {
 	}
 	if got := info.Mode().Perm(); got != 0o600 {
 		t.Fatalf("expected mode 0600, got %o", got)
+	}
+}
+
+func TestPluginStoreFileModeAfterOverwrite(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	store, err := newPluginStore("test_plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("token", "abc123"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(store.path, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("token", "def456"); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := os.Stat(store.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("expected mode 0600 after overwrite, got %o", got)
+	}
+}
+
+func TestNewPluginStoreRejectsInvalidPluginName(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	for _, name := range []string{"", ".", "..", "../etc", "foo/bar", `foo\bar`, "foo.bar"} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := newPluginStore(name); err == nil {
+				t.Fatal("expected invalid plugin name error")
+			}
+		})
+	}
+}
+
+func TestLuaStoreInitErrorPropagates(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	dir := filepath.Join(home, ".config", "matcha", "plugins", "test_plugin")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "data.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	m := newTestManager()
+	defer m.Close()
+	m.currentPlugin = "test_plugin"
+
+	err := m.state.DoString(`
+		local matcha = require("matcha")
+		matcha.store_get("token")
+	`)
+	if err == nil {
+		t.Fatal("expected store_get to fail on store init error")
+	}
+	if !strings.Contains(err.Error(), "store_get:") {
+		t.Fatalf("expected store_get error, got %v", err)
 	}
 }
