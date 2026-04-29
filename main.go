@@ -1208,7 +1208,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Split pane mode: open in split view instead of full screen
 		if m.config.EnableSplitPane && m.folderInbox != nil {
-			m.folderInbox.OpenSplitPreview(msg.UID, msg.AccountID)
+			m.folderInbox.OpenSplitPreview(msg.UID, msg.AccountID, email)
 			m.current = m.folderInbox
 			// Mark as read
 			if !email.IsRead {
