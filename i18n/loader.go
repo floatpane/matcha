@@ -3,6 +3,7 @@ package i18n
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -35,8 +36,8 @@ func loadFromEmbedded(bundle *Bundle) error {
 			continue
 		}
 
-		// Read file
-		data, err := localeFS.ReadFile(filepath.Join("locales", filename))
+		// Read file (embed.FS always uses forward slashes, even on Windows)
+		data, err := localeFS.ReadFile(path.Join("locales", filename))
 		if err != nil {
 			continue
 		}
