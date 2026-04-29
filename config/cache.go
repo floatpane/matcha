@@ -149,7 +149,7 @@ func LoadContactsCache() (*ContactsCache, error) {
 }
 
 func normalizeContactEmail(email string) string {
-	return strings.ToLower(strings.Trim(strings.TrimSpace(email), ","))
+	return strings.ToLower(strings.Trim(strings.TrimSpace(email), ",<>"))
 }
 
 // AddContact adds or updates a contact in the cache.
