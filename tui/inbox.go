@@ -433,7 +433,7 @@ func (m *Inbox) updateList() {
 			key.NewBinding(key.WithKeys("d"), key.WithHelp("\uf014 d", t("inbox.delete"))),
 			key.NewBinding(key.WithKeys("a"), key.WithHelp("\uea98 a", t("inbox.archive"))),
 			key.NewBinding(key.WithKeys("r"), key.WithHelp("\ue348 r", t("inbox.refresh"))),
-			key.NewBinding(key.WithKeys(searchKey()), key.WithHelp(searchKey(), "search")),
+			key.NewBinding(key.WithKeys(searchKey()), key.WithHelp(searchKey(), t("inbox.search"))),
 		}
 		if len(m.tabs) > 1 {
 			bindings = append(bindings,
@@ -449,7 +449,7 @@ func (m *Inbox) updateList() {
 	}
 
 	l.KeyMap.Quit.SetEnabled(false)
-	l.KeyMap.Filter = key.NewBinding(key.WithKeys(filterKey()), key.WithHelp(filterKey(), "filter"))
+	l.KeyMap.Filter = key.NewBinding(key.WithKeys(filterKey()), key.WithHelp(filterKey(), t("inbox.filter")))
 
 	// Disable default help to render it manually at the bottom
 	l.SetShowHelp(false)

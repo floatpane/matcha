@@ -54,6 +54,8 @@
       "delete": "löschen",
       "archive": "archivieren",
       "refresh": "aktualisieren",
+      "search": "suchen",
+      "filter": "filtern",
       "reply": "antworten",
       "forward": "weiterleiten",
       "move": "verschieben",

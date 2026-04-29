@@ -54,6 +54,8 @@
       "delete": "删除",
       "archive": "存档",
       "refresh": "刷新",
+      "search": "搜索",
+      "filter": "筛选",
       "reply": "回复",
       "forward": "转发",
       "move": "移动",
