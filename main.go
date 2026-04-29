@@ -206,14 +206,17 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 	searchWasActive := false
+	filterWasActive := false
 
 	if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == "esc" {
 		switch current := m.current.(type) {
 		case *tui.Inbox:
 			searchWasActive = current.IsSearchActive()
+			filterWasActive = current.IsFilterActive()
 		case *tui.FolderInbox:
 			if inbox := current.GetInbox(); inbox != nil {
 				searchWasActive = inbox.IsSearchActive()
+				filterWasActive = inbox.IsFilterActive()
 			}
 		}
 	}
@@ -254,7 +257,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case *tui.FilePicker:
 				return m, func() tea.Msg { return tui.CancelFilePickerMsg{} }
 			case *tui.FolderInbox, *tui.Inbox, *tui.Login:
-				if searchWasActive {
+				if searchWasActive || filterWasActive {
 					return m, tea.Batch(cmds...)
 				}
 				m.idleWatcher.StopAll()

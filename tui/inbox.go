@@ -1053,6 +1053,10 @@ func (m *Inbox) IsSearchActive() bool {
 	return m != nil && (m.searchOverlay != nil || m.searchActive)
 }
 
+func (m *Inbox) IsFilterActive() bool {
+	return m != nil && (m.list.FilterState() == list.Filtering || m.list.FilterState() == list.FilterApplied)
+}
+
 // GetEmailAtIndex returns the email at the given index for the current view
 func (m *Inbox) GetEmailAtIndex(index int) *fetcher.Email {
 	displayEmails := m.displayEmails()
