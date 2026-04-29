@@ -450,6 +450,8 @@ func (m *Inbox) updateList() {
 
 	l.KeyMap.Quit.SetEnabled(false)
 	l.KeyMap.Filter = key.NewBinding(key.WithKeys(filterKey()), key.WithHelp(filterKey(), t("inbox.filter")))
+	l.KeyMap.NextPage = key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdn", "next page"))
+	l.KeyMap.PrevPage = key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "prev page"))
 
 	// Disable default help to render it manually at the bottom
 	l.SetShowHelp(false)
