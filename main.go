@@ -2129,7 +2129,7 @@ func fetchEmailsForMailbox(account *config.Account, limit, offset uint32, mailbo
 
 func (m *mainModel) searchEmailsCmd(query backend.SearchQuery, folderName, accountID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), httpclient.IMAPSearchTimeout)
 		defer cancel()
 
 		var accounts []config.Account
@@ -2781,7 +2781,7 @@ func archiveFolderEmailCmd(account *config.Account, uid uint32, accountID string
 
 func (m *mainModel) batchDeleteEmailsCmd(account *config.Account, uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), httpclient.IMAPBatchActionTimeout)
 		defer cancel()
 
 		p := m.getProvider(account)
@@ -2820,7 +2820,7 @@ func (m *mainModel) batchDeleteEmailsCmd(account *config.Account, uids []uint32,
 
 func (m *mainModel) batchArchiveEmailsCmd(account *config.Account, uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), httpclient.IMAPBatchActionTimeout)
 		defer cancel()
 
 		p := m.getProvider(account)
@@ -2858,7 +2858,7 @@ func (m *mainModel) batchArchiveEmailsCmd(account *config.Account, uids []uint32
 
 func (m *mainModel) batchMoveEmailsCmd(account *config.Account, uids []uint32, accountID, sourceFolder, destFolder string, count int) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), httpclient.IMAPBatchActionTimeout)
 		defer cancel()
 
 		p := m.getProvider(account)
