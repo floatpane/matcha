@@ -543,6 +543,10 @@ type SendRSVPMsg struct {
 // RSVPResultMsg signals that RSVP was sent (or failed)
 type LanguageChangedMsg struct{}
 
+// ConfigSavedMsg signals the config was written to disk and downstream
+// consumers (notably the daemon) should reload it.
+type ConfigSavedMsg struct{}
+
 type RSVPResultMsg struct {
 	Err       error
 	Response  string // "ACCEPTED", "DECLINED", "TENTATIVE"

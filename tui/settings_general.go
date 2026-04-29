@@ -68,19 +68,24 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+			saved := false
 			switch m.generalCursor {
 			case 0: // Image Display
 				m.cfg.DisableImages = !m.cfg.DisableImages
 				_ = config.SaveConfig(m.cfg)
+				saved = true
 			case 1: // Contextual Tips
 				m.cfg.HideTips = !m.cfg.HideTips
 				_ = config.SaveConfig(m.cfg)
+				saved = true
 			case 2: // Desktop Notifications
 				m.cfg.DisableNotifications = !m.cfg.DisableNotifications
 				_ = config.SaveConfig(m.cfg)
+				saved = true
 			case 3: // Split Pane View
 				m.cfg.EnableSplitPane = !m.cfg.EnableSplitPane
 				_ = config.SaveConfig(m.cfg)
+				saved = true
 			case 4: // Date Format
 				switch m.cfg.DateFormat {
 				case config.DateFormatEU:
@@ -91,6 +96,7 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 					m.cfg.DateFormat = config.DateFormatEU
 				}
 				_ = config.SaveConfig(m.cfg)
+				saved = true
 			case 5: // Language
 				// Cycle through available languages
 				langs := i18n.LanguageCodes()
@@ -108,11 +114,17 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				// Apply language change immediately
 				i18n.GetManager().SetLanguage(m.cfg.Language)
 				// Trigger full UI rebuild
-				return m, func() tea.Msg { return LanguageChangedMsg{} }
+				return m, tea.Batch(
+					func() tea.Msg { return ConfigSavedMsg{} },
+					func() tea.Msg { return LanguageChangedMsg{} },
+				)
 			case 6: // Edit Signature
 				if msg.String() == "enter" || msg.String() == "right" || msg.String() == "l" {
 					return m, func() tea.Msg { return GoToSignatureEditorMsg{} }
 				}
+			}
+			if saved {
+				return m, func() tea.Msg { return ConfigSavedMsg{} }
 			}
 		}
 	}

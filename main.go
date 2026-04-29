@@ -982,6 +982,14 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
 
+	case tui.ConfigSavedMsg:
+		if m.service != nil {
+			if err := m.service.ReloadConfig(); err != nil {
+				log.Printf("config reload: %v", err)
+			}
+		}
+		return m, nil
+
 	case tui.LanguageChangedMsg:
 		// Rebuild all models with new translations
 		// Keep current view type but recreate with fresh i18n
