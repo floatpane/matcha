@@ -208,7 +208,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	searchWasActive := false
 	filterWasActive := false
 
-	if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == "esc" {
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == config.Keybinds.Global.Cancel {
 		switch current := m.current.(type) {
 		case *tui.Inbox:
 			searchWasActive = current.IsSearchActive()
