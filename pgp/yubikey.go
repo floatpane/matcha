@@ -3,6 +3,7 @@ package pgp
 import (
 	"bytes"
 	"crypto"
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -22,6 +23,8 @@ import (
 
 	openpgp "cunicu.li/go-openpgp-card"
 )
+
+var randRead = rand.Read
 
 // openCard connects to the first available OpenPGP smartcard via PC/SC.
 func openCard() (*openpgp.Card, error) {
@@ -94,7 +97,7 @@ func BuildPGPSignedMessage(payload []byte, pin string, publicKeyPath string) ([]
 	headers, body := splitPayload(payload)
 
 	// Build the signed body part (this is what gets hashed)
-	boundary := fmt.Sprintf("----=_Part_%d", time.Now().Unix())
+	boundary := generateMIMEBoundary()
 	signedPart := buildSignedPart(headers, body, boundary)
 
 	// Build the OpenPGP signature packet
@@ -110,6 +113,14 @@ func BuildPGPSignedMessage(payload []byte, pin string, publicKeyPath string) ([]
 	}
 
 	return buildMultipartSigned(headers, body, boundary, armoredSig), nil
+}
+
+func generateMIMEBoundary() string {
+	var buf [16]byte
+	if n, err := randRead(buf[:]); err == nil && n == len(buf) {
+		return fmt.Sprintf("----=_Part_%x", buf[:])
+	}
+	return fmt.Sprintf("----=_Part_%d", time.Now().UnixNano())
 }
 
 // loadSigningPublicKey reads a PGP public key file and returns the signing
