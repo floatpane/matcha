@@ -64,6 +64,7 @@ type Composer struct {
 	accounts           []config.Account
 	selectedAccountIdx int
 	showAccountPicker  bool
+	fromInput          textinput.Model // editable From when account is catch-all
 
 	// Contact suggestions
 	suggestions        []config.Contact
@@ -141,6 +142,12 @@ func NewComposer(from, to, subject, body string, hideTips bool) *Composer {
 	m.signatureInput.SetStyles(taStyles)
 	m.updateSignature()
 
+	m.fromInput = textinput.New()
+	m.fromInput.Placeholder = t("composer.from_placeholder")
+	m.fromInput.Prompt = "> "
+	m.fromInput.CharLimit = 256
+	m.fromInput.SetStyles(tiStyles)
+
 	// Start focus on To field (From is selectable but not a text input)
 	m.focusIndex = focusTo
 	m.toInput.Focus()
@@ -151,10 +158,17 @@ func NewComposer(from, to, subject, body string, hideTips bool) *Composer {
 // updateSignature updates the signature input based on the current selected account.
 func (m *Composer) updateSignature() {
 	if len(m.accounts) > 0 && m.selectedAccountIdx < len(m.accounts) {
-		if sig, err := config.LoadSignatureForAccount(&m.accounts[m.selectedAccountIdx]); err == nil && sig != "" {
+		acc := &m.accounts[m.selectedAccountIdx]
+		if sig, err := config.LoadSignatureForAccount(acc); err == nil && sig != "" {
 			m.signatureInput.SetValue(sig)
-			return
+		} else if sig, err := config.LoadSignature(); err == nil && sig != "" {
+			m.signatureInput.SetValue(sig)
+		} else {
+			m.signatureInput.SetValue("")
 		}
+		// Seed the editable From address for catch-all accounts.
+		m.fromInput.SetValue(acc.FormatFromHeader())
+		return
 	}
 
 	if sig, err := config.LoadSignature(); err == nil && sig != "" {
@@ -195,6 +209,13 @@ func (m *Composer) getFromAddress() string {
 		return m.accounts[m.selectedAccountIdx].FormatFromHeader()
 	}
 	return ""
+}
+
+func (m *Composer) isCatchAllAccount() bool {
+	if len(m.accounts) > 0 && m.selectedAccountIdx < len(m.accounts) {
+		return m.accounts[m.selectedAccountIdx].CatchAll
+	}
+	return false
 }
 
 func (m *Composer) getSelectedAccount() *config.Account {
@@ -385,8 +406,8 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			maxFocus := focusSend
 			minFocus := focusFrom
-			// Skip From field if only one account (nothing to switch)
-			if len(m.accounts) <= 1 {
+			// Skip From field if only one non-catch-all account (nothing to switch or edit)
+			if len(m.accounts) <= 1 && !m.isCatchAllAccount() {
 				minFocus = focusTo
 			}
 
@@ -396,6 +417,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusIndex = maxFocus
 			}
 
+			m.fromInput.Blur()
 			m.toInput.Blur()
 			m.ccInput.Blur()
 			m.bccInput.Blur()
@@ -404,6 +426,10 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.signatureInput.Blur()
 
 			switch m.focusIndex {
+			case focusFrom:
+				if m.isCatchAllAccount() {
+					cmds = append(cmds, m.fromInput.Focus())
+				}
 			case focusTo:
 				cmds = append(cmds, m.toInput.Focus())
 			case focusCc:
@@ -428,8 +454,12 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter", " ":
 			switch m.focusIndex {
 			case focusFrom:
-				if len(m.accounts) > 1 && msg.String() == "enter" {
+				if msg.String() == "enter" && len(m.accounts) > 1 {
 					m.showAccountPicker = true
+					return m, nil
+				}
+				if m.isCatchAllAccount() && msg.String() == " " {
+					break
 				}
 				return m, nil
 			case focusAttachment:
@@ -449,6 +479,10 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if acc != nil {
 						accountID = acc.ID
 					}
+					fromOverride := ""
+					if m.isCatchAllAccount() {
+						fromOverride = m.fromInput.Value()
+					}
 					return m, func() tea.Msg {
 						return SendEmailMsg{
 							To:              m.toInput.Value(),
@@ -458,6 +492,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							Body:            m.bodyInput.Value(),
 							AttachmentPaths: m.attachmentPaths,
 							AccountID:       accountID,
+							FromOverride:    fromOverride,
 							QuotedText:      m.quotedText,
 							InReplyTo:       m.inReplyTo,
 							References:      m.references,
@@ -473,6 +508,11 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch m.focusIndex {
+	case focusFrom:
+		if m.isCatchAllAccount() {
+			m.fromInput, cmd = m.fromInput.Update(msg)
+			cmds = append(cmds, cmd)
+		}
 	case focusTo:
 		m.toInput, cmd = m.toInput.Update(msg)
 		cmds = append(cmds, cmd)
@@ -528,7 +568,18 @@ func (m *Composer) View() tea.View {
 	// From field with account selector
 	fromAddr := m.getFromAddress()
 	var fromField string
-	if len(m.accounts) > 1 {
+	if m.isCatchAllAccount() {
+		fromAddrView := m.fromInput.View()
+		if len(m.accounts) > 1 {
+			if m.focusIndex == focusFrom {
+				fromField = focusedStyle.Render(fmt.Sprintf("> %s ", t("composer.from"))) + fromAddrView + " " + blurredStyle.Render("["+t("composer.enter_to_switch")+"]")
+			} else {
+				fromField = blurredStyle.Render(fmt.Sprintf("  %s ", t("composer.from"))) + fromAddrView + " " + blurredStyle.Render("["+t("composer.switchable")+"]")
+			}
+		} else {
+			fromField = "  " + t("composer.from") + " " + fromAddrView
+		}
+	} else if len(m.accounts) > 1 {
 		if m.focusIndex == focusFrom {
 			fromField = focusedStyle.Render(fmt.Sprintf("> %s %s [%s]", t("composer.from"), fromAddr, t("composer.enter_to_switch")))
 		} else {
@@ -876,6 +927,7 @@ func (m *Composer) ToDraft() config.Draft {
 		Body:            m.bodyInput.Value(),
 		AttachmentPaths: m.attachmentPaths,
 		AccountID:       m.GetSelectedAccountID(),
+		FromOverride:    m.fromInput.Value(),
 		InReplyTo:       m.inReplyTo,
 		References:      m.references,
 		QuotedText:      m.quotedText,
@@ -889,6 +941,9 @@ func NewComposerFromDraft(draft config.Draft, accounts []config.Account, hideTip
 	m.bccInput.SetValue(draft.Bcc)
 	m.draftID = draft.ID
 	m.attachmentPaths = draft.AttachmentPaths
+	if m.isCatchAllAccount() && draft.FromOverride != "" {
+		m.fromInput.SetValue(draft.FromOverride)
+	}
 	m.inReplyTo = draft.InReplyTo
 	m.references = draft.References
 	m.quotedText = draft.QuotedText

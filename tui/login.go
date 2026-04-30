@@ -35,6 +35,7 @@ const (
 	inputSMTPServer
 	inputSMTPPort
 	inputInsecure
+	inputCatchAll     // "true/false" — show all inbox messages regardless of To address
 	inputJMAPEndpoint // JMAP session URL
 	inputPOP3Server
 	inputPOP3Port
@@ -97,6 +98,9 @@ func NewLogin(hideTips bool) *Login {
 		case inputInsecure:
 			t.Placeholder = "Insecure (true/false) - Skip TLS verification"
 			t.Prompt = "🔓 > "
+		case inputCatchAll:
+			t.Placeholder = "Catch-All (true/false) - Show all inbox messages"
+			t.Prompt = "📬 > "
 		case inputJMAPEndpoint:
 			t.Placeholder = "JMAP Session URL (e.g., https://api.fastmail.com/jmap/session)"
 			t.Prompt = "🔗 > "
@@ -139,14 +143,14 @@ func (m *Login) visibleFields() []int {
 	switch proto {
 	case "jmap":
 		// JMAP: no provider selector, just endpoint + common fields
-		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputSendAsEmail, inputPassword, inputJMAPEndpoint)
+		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputSendAsEmail, inputCatchAll, inputPassword, inputJMAPEndpoint)
 	case "pop3":
 		// POP3: custom server fields + SMTP for sending
-		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputSendAsEmail, inputPassword,
+		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputSendAsEmail, inputCatchAll, inputPassword,
 			inputPOP3Server, inputPOP3Port, inputSMTPServer, inputSMTPPort, inputInsecure)
 	default:
 		// IMAP (default): existing flow
-		fields = append(fields, inputProvider, inputName, inputEmail, inputFetchEmail, inputSendAsEmail)
+		fields = append(fields, inputProvider, inputName, inputEmail, inputFetchEmail, inputSendAsEmail, inputCatchAll)
 		if hasOAuth {
 			fields = append(fields, inputAuthMethod)
 		}
@@ -284,6 +288,7 @@ func (m *Login) submitForm() func() tea.Msg {
 	proto := m.protocol()
 
 	insecure := m.inputs[inputInsecure].Value() == "true"
+	catchAll := m.inputs[inputCatchAll].Value() == "true"
 
 	return func() tea.Msg {
 		return Credentials{
@@ -293,6 +298,7 @@ func (m *Login) submitForm() func() tea.Msg {
 			Host:         m.inputs[inputEmail].Value(),
 			FetchEmail:   m.inputs[inputFetchEmail].Value(),
 			SendAsEmail:  m.inputs[inputSendAsEmail].Value(),
+			CatchAll:     catchAll,
 			Password:     m.inputs[inputPassword].Value(),
 			IMAPServer:   m.inputs[inputIMAPServer].Value(),
 			IMAPPort:     imapPort,
@@ -344,6 +350,8 @@ func (m *Login) View() tea.View {
 		tip = "The port for the SMTP server (usually 587 for TLS)."
 	case inputInsecure:
 		tip = "Type 'true' to disable TLS certificate verification (not recommended)."
+	case inputCatchAll:
+		tip = "Type 'true' to show all inbox messages regardless of To address (useful for catch-all domains)."
 	case inputJMAPEndpoint:
 		tip = "The JMAP session resource URL (e.g., https://api.fastmail.com/jmap/session)."
 	case inputPOP3Server:
@@ -366,6 +374,7 @@ func (m *Login) View() tea.View {
 			m.inputs[inputEmail].View(),
 			m.inputs[inputFetchEmail].View(),
 			m.inputs[inputSendAsEmail].View(),
+			m.inputs[inputCatchAll].View(),
 			m.inputs[inputPassword].View(),
 			"",
 			listHeader.Render("JMAP Settings:"),
@@ -377,6 +386,7 @@ func (m *Login) View() tea.View {
 			m.inputs[inputEmail].View(),
 			m.inputs[inputFetchEmail].View(),
 			m.inputs[inputSendAsEmail].View(),
+			m.inputs[inputCatchAll].View(),
 			m.inputs[inputPassword].View(),
 			"",
 			listHeader.Render("POP3 Server Settings:"),
@@ -398,6 +408,7 @@ func (m *Login) View() tea.View {
 			m.inputs[inputEmail].View(),
 			m.inputs[inputFetchEmail].View(),
 			m.inputs[inputSendAsEmail].View(),
+			m.inputs[inputCatchAll].View(),
 		)
 
 		if hasOAuth {
@@ -438,7 +449,7 @@ func (m *Login) View() tea.View {
 }
 
 // SetEditMode sets the login form to edit an existing account.
-func (m *Login) SetEditMode(accountID, protocol, provider, name, email, fetchEmail, sendAsEmail, imapServer string, imapPort int, smtpServer string, smtpPort int, insecure bool, jmapEndpoint, pop3Server string, pop3Port int) {
+func (m *Login) SetEditMode(accountID, protocol, provider, name, email, fetchEmail, sendAsEmail, imapServer string, imapPort int, smtpServer string, smtpPort int, insecure bool, jmapEndpoint, pop3Server string, pop3Port int, catchAll bool) {
 	m.isEditMode = true
 	m.accountID = accountID
 
@@ -451,6 +462,11 @@ func (m *Login) SetEditMode(accountID, protocol, provider, name, email, fetchEma
 	m.inputs[inputEmail].SetValue(email)
 	m.inputs[inputFetchEmail].SetValue(fetchEmail)
 	m.inputs[inputSendAsEmail].SetValue(sendAsEmail)
+	if catchAll {
+		m.inputs[inputCatchAll].SetValue("true")
+	} else {
+		m.inputs[inputCatchAll].SetValue("false")
+	}
 	m.showCustom = provider == "custom"
 
 	if m.showCustom {

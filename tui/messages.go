@@ -35,6 +35,7 @@ type SendEmailMsg struct {
 	InReplyTo       string
 	References      []string
 	AccountID       string // ID of the account to send from
+	FromOverride    string // Custom From address (used when account is catch-all)
 	QuotedText      string // Hidden quoted text appended when sending
 	Signature       string // Signature to append to email body
 	SignSMIME       bool   // Whether to sign the email using S/MIME
@@ -48,6 +49,7 @@ type Credentials struct {
 	Host         string // Host (this was the previous "Email Address" field in the UI)
 	FetchEmail   string // Single email address to fetch messages for. If empty, code should default this to Host when creating the account.
 	SendAsEmail  string // Optional From header email. If empty, sending falls back to FetchEmail, then Host.
+	CatchAll     bool   // Show all inbox messages regardless of To address.
 	Password     string
 	IMAPServer   string
 	IMAPPort     int
@@ -277,6 +279,7 @@ type GoToEditAccountMsg struct {
 	Email        string
 	FetchEmail   string
 	SendAsEmail  string
+	CatchAll     bool
 	IMAPServer   string
 	IMAPPort     int
 	SMTPServer   string

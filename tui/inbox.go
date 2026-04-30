@@ -389,16 +389,18 @@ func (m *Inbox) updateList() {
 	currentIndex := m.list.Index()
 
 	displayEmails := m.displayEmails()
-	var showAccountLabel bool
+	m.emailsCount = len(displayEmails)
 
+	var showAccountLabel bool
 	if m.searchActive {
-		showAccountLabel = !(len(m.accounts) <= 1)
+		showAccountLabel = len(m.accounts) > 1
 	} else if m.currentAccountID == "" {
-		// "ALL" view - show all emails sorted by date
-		showAccountLabel = !(len(m.accounts) <= 1)
+		showAccountLabel = len(m.accounts) > 1
 	}
 
-	m.emailsCount = len(displayEmails)
+	if !showAccountLabel && len(m.accounts) == 1 && m.accounts[0].CatchAll {
+		showAccountLabel = true
+	}
 
 	items := make([]list.Item, len(displayEmails))
 	for i, email := range displayEmails {
@@ -500,6 +502,18 @@ func (m *Inbox) filteredSearchResults() []fetcher.Email {
 }
 
 func (m *Inbox) accountLabelForEmail(email fetcher.Email) string {
+	var owningAcc *config.Account
+	for i := range m.accounts {
+		if m.accounts[i].ID == email.AccountID {
+			owningAcc = &m.accounts[i]
+			break
+		}
+	}
+
+	if owningAcc != nil && owningAcc.CatchAll && len(email.To) > 0 {
+		return extractEmailAddress(email.To[0])
+	}
+
 	for _, acc := range m.accounts {
 		fetchEmail := accountDisplayEmail(acc)
 		for _, recipient := range email.To {
@@ -508,10 +522,9 @@ func (m *Inbox) accountLabelForEmail(email fetcher.Email) string {
 			}
 		}
 	}
-	for _, acc := range m.accounts {
-		if acc.ID == email.AccountID {
-			return accountDisplayEmail(acc)
-		}
+
+	if owningAcc != nil {
+		return accountDisplayEmail(*owningAcc)
 	}
 	return ""
 }

@@ -345,6 +345,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ServiceProvider: msg.Provider,
 				FetchEmail:      fetchEmails[0],
 				SendAsEmail:     msg.SendAsEmail,
+				CatchAll:        msg.CatchAll,
 				AuthMethod:      msg.AuthMethod,
 				Protocol:        msg.Protocol,
 				Insecure:        msg.Insecure,
@@ -389,6 +390,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					ServiceProvider: msg.Provider,
 					FetchEmail:      fe,
 					SendAsEmail:     msg.SendAsEmail,
+					CatchAll:        msg.CatchAll,
 					AuthMethod:      msg.AuthMethod,
 					Protocol:        msg.Protocol,
 					JMAPEndpoint:    msg.JMAPEndpoint,
@@ -1066,7 +1068,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			hideTips = m.config.HideTips
 		}
 		login := tui.NewLogin(hideTips)
-		login.SetEditMode(msg.AccountID, msg.Protocol, msg.Provider, msg.Name, msg.Email, msg.FetchEmail, msg.SendAsEmail, msg.IMAPServer, msg.IMAPPort, msg.SMTPServer, msg.SMTPPort, msg.Insecure, msg.JMAPEndpoint, msg.POP3Server, msg.POP3Port)
+		login.SetEditMode(msg.AccountID, msg.Protocol, msg.Provider, msg.Name, msg.Email, msg.FetchEmail, msg.SendAsEmail, msg.IMAPServer, msg.IMAPPort, msg.SMTPServer, msg.SMTPPort, msg.Insecure, msg.JMAPEndpoint, msg.POP3Server, msg.POP3Port, msg.CatchAll)
 		m.current = login
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
@@ -2407,6 +2409,13 @@ func sendEmail(account *config.Account, msg tui.SendEmailMsg) tea.Cmd {
 	return func() tea.Msg {
 		if account == nil {
 			return tui.EmailResultMsg{Err: fmt.Errorf("no account configured")}
+		}
+
+		// Apply custom From address for catch-all accounts.
+		if msg.FromOverride != "" {
+			acc := *account
+			acc.SendAsEmail = msg.FromOverride
+			account = &acc
 		}
 
 		recipients := splitEmails(msg.To)

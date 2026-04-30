@@ -498,7 +498,9 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 			}
 
 			matched := false
-			if isSentMailbox {
+			if account.CatchAll {
+				matched = true
+			} else if isSentMailbox {
 				var senderEmail string
 				if len(msg.Envelope.From) > 0 {
 					senderEmail = msg.Envelope.From[0].Addr()
@@ -1518,23 +1520,27 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 
 		// For archive/All Mail, match emails where user is sender OR recipient
 		matched := false
-		// Check if user is the sender
-		if addressMatches(fromAddr, fetchEmail, account) {
+		if account.CatchAll {
 			matched = true
-		}
-		// Check if user is a recipient
-		if !matched {
-			for _, r := range toAddrList {
-				if addressMatches(r, fetchEmail, account) {
-					matched = true
-					break
+		} else {
+			// Check if user is the sender
+			if addressMatches(fromAddr, fetchEmail, account) {
+				matched = true
+			}
+			// Check if user is a recipient
+			if !matched {
+				for _, r := range toAddrList {
+					if addressMatches(r, fetchEmail, account) {
+						matched = true
+						break
+					}
 				}
 			}
-		}
-		// Check delivery headers for auto-forwarded emails
-		if !matched {
-			headerData := msg.FindBodySection(deliveryHeaderSection)
-			matched = deliveryHeadersMatch(headerData, fetchEmail, account)
+			// Check delivery headers for auto-forwarded emails
+			if !matched {
+				headerData := msg.FindBodySection(deliveryHeaderSection)
+				matched = deliveryHeadersMatch(headerData, fetchEmail, account)
+			}
 		}
 
 		if !matched {

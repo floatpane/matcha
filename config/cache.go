@@ -260,6 +260,7 @@ type Draft struct {
 	Body            string    `json:"body"`
 	AttachmentPaths []string  `json:"attachment_paths,omitempty"`
 	AccountID       string    `json:"account_id"`
+	FromOverride    string    `json:"from_override,omitempty"`
 	InReplyTo       string    `json:"in_reply_to,omitempty"`
 	References      []string  `json:"references,omitempty"`
 	QuotedText      string    `json:"quoted_text,omitempty"`
