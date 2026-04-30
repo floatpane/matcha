@@ -13,7 +13,7 @@ import (
 func LoadTranslations(bundle *Bundle) error {
 	// Load from embedded files
 	if err := loadFromEmbedded(bundle); err != nil {
-		return fmt.Errorf("%w: embedded load failed: %v", ErrLoadFailed, err)
+		return fmt.Errorf("%w: embedded load failed: %w", ErrLoadFailed, err)
 	}
 
 	return nil
