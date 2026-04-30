@@ -172,6 +172,12 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 
+		// Don't intercept keys while the inbox search overlay is active.
+		// Otherwise folder-level bindings like "m" (move) would shadow text input.
+		if m.inbox.searchOverlay != nil {
+			break
+		}
+
 		kb := config.Keybinds
 
 		// Route input to preview pane when focused

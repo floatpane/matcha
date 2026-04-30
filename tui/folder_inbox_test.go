@@ -86,3 +86,39 @@ func TestFolderInboxSplitPreviewPrefersAllEmails(t *testing.T) {
 		t.Fatalf("expected the live allEmails entry, got %+v", got)
 	}
 }
+
+// TestSearchOverlayKeysNotIntercepted covers issue #1199: pressing keys that
+// match folder-level bindings (e.g. "m" for move) while the search overlay is
+// active used to trigger the move flow instead of entering text into the
+// search input. FolderInbox.Update now passes through to the inner inbox
+// while m.inbox.searchOverlay != nil so the overlay receives raw keystrokes.
+func TestSearchOverlayKeysNotIntercepted(t *testing.T) {
+	accounts := []config.Account{
+		{ID: "account-1", Email: "host.example.com", FetchEmail: "first@example.com"},
+	}
+	fi := NewFolderInbox([]string{"INBOX", "Archive"}, accounts)
+	model, _ := fi.Update(tea.WindowSizeMsg{Width: 200, Height: 60})
+	fi = model.(*FolderInbox)
+
+	// Selection must exist so the bug's "m" -> Move handler would actually fire.
+	fi.SetEmails([]fetcher.Email{
+		{UID: 1, AccountID: "account-1", Subject: "first"},
+	}, accounts)
+
+	// Open the search overlay (the same state pressing "/" produces in inbox.go).
+	fi.inbox.searchOverlay = NewSearchOverlay(fi.width, fi.height)
+
+	// Press "m" -- with the bug this would set movingEmail = true.
+	model, _ = fi.Update(tea.KeyPressMsg{Code: 'm', Text: "m"})
+	fi = model.(*FolderInbox)
+
+	if fi.movingEmail {
+		t.Fatal("pressing 'm' while search overlay is active must not start the move flow")
+	}
+	if fi.inbox.searchOverlay == nil {
+		t.Fatal("search overlay must remain open after typing into it")
+	}
+	if got := fi.inbox.searchOverlay.input.Value(); got != "m" {
+		t.Fatalf("search input should contain typed character, got %q", got)
+	}
+}
