@@ -110,9 +110,10 @@ func hasSeenFlag(flags []imap.Flag) bool {
 	return slices.Contains(flags, imap.FlagSeen)
 }
 
-// stripPlusTag removes a Gmail-style "+tag" subaddress from the local part.
-// "user+anything@gmail.com" -> "user@gmail.com".
-func stripPlusTag(addr string) string {
+// normalizeGmailAddress canonicalizes a Gmail address by stripping the "+tag"
+// subaddress and removing dots from the local part. Gmail treats
+// "u.s.e.r+tag@gmail.com" and "user@gmail.com" as the same mailbox.
+func normalizeGmailAddress(addr string) string {
 	at := strings.LastIndex(addr, "@")
 	if at < 0 {
 		return addr
@@ -121,11 +122,13 @@ func stripPlusTag(addr string) string {
 	if plus := strings.Index(local, "+"); plus >= 0 {
 		local = local[:plus]
 	}
+	local = strings.ReplaceAll(local, ".", "")
 	return local + domain
 }
 
 // addressMatches reports whether candidate matches the configured fetch email.
-// For Gmail accounts, subaddressed forms like "local+tag@gmail.com" also match.
+// For Gmail accounts, subaddressed forms ("local+tag@gmail.com") and dotted
+// forms ("l.o.c.a.l@gmail.com") also match.
 // fetchEmail must already be lowercased and trimmed.
 func addressMatches(candidate, fetchEmail string, account *config.Account) bool {
 	candidate = strings.ToLower(strings.TrimSpace(candidate))
@@ -136,7 +139,7 @@ func addressMatches(candidate, fetchEmail string, account *config.Account) bool 
 		return true
 	}
 	if account != nil && strings.EqualFold(account.ServiceProvider, "gmail") {
-		return stripPlusTag(candidate) == stripPlusTag(fetchEmail)
+		return normalizeGmailAddress(candidate) == normalizeGmailAddress(fetchEmail)
 	}
 	return false
 }
