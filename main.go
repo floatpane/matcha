@@ -3856,6 +3856,11 @@ func main() {
 		}
 		if !disableNotifications {
 			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("panic in macOS sync goroutine: %v", r)
+					}
+				}()
 				_ = config.SyncMacOSContacts()
 				_ = theme.SyncWithMacOS()
 			}()
