@@ -45,9 +45,9 @@ func TestRandomURLSafe_LengthAndCharset(t *testing.T) {
 
 func TestDetectProvider(t *testing.T) {
 	cases := []struct {
-		email   string
-		want    string
-		wantOK  bool
+		email  string
+		want   string
+		wantOK bool
 	}{
 		{"alice@gmail.com", "gmail", true},
 		{"ALICE@GMAIL.COM", "gmail", true},
