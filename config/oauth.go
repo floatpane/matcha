@@ -1,18 +1,5 @@
-// Package config — OAuth2 support for Matcha.
-//
-// This file is a drop-in replacement for the Python-shellout implementation.
-// It uses golang.org/x/oauth2 for the auth code + PKCE flow and stores
-// tokens in the OS keyring (same backend already used for IMAP passwords),
-// keeping the binary single-file and consistent with the rest of the
-// credential story.
-//
-// Public API preserved from the previous version:
-//   - (*Account).IsOAuth2() bool
-//   - GetOAuth2Token(email string) (string, error)
-//   - RunOAuth2Flow(email, provider, clientID, clientSecret string) error
-//
-// New helper, used by the settings UI when removing an account:
-//   - RevokeOAuth2Token(email string) error
+// OAuth2 support for Matcha. Uses golang.org/x/oauth2 for the auth code +
+// PKCE flow and stores tokens in the OS keyring alongside IMAP passwords.
 package config
 
 import (
@@ -73,29 +60,21 @@ func GetOAuth2Token(email string) (string, error) {
 	return fresh.AccessToken, nil
 }
 
-// OAuth2Options tunes RunOAuth2FlowWithOptions behaviour. Zero value mirrors
-// the historical CLI behaviour: status is printed to os.Stderr.
+// OAuth2Options tunes RunOAuth2FlowWithOptions. Zero value writes status to os.Stderr.
 type OAuth2Options struct {
-	// StatusWriter receives human-readable progress messages ("Opening browser
-	// to authorize…", the auth URL, browser-launch failures). Set to io.Discard
-	// when the caller is rendering its own UI (e.g. the Bubbletea TUI), since
-	// raw writes to stderr corrupt the terminal grid. nil = os.Stderr.
+	// StatusWriter receives progress messages. nil = os.Stderr; pass io.Discard
+	// from a TUI to avoid corrupting the alternate-screen grid.
 	StatusWriter io.Writer
 }
 
-// RunOAuth2Flow performs the full browser-based authorization for `email`.
-// providerKey may be "gmail" or "outlook"; if empty it is auto-detected.
-// If clientID/clientSecret are non-empty they are persisted for future refreshes.
-//
-// Status messages are printed to os.Stderr. Callers running inside an
-// alternate-screen TUI should use RunOAuth2FlowWithOptions with
-// StatusWriter set to io.Discard (or a writer that bridges to their UI).
+// RunOAuth2Flow performs browser-based authorization for email and writes
+// status to os.Stderr. providerKey ("gmail"|"outlook") is auto-detected when
+// empty. Non-empty clientID/clientSecret are persisted for future refreshes.
 func RunOAuth2Flow(email, providerKey, clientID, clientSecret string) error {
 	return RunOAuth2FlowWithOptions(email, providerKey, clientID, clientSecret, OAuth2Options{})
 }
 
-// RunOAuth2FlowWithOptions is the full-featured form of RunOAuth2Flow. The
-// public-facing wrapper preserves the original signature for CLI callers.
+// RunOAuth2FlowWithOptions is RunOAuth2Flow with caller-controlled status output.
 func RunOAuth2FlowWithOptions(email, providerKey, clientID, clientSecret string, opts OAuth2Options) error {
 	statusW := opts.StatusWriter
 	if statusW == nil {
@@ -107,15 +86,13 @@ func RunOAuth2FlowWithOptions(email, providerKey, clientID, clientSecret string,
 	}
 
 	if clientID != "" && clientSecret != "" {
-		// Save per-email so different accounts can use different OAuth clients
-		// (e.g. one personal Cloud Project + one Workspace Cloud Project).
+		// Always store per-email so accounts can use distinct OAuth clients.
 		if err := saveClientCredentials(email, clientID, clientSecret); err != nil {
 			return fmt.Errorf("oauth2: could not store client credentials: %w", err)
 		}
-		// If no provider-level default exists yet, also save these as the
-		// default so additional accounts on the same provider can omit the
-		// flags. We don't overwrite an existing default — that's reserved
-		// for an explicit per-email override.
+		// Seed the provider default on first auth so other accounts can omit
+		// the flags. Existing defaults are not overwritten — that's the job
+		// of an explicit per-email override.
 		if _, _, err := loadClientCredentials(provider.Key); err != nil {
 			_ = saveClientCredentials(provider.Key, clientID, clientSecret)
 		}
@@ -216,6 +193,8 @@ func RunOAuth2FlowWithOptions(email, providerKey, clientID, clientSecret string,
 		// provider for addresses whose domain isn't auto-detectable (Workspace
 		// custom domains, etc.). Best-effort: refresh still works via fallback
 		// detection for addresses where domain detection succeeds.
+		// Persist the resolved provider so custom-domain (Workspace) accounts
+		// survive refresh, where domain-based detection would fail.
 		_ = keyring.Set(keyringServiceName, email+providerKeySuffix, provider.Key)
 		fmt.Fprintln(statusW, "OAuth2 setup complete.")
 		return nil
@@ -333,17 +312,15 @@ func resolveProvider(email, key string) (provider, error) {
 	return p, nil
 }
 
+// providerForToken resolves an email to its OAuth provider. The keyring
+// mapping wins so custom-domain accounts work; domain detection is the
+// fallback for accounts that predate the mapping.
 func providerForToken(email string) (provider, error) {
-	// First check the keyring — RunOAuth2Flow persists the resolved provider
-	// here so Workspace addresses (which can't be auto-detected from the
-	// domain) round-trip correctly through GetOAuth2Token.
 	if v, err := keyring.Get(keyringServiceName, email+providerKeySuffix); err == nil {
 		if p, ok := providers[v]; ok {
 			return p, nil
 		}
 	}
-	// Fall back to email-domain detection for accounts that pre-date the
-	// keyring mapping (or whose provider was never explicitly stored).
 	if k, ok := detectProvider(email); ok {
 		return providers[k], nil
 	}
@@ -415,11 +392,10 @@ func deleteToken(email string) error {
 	return nil
 }
 
-// decodeToken accepts both the oauth2.Token JSON shape (uses `expiry` as an
-// RFC3339 string) and the legacy Python shape (uses `expires_at` as a unix
-// timestamp). The other fields — access_token, refresh_token, token_type —
-// share identical names across both shapes, so we parse into a combined struct
-// rather than try-one-then-fall-through (which would silently drop expiry).
+// decodeToken accepts both the oauth2.Token shape (`expiry` as RFC3339) and
+// the legacy Python shape (`expires_at` as unix timestamp). Combined-struct
+// parsing — try-then-fallback would silently drop expiry because the other
+// field tags overlap.
 func decodeToken(data []byte) (*oauth2.Token, error) {
 	var raw struct {
 		AccessToken  string    `json:"access_token"`
@@ -450,7 +426,9 @@ func decodeToken(data []byte) (*oauth2.Token, error) {
 	}, nil
 }
 
-func saveClientCredentials(providerKey, id, secret string) error {
+// saveClientCredentials stores an OAuth client_id/client_secret pair under
+// `key` (a provider name for the default, or an email for an override).
+func saveClientCredentials(key, id, secret string) error {
 	b, err := json.Marshal(struct {
 		ID     string `json:"client_id"`
 		Secret string `json:"client_secret"`
@@ -458,15 +436,11 @@ func saveClientCredentials(providerKey, id, secret string) error {
 	if err != nil {
 		return err
 	}
-	return keyring.Set(keyringServiceName, providerKey+clientCredKeySuffix, string(b))
+	return keyring.Set(keyringServiceName, key+clientCredKeySuffix, string(b))
 }
 
-// loadClientForAccount looks up OAuth client credentials with email-specific
-// override semantics: the per-email entry wins if present, otherwise we fall
-// back to the provider-level default. This lets two accounts on the same
-// provider (e.g. personal Gmail + Workspace Gmail) use distinct OAuth clients
-// while preserving the common single-client UX for users with one Cloud
-// Project.
+// loadClientForAccount returns OAuth client credentials, preferring a
+// per-email override over the provider-level default.
 func loadClientForAccount(email, providerKey string) (string, string, error) {
 	if id, secret, err := loadClientCredentials(email); err == nil {
 		return id, secret, nil
@@ -474,15 +448,21 @@ func loadClientForAccount(email, providerKey string) (string, string, error) {
 	return loadClientCredentials(providerKey)
 }
 
-func loadClientCredentials(providerKey string) (string, string, error) {
-	v, err := keyring.Get(keyringServiceName, providerKey+clientCredKeySuffix)
+// loadClientCredentials reads credentials from the keyring under `key`
+// (provider name or email). For provider keys we also fall back to the legacy
+// on-disk file written by the pre-Go OAuth helper; email keys skip that path
+// because the helper only wrote per-provider files.
+func loadClientCredentials(key string) (string, string, error) {
+	v, err := keyring.Get(keyringServiceName, key+clientCredKeySuffix)
 	if err != nil {
-		// Try legacy on-disk location written by the Python script.
+		if strings.Contains(key, "@") {
+			return "", "", err
+		}
 		dir, derr := configDir()
 		if derr != nil {
 			return "", "", err
 		}
-		path := filepath.Join(dir, "oauth", providerKey+"_client.json")
+		path := filepath.Join(dir, "oauth", key+"_client.json")
 		data, ferr := os.ReadFile(path)
 		if ferr != nil {
 			return "", "", err

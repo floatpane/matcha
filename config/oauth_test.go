@@ -327,11 +327,11 @@ func TestDeleteToken_RemovesPerEmailClientCreds(t *testing.T) {
 	}
 }
 
-func TestProviderForToken_KeyringWinsOverDomainDetection(t *testing.T) {
+func TestProviderForToken_KeyringMappingForCustomDomain(t *testing.T) {
 	keyring.MockInit()
 	t.Setenv("HOME", t.TempDir())
 
-	// Workspace-style domain — not auto-detectable.
+	// Workspace-style domain — not auto-detectable; should fail before mapping.
 	if _, err := providerForToken("user@corp.example"); err == nil {
 		t.Error("expected error before mapping is stored")
 	}
@@ -345,6 +345,26 @@ func TestProviderForToken_KeyringWinsOverDomainDetection(t *testing.T) {
 	}
 	if p.Key != "gmail" {
 		t.Errorf("got provider %q, want gmail", p.Key)
+	}
+}
+
+// TestProviderForToken_KeyringPrecedence verifies the keyring mapping is
+// consulted *before* domain detection by using an @gmail.com address that
+// would otherwise auto-detect to gmail, and storing "outlook" in the keyring.
+// If the keyring entry isn't actually consulted first, the test catches it.
+func TestProviderForToken_KeyringPrecedence(t *testing.T) {
+	keyring.MockInit()
+	t.Setenv("HOME", t.TempDir())
+
+	if err := keyring.Set(keyringServiceName, "user@gmail.com"+providerKeySuffix, "outlook"); err != nil {
+		t.Fatal(err)
+	}
+	p, err := providerForToken("user@gmail.com")
+	if err != nil {
+		t.Fatalf("providerForToken: %v", err)
+	}
+	if p.Key != "outlook" {
+		t.Errorf("got provider %q, want outlook (keyring should win over domain detection)", p.Key)
 	}
 }
 

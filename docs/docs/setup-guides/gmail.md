@@ -115,6 +115,10 @@ The `--provider gmail` flag is required for Workspace accounts because Matcha ca
 
 If your Workspace admin restricts third-party app access, they'll need to allowlist the OAuth Client ID in **Admin Console → Security → API Controls → App Access Control**. Without that, you'll see an "Access blocked: app has not completed verification" error regardless of which Cloud Project the OAuth Client lives in.
 
+#### Rotating an OAuth Client secret
+
+If you rotate a client secret in Google Cloud Console, re-running `matcha oauth auth <email> --client-id ID --client-secret NEW_SECRET` updates the credentials stored under that specific email address but **does not** overwrite the provider-level default. This is intentional — explicit per-account credentials shouldn't silently mutate the shared default that other accounts may rely on. After rotating the secret of the OAuth Client that backs your provider default, also re-run `oauth auth` for any other account that previously relied on the default, passing the new secret with `--client-id`/`--client-secret` so each account's stored credentials get refreshed.
+
 ### 7. Add your account in Matcha
 
 From Matcha, open settings and choose to add a new account. Enter:
