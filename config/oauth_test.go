@@ -141,9 +141,18 @@ func TestDecodeToken_Malformed(t *testing.T) {
 	}
 }
 
+// setHomeDir redirects os.UserHomeDir to a temp directory on every supported
+// OS. Linux/macOS read $HOME; Windows reads %USERPROFILE%. Setting both is
+// harmless on the platform that doesn't honor it.
+func setHomeDir(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+}
+
 func TestSaveAndLoadToken_KeyringRoundTrip(t *testing.T) {
 	keyring.MockInit()
-	t.Setenv("HOME", t.TempDir())
+	setHomeDir(t, t.TempDir())
 
 	email := "user@gmail.com"
 	tok := &oauth2.Token{
@@ -173,7 +182,7 @@ func TestSaveAndLoadToken_KeyringRoundTrip(t *testing.T) {
 func TestLoadToken_MigratesFromDisk(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHomeDir(t, home)
 
 	email := "migrate@gmail.com"
 	dir := filepath.Join(home, ".config", "matcha", "oauth_tokens")
@@ -208,7 +217,7 @@ func TestLoadToken_MigratesFromDisk(t *testing.T) {
 
 func TestSaveAndLoadClientCredentials(t *testing.T) {
 	keyring.MockInit()
-	t.Setenv("HOME", t.TempDir())
+	setHomeDir(t, t.TempDir())
 
 	if err := saveClientCredentials("gmail", "client-id-1", "client-secret-1"); err != nil {
 		t.Fatalf("saveClientCredentials: %v", err)
@@ -228,7 +237,7 @@ func TestSaveAndLoadClientCredentials(t *testing.T) {
 func TestLoadClientCredentials_MigratesFromDisk(t *testing.T) {
 	keyring.MockInit()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHomeDir(t, home)
 
 	dir := filepath.Join(home, ".config", "matcha", "oauth")
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -249,9 +258,10 @@ func TestLoadClientCredentials_MigratesFromDisk(t *testing.T) {
 }
 
 func TestLegacyTokenPath_Shape(t *testing.T) {
-	t.Setenv("HOME", "/home/example")
+	home := t.TempDir()
+	setHomeDir(t, home)
 	got := legacyTokenPath("user@gmail.com")
-	want := filepath.Join("/home/example", ".config", "matcha", "oauth_tokens", "user@gmail.com.json")
+	want := filepath.Join(home, ".config", "matcha", "oauth_tokens", "user@gmail.com.json")
 	if got != want {
 		t.Errorf("legacyTokenPath = %q, want %q", got, want)
 	}
@@ -267,7 +277,7 @@ func TestProviderHelpText(t *testing.T) {
 
 func TestLoadClientForAccount_PerEmailOverridesProviderDefault(t *testing.T) {
 	keyring.MockInit()
-	t.Setenv("HOME", t.TempDir())
+	setHomeDir(t, t.TempDir())
 
 	// Provider-level default (used by accounts that don't override).
 	if err := saveClientCredentials("gmail", "default-id", "default-secret"); err != nil {
@@ -299,7 +309,7 @@ func TestLoadClientForAccount_PerEmailOverridesProviderDefault(t *testing.T) {
 
 func TestDeleteToken_RemovesPerEmailClientCreds(t *testing.T) {
 	keyring.MockInit()
-	t.Setenv("HOME", t.TempDir())
+	setHomeDir(t, t.TempDir())
 
 	// Set both a provider-level default and a per-email override.
 	if err := saveClientCredentials("gmail", "default-id", "default-secret"); err != nil {
@@ -329,7 +339,7 @@ func TestDeleteToken_RemovesPerEmailClientCreds(t *testing.T) {
 
 func TestProviderForToken_KeyringMappingForCustomDomain(t *testing.T) {
 	keyring.MockInit()
-	t.Setenv("HOME", t.TempDir())
+	setHomeDir(t, t.TempDir())
 
 	// Workspace-style domain — not auto-detectable; should fail before mapping.
 	if _, err := providerForToken("user@corp.example"); err == nil {
@@ -354,7 +364,7 @@ func TestProviderForToken_KeyringMappingForCustomDomain(t *testing.T) {
 // If the keyring entry isn't actually consulted first, the test catches it.
 func TestProviderForToken_KeyringPrecedence(t *testing.T) {
 	keyring.MockInit()
-	t.Setenv("HOME", t.TempDir())
+	setHomeDir(t, t.TempDir())
 
 	if err := keyring.Set(keyringServiceName, "user@gmail.com"+providerKeySuffix, "outlook"); err != nil {
 		t.Fatal(err)
@@ -370,7 +380,7 @@ func TestProviderForToken_KeyringPrecedence(t *testing.T) {
 
 func TestProviderForToken_FallsBackToDomainDetection(t *testing.T) {
 	keyring.MockInit()
-	t.Setenv("HOME", t.TempDir())
+	setHomeDir(t, t.TempDir())
 
 	// No keyring mapping — should still resolve via domain heuristic.
 	p, err := providerForToken("legacy.user@gmail.com")
@@ -384,7 +394,7 @@ func TestProviderForToken_FallsBackToDomainDetection(t *testing.T) {
 
 func TestRevokeOAuth2Token_NoStoredTokenIsNoop(t *testing.T) {
 	keyring.MockInit()
-	t.Setenv("HOME", t.TempDir())
+	setHomeDir(t, t.TempDir())
 	// Should not error when no token is stored.
 	if err := RevokeOAuth2Token("nobody@gmail.com"); err != nil {
 		t.Errorf("RevokeOAuth2Token on empty state should be a no-op, got %v", err)
