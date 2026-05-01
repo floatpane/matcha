@@ -425,6 +425,7 @@ type CachedEmailBody struct {
 	UID            uint32             `json:"uid"`
 	AccountID      string             `json:"account_id"`
 	Body           string             `json:"body"`
+	BodyMIMEType   string             `json:"body_mime_type,omitempty"` // empty for cache rows written before MIME-type tracking; renderer falls back to legacy markdown→HTML pre-pass
 	Attachments    []CachedAttachment `json:"attachments,omitempty"`
 	CachedAt       time.Time          `json:"cached_at"`
 	LastAccessedAt time.Time          `json:"last_accessed_at"`

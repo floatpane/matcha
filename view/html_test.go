@@ -834,21 +834,13 @@ func TestProcessBody(t *testing.T) {
 	}
 }
 
-// TestProcessBody_HTMLMIMETypeSkipsMarkdownPrepass verifies that bodies tagged
-// as text/html bypass the markdown→HTML pre-pass. Datadog-style HTML emails
-// have indented attribute-heavy <table> tags that md4c either escapes or
-// treats as a code block, leaking raw markup to the renderer (#602 et al).
-// With the right MIME type the renderer should hand the body straight to the
-// HTML parser, leaving no literal "<table" text in the output.
-func TestProcessBody_HTMLMIMETypeSkipsMarkdownPrepass(t *testing.T) {
-	ansiEscapeRegex := regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	bodyStyle := lipgloss.NewStyle()
-	h1Style := lipgloss.NewStyle()
-	h2Style := lipgloss.NewStyle()
-
-	// Indented attribute-heavy HTML — the shape that triggers md4c escaping
-	// when the body is passed through markdownToHTML first.
-	htmlBody := `    <table cellpadding="0" cellspacing="0" border="0" width="710" style="border:1px solid #E7E7E7;">
+// datadogShapeHTML is the indented attribute-heavy table shape commonly
+// produced by Datadog Daily Digest, marketing tools, and any sender that
+// uses HTML <table> for layout. md4c's html_block rule rejects this shape
+// (leading whitespace, attribute-laden opening tag), so the markdown
+// pre-pass passes the literal text through, and htmlconv then renders the
+// raw "<table cellpadding=..." tag as visible body text.
+const datadogShapeHTML = `    <table cellpadding="0" cellspacing="0" border="0" width="710" style="border:1px solid #E7E7E7;">
       <tr>
         <td style="background-color: #632ca6; color: white;">
           <h1>The Daily Digest</h1>
@@ -856,10 +848,37 @@ func TestProcessBody_HTMLMIMETypeSkipsMarkdownPrepass(t *testing.T) {
       </tr>
     </table>`
 
-	// With mimeType="text/html", htmlconv handles the structure directly;
-	// even if it doesn't render <td> the way we'd like, the literal opening
-	// tag must not appear in the output.
-	processed, _, err := ProcessBody(htmlBody, BodyMIMETypeHTML, h1Style, h2Style, bodyStyle, false)
+// TestProcessBody_LegacyPathManglesIndentedHTML pins the bug this PR fixes.
+// With an empty MIME type, the renderer falls through to the legacy
+// markdown→HTML pre-pass, which is what every body went through before this
+// change. For Datadog-shape input the output literally contains the opening
+// "<table cellpadding=..." text, which is what users see leaked into the
+// inbox viewer. This test will pass on master too — it documents the bug,
+// not the fix.
+func TestProcessBody_LegacyPathManglesIndentedHTML(t *testing.T) {
+	ansiEscapeRegex := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	processed, _, err := ProcessBody(datadogShapeHTML, "", lipgloss.NewStyle(), lipgloss.NewStyle(), lipgloss.NewStyle(), false)
+	if err != nil {
+		t.Fatalf("ProcessBody(legacy) failed: %v", err)
+	}
+	clean := ansiEscapeRegex.ReplaceAllString(processed, "")
+	if !strings.Contains(clean, "<table") {
+		t.Errorf("legacy path should leak literal '<table' tag for indented attribute-heavy HTML — if this assertion stops firing, md4c's html_block handling has improved and this PR's premise needs re-evaluation. Got:\n%s", clean)
+	}
+}
+
+// TestProcessBody_HTMLMIMETypeSkipsMarkdownPrepass is the fix counterpart to
+// the legacy-mangling test above. Same input, but tagged "text/html", goes
+// straight to htmlconv without the broken markdown pre-pass.
+func TestProcessBody_HTMLMIMETypeSkipsMarkdownPrepass(t *testing.T) {
+	ansiEscapeRegex := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	bodyStyle := lipgloss.NewStyle()
+	h1Style := lipgloss.NewStyle()
+	h2Style := lipgloss.NewStyle()
+
+	// Same input as TestProcessBody_LegacyPathManglesIndentedHTML — the
+	// differential is purely the MIME-type argument.
+	processed, _, err := ProcessBody(datadogShapeHTML, BodyMIMETypeHTML, h1Style, h2Style, bodyStyle, false)
 	if err != nil {
 		t.Fatalf("ProcessBody(text/html) failed: %v", err)
 	}

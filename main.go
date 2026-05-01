@@ -732,10 +732,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, func() tea.Msg {
 				return tui.PreviewBodyFetchedMsg{
-					UID:         msg.UID,
-					Body:        cached.Body,
-					Attachments: attachments,
-					AccountID:   msg.AccountID,
+					UID:          msg.UID,
+					Body:         cached.Body,
+					BodyMIMEType: cached.BodyMIMEType,
+					Attachments:  attachments,
+					AccountID:    msg.AccountID,
 				}
 			}
 		}
@@ -758,10 +759,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			go func() {
 				err := config.SaveEmailBody(folderName, config.CachedEmailBody{
-					UID:         msg.UID,
-					AccountID:   msg.AccountID,
-					Body:        msg.Body,
-					Attachments: cachedAttachments,
+					UID:          msg.UID,
+					AccountID:    msg.AccountID,
+					Body:         msg.Body,
+					BodyMIMEType: msg.BodyMIMEType,
+					Attachments:  cachedAttachments,
 				}, m.config.GetBodyCacheThreshold())
 				if err != nil {
 					log.Printf("debug: error caching email body fails (disk full, permission denied) for UID: %d: %v", msg.UID, err)
@@ -1261,11 +1263,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, func() tea.Msg {
 				return tui.EmailBodyFetchedMsg{
-					UID:         msg.UID,
-					Body:        cached.Body,
-					Attachments: attachments,
-					AccountID:   msg.AccountID,
-					Mailbox:     msg.Mailbox,
+					UID:          msg.UID,
+					Body:         cached.Body,
+					BodyMIMEType: cached.BodyMIMEType,
+					Attachments:  attachments,
+					AccountID:    msg.AccountID,
+					Mailbox:      msg.Mailbox,
 				}
 			}
 		}
@@ -1282,7 +1285,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Update the email in our stores
-		m.updateEmailBodyByUID(msg.UID, msg.AccountID, msg.Mailbox, msg.Body, msg.Attachments)
+		m.updateEmailBodyByUID(msg.UID, msg.AccountID, msg.Mailbox, msg.Body, msg.BodyMIMEType, msg.Attachments)
 
 		// Cache the body to disk
 		folderForCache := "INBOX"
@@ -1309,10 +1312,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cachedAttachments = append(cachedAttachments, ca)
 		}
 		err := config.SaveEmailBody(folderForCache, config.CachedEmailBody{
-			UID:         msg.UID,
-			AccountID:   msg.AccountID,
-			Body:        msg.Body,
-			Attachments: cachedAttachments,
+			UID:          msg.UID,
+			AccountID:    msg.AccountID,
+			Body:         msg.Body,
+			BodyMIMEType: msg.BodyMIMEType,
+			Attachments:  cachedAttachments,
 		}, m.config.GetBodyCacheThreshold())
 
 		if err != nil {
@@ -1840,10 +1844,11 @@ func (m *mainModel) getEmailIndex(uid uint32, accountID string, mailbox tui.Mail
 	return -1
 }
 
-func (m *mainModel) updateEmailBodyByUID(uid uint32, accountID string, mailbox tui.MailboxKind, body string, attachments []fetcher.Attachment) {
+func (m *mainModel) updateEmailBodyByUID(uid uint32, accountID string, mailbox tui.MailboxKind, body, bodyMIMEType string, attachments []fetcher.Attachment) {
 	for i := range m.emails {
 		if m.emails[i].UID == uid && m.emails[i].AccountID == accountID {
 			m.emails[i].Body = body
+			m.emails[i].BodyMIMEType = bodyMIMEType
 			m.emails[i].Attachments = attachments
 			break
 		}
@@ -1852,6 +1857,7 @@ func (m *mainModel) updateEmailBodyByUID(uid uint32, accountID string, mailbox t
 		for i := range emails {
 			if emails[i].UID == uid {
 				emails[i].Body = body
+				emails[i].BodyMIMEType = bodyMIMEType
 				emails[i].Attachments = attachments
 				break
 			}

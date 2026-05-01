@@ -971,7 +971,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 										body, _ := io.ReadAll(p.Body)
 										extractedBody = string(body)
 										extractedBodyMIMEType = "text/plain"
-										plainPartID = "decrypted"
+										htmlPartID = "decrypted"
 									}
 								}
 							}
