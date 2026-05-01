@@ -154,7 +154,7 @@ func (d *Daemon) handleFetchEmailBody(conn *daemonrpc.Conn, req *daemonrpc.Reque
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
 
-	body, attachments, err := p.FetchEmailBody(ctx, params.Folder, params.UID)
+	body, mimeType, attachments, err := p.FetchEmailBody(ctx, params.Folder, params.UID)
 	if err != nil {
 		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error())
 		return
@@ -172,8 +172,9 @@ func (d *Daemon) handleFetchEmailBody(conn *daemonrpc.Conn, req *daemonrpc.Reque
 	}
 
 	conn.SendResponse(req.ID, daemonrpc.FetchEmailBodyResult{
-		Body:        body,
-		Attachments: attInfos,
+		Body:         body,
+		BodyMIMEType: mimeType,
+		Attachments:  attInfos,
 	})
 }
 

@@ -276,10 +276,10 @@ func searchLimit(query backend.SearchQuery) uint32 {
 	return 100
 }
 
-func (p *Provider) FetchEmailBody(_ context.Context, _ string, uid uint32) (string, []backend.Attachment, error) {
+func (p *Provider) FetchEmailBody(_ context.Context, _ string, uid uint32) (string, string, []backend.Attachment, error) {
 	jmapID, err := p.lookupJMAPID(uid)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 
 	req := &jmapclient.Request{}
@@ -297,7 +297,7 @@ func (p *Provider) FetchEmailBody(_ context.Context, _ string, uid uint32) (stri
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return "", nil, fmt.Errorf("jmap body: %w", err)
+		return "", "", nil, fmt.Errorf("jmap body: %w", err)
 	}
 
 	for _, inv := range resp.Responses {
@@ -305,10 +305,11 @@ func (p *Provider) FetchEmailBody(_ context.Context, _ string, uid uint32) (stri
 			eml := r.List[0]
 
 			// Get body text (prefer HTML)
-			var body string
+			var body, mimeType string
 			for _, part := range eml.HTMLBody {
 				if val, ok := eml.BodyValues[part.PartID]; ok {
 					body = val.Value
+					mimeType = "text/html"
 					break
 				}
 			}
@@ -316,6 +317,7 @@ func (p *Provider) FetchEmailBody(_ context.Context, _ string, uid uint32) (stri
 				for _, part := range eml.TextBody {
 					if val, ok := eml.BodyValues[part.PartID]; ok {
 						body = val.Value
+						mimeType = "text/plain"
 						break
 					}
 				}
@@ -336,11 +338,11 @@ func (p *Provider) FetchEmailBody(_ context.Context, _ string, uid uint32) (stri
 				atts = append(atts, a)
 			}
 
-			return body, atts, nil
+			return body, mimeType, atts, nil
 		}
 	}
 
-	return "", nil, fmt.Errorf("jmap: email not found")
+	return "", "", nil, fmt.Errorf("jmap: email not found")
 }
 
 func (p *Provider) FetchAttachment(_ context.Context, _ string, _ uint32, partID, _ string) ([]byte, error) {

@@ -2378,30 +2378,32 @@ func fetchEmailBodyCmd(cfg *config.Config, uid uint32, accountID string, mailbox
 		}
 
 		var (
-			body        string
-			attachments []fetcher.Attachment
-			err         error
+			body         string
+			bodyMIMEType string
+			attachments  []fetcher.Attachment
+			err          error
 		)
 		switch mailbox {
 		case tui.MailboxSent:
-			body, attachments, err = fetcher.FetchSentEmailBody(account, uid)
+			body, bodyMIMEType, attachments, err = fetcher.FetchSentEmailBody(account, uid)
 		case tui.MailboxTrash:
-			body, attachments, err = fetcher.FetchTrashEmailBody(account, uid)
+			body, bodyMIMEType, attachments, err = fetcher.FetchTrashEmailBody(account, uid)
 		case tui.MailboxArchive:
-			body, attachments, err = fetcher.FetchArchiveEmailBody(account, uid)
+			body, bodyMIMEType, attachments, err = fetcher.FetchArchiveEmailBody(account, uid)
 		default:
-			body, attachments, err = fetcher.FetchEmailBody(account, uid)
+			body, bodyMIMEType, attachments, err = fetcher.FetchEmailBody(account, uid)
 		}
 		if err != nil {
 			return tui.EmailBodyFetchedMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
 		}
 
 		return tui.EmailBodyFetchedMsg{
-			UID:         uid,
-			Body:        body,
-			Attachments: attachments,
-			AccountID:   accountID,
-			Mailbox:     mailbox,
+			UID:          uid,
+			Body:         body,
+			BodyMIMEType: bodyMIMEType,
+			Attachments:  attachments,
+			AccountID:    accountID,
+			Mailbox:      mailbox,
 		}
 	}
 }
@@ -2758,17 +2760,18 @@ func fetchFolderEmailBodyCmd(cfg *config.Config, uid uint32, accountID string, f
 			return tui.EmailBodyFetchedMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: fmt.Errorf("account not found")}
 		}
 
-		body, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
+		body, bodyMIMEType, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
 		if err != nil {
 			return tui.EmailBodyFetchedMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
 		}
 
 		return tui.EmailBodyFetchedMsg{
-			UID:         uid,
-			Body:        body,
-			Attachments: attachments,
-			AccountID:   accountID,
-			Mailbox:     mailbox,
+			UID:          uid,
+			Body:         body,
+			BodyMIMEType: bodyMIMEType,
+			Attachments:  attachments,
+			AccountID:    accountID,
+			Mailbox:      mailbox,
 		}
 	}
 }
@@ -2780,16 +2783,17 @@ func fetchPreviewBodyCmd(cfg *config.Config, uid uint32, accountID string, folde
 			return tui.PreviewBodyFetchedMsg{UID: uid, AccountID: accountID, Err: fmt.Errorf("account not found")}
 		}
 
-		body, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
+		body, bodyMIMEType, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
 		if err != nil {
 			return tui.PreviewBodyFetchedMsg{UID: uid, AccountID: accountID, Err: err}
 		}
 
 		return tui.PreviewBodyFetchedMsg{
-			UID:         uid,
-			Body:        body,
-			Attachments: attachments,
-			AccountID:   accountID,
+			UID:          uid,
+			Body:         body,
+			BodyMIMEType: bodyMIMEType,
+			Attachments:  attachments,
+			AccountID:    accountID,
 		}
 	}
 }

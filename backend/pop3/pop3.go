@@ -131,21 +131,21 @@ func (p *Provider) FetchEmails(_ context.Context, _ string, limit, offset uint32
 	return emails, nil
 }
 
-func (p *Provider) FetchEmailBody(_ context.Context, _ string, uid uint32) (string, []backend.Attachment, error) {
+func (p *Provider) FetchEmailBody(_ context.Context, _ string, uid uint32) (string, string, []backend.Attachment, error) {
 	conn, err := p.connect()
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	defer conn.Quit()
 
 	msgID, err := p.findMessageByUID(conn, uid)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 
 	raw, err := conn.RetrRaw(msgID)
 	if err != nil {
-		return "", nil, fmt.Errorf("pop3 retr: %w", err)
+		return "", "", nil, fmt.Errorf("pop3 retr: %w", err)
 	}
 
 	return parseMessageBody(raw)
@@ -352,15 +352,17 @@ func entityToEmail(header *message.Header, msgInfo pop3client.MessageID, account
 }
 
 // parseMessageBody extracts the body text and attachments from a raw message.
-func parseMessageBody(r io.Reader) (string, []backend.Attachment, error) {
+func parseMessageBody(r io.Reader) (string, string, []backend.Attachment, error) {
 	mr, err := gomail.CreateReader(r)
 	if err != nil {
-		// Not a multipart message — read body directly
+		// Not a multipart message — read body directly. We don't know the
+		// content type at this layer; surface empty so the renderer falls
+		// back to its legacy markdown→HTML path.
 		body, err := io.ReadAll(r)
 		if err != nil {
-			return "", nil, err
+			return "", "", nil, err
 		}
-		return string(body), nil, nil
+		return string(body), "", nil, nil
 	}
 
 	var bodyText string
@@ -411,9 +413,9 @@ func parseMessageBody(r io.Reader) (string, []backend.Attachment, error) {
 	}
 
 	if htmlBody != "" {
-		return htmlBody, attachments, nil
+		return htmlBody, "text/html", attachments, nil
 	}
-	return bodyText, attachments, nil
+	return bodyText, "text/plain", attachments, nil
 }
 
 // findAttachmentData walks a raw message to find attachment data by partID.

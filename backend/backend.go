@@ -27,7 +27,9 @@ type Provider interface {
 // EmailReader fetches emails and their content.
 type EmailReader interface {
 	FetchEmails(ctx context.Context, folder string, limit, offset uint32) ([]Email, error)
-	FetchEmailBody(ctx context.Context, folder string, uid uint32) (string, []Attachment, error)
+	// FetchEmailBody returns the chosen body, its MIME type ("text/html" or
+	// "text/plain"; empty when unknown), parsed attachments, and any error.
+	FetchEmailBody(ctx context.Context, folder string, uid uint32) (string, string, []Attachment, error)
 	FetchAttachment(ctx context.Context, folder string, uid uint32, partID, encoding string) ([]byte, error)
 }
 

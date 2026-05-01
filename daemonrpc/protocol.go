@@ -147,8 +147,9 @@ type FetchEmailBodyParams struct {
 }
 
 type FetchEmailBodyResult struct {
-	Body        string           `json:"body"`
-	Attachments []AttachmentInfo `json:"attachments"`
+	Body         string           `json:"body"`
+	BodyMIMEType string           `json:"body_mime_type,omitempty"`
+	Attachments  []AttachmentInfo `json:"attachments"`
 }
 
 type AttachmentInfo struct {

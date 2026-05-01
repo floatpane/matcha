@@ -36,12 +36,12 @@ func (p *Provider) FetchEmails(_ context.Context, folder string, limit, offset u
 	return toBackendEmails(emails), nil
 }
 
-func (p *Provider) FetchEmailBody(_ context.Context, folder string, uid uint32) (string, []backend.Attachment, error) {
-	body, atts, err := fetcher.FetchEmailBodyFromMailbox(p.account, folder, uid)
+func (p *Provider) FetchEmailBody(_ context.Context, folder string, uid uint32) (string, string, []backend.Attachment, error) {
+	body, mimeType, atts, err := fetcher.FetchEmailBodyFromMailbox(p.account, folder, uid)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
-	return body, toBackendAttachments(atts), nil
+	return body, mimeType, toBackendAttachments(atts), nil
 }
 
 func (p *Provider) FetchAttachment(_ context.Context, folder string, uid uint32, partID, encoding string) ([]byte, error) {

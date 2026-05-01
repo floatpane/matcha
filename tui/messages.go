@@ -96,11 +96,12 @@ type UpdatePreviewMsg struct {
 }
 
 type PreviewBodyFetchedMsg struct {
-	UID         uint32
-	AccountID   string
-	Body        string
-	Attachments []fetcher.Attachment
-	Err         error
+	UID          uint32
+	AccountID    string
+	Body         string
+	BodyMIMEType string
+	Attachments  []fetcher.Attachment
+	Err          error
 }
 
 type FetchErr error
@@ -255,12 +256,13 @@ type DiscardDraftMsg struct {
 }
 
 type EmailBodyFetchedMsg struct {
-	UID         uint32
-	Body        string
-	Attachments []fetcher.Attachment
-	Err         error
-	AccountID   string
-	Mailbox     MailboxKind
+	UID          uint32
+	Body         string
+	BodyMIMEType string
+	Attachments  []fetcher.Attachment
+	Err          error
+	AccountID    string
+	Mailbox      MailboxKind
 }
 
 // --- Multi-Account Messages ---
