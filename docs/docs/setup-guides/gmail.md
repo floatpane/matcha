@@ -46,7 +46,7 @@ OAuth2 lets you authorize Matcha through Google's standard sign-in flow. No app 
 
  ![OAuth consent screen](../assets/setup-guides/gmail/oauth-consent-screen.png) 
 
-> **Note:** Your app will be in "Testing" mode, which is perfectly fine for personal use. Google will show an "unverified app" warning during sign-in — just click **Continue**. Tokens in testing mode expire after 7 days, after which you'll need to re-authorize with `matcha gmail auth`.
+> **Note:** Your app will be in "Testing" mode, which is perfectly fine for personal use. Google will show an "unverified app" warning during sign-in — just click **Continue**. Tokens in testing mode expire after 7 days, after which you'll need to re-authorize with `matcha oauth auth your@gmail.com`.
 
 ### 4. Create OAuth credentials
 
@@ -59,37 +59,61 @@ OAuth2 lets you authorize Matcha through Google's standard sign-in flow. No app 
 
  ![Create OAuth credentials](../assets/setup-guides/gmail/oauth-create-credentials.png) 
 
-### 5. Save your client credentials
+### 5. Authorize your Gmail account
 
-Create the file `~/.config/matcha/oauth_client.json`:
-
-```json
-{
-  "client_id": "YOUR_CLIENT_ID",
-  "client_secret": "YOUR_CLIENT_SECRET"
-}
-```
-
-Or pass them directly in the next step.
-
-### 6. Authorize your Gmail account
-
-Run the following command in your terminal:
-
-```bash
-matcha oauth auth your@gmail.com
-```
-
-Or with inline credentials:
+Run the following command in your terminal, substituting your real client ID and secret:
 
 ```bash
 matcha oauth auth your@gmail.com --client-id YOUR_ID --client-secret YOUR_SECRET
 ```
 
+The credentials are saved to your operating system's keyring on first use.
+
 A browser window will open. Sign in with your Google account and grant access. Once authorized, you'll see "Authorization complete!" in your terminal.
 
  ![Browser authorization](../assets/setup-guides/gmail/oauth-browser-auth.png) 
  > **Note**: click "Continue" here
+
+### 6. Authorizing additional Gmail accounts
+
+Matcha supports multiple Google accounts in two configurations: **shared client** (recommended for personal-only use) and **per-account override** (required when accounts must use different Google Cloud Projects, e.g. a personal account plus a Google Workspace account whose admin restricts third-party app access).
+
+#### Shared OAuth Client (one Cloud Project, many accounts)
+
+A single **OAuth 2.0 Client** in one **Google Cloud Project** can authorize any number of users — that's how OAuth is designed to work. After your first `oauth auth` call, the client ID and secret are stored as the **provider default** in the keyring. Any additional accounts can omit the flags:
+
+```bash
+matcha oauth auth second.personal@gmail.com
+```
+
+This is the right setup when:
+
+- All your accounts are personal `@gmail.com` addresses, **or**
+- You're authorizing several Workspace addresses that all live under the same Workspace org and Cloud Project.
+
+Just remember to add each address to the **Test users** list on the consent screen of that one Cloud Project (unless the consent screen type is `Internal`, in which case any user in the Workspace org is automatically authorized).
+
+#### Per-Account OAuth Client Override (multiple Cloud Projects)
+
+Some scenarios require different OAuth Clients for different accounts:
+
+- **Personal Gmail + Workspace Gmail.** Workspace admins typically restrict third-party OAuth apps and only allow OAuth Clients hosted in Cloud Projects owned by the Workspace org itself. Your personal Cloud Project can't authorize the Workspace mailbox.
+- **Two Workspace accounts under different employers.** Each org's Workspace policy will only honor OAuth Clients in their own Cloud Project.
+
+For each account that needs its own OAuth Client, create a separate OAuth 2.0 Client ID in the appropriate Cloud Project (Desktop app type), then run `oauth auth` with the matching `--client-id`/`--client-secret`. The credentials are stored under that specific email address as a **per-account override** and don't disturb the provider default.
+
+```bash
+# Personal account uses the default OAuth Client (saved on first auth)
+matcha oauth auth personal@gmail.com --client-id PERSONAL_ID --client-secret PERSONAL_SECRET
+
+# Workspace account uses a different OAuth Client from the work org's Cloud Project
+matcha oauth auth you@yourcompany.com --provider gmail \
+  --client-id WORKSPACE_ID --client-secret WORKSPACE_SECRET
+```
+
+The `--provider gmail` flag is required for Workspace accounts because Matcha can't auto-detect the provider from a custom domain. The provider is also stored in the keyring so subsequent token refreshes work without re-supplying it.
+
+If your Workspace admin restricts third-party app access, they'll need to allowlist the OAuth Client ID in **Admin Console → Security → API Controls → App Access Control**. Without that, you'll see an "Access blocked: app has not completed verification" error regardless of which Cloud Project the OAuth Client lives in.
 
 ### 7. Add your account in Matcha
 
@@ -175,4 +199,5 @@ In Matcha account setup:
 | **OAuth2: "unverified app" warning** | This is normal in testing mode. Click **Advanced** → **Go to Matcha (unsafe)** to continue.                                     |
 | **OAuth2: token expired**          | In testing mode tokens expire after 7 days. Run `matcha oauth auth your@gmail.com` to re-authorize.                              |
 | **OAuth2: refresh failed**         | Your refresh token may have been revoked. Run `matcha oauth auth your@gmail.com` to re-authorize from scratch.                    |
-| **"python3 not found"**            | OAuth2 requires Python 3. Install it via your package manager (e.g. `brew install python3`, `apt install python3`).               |
+| **OAuth2: cannot determine provider** | Workspace/custom-domain accounts authorized before the keyring mapping was added need to re-run `matcha oauth auth <email> --provider gmail`. |
+| **Access blocked: app has not completed verification** (Workspace) | Your Workspace admin restricts third-party OAuth apps. Either create the OAuth client inside a Cloud Project owned by your Workspace org, or have an admin allowlist the client ID under **Admin Console → Security → API Controls → App Access Control**. |

@@ -77,28 +77,52 @@ Finally, go to **Overview** and record the value of your **Application (client) 
 
 We are now ready to authenticate to our newly-created App.
 
-### 1. Save your client credentials
+### 1. Authentication
 
-Create the file `~/.config/matcha/oauth_client_outlook.json`:
-
-```json
-{
-  "client_id": "YOUR_APPLICATION_CLIENT_ID",
-  "client_secret": "YOUR_CLIENT_SECRET_VALUE"
-}
-```
-
-### 2. Authentication
-
-Run `matcha oauth auth yourname@email.com` and go to the `http://localhost:8189` as prompted. Authenticate with your personal Outlook account, and authorize your Entra app to access your account.
-
-Once authorized, you'll see "Authorization complete!" in your terminal. A token will be stored that lets you authenticate via XOauth2.
-
-Or, if you don't want to create the JSON file, run with inline credentials:
+Run the authorization command, substituting your Application (client) ID and client secret value from the Entra app:
 
 ```bash
-matcha oauth auth your@outlook.com --provider outlook --client-id YOUR_ID --client-secret YOUR_SECRET
+matcha oauth auth yourname@email.com --provider outlook \
+  --client-id YOUR_APPLICATION_CLIENT_ID --client-secret YOUR_CLIENT_SECRET_VALUE
 ```
+
+A browser tab will open. Authenticate with your personal Outlook account and authorize your Entra app to access it. Matcha binds a localhost callback on a random free port — follow whichever URL the terminal prints (it will look like `http://127.0.0.1:<port>/callback`).
+
+The credentials are saved to your operating system's keyring on first use.
+
+Once authorized, you'll see "Authorization complete!" in your terminal and a token is stored that lets you authenticate via XOauth2.
+
+### 2. Authorizing additional Outlook accounts
+
+Matcha supports multiple Microsoft accounts in two configurations: **shared Entra app** (one App registration authorizes many users) and **per-account override** (different App registrations for accounts that live in different **Microsoft Entra tenants**).
+
+#### Shared Entra app (one App registration, many users)
+
+A single **App registration** in one Entra tenant can authorize any number of Microsoft accounts. After your first `oauth auth` call, the Application (client) ID and client secret are stored as the **provider default** in the keyring. Additional accounts can omit the flags:
+
+```bash
+matcha oauth auth second.account@outlook.com --provider outlook
+```
+
+The `--provider outlook` flag is required for any address whose domain doesn't auto-detect (anything other than `@outlook.com`, `@hotmail.com`, `@live.com`, `@msn.com`).
+
+#### Per-account override (multiple Entra tenants)
+
+When two accounts live in different Entra tenants — for example, a personal Outlook account and a work Microsoft 365 mailbox where IT controls a separate tenant — each account needs its own App registration. Create the second App registration in the appropriate tenant (with the same `IMAP.AccessAsUser.All`, `SMTP.Send`, `offline_access` scopes), then authorize:
+
+```bash
+# Personal Outlook uses the default App registration (saved on first auth)
+matcha oauth auth you@outlook.com --provider outlook \
+  --client-id PERSONAL_ENTRA_CLIENT_ID --client-secret PERSONAL_SECRET
+
+# Work mailbox uses a separate App registration in your employer's tenant
+matcha oauth auth you@yourcompany.com --provider outlook \
+  --client-id WORK_ENTRA_CLIENT_ID --client-secret WORK_SECRET
+```
+
+The work credentials are stored under that specific email address as a **per-account override** and don't disturb the provider default.
+
+If your work tenant requires admin consent for third-party app access, the App registration needs to be configured for the right **supported account types** (**Single tenant** for one organization, **Multitenant** if you want one App registration to span multiple Entra tenants), and an admin may need to grant tenant-wide consent for the requested API permissions.
 
 ### Enabling IMAP in Outlook
 
@@ -171,6 +195,5 @@ From Matcha, open settings and choose to add a new account. Enter:
 | **Authentication error with parser message** | Outlook's IMAP error responses can trip up some IMAP parsers. Use OAuth2 instead of app passwords if you see wire-parsing errors. |
 | **OAuth2: consent screen not showing permissions** | Ensure you added the correct API permissions (IMAP.AccessAsUser.All, SMTP.Send, offline_access) in Azure. |
 | **OAuth2: token expired** | Run `matcha oauth auth your@outlook.com` to re-authorize. |
-| **OAuth2: refresh failed** | Your client secret may have expired. Create a new one in Azure and update `oauth_client_outlook.json`. |
-| **"python3 not found"** | OAuth2 requires Python 3. Install it via your package manager. |
+| **OAuth2: refresh failed** | Your client secret may have expired. Create a new one in Azure and re-run `matcha oauth auth your@outlook.com --provider outlook --client-id NEW_ID --client-secret NEW_SECRET`. |
 | **App password not available** | App passwords require two-step verification to be enabled on your Microsoft account. |

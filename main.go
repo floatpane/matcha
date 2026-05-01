@@ -419,12 +419,17 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-		// If OAuth2, launch the authorization flow after saving the account
+		// If OAuth2, launch the authorization flow after saving the account.
+		// We discard the flow's status text because the TUI is rendering on
+		// the alternate screen — raw stderr writes corrupt the cell grid.
+		// A follow-up PR will surface the auth URL through a proper modal.
 		if lastAccount.IsOAuth2() {
 			email := lastAccount.Email
 			provider := lastAccount.ServiceProvider
 			return m, func() tea.Msg {
-				err := config.RunOAuth2Flow(email, provider, "", "")
+				err := config.RunOAuth2FlowWithOptions(email, provider, "", "", config.OAuth2Options{
+					StatusWriter: io.Discard,
+				})
 				return tui.OAuth2CompleteMsg{Email: email, Err: err}
 			}
 		}
@@ -3181,30 +3186,65 @@ func runOAuthCLI(args []string) {
 		fmt.Fprintln(os.Stderr, "  --client-id ID            OAuth2 client ID")
 		fmt.Fprintln(os.Stderr, "  --client-secret SECRET    OAuth2 client secret")
 		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Credentials are stored per provider in:")
-		fmt.Fprintln(os.Stderr, "  Gmail:   ~/.config/matcha/oauth_client.json")
-		fmt.Fprintln(os.Stderr, "  Outlook: ~/.config/matcha/oauth_client_outlook.json")
+		fmt.Fprintln(os.Stderr, "Credentials are stored in the OS keyring per provider.")
 		os.Exit(1)
 	}
 
-	// Find the Python script and pass through to it
-	script, err := config.OAuthScriptPath()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
+	subcommand := args[0]
+	rest := args[1:]
 
-	cmdArgs := append([]string{script}, args...)
-	cmd := exec.Command("python3", cmdArgs...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			os.Exit(exitErr.ExitCode())
+	switch subcommand {
+	case "auth":
+		fs := flag.NewFlagSet("oauth auth", flag.ExitOnError)
+		providerFlag := fs.String("provider", "", "OAuth2 provider (gmail|outlook); auto-detected from email if omitted")
+		clientID := fs.String("client-id", "", "OAuth2 client ID")
+		clientSecret := fs.String("client-secret", "", "OAuth2 client secret")
+		// Pull positional args out before parsing so flags can appear on either
+		// side of the email. The stdlib flag package stops at the first non-flag
+		// argument; the documented form puts the email first, which would
+		// otherwise leave --client-id/--client-secret unconsumed.
+		email := ""
+		flagArgs := make([]string, 0, len(rest))
+		for _, a := range rest {
+			if email == "" && !strings.HasPrefix(a, "-") {
+				email = a
+				continue
+			}
+			flagArgs = append(flagArgs, a)
 		}
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if err := fs.Parse(flagArgs); err != nil {
+			os.Exit(1)
+		}
+		if email == "" {
+			fmt.Fprintln(os.Stderr, "Usage: matcha oauth auth <email> [--provider ...] [--client-id ID --client-secret SECRET]")
+			os.Exit(1)
+		}
+		if err := config.RunOAuth2Flow(email, *providerFlag, *clientID, *clientSecret); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "token":
+		if len(rest) < 1 {
+			fmt.Fprintln(os.Stderr, "Usage: matcha oauth token <email>")
+			os.Exit(1)
+		}
+		token, err := config.GetOAuth2Token(rest[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(token)
+	case "revoke":
+		if len(rest) < 1 {
+			fmt.Fprintln(os.Stderr, "Usage: matcha oauth revoke <email>")
+			os.Exit(1)
+		}
+		if err := config.RevokeOAuth2Token(rest[0]); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown oauth subcommand: %s\n", subcommand)
 		os.Exit(1)
 	}
 }

@@ -112,12 +112,14 @@ This command will:
 2. Detect your installation method (Homebrew, Snap, or binary)
 3. Update using the appropriate method
 
-### Gmail OAuth2
+### OAuth2
 
-Manage Gmail OAuth2 authorization:
+Manage OAuth2 authorization for Gmail and Outlook accounts:
 
 ```bash
-matcha gmail auth <email>     # Authorize a Gmail account
-matcha gmail token <email>    # Print a fresh access token
-matcha gmail revoke <email>   # Revoke stored tokens
+matcha oauth auth <email>     # Authorize an account (opens browser)
+matcha oauth token <email>    # Print a fresh access token
+matcha oauth revoke <email>   # Revoke stored tokens
 ```
+
+See the [CLI reference](Features/CLI.md#matcha-oauth) for full flag documentation. `matcha gmail` is kept as an alias for backwards compatibility.

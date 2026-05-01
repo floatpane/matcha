@@ -223,17 +223,21 @@ Automatically detects your installation method (Homebrew, Snap, Flatpak, WinGet,
 Manage OAuth2 authorization for Gmail and Outlook.
 
 ```bash
-matcha oauth auth <email>                        # Authorize an account (opens browser, auto-detects provider)
-matcha oauth auth <email> --provider outlook     # Specify provider explicitly
-matcha oauth token <email>                       # Print a fresh access token
-matcha oauth revoke <email>                      # Revoke and delete stored tokens
+matcha oauth auth <email> --client-id ID --client-secret SECRET   # First-time authorization (opens browser)
+matcha oauth auth <email>                                         # Subsequent accounts on the same OAuth client
+matcha oauth auth <email> --provider gmail                        # Required for Workspace/custom-domain Gmail
+matcha oauth auth <email> --provider outlook                      # Required for Outlook addresses outside the auto-detected domains
+matcha oauth token <email>                                        # Print a fresh access token
+matcha oauth revoke <email>                                       # Revoke and delete stored tokens
 ```
 
 `matcha gmail` is kept as an alias for backwards compatibility.
 
-Client credentials are stored per provider:
-- Gmail: `~/.config/matcha/oauth_client.json` — see the [Gmail setup guide](../setup-guides/gmail.md)
-- Outlook: `~/.config/matcha/oauth_client_outlook.json` — see the [Outlook setup guide](../setup-guides/outlook.md)
+Client credentials, refresh tokens, and access tokens are stored in the operating system's keyring (Secret Service on Linux, Keychain on macOS, Credential Manager on Windows). On first authorization, the supplied `--client-id`/`--client-secret` are saved as the provider default; later accounts can omit the flags to reuse the same OAuth client. Passing the flags again on a subsequent account stores those credentials as a per-email override (useful when one account needs a Cloud Project distinct from the rest, e.g. Workspace policy requirements).
+
+For provider-specific setup walkthroughs:
+- [Gmail setup guide](../setup-guides/gmail.md)
+- [Outlook setup guide](../setup-guides/outlook.md)
 
 ## matcha version
 
