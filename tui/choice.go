@@ -77,13 +77,9 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		kb := config.Keybinds
 		switch msg.String() {
 		case "up", kb.Global.NavUp:
-			if m.cursor > 0 {
-				m.cursor--
-			}
+			m.cursor = (m.cursor - 1 + len(m.choices)) % len(m.choices)
 		case "down", kb.Global.NavDown:
-			if m.cursor < len(m.choices)-1 {
-				m.cursor++
-			}
+			m.cursor = (m.cursor + 1) % len(m.choices)
 		case "enter":
 			// Use cursor index instead of string comparison
 			idx := m.cursor
