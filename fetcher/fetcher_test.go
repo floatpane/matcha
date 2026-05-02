@@ -1,10 +1,58 @@
 package fetcher
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/floatpane/matcha/config"
 )
+
+type testPartHeader map[string]string
+
+func (h testPartHeader) Add(key, value string) {
+	h[key] = value
+}
+
+func (h testPartHeader) Del(key string) {
+	delete(h, key)
+}
+
+func (h testPartHeader) Get(key string) string {
+	return h[key]
+}
+
+func (h testPartHeader) Set(key, value string) {
+	h[key] = value
+}
+
+func TestDecodePartUsesCharsetWhenContentTypeIsMalformed(t *testing.T) {
+	header := testPartHeader{}
+	header.Set("Content-Type", "text/plain; charset=iso-8859-1; broken")
+
+	decoded, err := decodePart(bytes.NewReader([]byte{0x63, 0x61, 0x66, 0xe9}), header)
+	if err != nil {
+		t.Fatalf("decodePart() returned error: %v", err)
+	}
+
+	if decoded != "café" {
+		t.Fatalf("decodePart() = %q, want %q", decoded, "café")
+	}
+}
+
+func TestDecodePartFallsBackToUTF8WhenMalformedContentTypeHasNoCharset(t *testing.T) {
+	header := testPartHeader{}
+	header.Set("Content-Type", "text/plain; broken")
+
+	decoded, err := decodePart(strings.NewReader("hello"), header)
+	if err != nil {
+		t.Fatalf("decodePart() returned error: %v", err)
+	}
+
+	if decoded != "hello" {
+		t.Fatalf("decodePart() = %q, want %q", decoded, "hello")
+	}
+}
 
 // TestFetchEmails is an integration test that requires a live IMAP server and valid credentials.
 // NOTE: This test will be skipped if it cannot load a configuration file,

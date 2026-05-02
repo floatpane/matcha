@@ -168,36 +168,52 @@ func deliveryHeadersMatch(data []byte, fetchEmail string, account *config.Accoun
 }
 
 func decodePart(reader io.Reader, header mail.PartHeader) (string, error) {
-	mediaType, params, err := mime.ParseMediaType(header.Get("Content-Type"))
-	if err != nil {
-		body, readErr := io.ReadAll(reader)
-		if readErr != nil {
-			return string(body), fmt.Errorf("fallback read after Content-Type parse error (%v): %w", err, readErr)
-		}
-		return string(body), nil
-	}
+	contentType := header.Get("Content-Type")
+	mediaType, params, parseErr := mime.ParseMediaType(contentType)
 
 	charset := "utf-8"
-	if params["charset"] != "" {
+	if parseErr != nil {
+		charset = bestEffortCharset(contentType)
+	} else if params["charset"] != "" {
 		charset = strings.ToLower(params["charset"])
 	}
 
+	decodedBody, err := decodeReaderWithCharset(reader, charset)
+	if err != nil {
+		return "", err
+	}
+
+	if parseErr == nil && strings.HasPrefix(mediaType, "multipart/") {
+		return "[This is a multipart message]", nil
+	}
+
+	return string(decodedBody), nil
+}
+
+func decodeReaderWithCharset(reader io.Reader, charset string) ([]byte, error) {
 	encoding, err := ianaindex.IANA.Encoding(charset)
 	if err != nil || encoding == nil {
 		encoding, _ = ianaindex.IANA.Encoding("utf-8")
 	}
 
 	transformReader := transform.NewReader(reader, encoding.NewDecoder())
-	decodedBody, err := ioutil.ReadAll(transformReader)
-	if err != nil {
-		return "", err
+	return ioutil.ReadAll(transformReader)
+}
+
+func bestEffortCharset(contentType string) string {
+	for _, param := range strings.Split(contentType, ";") {
+		key, value, found := strings.Cut(param, "=")
+		if !found || !strings.EqualFold(strings.TrimSpace(key), "charset") {
+			continue
+		}
+
+		value = strings.Trim(strings.TrimSpace(value), `"`)
+		if value != "" {
+			return strings.ToLower(value)
+		}
 	}
 
-	if strings.HasPrefix(mediaType, "multipart/") {
-		return "[This is a multipart message]", nil
-	}
-
-	return string(decodedBody), nil
+	return "utf-8"
 }
 
 func decodeHeader(header string) string {
