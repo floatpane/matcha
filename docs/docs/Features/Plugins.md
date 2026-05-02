@@ -200,6 +200,44 @@ matcha.notify("Important!", 5)            -- shows for 5 seconds
 matcha.notify("Quick flash", 0.5)         -- shows for half a second
 ```
 
+### matcha.store_set(key, value)
+
+Store a string value persistently for this plugin. Each plugin has its own isolated key/value space, so different plugins cannot read or overwrite each other's keys.
+
+```lua
+matcha.store_set("api_key", "sk-...")
+matcha.store_set("last_seen_uid", "12345")
+```
+
+### matcha.store_get(key)
+
+Retrieve a previously stored string value, or `nil` if the key does not exist.
+
+```lua
+local key = matcha.store_get("api_key")
+if key then
+  matcha.log("found api key")
+end
+```
+
+### matcha.store_delete(key)
+
+Remove a key from this plugin's storage. Calling `store_delete` on a key that does not exist is a no-op.
+
+```lua
+matcha.store_delete("api_key")
+```
+
+### matcha.store_keys()
+
+Return a 1-indexed table of all keys currently stored by this plugin. Useful for iterating over plugin state on startup.
+
+```lua
+for _, key in ipairs(matcha.store_keys()) do
+  matcha.log("stored key: " .. key)
+end
+```
+
 ## Events
 
 ### startup
