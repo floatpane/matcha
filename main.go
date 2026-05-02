@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/mail"
 	"net/url"
 	"os"
 	"os/exec"
@@ -1379,6 +1380,24 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				accountID = m.config.GetFirstAccount().ID
 			}
 			composer = tui.NewComposerWithAccounts(m.config.Accounts, accountID, to, subject, "", hideTips)
+			// For catch-all accounts, pre-fill From with the specific address the email was delivered to.
+			if len(msg.Email.To) > 0 {
+				for i := range m.config.Accounts {
+					if m.config.Accounts[i].ID == accountID && m.config.Accounts[i].CatchAll {
+						acc := &m.config.Accounts[i]
+						deliveryAddr := msg.Email.To[0]
+						if addr, err := mail.ParseAddress(deliveryAddr); err == nil {
+							deliveryAddr = addr.Address
+						}
+						fromVal := deliveryAddr
+						if acc.Name != "" {
+							fromVal = fmt.Sprintf("%s <%s>", acc.Name, deliveryAddr)
+						}
+						composer.SetFromOverride(fromVal)
+						break
+					}
+				}
+			}
 		} else {
 			composer = tui.NewComposer("", to, subject, "", hideTips)
 		}

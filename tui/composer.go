@@ -200,6 +200,11 @@ func (m *Composer) ResetConfirmation() {
 	m.confirmingExit = false
 }
 
+// SetFromOverride pre-fills the editable From field (used for catch-all replies).
+func (m *Composer) SetFromOverride(addr string) {
+	m.fromInput.SetValue(addr)
+}
+
 func (m *Composer) Init() tea.Cmd {
 	return textinput.Blink
 }
