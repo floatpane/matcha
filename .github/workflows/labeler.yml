@@ -20,10 +20,20 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Apply Labels
+      - name: Apply Labels (issues — includes area/*)
+        if: github.event_name == 'issues'
         uses: github/issue-labeler@v3.4
         with:
           repo-token: "${{ secrets.HOMEBREW_GITHUB_TOKEN }}"
           configuration-path: .github/labeler-config.yml
+          enable-versioned-regex: 0
+          include-title: 1
+
+      - name: Apply Labels (PRs — no area/*, paths handle those)
+        if: github.event_name == 'pull_request_target'
+        uses: github/issue-labeler@v3.4
+        with:
+          repo-token: "${{ secrets.HOMEBREW_GITHUB_TOKEN }}"
+          configuration-path: .github/labeler-config-pr.yml
           enable-versioned-regex: 0
           include-title: 1
