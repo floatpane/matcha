@@ -1,0 +1,27 @@
+# Keyword labels for PRs only. No area/* (paths handle those via pr-paths.yml).
+
+"bug": '\b([Bb]ug(s)?|[Ff]ix(es)?)\b'
+
+"enhancement": '\b([Ff]eat(s)?)\b'
+
+"documentation": '\b([Dd]ocumentation|[Dd]ocs|[Rr]eadme)\b'
+
+"question": '\b([Qq]uestion(s)?|[Hh]elp|[Hh]ow to)\b'
+
+"performance": '\b([Pp]erformance|[Oo]ptimiz(e|ation)|[Ss]peed|[Ee]fficiency)\b'
+
+"dependencies": '([Cc]hore\(deps\)|[Ff]ix\(deps\))'
+
+"ci": '\b([Cc]i|[Cc]ontinuous integration|[Bb]uild|[Ww]orkflow)\b'
+
+"chore": '\b([Cc]hore|[Mm]aintenance|[Rr]efactor|[Cc]leanup)\b'
+
+"os/windows": '\b([Ww]indows|[Ww]in(10|11)|[Mm]icrosoft)\b'
+
+"os/linux": '\b([Ll]inux|[Uu]buntu|[Dd]ebian|[Ff]edora|[Aa]rch [Ll]inux|[Nn]ix[Oo][Ss]|[Pp]op!?_?[Oo][Ss])\b'
+
+"os/macos": '\b([Mm]ac[Oo][Ss]?|[Oo][Ss] ?[Xx]|[Dd]arwin|[Mm]acbook)\b'
+
+"arch/arm64": '\b(arm64|aarch64|[Aa]pple ?[Ss]ilicon|[Mm][1-4]( [Pp]ro| [Mm]ax| [Uu]ltra)?|[Mm]ac(book)? [Mm][1-4])\b'
+
+"arch/amd64": '\b(amd64|x86[_-]?64|x64|[Ii]ntel( [Mm]ac)?)\b'
