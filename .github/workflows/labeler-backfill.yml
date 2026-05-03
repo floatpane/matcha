@@ -52,7 +52,7 @@ jobs:
 
       - name: Path labeler on open PRs
         if: steps.prs.outputs.list != ''
-        uses: actions/labeler@v5
+        uses: actions/labeler@v6
         with:
           repo-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
           configuration-path: .github/pr-paths.yml

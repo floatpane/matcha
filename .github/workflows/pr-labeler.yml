@@ -15,7 +15,7 @@ jobs:
           && !contains(fromJSON('["chore/sync-gomod2nix","chore/update-flake-lock","update-screenshots","update-demo-gif"]'), github.head_ref) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/labeler@v5
+      - uses: actions/labeler@v6
         with:
           repo-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
           configuration-path: .github/pr-paths.yml
