@@ -29,6 +29,19 @@ var (
 	attachmentBoxStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), false, false, false, true).PaddingLeft(2).MarginTop(1)
 )
 
+// BodyTransformer, if set, post-processes the rendered email body before it is
+// placed in the viewport. main.go wires this up to the plugin manager so that
+// plugins registered on the "email_body_render" hook can rewrite, recolor, or
+// remove parts of the displayed body.
+var BodyTransformer func(body string, email fetcher.Email) string
+
+func applyBodyTransform(body string, email fetcher.Email) string {
+	if BodyTransformer == nil {
+		return body
+	}
+	return BodyTransformer(body, email)
+}
+
 type EmailView struct {
 	viewport           viewport.Model
 	email              fetcher.Email
@@ -114,6 +127,7 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 	if err != nil {
 		body = fmt.Sprintf("Error rendering body: %v", err)
 	}
+	body = applyBodyTransform(body, email)
 
 	// Create header and compute heights that reduce viewport space.
 	header := fmt.Sprintf("From: %s\nSubject: %s", email.From, email.Subject)
@@ -230,6 +244,7 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if err != nil {
 						body = fmt.Sprintf("Error rendering body: %v", err)
 					}
+					body = applyBodyTransform(body, m.email)
 					m.imagePlacements = placements
 					wrapped := wrapBodyToWidth(body, m.viewport.Width())
 					m.viewport.SetContent(wrapped + "\n")
@@ -306,6 +321,7 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err != nil {
 			body = fmt.Sprintf("Error rendering body: %v", err)
 		}
+		body = applyBodyTransform(body, m.email)
 		m.imagePlacements = placements
 		wrapped := wrapBodyToWidth(body, m.viewport.Width())
 		m.viewport.SetContent(wrapped + "\n")

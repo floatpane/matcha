@@ -17,6 +17,7 @@ const (
 	HookEmailViewed     = "email_viewed"
 	HookFolderChanged   = "folder_changed"
 	HookComposerUpdated = "composer_updated"
+	HookEmailBodyRender = "email_body_render"
 )
 
 // Status area names.
@@ -117,6 +118,42 @@ func (m *Manager) CallComposerHook(event string, body, subject, to, cc, bcc stri
 			log.Printf("plugin hook %q error: %v", event, err)
 		}
 	}
+}
+
+// CallBodyRenderHook runs all email_body_render callbacks, threading the body
+// string through each. Callbacks receive (email_table, rendered, raw):
+//   - rendered: the current display string (ANSI-styled, post-HTML→terminal)
+//   - raw: the original message body (HTML or plain text, same string fed to
+//     the renderer) — useful for parsing the source instead of the rendered
+//     output
+//
+// A callback may return a string to replace the rendered body, or nil to leave
+// it unchanged. Non-string returns are ignored. Multiple callbacks chain in
+// registration order; each subsequent callback sees the previous callback's
+// rendered output, but always the same raw source.
+func (m *Manager) CallBodyRenderHook(email *lua.LTable, rendered, raw string) string {
+	callbacks, ok := m.hooks[HookEmailBodyRender]
+	if !ok {
+		return rendered
+	}
+
+	L := m.state
+	for _, fn := range callbacks {
+		if err := L.CallByParam(lua.P{
+			Fn:      fn,
+			NRet:    1,
+			Protect: true,
+		}, email, lua.LString(rendered), lua.LString(raw)); err != nil {
+			log.Printf("plugin hook %q error: %v", HookEmailBodyRender, err)
+			continue
+		}
+		ret := L.Get(-1)
+		L.Pop(1)
+		if s, ok := ret.(lua.LString); ok {
+			rendered = string(s)
+		}
+	}
+	return rendered
 }
 
 // CallKeyBinding invokes a plugin key binding callback with the given arguments.

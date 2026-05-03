@@ -3865,6 +3865,14 @@ func main() {
 	plugins := plugin.NewManager()
 	plugins.LoadPlugins()
 	initialModel.plugins = plugins
+	tui.BodyTransformer = func(body string, email fetcher.Email) string {
+		folder := "INBOX"
+		if initialModel.folderInbox != nil {
+			folder = initialModel.folderInbox.GetCurrentFolder()
+		}
+		t := plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, folder)
+		return plugins.CallBodyRenderHook(t, body, email.Body)
+	}
 	plugins.CallHook(plugin.HookStartup)
 
 	// Background sync macOS features

@@ -29,6 +29,7 @@ end)
 | `matcha.bind_key(key, area, description, callback)` | Register a custom keyboard shortcut for a view area (`"inbox"`, `"email_view"`, `"composer"`) |
 | `matcha.http(options)` | Make an HTTP request (see below) |
 | `matcha.prompt(placeholder, callback)` | Open a text input overlay in the composer (see below) |
+| `matcha.style(text, opts)` | Wrap `text` in lipgloss styling and return an ANSI-styled string (see below) |
 
 ## Hook events
 
@@ -42,6 +43,7 @@ end)
 | `email_send_after` | Same as `email_send_before` | Email sent successfully |
 | `folder_changed` | Folder name (string) | User switched folders |
 | `composer_updated` | Table with `body`, `body_len`, `subject`, `to`, `cc`, `bcc` | Composer content changed |
+| `email_body_render` | `(email_table, rendered, raw)` — return a string to replace the rendered body, or `nil` to keep it | About to display an email body. `rendered` is the ANSI-styled display string; `raw` is the original message source (HTML or plain text). Use for recoloring, bold/italic, removing parts, or fully replacing the displayed body with parsed output |
 
 ## HTTP requests
 
@@ -85,6 +87,65 @@ matcha.bind_key("ctrl+r", "composer", "rewrite", function(state)
 end)
 ```
 
+## Body rendering
+
+`matcha.on("email_body_render", function(email, rendered, raw) ... end)` runs
+after the email body has been converted to its final ANSI-styled form and
+before it is placed in the viewport. The callback receives:
+
+- `email`: the same table as `email_viewed`
+- `rendered`: the current display string (ANSI-styled, post-HTML→terminal)
+- `raw`: the original message body (HTML or plain text) — useful for parsing
+  the source instead of the rendered output
+
+Return a new string to replace the rendered body, or `nil` to leave it
+unchanged. Multiple registered callbacks chain in registration order; each
+subsequent callback sees the previous callback's rendered output, but always
+the same raw source.
+
+`matcha.style(text, opts)` wraps `text` in lipgloss styling. `opts` keys (all
+optional):
+
+- `color`, `bg`: string color (hex `"#rrggbb"`, named like `"red"`, or ANSI 256 number as string)
+- `bold`, `italic`, `underline`, `strikethrough`, `faint`, `blink`, `reverse`: bool
+
+```lua
+local matcha = require("matcha")
+
+matcha.on("email_body_render", function(email, rendered, raw)
+    -- highlight TODO in red bold (operates on rendered)
+    rendered = rendered:gsub("TODO", function(m)
+        return matcha.style(m, { color = "#ff0000", bold = true })
+    end)
+    -- italicize anything in *asterisks*
+    rendered = rendered:gsub("%*([^%*]+)%*", function(m)
+        return matcha.style(m, { italic = true })
+    end)
+    -- strip a tracking footer entirely
+    rendered = rendered:gsub("%-%-%-%s*Sent via Tracker.*$", "")
+    return rendered
+end)
+
+-- Parse the raw source and prepend a summary; works regardless of HTML markup.
+matcha.on("email_body_render", function(email, rendered, raw)
+    local urls = {}
+    for url in raw:gmatch("https?://[%w%-_%.~%?=&/%%#:]+") do
+        urls[#urls + 1] = url
+    end
+    local header = matcha.style("URLs: " .. #urls, { bold = true }) .. "\n\n"
+    return header .. rendered
+end)
+```
+
+Caveats:
+
+- The `rendered` string already contains ANSI escape sequences from the
+  HTML→terminal conversion. Patterns that straddle existing escapes will not
+  match — match plain text spans for predictable behavior, or operate on `raw`.
+- Returning a fully replaced string fully takes over the displayed body. To
+  build styled output from scratch, compose with `matcha.style` and join with
+  newlines.
+
 ## Available plugins
 
 The following example plugins ship in `~/.config/matcha/plugins/`:
@@ -98,6 +159,6 @@ The following example plugins ship in `~/.config/matcha/plugins/`:
 |------|-------------|
 | `plugin.go` | Plugin manager — Lua VM setup, plugin discovery and loading, notification/status state |
 | `hooks.go` | Hook definitions, callback registration, and hook invocation helpers |
-| `api.go` | `matcha` Lua module registration (`on`, `log`, `notify`, `set_status`, `set_compose_field`, `bind_key`, `http`, `prompt`) |
+| `api.go` | `matcha` Lua module registration (`on`, `log`, `notify`, `set_status`, `set_compose_field`, `bind_key`, `http`, `prompt`, `style`) |
 | `http.go` | `matcha.http()` implementation — HTTP client with timeout and body size limits |
 | `prompt.go` | `matcha.prompt()` implementation — user input overlay for the composer |

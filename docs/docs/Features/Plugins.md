@@ -315,6 +315,52 @@ end)
 | `cc`       | string | Current CC recipient(s)              |
 | `bcc`      | string | Current BCC recipient(s)             |
 
+### email_body_render
+
+Fired right before an email body is displayed in the email view. Receives `(email, rendered, raw)`:
+
+- `email`: same table as `email_viewed`
+- `rendered`: the ANSI-styled display string (post HTML→terminal conversion)
+- `raw`: the original message body (HTML or plain text) — parse this when you need the source instead of the rendered output
+
+Return a new string to replace the rendered body, or `nil` to leave it unchanged. You can recolor, bold/italicize, remove parts, or fully replace the displayed body with parsed output.
+
+```lua
+matcha.on("email_body_render", function(email, rendered, raw)
+  -- highlight TODO red bold
+  rendered = rendered:gsub("TODO", function(m)
+    return matcha.style(m, { color = "#ff0000", bold = true })
+  end)
+  -- italicize *asterisked* spans
+  rendered = rendered:gsub("%*([^%*]+)%*", function(m)
+    return matcha.style(m, { italic = true })
+  end)
+  -- strip a tracking footer entirely
+  rendered = rendered:gsub("%-%-%-%s*Sent via Tracker.*$", "")
+  return rendered
+end)
+
+-- Full replacement: parse raw source, prepend a URL summary.
+matcha.on("email_body_render", function(email, rendered, raw)
+  local urls = {}
+  for url in raw:gmatch("https?://[%w%-_%.~%?=&/%%#:]+") do
+    urls[#urls + 1] = url
+  end
+  if #urls == 0 then return rendered end
+  local header = matcha.style("URLs: " .. #urls, { bold = true })
+  return header .. "\n\n" .. rendered
+end)
+```
+
+`matcha.style(text, opts)` wraps `text` in lipgloss styling. `opts` is a table with optional keys:
+
+| Key                                                                  | Type   | Description                                                  |
+| -------------------------------------------------------------------- | ------ | ------------------------------------------------------------ |
+| `color`, `bg`                                                        | string | Hex (`"#rrggbb"`), name (`"red"`), or ANSI 256 number string |
+| `bold`, `italic`, `underline`, `strikethrough`, `faint`, `blink`, `reverse` | bool   | Toggle the corresponding attribute                           |
+
+Caveat: the body string already contains ANSI escape sequences from the HTML→terminal conversion. Patterns that straddle existing escapes will not match. Match plain text spans for predictable behavior.
+
 ## Marketplace
 
 Matcha includes a built-in plugin marketplace with 35+ community plugins. You can browse and install plugins from the terminal or from the [online marketplace](/marketplace).
