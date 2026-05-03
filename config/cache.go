@@ -422,11 +422,13 @@ type CachedAttachment struct {
 
 // CachedEmailBody stores the body and attachment metadata for a single email.
 type CachedEmailBody struct {
-	UID         uint32             `json:"uid"`
-	AccountID   string             `json:"account_id"`
-	Body        string             `json:"body"`
-	Attachments []CachedAttachment `json:"attachments,omitempty"`
-	CachedAt    time.Time          `json:"cached_at"`
+	UID            uint32             `json:"uid"`
+	AccountID      string             `json:"account_id"`
+	Body           string             `json:"body"`
+	Attachments    []CachedAttachment `json:"attachments,omitempty"`
+	CachedAt       time.Time          `json:"cached_at"`
+	LastAccessedAt time.Time          `json:"last_accessed_at"`
+	SizeBytes      int                `json:"size_bytes"`
 }
 
 // EmailBodyCache stores cached email bodies for a folder.
@@ -503,6 +505,24 @@ func GetCachedEmailBody(folderName string, uid uint32, accountID string) *Cached
 	return nil
 }
 
+func calculateTotalCacheSize(cache *EmailBodyCache) int {
+	total := 0
+	for _, b := range cache.Bodies {
+		total += b.SizeBytes
+	}
+	return total
+}
+
+func evict(cache *EmailBodyCache, newSize int, threshold int) {
+	sort.Slice(cache.Bodies, func(i, j int) bool {
+		return cache.Bodies[i].LastAccessedAt.Before(cache.Bodies[j].LastAccessedAt)
+	})
+
+	for len(cache.Bodies) > 0 && calculateTotalCacheSize(cache)+newSize > threshold {
+		cache.Bodies = cache.Bodies[1:]
+	}
+}
+
 // SaveEmailBody saves or updates a cached email body for a folder.
 func SaveEmailBody(folderName string, body CachedEmailBody) error {
 	cache, err := LoadEmailBodyCache(folderName)
@@ -510,7 +530,11 @@ func SaveEmailBody(folderName string, body CachedEmailBody) error {
 		cache = &EmailBodyCache{FolderName: folderName}
 	}
 
+	const threshold = 500 * 1024 * 1024 // 500MB
+
 	body.CachedAt = time.Now()
+	body.LastAccessedAt = time.Now()
+	body.SizeBytes = len(body.Body)
 
 	// Replace existing or append
 	found := false
@@ -522,6 +546,11 @@ func SaveEmailBody(folderName string, body CachedEmailBody) error {
 		}
 	}
 	if !found {
+
+		if calculateTotalCacheSize(cache)+body.SizeBytes > threshold {
+			evict(cache, body.SizeBytes, threshold)
+		}
+
 		cache.Bodies = append(cache.Bodies, body)
 	}
 
