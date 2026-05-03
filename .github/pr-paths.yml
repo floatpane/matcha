@@ -1,0 +1,121 @@
+# Path → label rules for actions/labeler@v5 (PR file paths).
+
+"area/tui":
+  - changed-files:
+      - any-glob-to-any-file:
+          - tui/**
+          - view/**
+
+"area/fetcher":
+  - changed-files:
+      - any-glob-to-any-file:
+          - fetcher/**
+
+"area/sender":
+  - changed-files:
+      - any-glob-to-any-file:
+          - sender/**
+
+"area/oauth":
+  - changed-files:
+      - any-glob-to-any-file:
+          - fetcher/xoauth2.go
+          - "**/oauth*"
+          - "**/xoauth*"
+
+"area/calendar":
+  - changed-files:
+      - any-glob-to-any-file:
+          - calendar/**
+
+"area/notify":
+  - changed-files:
+      - any-glob-to-any-file:
+          - notify/**
+
+"area/pgp":
+  - changed-files:
+      - any-glob-to-any-file:
+          - pgp/**
+
+"area/plugin":
+  - changed-files:
+      - any-glob-to-any-file:
+          - plugin/**
+          - plugins/**
+
+"area/theme":
+  - changed-files:
+      - any-glob-to-any-file:
+          - theme/**
+
+"area/i18n":
+  - changed-files:
+      - any-glob-to-any-file:
+          - i18n/**
+
+"area/config":
+  - changed-files:
+      - any-glob-to-any-file:
+          - config/**
+
+"area/cli":
+  - changed-files:
+      - any-glob-to-any-file:
+          - cli/**
+
+"area/daemon":
+  - changed-files:
+      - any-glob-to-any-file:
+          - daemon/**
+          - daemonclient/**
+          - daemonrpc/**
+
+"area/scard":
+  - changed-files:
+      - any-glob-to-any-file:
+          - pgp/yubikey.go
+          - "**/scard*"
+          - "**/pkcs11*"
+
+"area/nix":
+  - changed-files:
+      - any-glob-to-any-file:
+          - flake.nix
+          - flake.lock
+          - gomod2nix.toml
+
+"area/build":
+  - changed-files:
+      - any-glob-to-any-file:
+          - Makefile
+          - dist/**
+          - snapcraft.yaml
+          - com.floatpane.matcha.yaml
+          - .goreleaser*
+          - clib/**
+
+"area/docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/**
+          - README.md
+          - "**/*.md"
+
+"ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/workflows/**
+          - .github/labeler-config.yml
+          - .github/labels.yml
+          - .github/pr-paths.yml
+
+"dependencies":
+  - changed-files:
+      - any-glob-to-any-file:
+          - go.mod
+          - go.sum
+          - package.json
+          - package-lock.json
+          - docs/package.json
+          - docs/package-lock.json

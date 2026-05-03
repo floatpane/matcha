@@ -8,6 +8,10 @@ on:
 
 jobs:
   triage:
+    if: >
+      ${{ github.event_name == 'issues'
+          || (!startsWith(github.event.pull_request.title, 'chore(deps):')
+              && !contains(fromJSON('["chore/sync-gomod2nix","chore/update-flake-lock","update-screenshots","update-demo-gif"]'), github.head_ref)) }}
     permissions:
       contents: read
       issues: write
@@ -19,7 +23,7 @@ jobs:
       - name: Apply Labels
         uses: github/issue-labeler@v3.4
         with:
-          repo-token: "${{ secrets.GITHUB_TOKEN }}"
+          repo-token: "${{ secrets.HOMEBREW_GITHUB_TOKEN }}"
           configuration-path: .github/labeler-config.yml
           enable-versioned-regex: 0
           include-title: 1

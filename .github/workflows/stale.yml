@@ -1,0 +1,37 @@
+name: "Stale issues and PRs"
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          days-before-issue-stale: 30
+          days-before-issue-close: 14
+          days-before-pr-stale: 45
+          days-before-pr-close: 21
+          stale-issue-label: "stale"
+          stale-pr-label: "stale"
+          exempt-issue-labels: "pinned,security,help-wanted,good-first-issue,in-progress"
+          exempt-pr-labels: "pinned,security,in-progress,blocked"
+          stale-issue-message: >
+            This issue has had no activity for 30 days. It will be closed in 14 days unless updated.
+            Add a comment or remove the `stale` label to keep it open.
+          stale-pr-message: >
+            This PR has had no activity for 45 days. It will be closed in 21 days unless updated.
+          close-issue-message: >
+            Closing due to inactivity. Reopen if still relevant.
+          close-pr-message: >
+            Closing due to inactivity. Reopen if still relevant.
+          remove-stale-when-updated: true
+          operations-per-run: 100

@@ -1,0 +1,63 @@
+name: "Feature Request Triage"
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  welcome:
+    if: github.event_name == 'issues' && github.event.action == 'opened' && contains(github.event.issue.labels.*.name, 'enhancement')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              body: [
+                "Thanks for the suggestion!",
+                "",
+                "If you want to see this feature land, give the original post a 👍. Maintainers prioritize feature requests by reaction count.",
+                "Comment to add detail or use cases — extra context helps triage."
+              ].join("\n")
+            });
+
+  promote-popular:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          script: |
+            const threshold = 10;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'enhancement',
+              per_page: 100
+            });
+            for (const issue of issues) {
+              if (issue.pull_request) continue;
+              if (issue.labels.some(l => (l.name || l) === 'popular')) continue;
+              const upvotes = (issue.reactions && issue.reactions['+1']) || 0;
+              if (upvotes >= threshold) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  labels: ['popular']
+                });
+                core.info(`labeled #${issue.number} popular (${upvotes} 👍)`);
+              }
+            }

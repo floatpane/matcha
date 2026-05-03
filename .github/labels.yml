@@ -1,0 +1,140 @@
+# Label definitions. Synced by .github/workflows/label-sync.yml via `gh label`.
+
+# --- Type ---
+- name: bug
+  color: d73a4a
+  description: Something isn't working
+- name: enhancement
+  color: a2eeef
+  description: New feature or request
+- name: documentation
+  color: 0075ca
+  description: Documentation changes
+- name: question
+  color: d876e3
+  description: Further information requested
+- name: performance
+  color: fbca04
+  description: Performance improvement
+- name: dependencies
+  color: 0366d6
+  description: Dependency updates
+- name: ci
+  color: 1d76db
+  description: CI / build pipeline
+- name: chore
+  color: cfd3d7
+  description: Maintenance, refactor, cleanup
+- name: security
+  color: b60205
+  description: Security-related
+
+# --- Triage / lifecycle ---
+- name: needs-triage
+  color: ededed
+  description: Awaiting maintainer review
+- name: needs-response
+  color: fbca04
+  description: Waiting on issue author reply
+- name: stale
+  color: cccccc
+  description: No activity for extended period
+- name: pinned
+  color: 0e8a16
+  description: Exempt from stale
+- name: in-progress
+  color: 5319e7
+  description: Actively being worked on
+- name: blocked
+  color: b60205
+  description: Blocked on external dependency
+- name: help-wanted
+  color: 008672
+  description: Extra attention is needed
+- name: good-first-issue
+  color: 7057ff
+  description: Good for newcomers
+- name: popular
+  color: ff6f00
+  description: High community interest (10+ 👍)
+- name: duplicate
+  color: cfd3d7
+  description: Duplicate of another issue
+- name: wontfix
+  color: ffffff
+  description: Will not be worked on
+- name: invalid
+  color: e4e669
+  description: Not valid
+
+# --- OS ---
+- name: os/windows
+  color: 0078d4
+  description: Windows-specific
+- name: os/linux
+  color: fcc624
+  description: Linux-specific
+- name: os/macos
+  color: 333333
+  description: macOS-specific
+
+# --- Arch ---
+- name: arch/arm64
+  color: 6e40c9
+  description: arm64 / aarch64
+- name: arch/amd64
+  color: 1f6feb
+  description: amd64 / x86_64
+
+# --- Area ---
+- name: area/tui
+  color: c2e0c6
+  description: Terminal UI / view layer
+- name: area/fetcher
+  color: c2e0c6
+  description: IMAP fetch / IDLE / search
+- name: area/sender
+  color: c2e0c6
+  description: SMTP send path
+- name: area/oauth
+  color: c2e0c6
+  description: OAuth / XOAUTH2 / auth flows
+- name: area/calendar
+  color: c2e0c6
+  description: Calendar integration
+- name: area/notify
+  color: c2e0c6
+  description: Notifications
+- name: area/pgp
+  color: c2e0c6
+  description: PGP / encryption
+- name: area/plugin
+  color: c2e0c6
+  description: Plugin system
+- name: area/theme
+  color: c2e0c6
+  description: Theming / colors
+- name: area/i18n
+  color: c2e0c6
+  description: Localization / translations
+- name: area/config
+  color: c2e0c6
+  description: Configuration / settings
+- name: area/cli
+  color: c2e0c6
+  description: CLI flags / commands
+- name: area/daemon
+  color: c2e0c6
+  description: Daemon / RPC
+- name: area/scard
+  color: c2e0c6
+  description: Smart card / PKCS#11
+- name: area/nix
+  color: c2e0c6
+  description: Nix flake / packaging
+- name: area/build
+  color: c2e0c6
+  description: Build system / Makefile / packaging
+- name: area/docs
+  color: c2e0c6
+  description: Docs site / README

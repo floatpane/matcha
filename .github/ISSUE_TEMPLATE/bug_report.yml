@@ -50,11 +50,32 @@ body:
       description: "Run `go version` to find out. Only relevant if the issue is related to Go/compilation."
       placeholder: "e.g. 1.22.0"
 
-  - type: input
+  - type: dropdown
     id: os
     attributes:
       label: OS
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
       placeholder: "e.g. macOS 14, Ubuntu 24.04, Windows 11"
+
+  - type: dropdown
+    id: arch
+    attributes:
+      label: Architecture
+      options:
+        - amd64 (x86_64)
+        - arm64 (aarch64 / Apple Silicon)
+        - Other / unsure
     validations:
       required: true
 

@@ -1,0 +1,45 @@
+name: "Needs Response"
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+
+jobs:
+  toggle-label:
+    if: github.event.issue.pull_request == null
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add needs-response when maintainer comments
+        if: >
+          contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+          github.event.comment.user.login != github.event.issue.user.login
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              labels: ['needs-response']
+            });
+
+      - name: Remove needs-response when issue author replies
+        if: github.event.comment.user.login == github.event.issue.user.login
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          script: |
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number,
+                name: 'needs-response'
+              });
+            } catch (e) {
+              if (e.status !== 404) throw e;
+            }

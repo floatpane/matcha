@@ -87,8 +87,14 @@ jobs:
           commit-message: "docs: update demo.gif from release"
           title: "docs: update demo.gif"
           body: |
-            This PR updates the demo GIF based on the latest release version.
-            Generated automatically by the Update Demo VHS workflow.
+            ## What?
+
+            Replaces `public/assets/demo.gif` with a freshly recorded VHS run.
+
+            ## Why?
+
+            Keeps the demo GIF aligned with the latest release so README and docs reflect current behaviour. Generated automatically by the Update Demo VHS workflow.
           branch: "update-demo-gif"
           base: "master"
           add-paths: public/assets/demo.gif
+          labels: documentation

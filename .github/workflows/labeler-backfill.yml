@@ -1,0 +1,72 @@
+name: "Labeler Backfill"
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "What to backfill"
+        type: choice
+        default: both
+        options:
+          - issues
+          - prs
+          - both
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+
+jobs:
+  issues:
+    if: github.event.inputs.target == 'issues' || github.event.inputs.target == 'both'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+    steps:
+      - name: Re-trigger issue labeler via no-op edit
+        run: |
+          set -euo pipefail
+          mapfile -t numbers < <(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 1000 --json number -q '.[].number')
+          for n in "${numbers[@]}"; do
+            body=$(gh issue view "$n" --repo "$GITHUB_REPOSITORY" --json body -q .body)
+            # PATCH with same body → fires `edited` → labeler.yml runs
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/$n" -f body="$body" >/dev/null
+            echo "touched #$n"
+            sleep 1
+          done
+
+  prs:
+    if: github.event.inputs.target == 'prs' || github.event.inputs.target == 'both'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Collect open PR numbers
+        id: prs
+        run: |
+          nums=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 1000 --json number -q '[.[].number] | join(",")')
+          echo "list=$nums" >> "$GITHUB_OUTPUT"
+
+      - name: Path labeler on open PRs
+        if: steps.prs.outputs.list != ''
+        uses: actions/labeler@v5
+        with:
+          repo-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          configuration-path: .github/pr-paths.yml
+          sync-labels: false
+          dot: true
+          pr-number: ${{ steps.prs.outputs.list }}
+
+      - name: Re-trigger text labeler on PRs via no-op edit
+        run: |
+          set -euo pipefail
+          mapfile -t numbers < <(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 1000 --json number -q '.[].number')
+          for n in "${numbers[@]}"; do
+            body=$(gh pr view "$n" --repo "$GITHUB_REPOSITORY" --json body -q .body)
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$n" -f body="$body" >/dev/null
+            echo "touched PR #$n"
+            sleep 1
+          done

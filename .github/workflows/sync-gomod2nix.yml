@@ -39,5 +39,15 @@ jobs:
           git commit -m "chore: sync gomod2nix.toml"
           git push -f origin "$BRANCH"
           if ! gh pr list --head "$BRANCH" --state open | grep -q .; then
-            gh pr create --title "chore: sync gomod2nix.toml" --body "Automated gomod2nix.toml sync after Go dependency changes." --base master
+            BODY=$(cat <<'EOF'
+          ## What?
+
+          Regenerates `gomod2nix.toml` to reflect the current `go.mod` / `go.sum`.
+
+          ## Why?
+
+          Keeps the Nix build in sync with Go module changes. Without this, `nix build` fails when new or upgraded Go deps are missing from `gomod2nix.toml`. Generated automatically by the gomod2nix sync workflow.
+          EOF
+          )
+            gh pr create --title "chore: sync gomod2nix.toml" --body "$BODY" --base master --label chore --label area/nix
           fi
