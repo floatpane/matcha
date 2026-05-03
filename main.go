@@ -2165,6 +2165,7 @@ func fetchFoldersCmd(cfg *config.Config) tea.Cmd {
 func fetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
 	return func() tea.Msg {
 		emailsByAccount := make(map[string][]fetcher.Email)
+		accountErrors := make(map[string]error)
 		var mu sync.Mutex
 		var wg sync.WaitGroup
 
@@ -2174,7 +2175,9 @@ func fetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
 				defer wg.Done()
 				emails, err := fetcher.FetchFolderEmails(&acc, folderName, initialEmailLimit, 0)
 				if err != nil {
-					// Folder may not exist for this account — silently skip
+					mu.Lock()
+					accountErrors[acc.ID] = err
+					mu.Unlock()
 					return
 				}
 				mu.Lock()
@@ -2200,8 +2203,9 @@ func fetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
 		}
 
 		return tui.FolderEmailsFetchedMsg{
-			Emails:     allEmails,
-			FolderName: folderName,
+			Emails:        allEmails,
+			FolderName:    folderName,
+			AccountErrors: accountErrors,
 		}
 	}
 }

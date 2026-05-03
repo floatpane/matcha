@@ -388,6 +388,8 @@ type FolderEmailsFetchedMsg struct {
 	Emails     []fetcher.Email
 	AccountID  string
 	FolderName string
+	// AccountErrors maps account ID to fetch error for accounts that failed.
+	AccountErrors map[string]error
 }
 
 // FolderEmailsAppendedMsg signals that more emails from a folder have been fetched (pagination).
