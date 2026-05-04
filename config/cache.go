@@ -497,12 +497,27 @@ func GetCachedEmailBody(folderName string, uid uint32, accountID string) *Cached
 	if err != nil {
 		return nil
 	}
-	for _, b := range cache.Bodies {
+	for i, b := range cache.Bodies {
 		if b.UID == uid && b.AccountID == accountID {
-			return &b
+			cache.Bodies[i].LastAccessedAt = time.Now()
+			_ = saveEmailBodyCache(cache)
+			return &cache.Bodies[i]
 		}
 	}
 	return nil
+}
+
+func calculateEmailBodySize(body *CachedEmailBody) int {
+	size := len(body.Body)
+	for _, att := range body.Attachments {
+		size += len(att.Filename)
+		size += len(att.PartID)
+		size += len(att.Encoding)
+		size += len(att.MIMEType)
+		size += len(att.ContentID)
+		size += len(att.CalendarData)
+	}
+	return size
 }
 
 func calculateTotalCacheSize(cache *EmailBodyCache) int {
@@ -532,7 +547,7 @@ func SaveEmailBody(folderName string, body CachedEmailBody, threshold int) error
 
 	body.CachedAt = time.Now()
 	body.LastAccessedAt = time.Now()
-	body.SizeBytes = len(body.Body)
+	body.SizeBytes = calculateEmailBodySize(&body)
 
 	// Replace existing or append
 	found := false
@@ -544,12 +559,13 @@ func SaveEmailBody(folderName string, body CachedEmailBody, threshold int) error
 		}
 	}
 	if !found {
+		if body.SizeBytes <= threshold {
+			if calculateTotalCacheSize(cache)+body.SizeBytes > threshold {
+				evict(cache, body.SizeBytes, threshold)
+			}
 
-		if calculateTotalCacheSize(cache)+body.SizeBytes > threshold {
-			evict(cache, body.SizeBytes, threshold)
+			cache.Bodies = append(cache.Bodies, body)
 		}
-
-		cache.Bodies = append(cache.Bodies, body)
 	}
 
 	return saveEmailBodyCache(cache)
