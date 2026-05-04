@@ -101,6 +101,10 @@ type FolderInbox struct {
 	previewPane        *EmailView
 	previewedUID       uint32
 	previewedAccountID string
+	// previewSearchEmail holds an Email handed in by OpenSplitPreview for hits
+	// that do not live in m.inbox.allEmails (search results across folders).
+	// findEmailByUID falls back to it when allEmails has no match.
+	previewSearchEmail *fetcher.Email
 	focusedPane        PaneType
 }
 
@@ -165,6 +169,12 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		// Don't intercept keys while filtering
 		if m.inbox.list.FilterState() == list.Filtering {
+			break
+		}
+
+		// Don't intercept keys while the inbox search overlay is active.
+		// Otherwise folder-level bindings like "m" (move) would shadow text input.
+		if m.inbox.searchOverlay != nil {
 			break
 		}
 
@@ -371,6 +381,9 @@ func (m *FolderInbox) wrapInboxCmd(cmd tea.Cmd) tea.Cmd {
 				Limit:      inner.Limit,
 			}
 		case RequestRefreshMsg:
+			inner.FolderName = m.currentFolder
+			return inner
+		case SearchRequestedMsg:
 			inner.FolderName = m.currentFolder
 			return inner
 		}
@@ -758,11 +771,15 @@ func (m *FolderInbox) renderEmptyPreview() string {
 	return emptyStyle.Render("Loading...")
 }
 
-// OpenSplitPreview opens the split preview pane for a specific email
-func (m *FolderInbox) OpenSplitPreview(uid uint32, accountID string) {
+// OpenSplitPreview opens the split preview pane for a specific email.
+// email may be non-nil for hits coming from search results (which are not in
+// m.inbox.allEmails); when set, it is used as a fallback by findEmailByUID
+// so the preview can render without a follow-up lookup.
+func (m *FolderInbox) OpenSplitPreview(uid uint32, accountID string, email *fetcher.Email) {
 	m.previewPane = nil // Will be created when body arrives
 	m.previewedUID = uid
 	m.previewedAccountID = accountID
+	m.previewSearchEmail = email
 	m.focusedPane = FocusPreview
 	// Recalculate inbox width for split mode
 	inboxWidth := m.calculateInboxWidth()
@@ -776,6 +793,7 @@ func (m *FolderInbox) closeSplitPreview() {
 	m.previewPane = nil
 	m.previewedUID = 0
 	m.previewedAccountID = ""
+	m.previewSearchEmail = nil
 	m.focusedPane = FocusInbox
 	// Restore full inbox width
 	inboxWidth := m.width - sidebarWidth - 3
@@ -786,12 +804,19 @@ func (m *FolderInbox) closeSplitPreview() {
 	m.updateHelpKeys()
 }
 
-// findEmailByUID finds email in inbox by UID and account ID
+// findEmailByUID finds email in inbox by UID and account ID. Falls back to
+// the email handed in by OpenSplitPreview so search hits that are not in
+// allEmails (cross-folder or uncached) still render in the preview pane.
 func (m *FolderInbox) findEmailByUID(uid uint32, accountID string) *fetcher.Email {
 	for i := range m.inbox.allEmails {
 		if m.inbox.allEmails[i].UID == uid && m.inbox.allEmails[i].AccountID == accountID {
 			return &m.inbox.allEmails[i]
 		}
+	}
+	if m.previewSearchEmail != nil &&
+		m.previewSearchEmail.UID == uid &&
+		m.previewSearchEmail.AccountID == accountID {
+		return m.previewSearchEmail
 	}
 	return nil
 }

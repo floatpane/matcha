@@ -54,6 +54,8 @@
       "delete": "削除",
       "archive": "アーカイブ",
       "refresh": "更新",
+      "search": "検索",
+      "filter": "フィルタ",
       "reply": "返信",
       "forward": "転送",
       "move": "移動",

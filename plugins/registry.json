@@ -48,6 +48,18 @@
     "file": "empty_body_guard.lua"
   },
   {
+    "name": "link_summary",
+    "title": "Link Summary",
+    "description": "Parses the raw body, extracts every URL, and prepends a numbered link summary to the displayed email. Demo of full body manipulation via the email_body_render hook.",
+    "file": "link_summary.lua"
+  },
+  {
+    "name": "github_highlighter",
+    "title": "GitHub Highlighter",
+    "description": "Highlights every \"GitHub\" mention in displayed email bodies with bold purple text. Demo of the email_body_render hook.",
+    "file": "github_highlighter.lua"
+  },
+  {
     "name": "folder_announcer",
     "title": "Folder Announcer",
     "description": "Shows a brief notification when you switch folders.",

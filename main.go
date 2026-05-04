@@ -7,10 +7,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"net/mail"
 	"net/url"
 	"os"
 	"os/exec"
@@ -18,6 +20,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -203,6 +206,21 @@ func (m *mainModel) syncUnreadBadge() {
 func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
+	searchWasActive := false
+	filterWasActive := false
+
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == config.Keybinds.Global.Cancel {
+		switch current := m.current.(type) {
+		case *tui.Inbox:
+			searchWasActive = current.IsSearchActive()
+			filterWasActive = current.IsFilterActive()
+		case *tui.FolderInbox:
+			if inbox := current.GetInbox(); inbox != nil {
+				searchWasActive = inbox.IsSearchActive()
+				filterWasActive = inbox.IsFilterActive()
+			}
+		}
+	}
 
 	m.current, cmd = m.current.Update(msg)
 	cmds = append(cmds, cmd)
@@ -240,6 +258,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case *tui.FilePicker:
 				return m, func() tea.Msg { return tui.CancelFilePickerMsg{} }
 			case *tui.FolderInbox, *tui.Inbox, *tui.Login:
+				if searchWasActive || filterWasActive {
+					return m, tea.Batch(cmds...)
+				}
 				m.idleWatcher.StopAll()
 				m.current = tui.NewChoice()
 				m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
@@ -325,6 +346,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ServiceProvider: msg.Provider,
 				FetchEmail:      fetchEmails[0],
 				SendAsEmail:     msg.SendAsEmail,
+				CatchAll:        msg.CatchAll,
 				AuthMethod:      msg.AuthMethod,
 				Protocol:        msg.Protocol,
 				Insecure:        msg.Insecure,
@@ -369,6 +391,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					ServiceProvider: msg.Provider,
 					FetchEmail:      fe,
 					SendAsEmail:     msg.SendAsEmail,
+					CatchAll:        msg.CatchAll,
 					AuthMethod:      msg.AuthMethod,
 					Protocol:        msg.Protocol,
 					JMAPEndpoint:    msg.JMAPEndpoint,
@@ -922,6 +945,13 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			fetchFolderEmailsPaginatedCmd(account, folderName, limit, msg.Offset),
 		)
 
+	case tui.SearchRequestedMsg:
+		folderName := msg.FolderName
+		if folderName == "" {
+			folderName = "INBOX"
+		}
+		return m, m.searchEmailsCmd(msg.Query, folderName, msg.AccountID)
+
 	case tui.EmailsAppendedMsg:
 		if m.emailsByAcct == nil {
 			m.emailsByAcct = make(map[string][]fetcher.Email)
@@ -982,6 +1012,14 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
 
+	case tui.ConfigSavedMsg:
+		if m.service != nil {
+			if err := m.service.ReloadConfig(); err != nil {
+				log.Printf("config reload: %v", err)
+			}
+		}
+		return m, nil
+
 	case tui.LanguageChangedMsg:
 		// Rebuild all models with new translations
 		// Keep current view type but recreate with fresh i18n
@@ -1031,7 +1069,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			hideTips = m.config.HideTips
 		}
 		login := tui.NewLogin(hideTips)
-		login.SetEditMode(msg.AccountID, msg.Protocol, msg.Provider, msg.Name, msg.Email, msg.FetchEmail, msg.SendAsEmail, msg.IMAPServer, msg.IMAPPort, msg.SMTPServer, msg.SMTPPort, msg.Insecure, msg.JMAPEndpoint, msg.POP3Server, msg.POP3Port)
+		login.SetEditMode(msg.AccountID, msg.Protocol, msg.Provider, msg.Name, msg.Email, msg.FetchEmail, msg.SendAsEmail, msg.IMAPServer, msg.IMAPPort, msg.SMTPServer, msg.SMTPPort, msg.Insecure, msg.JMAPEndpoint, msg.POP3Server, msg.POP3Port, msg.CatchAll)
 		m.current = login
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
@@ -1165,7 +1203,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.current.Init()
 
 	case tui.ViewEmailMsg:
-		email := m.getEmailByUIDAndAccount(msg.UID, msg.AccountID, msg.Mailbox)
+		email := msg.Email
+		if email == nil {
+			email = m.getEmailByUIDAndAccount(msg.UID, msg.AccountID, msg.Mailbox)
+		} else {
+			m.addEmailToStoresIfMissing(*email, msg.Mailbox)
+		}
 		if email == nil {
 			return m, nil
 		}
@@ -1179,7 +1222,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Split pane mode: open in split view instead of full screen
 		if m.config.EnableSplitPane && m.folderInbox != nil {
-			m.folderInbox.OpenSplitPreview(msg.UID, msg.AccountID)
+			m.folderInbox.OpenSplitPreview(msg.UID, msg.AccountID, email)
 			m.current = m.folderInbox
 			// Mark as read
 			if !email.IsRead {
@@ -1337,6 +1380,24 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				accountID = m.config.GetFirstAccount().ID
 			}
 			composer = tui.NewComposerWithAccounts(m.config.Accounts, accountID, to, subject, "", hideTips)
+			// For catch-all accounts, pre-fill From with the specific address the email was delivered to.
+			if len(msg.Email.To) > 0 {
+				for i := range m.config.Accounts {
+					if m.config.Accounts[i].ID == accountID && m.config.Accounts[i].CatchAll {
+						acc := &m.config.Accounts[i]
+						deliveryAddr := msg.Email.To[0]
+						if addr, err := mail.ParseAddress(deliveryAddr); err == nil {
+							deliveryAddr = addr.Address
+						}
+						fromVal := deliveryAddr
+						if acc.Name != "" {
+							fromVal = fmt.Sprintf("%s <%s>", acc.Name, deliveryAddr)
+						}
+						composer.SetFromOverride(fromVal)
+						break
+					}
+				}
+			}
 		} else {
 			composer = tui.NewComposer("", to, subject, "", hideTips)
 		}
@@ -1798,6 +1859,17 @@ func (m *mainModel) updateEmailBodyByUID(uid uint32, accountID string, mailbox t
 	}
 }
 
+func (m *mainModel) addEmailToStoresIfMissing(email fetcher.Email, mailbox tui.MailboxKind) {
+	if m.getEmailByUIDAndAccount(email.UID, email.AccountID, mailbox) != nil {
+		return
+	}
+	if m.emailsByAcct == nil {
+		m.emailsByAcct = make(map[string][]fetcher.Email)
+	}
+	m.emailsByAcct[email.AccountID] = append(m.emailsByAcct[email.AccountID], email)
+	m.emails = flattenAndSort(m.emailsByAcct)
+}
+
 func (m *mainModel) markEmailAsReadInStores(uid uint32, accountID string) {
 	for i := range m.emails {
 		if m.emails[i].UID == uid && m.emails[i].AccountID == accountID {
@@ -2084,6 +2156,73 @@ func fetchEmailsForMailbox(account *config.Account, limit, offset uint32, mailbo
 	}
 }
 
+func (m *mainModel) searchEmailsCmd(query backend.SearchQuery, folderName, accountID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), httpclient.IMAPSearchTimeout)
+		defer cancel()
+
+		var accounts []config.Account
+		for _, acc := range m.config.Accounts {
+			if accountID == "" || acc.ID == accountID {
+				accounts = append(accounts, acc)
+			}
+		}
+
+		var results []fetcher.Email
+		var firstErr error
+		succeeded := false
+		for i := range accounts {
+			acc := &accounts[i]
+			p := m.getProvider(acc)
+			if p == nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("provider not found for account %s", acc.ID)
+				}
+				continue
+			}
+			emails, err := p.Search(ctx, folderName, query)
+			if err != nil {
+				if errors.Is(err, backend.ErrNotSupported) {
+					continue
+				}
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			succeeded = true
+			results = append(results, backendEmailsToFetcher(emails)...)
+		}
+		if !succeeded && firstErr != nil {
+			return tui.SearchResultsMsg{Query: query, Err: firstErr}
+		}
+		sortFetcherEmails(results)
+
+		return tui.SearchResultsMsg{Query: query, Emails: results}
+	}
+}
+
+func backendEmailsToFetcher(emails []backend.Email) []fetcher.Email {
+	result := make([]fetcher.Email, len(emails))
+	for i, e := range emails {
+		result[i] = fetcher.Email{
+			UID: e.UID, From: e.From, To: e.To, ReplyTo: e.ReplyTo,
+			Subject: e.Subject, Body: e.Body, Date: e.Date, IsRead: e.IsRead,
+			MessageID: e.MessageID, References: e.References, AccountID: e.AccountID,
+		}
+	}
+	return result
+}
+
+func sortFetcherEmails(emails []fetcher.Email) {
+	sort.Slice(emails, func(i, j int) bool {
+		if emails[i].Date.Equal(emails[j].Date) {
+			return emails[i].UID > emails[j].UID
+		}
+		return emails[i].Date.After(emails[j].Date)
+	})
+}
+
 func loadCachedEmails() tea.Cmd {
 	return func() tea.Msg {
 		cache, err := config.LoadEmailCache()
@@ -2289,6 +2428,13 @@ func sendEmail(account *config.Account, msg tui.SendEmailMsg) tea.Cmd {
 	return func() tea.Msg {
 		if account == nil {
 			return tui.EmailResultMsg{Err: fmt.Errorf("no account configured")}
+		}
+
+		// Apply custom From address for catch-all accounts.
+		if msg.FromOverride != "" {
+			acc := *account
+			acc.SendAsEmail = msg.FromOverride
+			account = &acc
 		}
 
 		recipients := splitEmails(msg.To)
@@ -2671,7 +2817,7 @@ func archiveFolderEmailCmd(account *config.Account, uid uint32, accountID string
 
 func (m *mainModel) batchDeleteEmailsCmd(account *config.Account, uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), httpclient.IMAPBatchActionTimeout)
 		defer cancel()
 
 		p := m.getProvider(account)
@@ -2710,7 +2856,7 @@ func (m *mainModel) batchDeleteEmailsCmd(account *config.Account, uids []uint32,
 
 func (m *mainModel) batchArchiveEmailsCmd(account *config.Account, uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), httpclient.IMAPBatchActionTimeout)
 		defer cancel()
 
 		p := m.getProvider(account)
@@ -2748,7 +2894,7 @@ func (m *mainModel) batchArchiveEmailsCmd(account *config.Account, uids []uint32
 
 func (m *mainModel) batchMoveEmailsCmd(account *config.Account, uids []uint32, accountID, sourceFolder, destFolder string, count int) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), httpclient.IMAPBatchActionTimeout)
 		defer cancel()
 
 		p := m.getProvider(account)
@@ -3253,7 +3399,7 @@ func isFlagSet(fs *flag.FlagSet, name string) bool {
 	return found
 }
 
-func runUpdateCLI() error {
+func runUpdateCLI() (err error) {
 	const api = "https://api.github.com/repos/floatpane/matcha/releases/latest"
 	resp, err := httpClient.Get(api)
 	if err != nil {
@@ -3520,18 +3666,22 @@ func runUpdateCLI() error {
 	if err != nil {
 		return fmt.Errorf("could not open new binary: %w", err)
 	}
+	defer in.Close()
 	out, err := os.OpenFile(tmpNew, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 	if err != nil {
-		in.Close()
 		return fmt.Errorf("could not create temp binary in target dir: %w", err)
 	}
-	if _, err := io.Copy(out, in); err != nil {
-		in.Close()
-		out.Close()
+
+	defer func() {
+		cerr := out.Close()
+		if err == nil && cerr != nil {
+			err = fmt.Errorf("could not flush new binary to disk: %w", cerr)
+		}
+	}()
+
+	if _, err = io.Copy(out, in); err != nil {
 		return fmt.Errorf("could not write new binary to disk: %w", err)
 	}
-	in.Close()
-	out.Close()
 
 	// On Windows, a running executable cannot be overwritten directly.
 	// Move the old binary out of the way first, then rename the new one in.
@@ -3543,7 +3693,7 @@ func runUpdateCLI() error {
 		}
 	}
 
-	if err := os.Rename(tmpNew, execPath); err != nil {
+	if err = os.Rename(tmpNew, execPath); err != nil {
 		return fmt.Errorf("could not replace executable: %w", err)
 	}
 
@@ -3715,6 +3865,14 @@ func main() {
 	plugins := plugin.NewManager()
 	plugins.LoadPlugins()
 	initialModel.plugins = plugins
+	tui.BodyTransformer = func(body string, email fetcher.Email) string {
+		folder := "INBOX"
+		if initialModel.folderInbox != nil {
+			folder = initialModel.folderInbox.GetCurrentFolder()
+		}
+		t := plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, folder)
+		return plugins.CallBodyRenderHook(t, body, email.Body)
+	}
 	plugins.CallHook(plugin.HookStartup)
 
 	// Background sync macOS features
@@ -3725,6 +3883,11 @@ func main() {
 		}
 		if !disableNotifications {
 			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("panic in macOS sync goroutine: %v", r)
+					}
+				}()
 				_ = config.SyncMacOSContacts()
 				_ = theme.SyncWithMacOS()
 			}()

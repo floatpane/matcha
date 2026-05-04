@@ -22,6 +22,10 @@ const (
 	InstallTimeout = 30 * time.Second
 	// UpdateCheckTimeout bounds version checks and asset downloads from main (main.go).
 	UpdateCheckTimeout = 30 * time.Second
+	// IMAPBatchActionTimeout bounds bulk IMAP operations (delete/archive/move) from main (main.go).
+	IMAPBatchActionTimeout = 60 * time.Second
+	// IMAPSearchTimeout bounds server-side IMAP search queries from main (main.go).
+	IMAPSearchTimeout = 60 * time.Second
 )
 
 // New returns an http.Client preconfigured with the given timeout.

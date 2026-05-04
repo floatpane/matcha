@@ -124,9 +124,9 @@ jobs:
       - name: Generate PR Body
         id: pr-body
         run: |
-          BODY="This PR updates the feature screenshots based on the latest release version.
+          BODY="## What?
 
-          Generated automatically by the Generate Screenshots workflow.
+          Refreshes the feature screenshots in \`docs/docs/assets/features/\`.
 
           ### Screenshots included:"
 
@@ -136,6 +136,12 @@ jobs:
             BODY="$BODY
           - \`$filename\`"
           done
+
+          BODY="$BODY
+
+          ## Why?
+
+          Keeps documentation visuals aligned with the current TUI. Generated automatically by the Generate Screenshots workflow on the latest release."
 
           echo "body<<EOF" >> $GITHUB_OUTPUT
           echo "$BODY" >> $GITHUB_OUTPUT
@@ -151,3 +157,4 @@ jobs:
           branch: "update-screenshots"
           base: "master"
           add-paths: docs/docs/assets/features/
+          labels: documentation

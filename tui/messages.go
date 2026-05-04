@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/floatpane/matcha/backend"
 	"github.com/floatpane/matcha/calendar"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/daemonrpc"
@@ -21,6 +22,7 @@ type ViewEmailMsg struct {
 	UID       uint32
 	AccountID string
 	Mailbox   MailboxKind
+	Email     *fetcher.Email
 }
 
 type SendEmailMsg struct {
@@ -33,6 +35,7 @@ type SendEmailMsg struct {
 	InReplyTo       string
 	References      []string
 	AccountID       string // ID of the account to send from
+	FromOverride    string // Custom From address (used when account is catch-all)
 	QuotedText      string // Hidden quoted text appended when sending
 	Signature       string // Signature to append to email body
 	SignSMIME       bool   // Whether to sign the email using S/MIME
@@ -46,6 +49,7 @@ type Credentials struct {
 	Host         string // Host (this was the previous "Email Address" field in the UI)
 	FetchEmail   string // Single email address to fetch messages for. If empty, code should default this to Host when creating the account.
 	SendAsEmail  string // Optional From header email. If empty, sending falls back to FetchEmail, then Host.
+	CatchAll     bool   // Show all inbox messages regardless of To address.
 	Password     string
 	IMAPServer   string
 	IMAPPort     int
@@ -100,6 +104,24 @@ type PreviewBodyFetchedMsg struct {
 }
 
 type FetchErr error
+
+type SearchRequestedMsg struct {
+	Query      backend.SearchQuery
+	Mailbox    MailboxKind
+	FolderName string
+	AccountID  string
+}
+
+type SearchResultsMsg struct {
+	Query  backend.SearchQuery
+	Emails []fetcher.Email
+	Err    error
+}
+
+type ApplySearchResultsMsg struct {
+	Query  backend.SearchQuery
+	Emails []fetcher.Email
+}
 
 type GoToInboxMsg struct{}
 
@@ -257,6 +279,7 @@ type GoToEditAccountMsg struct {
 	Email        string
 	FetchEmail   string
 	SendAsEmail  string
+	CatchAll     bool
 	IMAPServer   string
 	IMAPPort     int
 	SMTPServer   string
@@ -542,6 +565,10 @@ type SendRSVPMsg struct {
 
 // RSVPResultMsg signals that RSVP was sent (or failed)
 type LanguageChangedMsg struct{}
+
+// ConfigSavedMsg signals the config was written to disk and downstream
+// consumers (notably the daemon) should reload it.
+type ConfigSavedMsg struct{}
 
 type RSVPResultMsg struct {
 	Err       error

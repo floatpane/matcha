@@ -10,6 +10,8 @@
     "delete": "d",
     "archive": "a",
     "refresh": "r",
+    "search": "/",
+    "filter": "f",
     "open": "enter",
     "next_tab": "l",
     "prev_tab": "h"

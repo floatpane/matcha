@@ -25,6 +25,7 @@ type Service interface {
 	RefreshFolder(accountID, folder string) error
 	Subscribe(accountID, folder string) error
 	Unsubscribe(accountID, folder string) error
+	ReloadConfig() error
 	Events() <-chan *daemonrpc.Event
 	IsDaemon() bool
 	Close() error
@@ -187,6 +188,10 @@ func (s *daemonService) Unsubscribe(accountID, folder string) error {
 	}, nil)
 }
 
+func (s *daemonService) ReloadConfig() error {
+	return s.client.Call(daemonrpc.MethodReloadConfig, nil, nil)
+}
+
 func (s *daemonService) Events() <-chan *daemonrpc.Event {
 	return s.client.Events()
 }
@@ -310,6 +315,16 @@ func (s *directService) Subscribe(_, _ string) error {
 }
 
 func (s *directService) Unsubscribe(_, _ string) error {
+	return nil
+}
+
+func (s *directService) ReloadConfig() error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return err
+	}
+	s.cfg = cfg
+	s.initProviders()
 	return nil
 }
 

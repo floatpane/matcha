@@ -59,6 +59,7 @@ func (m *Settings) updateAccounts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 					Email:        acc.Email,
 					FetchEmail:   acc.FetchEmail,
 					SendAsEmail:  acc.SendAsEmail,
+					CatchAll:     acc.CatchAll,
 					IMAPServer:   acc.IMAPServer,
 					IMAPPort:     acc.IMAPPort,
 					SMTPServer:   acc.SMTPServer,
@@ -146,6 +147,9 @@ func (m *Settings) viewAccounts() string {
 		}
 		if config.HasAccountSignature(&account) {
 			providerInfo += " [Signature]"
+		}
+		if account.CatchAll {
+			providerInfo += " [Catch-All]"
 		}
 
 		line := fmt.Sprintf("%s - %s", displayName, accountEmailStyle.Render(providerInfo))

@@ -110,10 +110,44 @@ func hasSeenFlag(flags []imap.Flag) bool {
 	return slices.Contains(flags, imap.FlagSeen)
 }
 
+// normalizeGmailAddress canonicalizes a Gmail address by stripping the "+tag"
+// subaddress and removing dots from the local part. Gmail treats
+// "u.s.e.r+tag@gmail.com" and "user@gmail.com" as the same mailbox.
+func normalizeGmailAddress(addr string) string {
+	at := strings.LastIndex(addr, "@")
+	if at < 0 {
+		return addr
+	}
+	local, domain := addr[:at], addr[at:]
+	if plus := strings.Index(local, "+"); plus >= 0 {
+		local = local[:plus]
+	}
+	local = strings.ReplaceAll(local, ".", "")
+	return local + domain
+}
+
+// addressMatches reports whether candidate matches the configured fetch email.
+// For Gmail accounts, subaddressed forms ("local+tag@gmail.com") and dotted
+// forms ("l.o.c.a.l@gmail.com") also match.
+// fetchEmail must already be lowercased and trimmed.
+func addressMatches(candidate, fetchEmail string, account *config.Account) bool {
+	candidate = strings.ToLower(strings.TrimSpace(candidate))
+	if candidate == "" || fetchEmail == "" {
+		return false
+	}
+	if candidate == fetchEmail {
+		return true
+	}
+	if account != nil && strings.EqualFold(account.ServiceProvider, "gmail") {
+		return normalizeGmailAddress(candidate) == normalizeGmailAddress(fetchEmail)
+	}
+	return false
+}
+
 // deliveryHeadersMatch checks if any of the Delivered-To, X-Forwarded-To, or
 // X-Original-To headers contain the given email address. This catches
 // auto-forwarded emails where the envelope To/Cc don't match the local account.
-func deliveryHeadersMatch(data []byte, fetchEmail string) bool {
+func deliveryHeadersMatch(data []byte, fetchEmail string, account *config.Account) bool {
 	if len(data) == 0 {
 		return false
 	}
@@ -125,7 +159,7 @@ func deliveryHeadersMatch(data []byte, fetchEmail string) bool {
 	}
 	for _, key := range []string{"Delivered-To", "X-Forwarded-To", "X-Original-To"} {
 		for _, val := range headers.Values(key) {
-			if strings.EqualFold(strings.TrimSpace(val), fetchEmail) {
+			if addressMatches(val, fetchEmail, account) {
 				return true
 			}
 		}
@@ -134,36 +168,52 @@ func deliveryHeadersMatch(data []byte, fetchEmail string) bool {
 }
 
 func decodePart(reader io.Reader, header mail.PartHeader) (string, error) {
-	mediaType, params, err := mime.ParseMediaType(header.Get("Content-Type"))
-	if err != nil {
-		body, readErr := io.ReadAll(reader)
-		if readErr != nil {
-			return string(body), fmt.Errorf("fallback read after Content-Type parse error (%v): %w", err, readErr)
-		}
-		return string(body), nil
-	}
+	contentType := header.Get("Content-Type")
+	mediaType, params, parseErr := mime.ParseMediaType(contentType)
 
 	charset := "utf-8"
-	if params["charset"] != "" {
+	if parseErr != nil {
+		charset = bestEffortCharset(contentType)
+	} else if params["charset"] != "" {
 		charset = strings.ToLower(params["charset"])
 	}
 
+	decodedBody, err := decodeReaderWithCharset(reader, charset)
+	if err != nil {
+		return "", err
+	}
+
+	if parseErr == nil && strings.HasPrefix(mediaType, "multipart/") {
+		return "[This is a multipart message]", nil
+	}
+
+	return string(decodedBody), nil
+}
+
+func decodeReaderWithCharset(reader io.Reader, charset string) ([]byte, error) {
 	encoding, err := ianaindex.IANA.Encoding(charset)
 	if err != nil || encoding == nil {
 		encoding, _ = ianaindex.IANA.Encoding("utf-8")
 	}
 
 	transformReader := transform.NewReader(reader, encoding.NewDecoder())
-	decodedBody, err := ioutil.ReadAll(transformReader)
-	if err != nil {
-		return "", err
+	return ioutil.ReadAll(transformReader)
+}
+
+func bestEffortCharset(contentType string) string {
+	for _, param := range strings.Split(contentType, ";") {
+		key, value, found := strings.Cut(param, "=")
+		if !found || !strings.EqualFold(strings.TrimSpace(key), "charset") {
+			continue
+		}
+
+		value = strings.Trim(strings.TrimSpace(value), `"`)
+		if value != "" {
+			return strings.ToLower(value)
+		}
 	}
 
-	if strings.HasPrefix(mediaType, "multipart/") {
-		return "[This is a multipart message]", nil
-	}
-
-	return string(decodedBody), nil
+	return "utf-8"
 }
 
 func decodeHeader(header string) string {
@@ -464,17 +514,19 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 			}
 
 			matched := false
-			if isSentMailbox {
+			if account.CatchAll {
+				matched = true
+			} else if isSentMailbox {
 				var senderEmail string
 				if len(msg.Envelope.From) > 0 {
 					senderEmail = msg.Envelope.From[0].Addr()
 				}
-				if strings.EqualFold(strings.TrimSpace(senderEmail), fetchEmail) {
+				if addressMatches(senderEmail, fetchEmail, account) {
 					matched = true
 				}
 			} else {
 				for _, r := range toAddrList {
-					if strings.EqualFold(strings.TrimSpace(r), fetchEmail) {
+					if addressMatches(r, fetchEmail, account) {
 						matched = true
 						break
 					}
@@ -482,7 +534,7 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 				// Check delivery headers for auto-forwarded emails
 				if !matched {
 					headerData := msg.FindBodySection(deliveryHeaderSection)
-					matched = deliveryHeadersMatch(headerData, fetchEmail)
+					matched = deliveryHeadersMatch(headerData, fetchEmail, account)
 				}
 			}
 
@@ -1484,23 +1536,27 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 
 		// For archive/All Mail, match emails where user is sender OR recipient
 		matched := false
-		// Check if user is the sender
-		if strings.EqualFold(strings.TrimSpace(fromAddr), fetchEmail) {
+		if account.CatchAll {
 			matched = true
-		}
-		// Check if user is a recipient
-		if !matched {
-			for _, r := range toAddrList {
-				if strings.EqualFold(strings.TrimSpace(r), fetchEmail) {
-					matched = true
-					break
+		} else {
+			// Check if user is the sender
+			if addressMatches(fromAddr, fetchEmail, account) {
+				matched = true
+			}
+			// Check if user is a recipient
+			if !matched {
+				for _, r := range toAddrList {
+					if addressMatches(r, fetchEmail, account) {
+						matched = true
+						break
+					}
 				}
 			}
-		}
-		// Check delivery headers for auto-forwarded emails
-		if !matched {
-			headerData := msg.FindBodySection(deliveryHeaderSection)
-			matched = deliveryHeadersMatch(headerData, fetchEmail)
+			// Check delivery headers for auto-forwarded emails
+			if !matched {
+				headerData := msg.FindBodySection(deliveryHeaderSection)
+				matched = deliveryHeadersMatch(headerData, fetchEmail, account)
+			}
 		}
 
 		if !matched {

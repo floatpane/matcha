@@ -42,6 +42,9 @@ type Account struct {
 	// SendAsEmail controls the visible From header on outgoing mail.
 	// If empty, it defaults to FetchEmail, then Email.
 	SendAsEmail string `json:"send_as_email,omitempty"`
+	// CatchAll skips per-address filtering so all inbox messages are shown,
+	// regardless of which address they were delivered to.
+	CatchAll bool `json:"catch_all,omitempty"`
 
 	// Custom server settings (used when ServiceProvider is "custom")
 	IMAPServer string `json:"imap_server,omitempty"`
@@ -243,6 +246,9 @@ func (a *Account) GetSendAsEmail() string {
 // FormatFromHeader returns the display-ready From header value.
 func (a *Account) FormatFromHeader() string {
 	sendAs := a.GetSendAsEmail()
+	if strings.Contains(sendAs, "<") && strings.Contains(sendAs, ">") {
+		return sendAs
+	}
 	if a.Name != "" && sendAs != "" {
 		return fmt.Sprintf("%s <%s>", a.Name, sendAs)
 	}
@@ -373,6 +379,7 @@ type secureDiskAccount struct {
 	JMAPEndpoint       string `json:"jmap_endpoint,omitempty"`
 	POP3Server         string `json:"pop3_server,omitempty"`
 	POP3Port           int    `json:"pop3_port,omitempty"`
+	CatchAll           bool   `json:"catch_all,omitempty"`
 }
 
 type secureDiskConfig struct {
@@ -456,6 +463,7 @@ func SaveConfig(config *Config) error {
 				JMAPEndpoint:       acc.JMAPEndpoint,
 				POP3Server:         acc.POP3Server,
 				POP3Port:           acc.POP3Port,
+				CatchAll:           acc.CatchAll,
 			})
 		}
 		data, err = json.MarshalIndent(sdc, "", "  ")
@@ -517,6 +525,7 @@ func LoadConfig() (*Config, error) {
 		JMAPEndpoint       string `json:"jmap_endpoint,omitempty"`
 		POP3Server         string `json:"pop3_server,omitempty"`
 		POP3Port           int    `json:"pop3_port,omitempty"`
+		CatchAll           bool   `json:"catch_all,omitempty"`
 	}
 	type diskConfig struct {
 		Accounts             []rawAccount  `json:"accounts"`
@@ -588,6 +597,7 @@ func LoadConfig() (*Config, error) {
 			JMAPEndpoint:       rawAcc.JMAPEndpoint,
 			POP3Server:         rawAcc.POP3Server,
 			POP3Port:           rawAcc.POP3Port,
+			CatchAll:           rawAcc.CatchAll,
 		}
 
 		// Validate PGPKeySource

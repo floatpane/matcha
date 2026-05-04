@@ -165,11 +165,7 @@ func (p *Provider) FetchEmails(_ context.Context, folder string, limit, offset u
 			Name:     "Email/query",
 			Path:     "/ids",
 		},
-		Properties: []string{
-			"id", "subject", "from", "to", "replyTo", "receivedAt",
-			"preview", "keywords", "mailboxIds", "hasAttachment",
-			"messageId",
-		},
+		Properties: []string{"id", "subject", "from", "to", "replyTo", "receivedAt", "preview", "keywords", "mailboxIds", "hasAttachment", "messageId"},
 	})
 
 	resp, err := p.client.Do(req)
@@ -193,6 +189,91 @@ func (p *Provider) FetchEmails(_ context.Context, folder string, limit, offset u
 	}
 
 	return emails, nil
+}
+
+func (p *Provider) Search(_ context.Context, folder string, query backend.SearchQuery) ([]backend.Email, error) {
+	mboxID, err := p.resolveMailboxID(folder)
+	if err != nil {
+		return nil, err
+	}
+
+	req := &jmapclient.Request{}
+	queryCallID := req.Invoke(&email.Query{
+		Account: p.accountID,
+		Filter:  buildSearchFilter(mboxID, query),
+		Sort: []*email.SortComparator{
+			{Property: "receivedAt", IsAscending: false},
+		},
+		Limit: uint64(searchLimit(query)),
+	})
+
+	req.Invoke(&email.Get{
+		Account: p.accountID,
+		ReferenceIDs: &jmapclient.ResultReference{
+			ResultOf: queryCallID,
+			Name:     "Email/query",
+			Path:     "/ids",
+		},
+		Properties: []string{
+			"id", "subject", "from", "to", "replyTo", "receivedAt",
+			"preview", "keywords", "mailboxIds", "hasAttachment",
+			"messageId",
+		},
+	})
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("jmap search: %w", err)
+	}
+
+	var emails []backend.Email
+	for _, inv := range resp.Responses {
+		if r, ok := inv.Args.(*email.GetResponse); ok {
+			for _, eml := range r.List {
+				uid := jmapIDToUID(eml.ID)
+				p.mu.Lock()
+				p.idToJMAPID[uid] = eml.ID
+				p.mu.Unlock()
+
+				emails = append(emails, jmapEmailToBackend(eml, uid, p.account.ID))
+			}
+		}
+	}
+
+	return emails, nil
+}
+
+func buildSearchFilter(mboxID jmapclient.ID, query backend.SearchQuery) *email.FilterCondition {
+	f := &email.FilterCondition{InMailbox: mboxID}
+	if query.From != "" {
+		f.From = query.From
+	}
+	if query.To != "" {
+		f.To = query.To
+	}
+	if query.Subject != "" {
+		f.Subject = query.Subject
+	}
+	if query.Body != "" {
+		f.Body = query.Body
+	}
+	if !query.Since.IsZero() {
+		f.After = &query.Since
+	}
+	if !query.Before.IsZero() {
+		f.Before = &query.Before
+	}
+	if query.LargerThan > 0 {
+		f.MinSize = uint64(query.LargerThan)
+	}
+	return f
+}
+
+func searchLimit(query backend.SearchQuery) uint32 {
+	if query.Limit > 0 {
+		return query.Limit
+	}
+	return 100
 }
 
 func (p *Provider) FetchEmailBody(_ context.Context, _ string, uid uint32) (string, []backend.Attachment, error) {

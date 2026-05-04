@@ -1,6 +1,6 @@
-"bug": '\b([Bb]ug(s)?|[Ee]rror(s)?|[Ff]ix(es)?)\b'
+"bug": '\b([Bb]ug(s)?|[Ff]ix(es)?)\b'
 
-"enhancement": '\b([Ee]nhancement(s)?|[Ff]eature(s)?|[Ii]dea(s)?|[Ff]eat(s)?)\b'
+"enhancement": '\b([Ff]eat(s)?)\b'
 
 "documentation": '\b([Dd]ocumentation|[Dd]ocs|[Rr]eadme)\b'
 
@@ -13,3 +13,47 @@
 "ci": '\b([Cc]i|[Cc]ontinuous integration|[Bb]uild|[Ww]orkflow)\b'
 
 "chore": '\b([Cc]hore|[Mm]aintenance|[Rr]efactor|[Cc]leanup)\b'
+
+"os/windows": '\b([Ww]indows|[Ww]in(10|11)|[Mm]icrosoft)\b'
+
+"os/linux": '\b([Ll]inux|[Uu]buntu|[Dd]ebian|[Ff]edora|[Aa]rch [Ll]inux|[Nn]ix[Oo][Ss]|[Pp]op!?_?[Oo][Ss])\b'
+
+"os/macos": '\b([Mm]ac[Oo][Ss]?|[Oo][Ss] ?[Xx]|[Dd]arwin|[Mm]acbook)\b'
+
+"arch/arm64": '\b(arm64|aarch64|[Aa]pple ?[Ss]ilicon|[Mm][1-4]( [Pp]ro| [Mm]ax| [Uu]ltra)?|[Mm]ac(book)? [Mm][1-4])\b'
+
+"arch/amd64": '\b(amd64|x86[_-]?64|x64|[Ii]ntel( [Mm]ac)?)\b'
+
+"area/tui": '\b([Tt][Uu][Ii]|[Vv]iew|[Bb]ubble[Tt]ea|[Ll]ipgloss|[Kk]eybind(ing)?s?|[Tt]erminal [Uu][Ii])\b'
+
+"area/fetcher": '\b([Ff]etcher|[Ii][Mm][Aa][Pp]|[Ii]dle|[Mm]ailbox|[Ss]earch|[Ss]ub-?address)\b'
+
+"area/sender": '\b([Ss]ender|[Ss][Mm][Tt][Pp]|[Ss]end(ing)? [Mm]ail|[Cc]ompose)\b'
+
+"area/oauth": '\b([Oo][Aa]uth2?|[Xx][Oo][Aa][Uu][Tt][Hh]2?|[Gg]oogle [Aa]uth|[Mm]icrosoft [Aa]uth|[Tt]oken [Rr]efresh)\b'
+
+"area/calendar": '\b([Cc]alendar|[Ii][Cc]al|[Cc]al[Dd][Aa][Vv]|[Ee]vent(s)?)\b'
+
+"area/notify": '\b([Nn]otif(y|ication)s?|[Tt]oast|[Dd]esktop [Nn]otif)\b'
+
+"area/pgp": '\b([Pp][Gg][Pp]|[Gg][Pp][Gg]|[Ee]ncrypt(ion)?|[Dd]ecrypt|[Ss]ign(ing)?|[Kk]ey ?ring)\b'
+
+"area/plugin": '\b([Pp]lugin(s)?)\b'
+
+"area/theme": '\b([Tt]heme(s)?|[Cc]olor ?scheme|[Ss]tyling)\b'
+
+"area/i18n": '\b([Ii]18n|[Ll]10n|[Ll]ocali[sz]ation|[Tt]ranslat(e|ion)|[Ll]anguage [Pp]ack)\b'
+
+"area/config": '\b([Cc]onfig(uration)?|[Ss]ettings|[Cc]onfig\.yaml|[Cc]onfig\.toml|[Pp]references)\b'
+
+"area/cli": '\b([Cc][Ll][Ii]|[Cc]ommand[- ]?line|[Ff]lag(s)?|[Aa]rgument(s)?)\b'
+
+"area/daemon": '\b([Dd]aemon|[Rr][Pp][Cc]|[Bb]ackground [Ss]ervice|[Ss]ystemd)\b'
+
+"area/scard": '\b([Ss]mart ?card|[Ss]card|[Pp][Kk][Cc][Ss]#?11|[Yy]ubikey|[Hh]ardware [Tt]oken)\b'
+
+"area/nix": '\b([Nn]ix|[Nn]ix[Oo][Ss]|[Ff]lake|[Gg]omod2nix|[Hh]ome ?[Mm]anager)\b'
+
+"area/build": '\b([Bb]uild|[Mm]akefile|[Gg]oreleaser|[Ss]napcraft|[Ff]latpak|[Hh]omebrew|[Pp]ackag(e|ing))\b'
+
+"area/docs": '\b([Dd]ocumentation|[Dd]ocs|[Rr]eadme|[Mm]an ?page)\b'

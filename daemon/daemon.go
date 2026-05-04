@@ -348,6 +348,14 @@ func (d *Daemon) syncAllAccounts(ctx context.Context) {
 			continue
 		}
 
+		oldCached, _ := config.LoadFolderEmailCache("INBOX")
+		oldUIDs := make(map[uint32]struct{}, len(oldCached))
+		for _, e := range oldCached {
+			if e.AccountID == acct.ID {
+				oldUIDs[e.UID] = struct{}{}
+			}
+		}
+
 		// Cache the fetched emails to disk.
 		var cached []config.CachedEmail
 		for _, e := range emails {
@@ -372,14 +380,21 @@ func (d *Daemon) syncAllAccounts(ctx context.Context) {
 			EmailCount: len(emails),
 		})
 
+		newCount := 0
+		for _, e := range emails {
+			if _, seen := oldUIDs[e.UID]; !seen {
+				newCount++
+			}
+		}
+
 		// Send desktop notification if TUI not connected.
 		d.mu.RLock()
 		noClients := len(d.clients) == 0
 		d.mu.RUnlock()
 
-		if noClients && len(emails) > 0 {
+		if noClients && newCount > 0 {
 			if !d.config.DisableNotifications {
-				go notify.Send("Matcha", fmt.Sprintf("New mail for %s", acct.Email))
+				go notify.Send("Matcha", fmt.Sprintf("New mail for %s", acct.FetchEmail))
 			}
 		}
 	}

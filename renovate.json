@@ -2,6 +2,10 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
   "postUpdateOptions": ["gomodTidy"],
+  "labels": ["dependencies"],
+  "commitMessage": "chore(deps): {{depName}} ^ {{newVersion}}",
+  "prTitle": "chore(deps): {{depName}} ^ {{newVersion}}",
+  "prBodyTemplate": "## What?\n\n{{{table}}}{{{notes}}}{{{changelogs}}}\n\n## Why?\n\nAutomated dependency update via Renovate.\n\n{{{configDescription}}}\n\n{{{warnings}}}\n\n---\n\n{{{controls}}}\n\n{{{footer}}}",
   "packageRules": [
     {
       "matchManagers": ["gomod"],

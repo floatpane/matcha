@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"io"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -43,6 +44,20 @@ type item struct {
 func (i item) Title() string       { return i.title }
 func (i item) Description() string { return i.desc }
 func (i item) FilterValue() string { return i.title + " " + i.desc }
+
+func searchKey() string {
+	if config.Keybinds.Inbox.Search != "" {
+		return config.Keybinds.Inbox.Search
+	}
+	return "/"
+}
+
+func filterKey() string {
+	if config.Keybinds.Inbox.Filter != "" {
+		return config.Keybinds.Inbox.Filter
+	}
+	return "f"
+}
 
 type itemDelegate struct {
 	inbox *Inbox
@@ -281,6 +296,10 @@ type Inbox struct {
 	extraShortHelpKeys []key.Binding
 	pluginStatus       string // Persistent status text set by plugins
 	pluginKeyBindings  []PluginKeyBinding
+	searchOverlay      *SearchOverlay
+	searchActive       bool
+	searchQuery        string
+	searchResults      []fetcher.Email
 
 	// Visual mode state (Vim-style multi-select)
 	visualMode     bool              // Whether visual mode is active
@@ -325,10 +344,7 @@ func NewInboxWithMailbox(emails []fetcher.Email, accounts []config.Account, mail
 		tabs = []AccountTab{{ID: "", Label: "ALL", Email: ""}}
 		for _, acc := range accounts {
 			// Use FetchEmail for display, fall back to Email if not set
-			displayEmail := acc.FetchEmail
-			if displayEmail == "" {
-				displayEmail = acc.Email
-			}
+			displayEmail := accountDisplayEmail(acc)
 			tabs = append(tabs, AccountTab{ID: acc.ID, Label: displayEmail, Email: displayEmail})
 		}
 	}
@@ -348,7 +364,7 @@ func NewInboxWithMailbox(emails []fetcher.Email, accounts []config.Account, mail
 	inbox := &Inbox{
 		accounts:         accounts,
 		emailsByAccount:  emailsByAccount,
-		allEmails:        emails,
+		allEmails:        dedupeEmailsForAccounts(emails, accounts),
 		tabs:             tabs,
 		activeTabIndex:   0,
 		currentAccountID: "",
@@ -372,32 +388,25 @@ func (m *Inbox) updateList() {
 	// Capture current index to restore later
 	currentIndex := m.list.Index()
 
-	var displayEmails []fetcher.Email
-	var showAccountLabel bool
+	displayEmails := m.displayEmails()
+	m.emailsCount = len(displayEmails)
 
-	if m.currentAccountID == "" {
-		// "ALL" view - show all emails sorted by date
-		displayEmails = m.allEmails
-		showAccountLabel = !(len(m.accounts) <= 1)
-	} else {
-		// Specific account view
-		displayEmails = m.emailsByAccount[m.currentAccountID]
-		showAccountLabel = false
+	var showAccountLabel bool
+	if m.searchActive {
+		showAccountLabel = len(m.accounts) > 1
+	} else if m.currentAccountID == "" {
+		showAccountLabel = len(m.accounts) > 1
 	}
 
-	m.emailsCount = len(displayEmails)
+	if !showAccountLabel && len(m.accounts) == 1 && m.accounts[0].CatchAll {
+		showAccountLabel = true
+	}
 
 	items := make([]list.Item, len(displayEmails))
 	for i, email := range displayEmails {
 		accountEmail := ""
 		if showAccountLabel {
-			// Find the account email for display
-			for _, acc := range m.accounts {
-				if acc.ID == email.AccountID {
-					accountEmail = acc.FetchEmail
-					break
-				}
-			}
+			accountEmail = m.accountLabelForEmail(email)
 		}
 
 		items[i] = item{
@@ -426,6 +435,7 @@ func (m *Inbox) updateList() {
 			key.NewBinding(key.WithKeys("d"), key.WithHelp("\uf014 d", t("inbox.delete"))),
 			key.NewBinding(key.WithKeys("a"), key.WithHelp("\uea98 a", t("inbox.archive"))),
 			key.NewBinding(key.WithKeys("r"), key.WithHelp("\ue348 r", t("inbox.refresh"))),
+			key.NewBinding(key.WithKeys(searchKey()), key.WithHelp(searchKey(), t("inbox.search"))),
 		}
 		if len(m.tabs) > 1 {
 			bindings = append(bindings,
@@ -441,6 +451,9 @@ func (m *Inbox) updateList() {
 	}
 
 	l.KeyMap.Quit.SetEnabled(false)
+	l.KeyMap.Filter = key.NewBinding(key.WithKeys(filterKey()), key.WithHelp(filterKey(), t("inbox.filter")))
+	l.KeyMap.NextPage = key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdn", "next page"))
+	l.KeyMap.PrevPage = key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "prev page"))
 
 	// Disable default help to render it manually at the bottom
 	l.SetShowHelp(false)
@@ -465,9 +478,133 @@ func (m *Inbox) updateList() {
 	m.list = l
 }
 
+func (m *Inbox) displayEmails() []fetcher.Email {
+	if m.searchActive {
+		return m.filteredSearchResults()
+	}
+	if m.currentAccountID == "" {
+		return m.allEmails
+	}
+	return m.emailsByAccount[m.currentAccountID]
+}
+
+func (m *Inbox) filteredSearchResults() []fetcher.Email {
+	if m.currentAccountID == "" {
+		return m.searchResults
+	}
+	filtered := make([]fetcher.Email, 0, len(m.searchResults))
+	for _, email := range m.searchResults {
+		if email.AccountID == m.currentAccountID {
+			filtered = append(filtered, email)
+		}
+	}
+	return filtered
+}
+
+func (m *Inbox) accountLabelForEmail(email fetcher.Email) string {
+	var owningAcc *config.Account
+	for i := range m.accounts {
+		if m.accounts[i].ID == email.AccountID {
+			owningAcc = &m.accounts[i]
+			break
+		}
+	}
+
+	if owningAcc != nil && owningAcc.CatchAll && len(email.To) > 0 {
+		return extractEmailAddress(email.To[0])
+	}
+
+	for _, acc := range m.accounts {
+		fetchEmail := accountDisplayEmail(acc)
+		for _, recipient := range email.To {
+			if sameEmailAddress(recipient, fetchEmail) {
+				return extractEmailAddress(recipient)
+			}
+		}
+	}
+
+	if owningAcc != nil {
+		return accountDisplayEmail(*owningAcc)
+	}
+	return ""
+}
+
+func dedupeEmailsForAccounts(emails []fetcher.Email, accounts []config.Account) []fetcher.Email {
+	if len(emails) <= 1 {
+		return emails
+	}
+
+	accountByID := make(map[string]config.Account, len(accounts))
+	for _, acc := range accounts {
+		accountByID[acc.ID] = acc
+	}
+
+	deduped := make([]fetcher.Email, 0, len(emails))
+	indexByKey := make(map[string]int, len(emails))
+	for _, email := range emails {
+		key := emailDedupKey(email)
+		if existingIndex, ok := indexByKey[key]; ok {
+			existing := deduped[existingIndex]
+			if !emailMatchesOwningAccount(existing, accountByID) && emailMatchesOwningAccount(email, accountByID) {
+				deduped[existingIndex] = email
+			}
+			continue
+		}
+		indexByKey[key] = len(deduped)
+		deduped = append(deduped, email)
+	}
+	return deduped
+}
+
+func emailDedupKey(email fetcher.Email) string {
+	if email.MessageID != "" {
+		return email.MessageID
+	}
+	// Malformed messages can omit Message-ID, so fall back to stable visible metadata.
+	return fmt.Sprintf("%s|%s|%d", email.From, email.Subject, email.Date.UnixNano())
+}
+
+func emailMatchesOwningAccount(email fetcher.Email, accountByID map[string]config.Account) bool {
+	acc, ok := accountByID[email.AccountID]
+	if !ok {
+		return false
+	}
+	fetchEmail := accountDisplayEmail(acc)
+	for _, recipient := range email.To {
+		if sameEmailAddress(recipient, fetchEmail) {
+			return true
+		}
+	}
+	return false
+}
+
+func accountDisplayEmail(acc config.Account) string {
+	if acc.FetchEmail != "" {
+		return acc.FetchEmail
+	}
+	return acc.Email
+}
+
+func sameEmailAddress(a, b string) bool {
+	return strings.EqualFold(extractEmailAddress(a), extractEmailAddress(b))
+}
+
+func extractEmailAddress(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if addr, err := mail.ParseAddress(value); err == nil {
+		return strings.TrimSpace(addr.Address)
+	}
+	return strings.Trim(value, "<>")
+}
+
 func (m *Inbox) getTitle() string {
 	var title string
-	if m.currentAccountID == "" {
+	if m.searchActive {
+		title = fmt.Sprintf("Search Results - %s", m.searchQuery)
+	} else if m.currentAccountID == "" {
 		title = m.getBaseTitle() + " - " + t("inbox.all_accounts")
 	} else {
 		title = m.getBaseTitle()
@@ -476,7 +613,7 @@ func (m *Inbox) getTitle() string {
 				if acc.Name != "" {
 					title = fmt.Sprintf("%s - %s", m.getBaseTitle(), acc.Name)
 				} else {
-					title = fmt.Sprintf("%s - %s", m.getBaseTitle(), acc.FetchEmail)
+					title = fmt.Sprintf("%s - %s", m.getBaseTitle(), accountDisplayEmail(acc))
 				}
 				break
 			}
@@ -519,6 +656,14 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
+		if m.searchOverlay != nil {
+			if msg.String() == config.Keybinds.Global.Cancel {
+				m.searchOverlay = nil
+				return m, nil
+			}
+			cmd := m.searchOverlay.Update(msg, m.mailbox, m.currentAccountID)
+			return m, cmd
+		}
 		if m.list.FilterState() == list.Filtering {
 			// Don't allow visual mode while filtering
 			if m.visualMode {
@@ -530,7 +675,11 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		kb := config.Keybinds
+		searchBinding := searchKey()
 		switch keypress := msg.String(); keypress {
+		case searchBinding:
+			m.searchOverlay = NewSearchOverlay(m.width, m.height)
+			return m, m.searchOverlay.Init()
 		case kb.Inbox.VisualMode:
 			if !m.visualMode {
 				// Enter visual mode
@@ -553,6 +702,13 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case kb.Global.Cancel:
+			if m.searchActive {
+				m.searchActive = false
+				m.searchQuery = ""
+				m.searchResults = nil
+				m.updateList()
+				return m, nil
+			}
 			if m.visualMode {
 				// Exit visual mode on cancel key
 				m.visualMode = false
@@ -673,8 +829,12 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				idx := selectedItem.originalIndex
 				uid := selectedItem.uid
 				accountID := selectedItem.accountID
+				var email *fetcher.Email
+				if m.searchActive {
+					email = m.GetEmailAtIndex(idx)
+				}
 				return m, func() tea.Msg {
-					return ViewEmailMsg{Index: idx, UID: uid, AccountID: accountID, Mailbox: m.mailbox}
+					return ViewEmailMsg{Index: idx, UID: uid, AccountID: accountID, Mailbox: m.mailbox, Email: email}
 				}
 			}
 		}
@@ -683,9 +843,29 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.list.SetWidth(msg.Width)
 		m.list.SetHeight(msg.Height / 2)
+		if m.searchOverlay != nil {
+			return m, m.searchOverlay.Update(msg, m.mailbox, m.currentAccountID)
+		}
 		if m.shouldFetchMore() {
 			return m, tea.Batch(m.fetchMoreCmds()...)
 		}
+		return m, nil
+
+	case SearchResultsMsg:
+		if m.searchOverlay == nil {
+			return m, nil
+		}
+		return m, m.searchOverlay.Update(msg, m.mailbox, m.currentAccountID)
+
+	case ApplySearchResultsMsg:
+		m.searchOverlay = nil
+		m.searchActive = true
+		m.searchQuery = msg.Query.Raw
+		m.searchResults = dedupeEmailsForAccounts(msg.Emails, m.accounts)
+		m.visualMode = false
+		m.selectedUIDs = make(map[uint32]string)
+		m.selectionOrder = []uint32{}
+		m.updateList()
 		return m, nil
 
 	case FetchingMoreEmailsMsg:
@@ -750,6 +930,9 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Inbox) shouldFetchMore() bool {
 	if m.isFetching || m.isRefreshing {
+		return false
+	}
+	if m.searchActive {
 		return false
 	}
 	if m.allAccountsExhausted() {
@@ -845,6 +1028,11 @@ func (m *Inbox) View() tea.View {
 
 	b.WriteString(m.list.View())
 
+	if m.searchOverlay != nil {
+		b.WriteString("\n")
+		b.WriteString(m.searchOverlay.View())
+	}
+
 	// Ensure we don't start gap calculation on the same line as the list
 	if !strings.HasSuffix(b.String(), "\n") {
 		b.WriteString("\n")
@@ -874,14 +1062,17 @@ func (m *Inbox) GetCurrentAccountID() string {
 	return m.currentAccountID
 }
 
+func (m *Inbox) IsSearchActive() bool {
+	return m != nil && (m.searchOverlay != nil || m.searchActive)
+}
+
+func (m *Inbox) IsFilterActive() bool {
+	return m != nil && (m.list.FilterState() == list.Filtering || m.list.FilterState() == list.FilterApplied)
+}
+
 // GetEmailAtIndex returns the email at the given index for the current view
 func (m *Inbox) GetEmailAtIndex(index int) *fetcher.Email {
-	var displayEmails []fetcher.Email
-	if m.currentAccountID == "" {
-		displayEmails = m.allEmails
-	} else {
-		displayEmails = m.emailsByAccount[m.currentAccountID]
-	}
+	displayEmails := m.displayEmails()
 
 	if index >= 0 && index < len(displayEmails) {
 		return &displayEmails[index]
@@ -1055,7 +1246,7 @@ func (m *Inbox) SetPluginKeyBindings(bindings []PluginKeyBinding) {
 // SetEmails updates all emails (used after fetch)
 func (m *Inbox) SetEmails(emails []fetcher.Email, accounts []config.Account) {
 	m.accounts = accounts
-	m.allEmails = emails
+	m.allEmails = dedupeEmailsForAccounts(emails, accounts)
 	m.noMoreByAccount = make(map[string]bool)
 
 	// Rebuild tabs: empty for single account, "ALL" + accounts for multiple
@@ -1065,7 +1256,8 @@ func (m *Inbox) SetEmails(emails []fetcher.Email, accounts []config.Account) {
 	} else {
 		tabs = []AccountTab{{ID: "", Label: "ALL", Email: ""}}
 		for _, acc := range accounts {
-			tabs = append(tabs, AccountTab{ID: acc.ID, Label: acc.FetchEmail, Email: acc.Email})
+			displayEmail := accountDisplayEmail(acc)
+			tabs = append(tabs, AccountTab{ID: acc.ID, Label: displayEmail, Email: displayEmail})
 		}
 	}
 	m.tabs = tabs

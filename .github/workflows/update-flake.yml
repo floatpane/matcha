@@ -34,5 +34,15 @@ jobs:
           git commit -m "chore: update flake.lock"
           git push -f origin "$BRANCH"
           if ! gh pr list --head "$BRANCH" --state open | grep -q .; then
-            gh pr create --title "chore: update flake.lock" --body "Automated flake.lock update." --base master
+            BODY=$(cat <<'EOF'
+          ## What?
+
+          Updates `flake.lock` to the latest revisions of all flake inputs (`nixpkgs`, `flake-utils`, etc.).
+
+          ## Why?
+
+          Keeps Nix inputs current so contributors and CI build against fresh `nixpkgs`. Picks up upstream security and toolchain fixes. Generated automatically by the flake-lock update workflow on changes to `go.sum`.
+          EOF
+          )
+            gh pr create --title "chore: update flake.lock" --body "$BODY" --base master --label chore --label area/nix
           fi

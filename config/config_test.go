@@ -41,6 +41,7 @@ func TestSaveAndLoadConfig(t *testing.T) {
 				IMAPPort:        993,
 				SMTPServer:      "smtp.custom.com",
 				SMTPPort:        587,
+				CatchAll:        true,
 			},
 		},
 	}
@@ -310,6 +311,16 @@ func TestAccountSendIdentityHelpers(t *testing.T) {
 		account.FetchEmail = ""
 		if got := account.GetSendAsEmail(); got != "login@gmail.com" {
 			t.Fatalf("GetSendAsEmail() = %q, want %q", got, "login@gmail.com")
+		}
+	})
+
+	t.Run("format from header avoids double wrapping", func(t *testing.T) {
+		account := Account{
+			Name:        "Account Name",
+			SendAsEmail: "Custom Name <custom@example.com>",
+		}
+		if got := account.FormatFromHeader(); got != "Custom Name <custom@example.com>" {
+			t.Fatalf("FormatFromHeader() = %q, want %q", got, "Custom Name <custom@example.com>")
 		}
 	})
 }

@@ -1,0 +1,120 @@
+name: "Stale issues and PRs"
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          script: |
+            const IGNORED_AUTHORS = new Set(['floatpanebot', 'github-actions[bot]', 'renovate[bot]', 'dependabot[bot]']);
+            const STALE_LABEL = 'stale';
+            const EXEMPT_ISSUE = ['pinned', 'security', 'help-wanted', 'good-first-issue', 'in-progress'];
+            const EXEMPT_PR = ['pinned', 'security', 'in-progress', 'blocked'];
+            const ISSUE_STALE_DAYS = 30;
+            const ISSUE_CLOSE_DAYS = 14;
+            const PR_STALE_DAYS = 45;
+            const PR_CLOSE_DAYS = 21;
+            const OPS_LIMIT = 100;
+
+            const STALE_MSG = (days, close) =>
+              `This has had no activity for ${days} days. It will be closed in ${close} days unless updated. ` +
+              `Comment or remove the \`stale\` label to keep it open.`;
+            const CLOSE_MSG = 'Closing due to inactivity. Reopen if still relevant.';
+
+            const now = Date.now();
+            let ops = 0;
+
+            async function lastHumanActivity(issue) {
+              let latest = new Date(issue.created_at).getTime();
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                per_page: 100,
+              });
+              for (const c of comments) {
+                if (c.user && IGNORED_AUTHORS.has(c.user.login)) continue;
+                const t = new Date(c.created_at).getTime();
+                if (t > latest) latest = t;
+              }
+              if (issue.pull_request) {
+                const commits = await github.paginate(github.rest.pulls.listCommits, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: issue.number,
+                  per_page: 100,
+                });
+                for (const c of commits) {
+                  const t = new Date(c.commit.author.date).getTime();
+                  if (t > latest) latest = t;
+                }
+              }
+              return latest;
+            }
+
+            const items = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+
+            for (const item of items) {
+              if (ops >= OPS_LIMIT) { core.info('ops limit hit, stopping'); break; }
+              const isPR = !!item.pull_request;
+              const exempt = isPR ? EXEMPT_PR : EXEMPT_ISSUE;
+              const labels = item.labels.map(l => l.name || l);
+              if (exempt.some(l => labels.includes(l))) continue;
+
+              const staleDays = isPR ? PR_STALE_DAYS : ISSUE_STALE_DAYS;
+              const closeDays = isPR ? PR_CLOSE_DAYS : ISSUE_CLOSE_DAYS;
+              const isStale = labels.includes(STALE_LABEL);
+
+              const lastTs = await lastHumanActivity(item);
+              const ageDays = (now - lastTs) / 86400000;
+
+              if (!isStale && ageDays >= staleDays) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: item.number, labels: [STALE_LABEL],
+                });
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: item.number,
+                  body: STALE_MSG(staleDays, closeDays),
+                });
+                core.info(`marked #${item.number} stale (age ${ageDays.toFixed(1)}d)`);
+                ops++;
+              } else if (isStale && ageDays < staleDays) {
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner, repo: context.repo.repo,
+                    issue_number: item.number, name: STALE_LABEL,
+                  });
+                  core.info(`unstaled #${item.number} (real activity ${ageDays.toFixed(1)}d ago)`);
+                  ops++;
+                } catch (e) { if (e.status !== 404) throw e; }
+              } else if (isStale && ageDays >= staleDays + closeDays) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: item.number, body: CLOSE_MSG,
+                });
+                await github.rest.issues.update({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: item.number, state: 'closed', state_reason: 'not_planned',
+                });
+                core.info(`closed #${item.number} (age ${ageDays.toFixed(1)}d)`);
+                ops++;
+              }
+            }

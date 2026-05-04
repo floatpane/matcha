@@ -74,10 +74,20 @@ For security-related issues, please refer to the [Security Policy](https://githu
 
 For urgent concerns, contact [support@floatpane.com](mailto:support@floatpane.com)
 
-## GitAds Sponsored
-[![Sponsored by GitAds](https://gitads.dev/v1/ad-serve?source=floatpane/matcha@github)](https://gitads.dev/v1/ad-track?source=floatpane/matcha@github)
+## Sponsors
 >[!TIP]
 > Want to sponsor our development and be featured here? You can do so [here](https://andrinoff.com/sponsor), or discuss it via email with [our team](mailto:us@floatpane.com)
+
+
+Thank you to our sponsors for supporting Matcha's development!
+
+### Individual Sponsors:
+
+[David H. Colmenares](https://github.com/hipomenes) | Elliot Hornes | Robert M. | James L. | Chris D. 
+
+[![Sponsored by GitAds](https://gitads.dev/v1/ad-serve?source=floatpane/matcha@github)](https://gitads.dev/v1/ad-track?source=floatpane/matcha@github)
+
+_Clicking this add helps us fund our expenses!_
 
 <div align="center">
 
