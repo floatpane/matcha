@@ -524,13 +524,11 @@ func evict(cache *EmailBodyCache, newSize int, threshold int) {
 }
 
 // SaveEmailBody saves or updates a cached email body for a folder.
-func SaveEmailBody(folderName string, body CachedEmailBody) error {
+func SaveEmailBody(folderName string, body CachedEmailBody, threshold int) error {
 	cache, err := LoadEmailBodyCache(folderName)
 	if err != nil {
 		cache = &EmailBodyCache{FolderName: folderName}
 	}
-
-	const threshold = 500 * 1024 * 1024 // 500MB
 
 	body.CachedAt = time.Now()
 	body.LastAccessedAt = time.Now()

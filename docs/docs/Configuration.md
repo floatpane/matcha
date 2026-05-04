@@ -45,13 +45,16 @@ Configuration is stored in `~/.config/matcha/config.json`.
   "theme": "Matcha",
   "enable_split_pane": true,
   "disable_images": true,
-  "hide_tips": true
+  "hide_tips": true,
+  "body_cache_threshold_mb": 500
 }
 ```
 
 `send_as_email` is optional. When set, Matcha uses it for the outgoing `From` header while continuing to authenticate with the account's login address.
 
 `enable_split_pane` enables a side-by-side view where the email list and the selected email are shown on the same screen.
+
+`body_cache_threshold_mb` sets the maximum size (in megabytes) for the local email body cache. When this limit is reached, older cached emails are evicted to make room for new ones. Defaults to `500` MB if not specified.
 
 ## Data Locations
 

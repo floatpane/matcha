@@ -762,7 +762,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					AccountID:   msg.AccountID,
 					Body:        msg.Body,
 					Attachments: cachedAttachments,
-				})
+				}, m.config.GetBodyCacheThreshold())
 				if err != nil {
 					log.Printf("debug: error caching email body fails (disk full, permission denied) for UID: %d: %v", msg.UID, err)
 				}
@@ -1313,7 +1313,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			AccountID:   msg.AccountID,
 			Body:        msg.Body,
 			Attachments: cachedAttachments,
-		})
+		}, m.config.GetBodyCacheThreshold())
 
 		if err != nil {
 			log.Printf("debug: error caching email body fails (disk full, permission denied) for UID: %d: %v", msg.UID, err)
