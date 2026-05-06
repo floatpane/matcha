@@ -94,6 +94,26 @@ func TestEmailViewUpdate(t *testing.T) {
 		}
 	})
 
+	t.Run("Attachment navigation does not scroll body", func(t *testing.T) {
+		emailView := NewEmailView(emailWithAttachments, 0, 80, 24, MailboxInbox, false)
+		emailView.viewport.SetHeight(2)
+		emailView.viewport.SetContent("line 1\nline 2\nline 3\nline 4\nline 5\n")
+		emailView.viewport.SetYOffset(1)
+
+		model, _ := emailView.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+		emailView = model.(*EmailView)
+		if !emailView.focusOnAttachments {
+			t.Fatal("focusOnAttachments should be true after tabbing")
+		}
+
+		before := emailView.viewport.YOffset()
+		model, _ = emailView.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+		emailView = model.(*EmailView)
+		if got := emailView.viewport.YOffset(); got != before {
+			t.Fatalf("attachment navigation should not scroll the email body, got offset %d want %d", got, before)
+		}
+	})
+
 	t.Run("Download attachment", func(t *testing.T) {
 		emailView := NewEmailView(emailWithAttachments, 0, 80, 24, MailboxInbox, false)
 		// Focus on attachments

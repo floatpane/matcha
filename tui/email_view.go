@@ -209,10 +209,12 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.attachmentCursor > 0 {
 					m.attachmentCursor--
 				}
+				return m, nil
 			case "down", kb.Global.NavDown:
 				if m.attachmentCursor < len(m.email.Attachments)-1 {
 					m.attachmentCursor++
 				}
+				return m, nil
 			case "enter":
 				if len(m.email.Attachments) > 0 {
 					selected := m.email.Attachments[m.attachmentCursor]
