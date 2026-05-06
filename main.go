@@ -515,6 +515,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.folderInbox == nil {
 			return m, nil
 		}
+		// Surface per-account fetch failures so a broken account is visible
+		// in the logs rather than silently producing an empty inbox.
+		for accID, err := range msg.AccountErrors {
+			log.Printf("folder %s: account %s fetch failed: %v", msg.FolderName, accID, err)
+		}
 		// Call plugin hooks for received emails
 		if m.plugins != nil {
 			for _, email := range msg.Emails {
@@ -2165,7 +2170,7 @@ func fetchFoldersCmd(cfg *config.Config) tea.Cmd {
 func fetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
 	return func() tea.Msg {
 		emailsByAccount := make(map[string][]fetcher.Email)
-		accountErrors := make(map[string]error)
+		var accountErrors map[string]error
 		var mu sync.Mutex
 		var wg sync.WaitGroup
 
@@ -2176,6 +2181,9 @@ func fetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
 				emails, err := fetcher.FetchFolderEmails(&acc, folderName, initialEmailLimit, 0)
 				if err != nil {
 					mu.Lock()
+					if accountErrors == nil {
+						accountErrors = make(map[string]error)
+					}
 					accountErrors[acc.ID] = err
 					mu.Unlock()
 					return
