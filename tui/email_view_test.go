@@ -79,18 +79,18 @@ func TestEmailViewUpdate(t *testing.T) {
 			t.Errorf("After one down arrow, attachmentCursor should be 1, got %d", emailView.attachmentCursor)
 		}
 
-		// Move down again (should not go past the end)
+		// Move down again (should wrap to the first attachment)
 		model, _ = emailView.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		emailView = model.(*EmailView)
-		if emailView.attachmentCursor != 1 {
-			t.Errorf("attachmentCursor should not go past the end of the list, got %d", emailView.attachmentCursor)
+		if emailView.attachmentCursor != 0 {
+			t.Errorf("attachmentCursor should wrap to the start of the list, got %d", emailView.attachmentCursor)
 		}
 
-		// Move up
+		// Move up (should wrap to the last attachment)
 		model, _ = emailView.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 		emailView = model.(*EmailView)
-		if emailView.attachmentCursor != 0 {
-			t.Errorf("After one up arrow, attachmentCursor should be 0, got %d", emailView.attachmentCursor)
+		if emailView.attachmentCursor != 1 {
+			t.Errorf("After one up arrow from the first item, attachmentCursor should be 1, got %d", emailView.attachmentCursor)
 		}
 	})
 

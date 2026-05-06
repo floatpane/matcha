@@ -120,12 +120,12 @@ func (m *FilePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Normal browsing mode
 		switch msg.String() {
 		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
+			if len(m.items) > 0 {
+				m.cursor = (m.cursor - 1 + len(m.items)) % len(m.items)
 			}
 		case "down", "j":
-			if m.cursor < len(m.items)-1 {
-				m.cursor++
+			if len(m.items) > 0 {
+				m.cursor = (m.cursor + 1) % len(m.items)
 			}
 		case "/":
 			m.editingPath = true

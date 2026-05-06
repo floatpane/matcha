@@ -51,13 +51,9 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "up", "k":
-		if m.generalCursor > 0 {
-			m.generalCursor--
-		}
+		m.generalCursor = (m.generalCursor - 1 + len(opts)) % len(opts)
 	case "down", "j":
-		if m.generalCursor < len(opts)-1 {
-			m.generalCursor++
-		}
+		m.generalCursor = (m.generalCursor + 1) % len(opts)
 	case "enter", "space", "right", "l":
 		if m.generalCursor < len(opts) {
 			opt := opts[m.generalCursor]

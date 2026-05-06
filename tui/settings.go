@@ -237,15 +237,13 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Settings) updateMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	categoryCount := int(CategoryEncryption) + 1
+
 	switch msg.String() {
 	case "up", "k":
-		if m.menuCursor > 0 {
-			m.menuCursor--
-		}
+		m.menuCursor = (m.menuCursor - 1 + categoryCount) % categoryCount
 	case "down", "j":
-		if m.menuCursor < 4 {
-			m.menuCursor++
-		}
+		m.menuCursor = (m.menuCursor + 1) % categoryCount
 	case "right", "l", "enter":
 		m.activeCategory = SettingsCategory(m.menuCursor)
 		m.activePane = PaneContent
