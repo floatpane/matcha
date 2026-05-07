@@ -167,19 +167,6 @@ func (m *FilePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func formatFileSize(size int64) string {
-	switch {
-	case size < 1024:
-		return fmt.Sprintf("%dB", size)
-	case size < 1024*1024:
-		return fmt.Sprintf("%.1fK", float64(size)/1024)
-	case size < 1024*1024*1024:
-		return fmt.Sprintf("%.1fM", float64(size)/(1024*1024))
-	default:
-		return fmt.Sprintf("%.1fG", float64(size)/(1024*1024*1024))
-	}
-}
-
 func (m *FilePicker) View() tea.View {
 	var b strings.Builder
 
@@ -226,7 +213,7 @@ func (m *FilePicker) View() tea.View {
 			itemName = directoryStyle.Render(itemName + "/")
 		} else {
 			if info, err := item.Info(); err == nil {
-				sizeStr = fileSizeStyle.Render("  " + formatFileSize(info.Size()))
+				sizeStr = fileSizeStyle.Render("  " + tfs(info.Size()))
 			}
 		}
 

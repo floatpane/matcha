@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -223,6 +225,28 @@ func TestComposerUpdate(t *testing.T) {
 			t.Errorf("After ten Tabs with multi-account, focusIndex should wrap to %d (focusTo), got %d", focusTo, multiComposer.focusIndex)
 		}
 	})
+}
+
+func TestFormatAttachmentNameIncludesSize(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "image.jpg")
+	if err := os.WriteFile(path, make([]byte, 1258291), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	got := formatAttachmentName(path)
+	want := "image.jpg (1.2 MB)"
+	if got != want {
+		t.Fatalf("formatAttachmentName() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatAttachmentNameMissingFile(t *testing.T) {
+	got := formatAttachmentName("/missing/image.jpg")
+	want := "image.jpg"
+	if got != want {
+		t.Fatalf("formatAttachmentName() = %q, want %q", got, want)
+	}
 }
 
 // TestComposerGetFromAddress verifies the from address formatting.

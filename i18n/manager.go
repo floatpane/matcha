@@ -15,6 +15,7 @@ type Manager struct {
 	bundle      *Bundle
 	currentLang string
 	localizers  map[string]*Localizer
+	formatters  map[string]*NumberFormatter
 	cache       *Cache
 	mu          sync.RWMutex
 }
@@ -41,11 +42,13 @@ func Init(defaultLang string) error {
 			bundle:      bundle,
 			currentLang: defaultLang,
 			localizers:  make(map[string]*Localizer),
+			formatters:  make(map[string]*NumberFormatter),
 			cache:       NewCache(),
 		}
 
 		// Create default localizer
 		globalManager.localizers[defaultLang] = NewLocalizer(defaultLang, bundle)
+		globalManager.formatters[defaultLang] = NewNumberFormatter(globalManager.localizers[defaultLang].Locale())
 	})
 
 	return initErr
@@ -79,6 +82,11 @@ func (m *Manager) SetLanguage(lang string) error {
 	// Create localizer if not exists
 	if _, ok := m.localizers[lang]; !ok {
 		m.localizers[lang] = NewLocalizer(lang, m.bundle)
+	}
+
+	// Create formatter if not exists
+	if _, ok := m.formatters[lang]; !ok {
+		m.formatters[lang] = NewNumberFormatter(m.getLocaleLocked(lang))
 	}
 
 	m.currentLang = lang
@@ -152,12 +160,21 @@ func (m *Manager) GetLocale() *Locale {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	if localizer, ok := m.localizers[m.currentLang]; ok {
-		return localizer.Locale()
+	return m.getLocaleLocked(m.currentLang)
+}
+
+// GetNumberFormatter returns the number formatter for the current language.
+func (m *Manager) GetNumberFormatter() *NumberFormatter {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if formatter, ok := m.formatters[m.currentLang]; ok {
+		return formatter
 	}
 
-	locale, _ := ParseLocale(m.currentLang)
-	return locale
+	formatter := NewNumberFormatter(m.getLocaleLocked(m.currentLang))
+	m.formatters[m.currentLang] = formatter
+	return formatter
 }
 
 // ClearCache clears all translation caches.
@@ -170,4 +187,13 @@ func (m *Manager) ClearCache() {
 	for _, localizer := range m.localizers {
 		localizer.ClearCache()
 	}
+}
+
+func (m *Manager) getLocaleLocked(lang string) *Locale {
+	if localizer, ok := m.localizers[lang]; ok {
+		return localizer.Locale()
+	}
+
+	locale, _ := ParseLocale(lang)
+	return locale
 }

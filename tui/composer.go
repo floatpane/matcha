@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -228,6 +229,15 @@ func (m *Composer) getSelectedAccount() *config.Account {
 		return &m.accounts[m.selectedAccountIdx]
 	}
 	return nil
+}
+
+func formatAttachmentName(path string) string {
+	name := filepath.Base(path)
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return name
+	}
+	return fmt.Sprintf("%s (%s)", name, tfs(info.Size()))
 }
 
 func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -607,7 +617,7 @@ func (m *Composer) View() tea.View {
 	} else {
 		var names []string
 		for _, p := range m.attachmentPaths {
-			names = append(names, filepath.Base(p))
+			names = append(names, formatAttachmentName(p))
 		}
 		attachmentText := strings.Join(names, ", ")
 		if m.focusIndex == focusAttachment {

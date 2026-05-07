@@ -13,9 +13,9 @@ type NumberFormatter struct {
 
 // NewNumberFormatter creates a formatter for a locale.
 func NewNumberFormatter(locale *Locale) *NumberFormatter {
-	tag := locale.Tag
-	if tag == language.Und {
-		tag = language.English
+	tag := language.English
+	if locale != nil && locale.Tag != language.Und {
+		tag = locale.Tag
 	}
 
 	return &NumberFormatter{
