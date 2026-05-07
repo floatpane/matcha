@@ -147,6 +147,7 @@
       "hide_tips": "Masquer les Conseils Contextuels",
       "disable_notifications": "Désactiver les Notifications",
       "enable_split_pane": "Vue divisée",
+      "enable_threaded": "Vue par conversation",
       "date_format": "Format de Date",
       "language": "Langue",
       "signature": "Modifier la Signature",

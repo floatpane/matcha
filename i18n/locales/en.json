@@ -147,6 +147,7 @@
       "hide_tips": "Hide Contextual Tips",
       "disable_notifications": "Disable Notifications",
       "enable_split_pane": "Split Pane View",
+      "enable_threaded": "Threaded Conversation View",
       "date_format": "Date Format",
       "language": "Language",
       "signature": "Edit Signature",

@@ -91,6 +91,7 @@ type Config struct {
 	HideTips             bool          `json:"hide_tips,omitempty"`
 	DisableNotifications bool          `json:"disable_notifications,omitempty"`
 	EnableSplitPane      bool          `json:"enable_split_pane,omitempty"`
+	EnableThreaded       bool          `json:"enable_threaded,omitempty"`
 	Theme                string        `json:"theme,omitempty"`
 	MailingLists         []MailingList `json:"mailing_lists,omitempty"`
 	DateFormat           string        `json:"date_format,omitempty"`

@@ -465,6 +465,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.folderInbox = tui.NewFolderInbox(cachedFolders, m.config.Accounts)
 		m.folderInbox.SetDateFormat(m.config.GetDateFormat())
+		m.folderInbox.SetDefaultThreaded(m.config.EnableThreaded)
 		// Use cached INBOX emails for instant display (memory first, then disk)
 		if cached, ok := m.folderEmails["INBOX"]; ok && len(cached) > 0 {
 			m.folderInbox.SetEmails(cached, m.config.Accounts)
@@ -1017,6 +1018,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err := m.service.ReloadConfig(); err != nil {
 				log.Printf("config reload: %v", err)
 			}
+		}
+		if m.folderInbox != nil {
+			m.folderInbox.SetDefaultThreaded(m.config.EnableThreaded)
 		}
 		return m, nil
 

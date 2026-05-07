@@ -322,6 +322,7 @@ type Inbox struct {
 	searchResults      []fetcher.Email
 	threaded           map[string]bool
 	expanded           map[string]bool
+	defaultThreaded    bool
 
 	// Visual mode state (Vim-style multi-select)
 	visualMode     bool              // Whether visual mode is active
@@ -754,6 +755,16 @@ func (m *Inbox) folderKey() string {
 	return string(m.mailbox)
 }
 
+// SetDefaultThreaded sets the global default threading state used when no
+// per-folder override exists. Pass Config.EnableThreaded.
+func (m *Inbox) SetDefaultThreaded(v bool) {
+	m.defaultThreaded = v
+	// Drop the in-memory cache so the new default takes effect for folders
+	// without an explicit override on the next render.
+	m.threaded = nil
+	m.expanded = nil
+}
+
 func (m *Inbox) isThreaded() bool {
 	if m.threaded == nil {
 		m.threaded = make(map[string]bool)
@@ -763,7 +774,7 @@ func (m *Inbox) isThreaded() bool {
 	}
 	key := m.folderKey()
 	if _, ok := m.threaded[key]; !ok {
-		m.threaded[key] = config.IsFolderThreaded(key)
+		m.threaded[key] = config.IsFolderThreaded(key, m.defaultThreaded)
 	}
 	return m.threaded[key]
 }

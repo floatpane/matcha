@@ -204,14 +204,22 @@ func LoadFolderEmailHeaders(folderName string) ([]threading.EmailHeader, error) 
 	return headers, nil
 }
 
-func IsFolderThreaded(folderName string) bool {
+// IsFolderThreaded returns the threading state for a folder. If the user has
+// explicitly toggled threading for this folder, that override is returned.
+// Otherwise defaultEnabled (from Config.EnableThreaded) is used.
+func IsFolderThreaded(folderName string, defaultEnabled bool) bool {
 	cache, err := LoadFolderCache()
 	if err != nil || cache.ThreadedFolders == nil {
-		return false
+		return defaultEnabled
 	}
-	return cache.ThreadedFolders[folderName]
+	v, ok := cache.ThreadedFolders[folderName]
+	if !ok {
+		return defaultEnabled
+	}
+	return v
 }
 
+// SetFolderThreaded stores an explicit per-folder threading override.
 func SetFolderThreaded(folderName string, threaded bool) error {
 	cache, err := LoadFolderCache()
 	if err != nil {
@@ -220,11 +228,7 @@ func SetFolderThreaded(folderName string, threaded bool) error {
 	if cache.ThreadedFolders == nil {
 		cache.ThreadedFolders = make(map[string]bool)
 	}
-	if threaded {
-		cache.ThreadedFolders[folderName] = true
-	} else {
-		delete(cache.ThreadedFolders, folderName)
-	}
+	cache.ThreadedFolders[folderName] = threaded
 	return SaveFolderCache(cache)
 }
 
