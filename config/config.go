@@ -399,9 +399,11 @@ type secureDiskConfig struct {
 	HideTips             bool                `json:"hide_tips,omitempty"`
 	DisableNotifications bool                `json:"disable_notifications,omitempty"`
 	EnableSplitPane      bool                `json:"enable_split_pane,omitempty"`
+	EnableThreaded       bool                `json:"enable_threaded,omitempty"`
 	Theme                string              `json:"theme,omitempty"`
 	MailingLists         []MailingList       `json:"mailing_lists,omitempty"`
 	DateFormat           string              `json:"date_format,omitempty"`
+	Language             string              `json:"language,omitempty"`
 }
 
 // SaveConfig saves the given configuration to the config file and passwords to the keyring.
@@ -544,6 +546,7 @@ func LoadConfig() (*Config, error) {
 		HideTips             bool          `json:"hide_tips,omitempty"`
 		DisableNotifications bool          `json:"disable_notifications,omitempty"`
 		EnableSplitPane      bool          `json:"enable_split_pane,omitempty"`
+		EnableThreaded       bool          `json:"enable_threaded,omitempty"`
 		Theme                string        `json:"theme,omitempty"`
 		MailingLists         []MailingList `json:"mailing_lists,omitempty"`
 		DateFormat           string        `json:"date_format,omitempty"`
@@ -580,6 +583,7 @@ func LoadConfig() (*Config, error) {
 	config.HideTips = raw.HideTips
 	config.DisableNotifications = raw.DisableNotifications
 	config.EnableSplitPane = raw.EnableSplitPane
+	config.EnableThreaded = raw.EnableThreaded
 	config.Theme = raw.Theme
 	config.MailingLists = raw.MailingLists
 	config.DateFormat = raw.DateFormat
