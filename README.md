@@ -14,6 +14,8 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/floatpane/matcha.svg)](https://pkg.go.dev/github.com/floatpane/matcha)
 [![Awesome](https://awesome.re/badge.svg)](https://github.com/rothgar/awesome-tuis#messaging)
 
+<a href="https://trendshift.io/repositories/26026" target="_blank"><img src="https://trendshift.io/api/badge/repositories/26026" alt="floatpane%2Fmatcha | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+
 
 </div> 
 

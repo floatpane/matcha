@@ -96,6 +96,16 @@ type Config struct {
 	MailingLists         []MailingList `json:"mailing_lists,omitempty"`
 	DateFormat           string        `json:"date_format,omitempty"`
 	Language             string        `json:"language,omitempty"` // Language code (e.g., "en", "es", "de")
+	BodyCacheThresholdMB int           `json:"body_cache_threshold_mb,omitempty"`
+}
+
+// GetBodyCacheThreshold returns the email body cache threshold in bytes.
+// It defaults to 500MB if unset or zero.
+func (c *Config) GetBodyCacheThreshold() int {
+	if c.BodyCacheThresholdMB <= 0 {
+		return 500 * 1024 * 1024
+	}
+	return c.BodyCacheThresholdMB * 1024 * 1024
 }
 
 // GetDateFormat returns the Go time reference layout translated from the
@@ -538,6 +548,7 @@ func LoadConfig() (*Config, error) {
 		MailingLists         []MailingList `json:"mailing_lists,omitempty"`
 		DateFormat           string        `json:"date_format,omitempty"`
 		Language             string        `json:"language,omitempty"`
+		BodyCacheThresholdMB int           `json:"body_cache_threshold_mb,omitempty"`
 	}
 
 	var raw diskConfig
@@ -573,6 +584,8 @@ func LoadConfig() (*Config, error) {
 	config.MailingLists = raw.MailingLists
 	config.DateFormat = raw.DateFormat
 	config.Language = raw.Language
+	config.BodyCacheThresholdMB = raw.BodyCacheThresholdMB
+
 	for _, rawAcc := range raw.Accounts {
 		acc := Account{
 			ID:                 rawAcc.ID,

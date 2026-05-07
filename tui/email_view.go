@@ -123,7 +123,7 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 	// Initial state for showImages matches config unless overridden later
 	showImages := !disableImages
 
-	body, placements, err := view.ProcessBodyWithInline(email.Body, inlineImages, H1Style, H2Style, BodyStyle, !showImages)
+	body, placements, err := view.ProcessBodyWithInline(email.Body, email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, !showImages)
 	if err != nil {
 		body = fmt.Sprintf("Error rendering body: %v", err)
 	}
@@ -206,13 +206,15 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.focusOnAttachments {
 			switch msg.String() {
 			case "up", kb.Global.NavUp:
-				if m.attachmentCursor > 0 {
-					m.attachmentCursor--
+				if len(m.email.Attachments) > 0 {
+					m.attachmentCursor = (m.attachmentCursor - 1 + len(m.email.Attachments)) % len(m.email.Attachments)
 				}
+				return m, nil
 			case "down", kb.Global.NavDown:
-				if m.attachmentCursor < len(m.email.Attachments)-1 {
-					m.attachmentCursor++
+				if len(m.email.Attachments) > 0 {
+					m.attachmentCursor = (m.attachmentCursor + 1) % len(m.email.Attachments)
 				}
+				return m, nil
 			case "enter":
 				if len(m.email.Attachments) > 0 {
 					selected := m.email.Attachments[m.attachmentCursor]
@@ -240,7 +242,7 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					ClearKittyGraphics()
 
 					inlineImages := inlineImagesFromAttachments(m.email.Attachments)
-					body, placements, err := view.ProcessBodyWithInline(m.email.Body, inlineImages, H1Style, H2Style, BodyStyle, !m.showImages)
+					body, placements, err := view.ProcessBodyWithInline(m.email.Body, m.email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, !m.showImages)
 					if err != nil {
 						body = fmt.Sprintf("Error rendering body: %v", err)
 					}
@@ -317,7 +319,7 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// When the window size changes, wrap and clear kitty images to keep placement stable
 		ClearKittyGraphics()
 		inlineImages := inlineImagesFromAttachments(m.email.Attachments)
-		body, placements, err := view.ProcessBodyWithInline(m.email.Body, inlineImages, H1Style, H2Style, BodyStyle, !m.showImages)
+		body, placements, err := view.ProcessBodyWithInline(m.email.Body, m.email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, !m.showImages)
 		if err != nil {
 			body = fmt.Sprintf("Error rendering body: %v", err)
 		}

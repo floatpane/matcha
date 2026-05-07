@@ -79,18 +79,38 @@ func TestEmailViewUpdate(t *testing.T) {
 			t.Errorf("After one down arrow, attachmentCursor should be 1, got %d", emailView.attachmentCursor)
 		}
 
-		// Move down again (should not go past the end)
+		// Move down again (should wrap to the first attachment)
 		model, _ = emailView.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		emailView = model.(*EmailView)
-		if emailView.attachmentCursor != 1 {
-			t.Errorf("attachmentCursor should not go past the end of the list, got %d", emailView.attachmentCursor)
+		if emailView.attachmentCursor != 0 {
+			t.Errorf("attachmentCursor should wrap to the start of the list, got %d", emailView.attachmentCursor)
 		}
 
-		// Move up
+		// Move up (should wrap to the last attachment)
 		model, _ = emailView.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 		emailView = model.(*EmailView)
-		if emailView.attachmentCursor != 0 {
-			t.Errorf("After one up arrow, attachmentCursor should be 0, got %d", emailView.attachmentCursor)
+		if emailView.attachmentCursor != 1 {
+			t.Errorf("After one up arrow from the first item, attachmentCursor should be 1, got %d", emailView.attachmentCursor)
+		}
+	})
+
+	t.Run("Attachment navigation does not scroll body", func(t *testing.T) {
+		emailView := NewEmailView(emailWithAttachments, 0, 80, 24, MailboxInbox, false)
+		emailView.viewport.SetHeight(2)
+		emailView.viewport.SetContent("line 1\nline 2\nline 3\nline 4\nline 5\n")
+		emailView.viewport.SetYOffset(1)
+
+		model, _ := emailView.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+		emailView = model.(*EmailView)
+		if !emailView.focusOnAttachments {
+			t.Fatal("focusOnAttachments should be true after tabbing")
+		}
+
+		before := emailView.viewport.YOffset()
+		model, _ = emailView.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+		emailView = model.(*EmailView)
+		if got := emailView.viewport.YOffset(); got != before {
+			t.Fatalf("attachment navigation should not scroll the email body, got offset %d want %d", got, before)
 		}
 	})
 

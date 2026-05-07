@@ -660,9 +660,19 @@ type ImagePlacement struct {
 	SixelEncoded string // Cached Sixel escape sequence (encode once, reuse on scroll)
 }
 
+// BodyMIMEType values understood by ProcessBody/ProcessBodyWithInline. Empty
+// string means "unknown" — the renderer falls back to running markdownToHTML
+// before HTML parsing, which is correct for plaintext-with-markdown bodies but
+// can mangle complex HTML (e.g. tables with attribute-heavy <td style="...">).
+const (
+	BodyMIMETypeHTML  = "text/html"
+	BodyMIMETypePlain = "text/plain"
+)
+
 // ProcessBodyWithInline renders the body and resolves CID inline images when provided.
 // Returns the rendered body text, image placements for out-of-band rendering, and any error.
-func ProcessBodyWithInline(rawBody string, inline []InlineImage, h1Style, h2Style, bodyStyle lipgloss.Style, disableImages bool) (string, []ImagePlacement, error) {
+// mimeType is "text/html", "text/plain", or "" (unknown — falls back to legacy markdown→HTML pre-pass).
+func ProcessBodyWithInline(rawBody, mimeType string, inline []InlineImage, h1Style, h2Style, bodyStyle lipgloss.Style, disableImages bool) (string, []ImagePlacement, error) {
 	inlineMap := make(map[string]string, len(inline))
 	for _, img := range inline {
 		cid := strings.TrimSpace(img.CID)
@@ -674,22 +684,31 @@ func ProcessBodyWithInline(rawBody string, inline []InlineImage, h1Style, h2Styl
 		}
 		inlineMap[cid] = img.Base64
 	}
-	return processBody(rawBody, inlineMap, h1Style, h2Style, bodyStyle, disableImages)
+	return processBody(rawBody, mimeType, inlineMap, h1Style, h2Style, bodyStyle, disableImages)
 }
 
 // ProcessBody takes a raw email body, decodes it, and formats it as plain
 // text with terminal hyperlinks.
-func ProcessBody(rawBody string, h1Style, h2Style, bodyStyle lipgloss.Style, disableImages bool) (string, []ImagePlacement, error) {
-	return processBody(rawBody, nil, h1Style, h2Style, bodyStyle, disableImages)
+// mimeType is "text/html", "text/plain", or "" (unknown — falls back to legacy markdown→HTML pre-pass).
+func ProcessBody(rawBody, mimeType string, h1Style, h2Style, bodyStyle lipgloss.Style, disableImages bool) (string, []ImagePlacement, error) {
+	return processBody(rawBody, mimeType, nil, h1Style, h2Style, bodyStyle, disableImages)
 }
 
-func processBody(rawBody string, inline map[string]string, h1Style, h2Style, bodyStyle lipgloss.Style, disableImages bool) (string, []ImagePlacement, error) {
+func processBody(rawBody, mimeType string, inline map[string]string, h1Style, h2Style, bodyStyle lipgloss.Style, disableImages bool) (string, []ImagePlacement, error) {
 	decodedBody, err := decodeQuotedPrintable(rawBody)
 	if err != nil {
 		decodedBody = rawBody
 	}
 
-	htmlBody := markdownToHTML([]byte(decodedBody))
+	// HTML bodies skip the markdown pre-pass — md4c can mangle attribute-heavy
+	// or indented HTML (#602-style raw-tag bleed-through). Empty mimeType keeps
+	// legacy behavior for cached/legacy callers that don't supply one.
+	var htmlBody []byte
+	if mimeType == BodyMIMETypeHTML {
+		htmlBody = []byte(decodedBody)
+	} else {
+		htmlBody = markdownToHTML([]byte(decodedBody))
+	}
 
 	// Parse HTML into structured elements using C parser.
 	elements, ok := clib.HTMLToElements(string(htmlBody))

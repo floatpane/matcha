@@ -626,7 +626,7 @@ func TestProcessBodyWithHyperlinkSupport(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.setupHyperlinks()
 
-			processed, _, err := ProcessBody(tc.input, h1Style, h2Style, bodyStyle, false)
+			processed, _, err := ProcessBody(tc.input, "", h1Style, h2Style, bodyStyle, false)
 			if err != nil {
 				t.Fatalf("ProcessBody() failed: %v", err)
 			}
@@ -753,7 +753,7 @@ func TestProcessBodyWithImageProtocol(t *testing.T) {
 			tc.clearAllImageEnv()
 			tc.setupImageProtocol()
 
-			processed, placements, err := ProcessBody(tc.input, h1Style, h2Style, bodyStyle, false)
+			processed, placements, err := ProcessBody(tc.input, "", h1Style, h2Style, bodyStyle, false)
 			if err != nil {
 				t.Fatalf("ProcessBody() failed: %v", err)
 			}
@@ -820,7 +820,7 @@ func TestProcessBody(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			processed, _, err := ProcessBody(tc.input, h1Style, h2Style, bodyStyle, false)
+			processed, _, err := ProcessBody(tc.input, "", h1Style, h2Style, bodyStyle, false)
 			if err != nil {
 				t.Fatalf("ProcessBody() failed: %v", err)
 			}
@@ -831,6 +831,75 @@ func TestProcessBody(t *testing.T) {
 				t.Errorf("Processed body does not contain expected text.\nGot: %q\nWant to contain: %q", cleanProcessed, tc.expected)
 			}
 		})
+	}
+}
+
+// datadogShapeHTML is the indented attribute-heavy table shape commonly
+// produced by Datadog Daily Digest, marketing tools, and any sender that
+// uses HTML <table> for layout. md4c's html_block rule rejects this shape
+// (leading whitespace, attribute-laden opening tag), so the markdown
+// pre-pass passes the literal text through, and htmlconv then renders the
+// raw "<table cellpadding=..." tag as visible body text.
+const datadogShapeHTML = `    <table cellpadding="0" cellspacing="0" border="0" width="710" style="border:1px solid #E7E7E7;">
+      <tr>
+        <td style="background-color: #632ca6; color: white;">
+          <h1>The Daily Digest</h1>
+        </td>
+      </tr>
+    </table>`
+
+// TestProcessBody_LegacyPathManglesIndentedHTML pins the bug this PR fixes.
+// With an empty MIME type, the renderer falls through to the legacy
+// markdown→HTML pre-pass, which is what every body went through before this
+// change. For Datadog-shape input the output literally contains the opening
+// "<table cellpadding=..." text, which is what users see leaked into the
+// inbox viewer. This test will pass on master too — it documents the bug,
+// not the fix.
+func TestProcessBody_LegacyPathManglesIndentedHTML(t *testing.T) {
+	ansiEscapeRegex := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	processed, _, err := ProcessBody(datadogShapeHTML, "", lipgloss.NewStyle(), lipgloss.NewStyle(), lipgloss.NewStyle(), false)
+	if err != nil {
+		t.Fatalf("ProcessBody(legacy) failed: %v", err)
+	}
+	clean := ansiEscapeRegex.ReplaceAllString(processed, "")
+	if !strings.Contains(clean, "<table") {
+		t.Errorf("legacy path should leak literal '<table' tag for indented attribute-heavy HTML — if this assertion stops firing, md4c's html_block handling has improved and this PR's premise needs re-evaluation. Got:\n%s", clean)
+	}
+}
+
+// TestProcessBody_HTMLMIMETypeSkipsMarkdownPrepass is the fix counterpart to
+// the legacy-mangling test above. Same input, but tagged "text/html", goes
+// straight to htmlconv without the broken markdown pre-pass.
+func TestProcessBody_HTMLMIMETypeSkipsMarkdownPrepass(t *testing.T) {
+	ansiEscapeRegex := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	bodyStyle := lipgloss.NewStyle()
+	h1Style := lipgloss.NewStyle()
+	h2Style := lipgloss.NewStyle()
+
+	// Same input as TestProcessBody_LegacyPathManglesIndentedHTML — the
+	// differential is purely the MIME-type argument.
+	processed, _, err := ProcessBody(datadogShapeHTML, BodyMIMETypeHTML, h1Style, h2Style, bodyStyle, false)
+	if err != nil {
+		t.Fatalf("ProcessBody(text/html) failed: %v", err)
+	}
+	clean := ansiEscapeRegex.ReplaceAllString(processed, "")
+	if strings.Contains(clean, "<table") {
+		t.Errorf("text/html body should not leak literal '<table' tag. Got:\n%s", clean)
+	}
+	if !strings.Contains(clean, "The Daily Digest") {
+		t.Errorf("expected text content 'The Daily Digest' in output. Got:\n%s", clean)
+	}
+
+	// Sanity: a body labeled as plain text falls through markdownToHTML and
+	// preserves markdown semantics (heading rendering through the pipeline).
+	mdBody := "# Heading One\n\nSome **bold** text."
+	plainProcessed, _, err := ProcessBody(mdBody, BodyMIMETypePlain, h1Style, h2Style, bodyStyle, false)
+	if err != nil {
+		t.Fatalf("ProcessBody(text/plain) failed: %v", err)
+	}
+	plainClean := ansiEscapeRegex.ReplaceAllString(plainProcessed, "")
+	if !strings.Contains(plainClean, "Heading One") {
+		t.Errorf("text/plain body should still render markdown. Got:\n%s", plainClean)
 	}
 }
 

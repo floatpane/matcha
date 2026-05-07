@@ -733,10 +733,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, func() tea.Msg {
 				return tui.PreviewBodyFetchedMsg{
-					UID:         msg.UID,
-					Body:        cached.Body,
-					Attachments: attachments,
-					AccountID:   msg.AccountID,
+					UID:          msg.UID,
+					Body:         cached.Body,
+					BodyMIMEType: cached.BodyMIMEType,
+					Attachments:  attachments,
+					AccountID:    msg.AccountID,
 				}
 			}
 		}
@@ -759,11 +760,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			go func() {
 				err := config.SaveEmailBody(folderName, config.CachedEmailBody{
-					UID:         msg.UID,
-					AccountID:   msg.AccountID,
-					Body:        msg.Body,
-					Attachments: cachedAttachments,
-				})
+					UID:          msg.UID,
+					AccountID:    msg.AccountID,
+					Body:         msg.Body,
+					BodyMIMEType: msg.BodyMIMEType,
+					Attachments:  cachedAttachments,
+				}, m.config.GetBodyCacheThreshold())
 				if err != nil {
 					log.Printf("debug: error caching email body fails (disk full, permission denied) for UID: %d: %v", msg.UID, err)
 				}
@@ -1265,11 +1267,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, func() tea.Msg {
 				return tui.EmailBodyFetchedMsg{
-					UID:         msg.UID,
-					Body:        cached.Body,
-					Attachments: attachments,
-					AccountID:   msg.AccountID,
-					Mailbox:     msg.Mailbox,
+					UID:          msg.UID,
+					Body:         cached.Body,
+					BodyMIMEType: cached.BodyMIMEType,
+					Attachments:  attachments,
+					AccountID:    msg.AccountID,
+					Mailbox:      msg.Mailbox,
 				}
 			}
 		}
@@ -1286,7 +1289,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Update the email in our stores
-		m.updateEmailBodyByUID(msg.UID, msg.AccountID, msg.Mailbox, msg.Body, msg.Attachments)
+		m.updateEmailBodyByUID(msg.UID, msg.AccountID, msg.Mailbox, msg.Body, msg.BodyMIMEType, msg.Attachments)
 
 		// Cache the body to disk
 		folderForCache := "INBOX"
@@ -1313,11 +1316,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cachedAttachments = append(cachedAttachments, ca)
 		}
 		err := config.SaveEmailBody(folderForCache, config.CachedEmailBody{
-			UID:         msg.UID,
-			AccountID:   msg.AccountID,
-			Body:        msg.Body,
-			Attachments: cachedAttachments,
-		})
+			UID:          msg.UID,
+			AccountID:    msg.AccountID,
+			Body:         msg.Body,
+			BodyMIMEType: msg.BodyMIMEType,
+			Attachments:  cachedAttachments,
+		}, m.config.GetBodyCacheThreshold())
 
 		if err != nil {
 			log.Printf("debug: error caching email body fails (disk full, permission denied) for UID: %d: %v", msg.UID, err)
@@ -1844,10 +1848,11 @@ func (m *mainModel) getEmailIndex(uid uint32, accountID string, mailbox tui.Mail
 	return -1
 }
 
-func (m *mainModel) updateEmailBodyByUID(uid uint32, accountID string, mailbox tui.MailboxKind, body string, attachments []fetcher.Attachment) {
+func (m *mainModel) updateEmailBodyByUID(uid uint32, accountID string, mailbox tui.MailboxKind, body, bodyMIMEType string, attachments []fetcher.Attachment) {
 	for i := range m.emails {
 		if m.emails[i].UID == uid && m.emails[i].AccountID == accountID {
 			m.emails[i].Body = body
+			m.emails[i].BodyMIMEType = bodyMIMEType
 			m.emails[i].Attachments = attachments
 			break
 		}
@@ -1856,6 +1861,7 @@ func (m *mainModel) updateEmailBodyByUID(uid uint32, accountID string, mailbox t
 		for i := range emails {
 			if emails[i].UID == uid {
 				emails[i].Body = body
+				emails[i].BodyMIMEType = bodyMIMEType
 				emails[i].Attachments = attachments
 				break
 			}
@@ -2388,30 +2394,32 @@ func fetchEmailBodyCmd(cfg *config.Config, uid uint32, accountID string, mailbox
 		}
 
 		var (
-			body        string
-			attachments []fetcher.Attachment
-			err         error
+			body         string
+			bodyMIMEType string
+			attachments  []fetcher.Attachment
+			err          error
 		)
 		switch mailbox {
 		case tui.MailboxSent:
-			body, attachments, err = fetcher.FetchSentEmailBody(account, uid)
+			body, bodyMIMEType, attachments, err = fetcher.FetchSentEmailBody(account, uid)
 		case tui.MailboxTrash:
-			body, attachments, err = fetcher.FetchTrashEmailBody(account, uid)
+			body, bodyMIMEType, attachments, err = fetcher.FetchTrashEmailBody(account, uid)
 		case tui.MailboxArchive:
-			body, attachments, err = fetcher.FetchArchiveEmailBody(account, uid)
+			body, bodyMIMEType, attachments, err = fetcher.FetchArchiveEmailBody(account, uid)
 		default:
-			body, attachments, err = fetcher.FetchEmailBody(account, uid)
+			body, bodyMIMEType, attachments, err = fetcher.FetchEmailBody(account, uid)
 		}
 		if err != nil {
 			return tui.EmailBodyFetchedMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
 		}
 
 		return tui.EmailBodyFetchedMsg{
-			UID:         uid,
-			Body:        body,
-			Attachments: attachments,
-			AccountID:   accountID,
-			Mailbox:     mailbox,
+			UID:          uid,
+			Body:         body,
+			BodyMIMEType: bodyMIMEType,
+			Attachments:  attachments,
+			AccountID:    accountID,
+			Mailbox:      mailbox,
 		}
 	}
 }
@@ -2768,17 +2776,18 @@ func fetchFolderEmailBodyCmd(cfg *config.Config, uid uint32, accountID string, f
 			return tui.EmailBodyFetchedMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: fmt.Errorf("account not found")}
 		}
 
-		body, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
+		body, bodyMIMEType, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
 		if err != nil {
 			return tui.EmailBodyFetchedMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
 		}
 
 		return tui.EmailBodyFetchedMsg{
-			UID:         uid,
-			Body:        body,
-			Attachments: attachments,
-			AccountID:   accountID,
-			Mailbox:     mailbox,
+			UID:          uid,
+			Body:         body,
+			BodyMIMEType: bodyMIMEType,
+			Attachments:  attachments,
+			AccountID:    accountID,
+			Mailbox:      mailbox,
 		}
 	}
 }
@@ -2790,16 +2799,17 @@ func fetchPreviewBodyCmd(cfg *config.Config, uid uint32, accountID string, folde
 			return tui.PreviewBodyFetchedMsg{UID: uid, AccountID: accountID, Err: fmt.Errorf("account not found")}
 		}
 
-		body, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
+		body, bodyMIMEType, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
 		if err != nil {
 			return tui.PreviewBodyFetchedMsg{UID: uid, AccountID: accountID, Err: err}
 		}
 
 		return tui.PreviewBodyFetchedMsg{
-			UID:         uid,
-			Body:        body,
-			Attachments: attachments,
-			AccountID:   accountID,
+			UID:          uid,
+			Body:         body,
+			BodyMIMEType: bodyMIMEType,
+			Attachments:  attachments,
+			AccountID:    accountID,
 		}
 	}
 }

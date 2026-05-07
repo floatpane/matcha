@@ -30,13 +30,11 @@ func (m *Settings) updateMailingLists(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 
 	switch msg.String() {
 	case "up", "k":
-		if m.listsCursor > 0 {
-			m.listsCursor--
-		}
+		itemCount := len(m.cfg.MailingLists) + 1
+		m.listsCursor = (m.listsCursor - 1 + itemCount) % itemCount
 	case "down", "j":
-		if m.listsCursor < len(m.cfg.MailingLists) {
-			m.listsCursor++
-		}
+		itemCount := len(m.cfg.MailingLists) + 1
+		m.listsCursor = (m.listsCursor + 1) % itemCount
 	case "d":
 		if m.listsCursor < len(m.cfg.MailingLists) && len(m.cfg.MailingLists) > 0 {
 			m.confirmingDelete = true
