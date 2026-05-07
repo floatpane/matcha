@@ -703,13 +703,36 @@ func processBody(rawBody, mimeType string, inline map[string]string, h1Style, h2
 	// HTML bodies skip the markdown pre-pass — md4c can mangle attribute-heavy
 	// or indented HTML (#602-style raw-tag bleed-through). Empty mimeType keeps
 	// legacy behavior for cached/legacy callers that don't supply one.
+	directHTML := mimeType == BodyMIMETypeHTML
 	var htmlBody []byte
-	if mimeType == BodyMIMETypeHTML {
+	if directHTML {
 		htmlBody = []byte(decodedBody)
 	} else {
 		htmlBody = markdownToHTML([]byte(decodedBody))
 	}
 
+	result, placements, err := renderHTMLToText(htmlBody, inline, h1Style, h2Style, disableImages)
+	if err != nil {
+		return "", nil, err
+	}
+
+	// Some real-world HTML emails (newsletters with table-only layouts and no
+	// <th>, AWeber-shape bodies) emit no visible content from htmlconv. Pre-
+	// c11de45, every body went through markdownToHTML first, which happened to
+	// keep these alive. Retry through the markdown pre-pass when the direct
+	// HTML path produces nothing.
+	if directHTML && strings.TrimSpace(result) == "" {
+		result, placements, err = renderHTMLToText(markdownToHTML([]byte(decodedBody)), inline, h1Style, h2Style, disableImages)
+		if err != nil {
+			return "", nil, err
+		}
+	}
+
+	result = styleQuotedReplies(result)
+	return bodyStyle.Render(result), placements, nil
+}
+
+func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Style lipgloss.Style, disableImages bool) (string, []ImagePlacement, error) {
 	// Parse HTML into structured elements using C parser.
 	elements, ok := clib.HTMLToElements(string(htmlBody))
 	if !ok {
@@ -849,10 +872,7 @@ func processBody(rawBody, mimeType string, inline map[string]string, h1Style, h2
 		result = imgMarkerRegex.ReplaceAllString(result, "")
 	}
 
-	// Style quoted reply sections (for plain text > quotes)
-	result = styleQuotedReplies(result)
-
-	return bodyStyle.Render(result), placements, nil
+	return result, placements, nil
 }
 
 func tableHeaderStyle() lipgloss.Style {
