@@ -1191,9 +1191,13 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tui.DeleteAccountMsg:
 		if m.config != nil {
-			m.config.RemoveAccount(msg.AccountID)
-			if err := config.SaveConfig(m.config); err != nil {
-				log.Printf("could not save config: %v", err)
+			if m.config.RemoveAccount(msg.AccountID) {
+				if err := config.CleanupAccountCache(msg.AccountID); err != nil {
+					log.Printf("could not clean account cache: %v", err)
+				}
+				if err := config.SaveConfig(m.config); err != nil {
+					log.Printf("could not save config: %v", err)
+				}
 			}
 			// Remove emails for this account
 			delete(m.emailsByAcct, msg.AccountID)

@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -89,6 +90,27 @@ func ClearEmailCache() error {
 		return err
 	}
 	return os.Remove(path)
+}
+
+func removeAccountFromEmailCache(accountID string) error {
+	cache, err := LoadEmailCache()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	filtered := cache.Emails[:0]
+	for _, email := range cache.Emails {
+		if email.AccountID != accountID {
+			filtered = append(filtered, email)
+		}
+	}
+	if len(filtered) == len(cache.Emails) {
+		return nil
+	}
+	cache.Emails = filtered
+	return SaveEmailCache(cache)
 }
 
 // --- Contacts Cache ---
@@ -376,6 +398,35 @@ func MigrateContactsCacheUsage(accountIDs []string) error {
 	return SaveContactsCache(cache)
 }
 
+func removeAccountFromContactsCache(accountID string) error {
+	cache, err := LoadContactsCache()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	changed := false
+	filtered := cache.Contacts[:0]
+	for _, contact := range cache.Contacts {
+		if _, ok := contact.Usage[accountID]; ok {
+			delete(contact.Usage, accountID)
+			changed = true
+		}
+		if len(contact.Usage) > 0 {
+			filtered = append(filtered, contact)
+		} else {
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	cache.Contacts = filtered
+	return SaveContactsCache(cache)
+}
+
 // --- Drafts Cache ---
 
 // Draft stores a saved email draft.
@@ -529,6 +580,27 @@ func HasDrafts() bool {
 		return false
 	}
 	return len(cache.Drafts) > 0
+}
+
+func removeAccountFromDraftsCache(accountID string) error {
+	cache, err := LoadDraftsCache()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	filtered := cache.Drafts[:0]
+	for _, draft := range cache.Drafts {
+		if draft.AccountID != accountID {
+			filtered = append(filtered, draft)
+		}
+	}
+	if len(filtered) == len(cache.Drafts) {
+		return nil
+	}
+	cache.Drafts = filtered
+	return SaveDraftsCache(cache)
 }
 
 // --- Email Body Cache ---
@@ -721,4 +793,79 @@ func PruneEmailBodyCache(folderName string, validUIDs map[uint32]string) error {
 
 	cache.Bodies = kept
 	return saveEmailBodyCache(cache)
+}
+
+func removeAccountFromEmailBodyCaches(accountID string) error {
+	dir, err := bodyCacheDir()
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var errs []error
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		data, err := SecureReadFile(path)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		var cache EmailBodyCache
+		if err := json.Unmarshal(data, &cache); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
+		filtered := cache.Bodies[:0]
+		for _, body := range cache.Bodies {
+			if body.AccountID != accountID {
+				filtered = append(filtered, body)
+			}
+		}
+		if len(filtered) == len(cache.Bodies) {
+			continue
+		}
+		if len(filtered) == 0 {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				errs = append(errs, err)
+			}
+			continue
+		}
+		cache.Bodies = filtered
+		cache.UpdatedAt = time.Now()
+		data, err = json.Marshal(cache)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if err := SecureWriteFile(path, data, 0600); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// CleanupAccountCache removes cached data associated with an account.
+func CleanupAccountCache(accountID string) error {
+	if accountID == "" {
+		return nil
+	}
+
+	return errors.Join(
+		removeAccountFromEmailCache(accountID),
+		removeAccountFromFolderCache(accountID),
+		removeAccountFromFolderEmailCaches(accountID),
+		removeAccountFromEmailBodyCaches(accountID),
+		removeAccountFromContactsCache(accountID),
+		removeAccountFromDraftsCache(accountID),
+	)
 }
