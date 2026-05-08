@@ -495,6 +495,8 @@ func saveEmailBodyCache(cache *EmailBodyCache) error {
 }
 
 // GetCachedEmailBody returns the cached body for a specific email, or nil if not cached.
+// LastAccessedAt is updated by SaveEmailBody, not here -- a read should not
+// mutate cache state.
 func GetCachedEmailBody(folderName string, uid uint32, accountID string) *CachedEmailBody {
 	cache, err := LoadEmailBodyCache(folderName)
 	if err != nil {
@@ -502,8 +504,6 @@ func GetCachedEmailBody(folderName string, uid uint32, accountID string) *Cached
 	}
 	for i, b := range cache.Bodies {
 		if b.UID == uid && b.AccountID == accountID {
-			cache.Bodies[i].LastAccessedAt = time.Now()
-			_ = saveEmailBodyCache(cache)
 			return &cache.Bodies[i]
 		}
 	}
