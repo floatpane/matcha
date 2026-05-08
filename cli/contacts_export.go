@@ -131,11 +131,12 @@ func exportToCSV(contacts []config.Contact, noHeader bool) ([]byte, error) {
 	}
 
 	for _, c := range contacts {
+		usage := config.ContactAggregateUsage(c)
 		record := []string{
 			escapeCSV(c.Name),
 			escapeCSV(c.Email),
-			c.LastUsed.Format("2006-01-02T15:04:05Z07:00"),
-			fmt.Sprintf("%d", c.UseCount),
+			usage.LastUsed.Format("2006-01-02T15:04:05Z07:00"),
+			fmt.Sprintf("%d", usage.UseCount),
 		}
 		if err := writer.Write(record); err != nil {
 			return nil, err

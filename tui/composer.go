@@ -553,7 +553,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			lastPart := strings.TrimSpace(parts[len(parts)-1])
 
 			if len(lastPart) >= 2 {
-				m.suggestions = config.SearchContacts(lastPart)
+				m.suggestions = config.SearchContactsForAccount(lastPart, m.GetSelectedAccountID())
 				m.showSuggestions = len(m.suggestions) > 0
 				m.selectedSuggestion = 0
 			} else {

@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -206,11 +208,11 @@ func TestConfigGetAccountByEmail(t *testing.T) {
 func TestAddContactNormalizesEmailAndDeduplicates(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	if err := AddContact("Alice", "Alice@Example.com"); err != nil {
-		t.Fatalf("AddContact() failed: %v", err)
+	if err := AddContactForAccount("Alice", "Alice@Example.com", "account-1"); err != nil {
+		t.Fatalf("AddContactForAccount() failed: %v", err)
 	}
-	if err := AddContact("", "alice@example.com"); err != nil {
-		t.Fatalf("AddContact() failed: %v", err)
+	if err := AddContactForAccount("", "alice@example.com", "account-1"); err != nil {
+		t.Fatalf("AddContactForAccount() failed: %v", err)
 	}
 
 	cache, err := LoadContactsCache()
@@ -226,8 +228,90 @@ func TestAddContactNormalizesEmailAndDeduplicates(t *testing.T) {
 	if contact.Email != "alice@example.com" {
 		t.Errorf("Expected normalized email alice@example.com, got %s", contact.Email)
 	}
-	if contact.UseCount != 2 {
-		t.Errorf("Expected UseCount 2 after duplicate add, got %d", contact.UseCount)
+	usage := contact.Usage["account-1"]
+	if usage.UseCount != 2 {
+		t.Errorf("Expected UseCount 2 after duplicate add, got %d", usage.UseCount)
+	}
+}
+
+func TestMigrateContactsCacheUsageExpandsLegacyUsage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	lastUsed := time.Date(2024, 3, 1, 12, 0, 0, 0, time.UTC)
+	path, err := GetContactsCachePath()
+	if err != nil {
+		t.Fatalf("GetContactsCachePath() failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatalf("MkdirAll() failed: %v", err)
+	}
+	legacyJSON := `{"contacts":[{"name":"Alice","email":"alice@example.com","last_used":"` + lastUsed.Format(time.RFC3339) + `","use_count":7}]}`
+	if err := os.WriteFile(path, []byte(legacyJSON), 0600); err != nil {
+		t.Fatalf("WriteFile() failed: %v", err)
+	}
+
+	if err := MigrateContactsCacheUsage([]string{"account-1", "account-2"}); err != nil {
+		t.Fatalf("MigrateContactsCacheUsage() failed: %v", err)
+	}
+
+	cache, err := LoadContactsCache()
+	if err != nil {
+		t.Fatalf("LoadContactsCache() failed: %v", err)
+	}
+	if len(cache.Contacts) != 1 {
+		t.Fatalf("Expected 1 contact, got %d", len(cache.Contacts))
+	}
+	for _, accountID := range []string{"account-1", "account-2"} {
+		usage, ok := cache.Contacts[0].Usage[accountID]
+		if !ok {
+			t.Fatalf("Expected usage for %s", accountID)
+		}
+		if usage.UseCount != 7 || !usage.LastUsed.Equal(lastUsed) {
+			t.Fatalf("Unexpected usage for %s: %+v", accountID, usage)
+		}
+	}
+	if _, ok := cache.Contacts[0].Usage[legacyContactUsageKey]; ok {
+		t.Fatal("Legacy usage key should be removed after migration")
+	}
+}
+
+func TestSearchContactsForAccountFiltersAndSortsByUsage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	now := time.Now()
+	cache := &ContactsCache{Contacts: []Contact{
+		{
+			Name:  "Alice",
+			Email: "alice@example.com",
+			Usage: map[string]ContactUsage{
+				"account-1": {UseCount: 1, LastUsed: now},
+			},
+		},
+		{
+			Name:  "Alicia",
+			Email: "alicia@example.com",
+			Usage: map[string]ContactUsage{
+				"account-2": {UseCount: 9, LastUsed: now.Add(time.Hour)},
+			},
+		},
+		{
+			Name:  "Alina",
+			Email: "alina@example.com",
+			Usage: map[string]ContactUsage{
+				"account-1": {UseCount: 3, LastUsed: now.Add(-time.Hour)},
+			},
+		},
+	}}
+	if err := SaveContactsCache(cache); err != nil {
+		t.Fatalf("SaveContactsCache() failed: %v", err)
+	}
+
+	matches := SearchContactsForAccount("ali", "account-1")
+	if len(matches) != 2 {
+		t.Fatalf("Expected 2 account-1 matches, got %d", len(matches))
+	}
+	if matches[0].Email != "alina@example.com" {
+		t.Fatalf("Expected highest account-1 usage first, got %s", matches[0].Email)
 	}
 }
 
