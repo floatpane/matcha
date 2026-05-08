@@ -55,6 +55,7 @@ type Composer struct {
 	bodyInput       textarea.Model
 	signatureInput  textarea.Model
 	attachmentPaths []string
+	attachmentNames map[string]string
 	encryptSMIME    bool
 	width           int
 	height          int
@@ -96,8 +97,9 @@ type Composer struct {
 // NewComposer initializes a new composer model.
 func NewComposer(from, to, subject, body string, hideTips bool) *Composer {
 	m := &Composer{
-		draftID:  uuid.New().String(),
-		hideTips: hideTips,
+		draftID:         uuid.New().String(),
+		hideTips:        hideTips,
+		attachmentNames: make(map[string]string),
 	}
 
 	tiStyles := ThemedTextInputStyles()
@@ -240,6 +242,13 @@ func formatAttachmentName(path string) string {
 	return fmt.Sprintf("%s (%s)", name, tfs(info.Size()))
 }
 
+func (m *Composer) attachmentDisplayName(path string) string {
+	if name, ok := m.attachmentNames[path]; ok {
+		return name
+	}
+	return filepath.Base(path)
+}
+
 func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
@@ -287,6 +296,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if !exists {
 				m.attachmentPaths = append(m.attachmentPaths, newPath)
+				m.attachmentNames[newPath] = formatAttachmentName(newPath)
 			}
 		}
 		return m, nil
@@ -462,6 +472,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "backspace", "delete", "d":
 			if m.focusIndex == focusAttachment && len(m.attachmentPaths) > 0 {
+				delete(m.attachmentNames, m.attachmentPaths[len(m.attachmentPaths)-1])
 				m.attachmentPaths = m.attachmentPaths[:len(m.attachmentPaths)-1]
 				return m, nil
 			}
@@ -617,7 +628,7 @@ func (m *Composer) View() tea.View {
 	} else {
 		var names []string
 		for _, p := range m.attachmentPaths {
-			names = append(names, formatAttachmentName(p))
+			names = append(names, m.attachmentDisplayName(p))
 		}
 		attachmentText := strings.Join(names, ", ")
 		if m.focusIndex == focusAttachment {
@@ -956,6 +967,10 @@ func NewComposerFromDraft(draft config.Draft, accounts []config.Account, hideTip
 	m.bccInput.SetValue(draft.Bcc)
 	m.draftID = draft.ID
 	m.attachmentPaths = draft.AttachmentPaths
+	m.attachmentNames = make(map[string]string, len(m.attachmentPaths))
+	for _, path := range m.attachmentPaths {
+		m.attachmentNames[path] = formatAttachmentName(path)
+	}
 	if m.isCatchAllAccount() && draft.FromOverride != "" {
 		m.fromInput.SetValue(draft.FromOverride)
 	}
