@@ -47,20 +47,21 @@ const (
 
 // Composer model holds the state of the email composition UI.
 type Composer struct {
-	focusIndex      int
-	toInput         textinput.Model
-	ccInput         textinput.Model
-	bccInput        textinput.Model
-	subjectInput    textinput.Model
-	bodyInput       textarea.Model
-	signatureInput  textarea.Model
-	attachmentPaths []string
-	attachmentNames map[string]string
-	encryptSMIME    bool
-	width           int
-	height          int
-	confirmingExit  bool
-	hideTips        bool
+	focusIndex       int
+	toInput          textinput.Model
+	ccInput          textinput.Model
+	bccInput         textinput.Model
+	subjectInput     textinput.Model
+	bodyInput        textarea.Model
+	signatureInput   textarea.Model
+	attachmentPaths  []string
+	attachmentNames  map[string]string
+	attachmentCursor int
+	encryptSMIME     bool
+	width            int
+	height           int
+	confirmingExit   bool
+	hideTips         bool
 
 	// Multi-account support
 	accounts           []config.Account
@@ -249,6 +250,31 @@ func (m *Composer) attachmentDisplayName(path string) string {
 	return filepath.Base(path)
 }
 
+func (m *Composer) clampAttachmentCursor() {
+	if len(m.attachmentPaths) == 0 {
+		m.attachmentCursor = 0
+		return
+	}
+	if m.attachmentCursor < 0 {
+		m.attachmentCursor = 0
+	}
+	if m.attachmentCursor >= len(m.attachmentPaths) {
+		m.attachmentCursor = len(m.attachmentPaths) - 1
+	}
+}
+
+func (m *Composer) removeSelectedAttachment() {
+	if len(m.attachmentPaths) == 0 {
+		return
+	}
+
+	m.clampAttachmentCursor()
+	idx := m.attachmentCursor
+	delete(m.attachmentNames, m.attachmentPaths[idx])
+	m.attachmentPaths = append(m.attachmentPaths[:idx], m.attachmentPaths[idx+1:]...)
+	m.clampAttachmentCursor()
+}
+
 func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
@@ -299,6 +325,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.attachmentNames[newPath] = formatAttachmentName(newPath)
 			}
 		}
+		m.clampAttachmentCursor()
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -413,6 +440,18 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		kb := config.Keybinds
+		attachmentPathSize := len(m.attachmentPaths)
+		if m.focusIndex == focusAttachment && attachmentPathSize > 0 {
+			switch msg.String() {
+			case "up", kb.Global.NavUp:
+				m.attachmentCursor = (m.attachmentCursor - 1 + attachmentPathSize) % attachmentPathSize
+				return m, nil
+			case "down", kb.Global.NavDown:
+				m.attachmentCursor = (m.attachmentCursor + 1) % attachmentPathSize
+				return m, nil
+			}
+		}
+
 		switch msg.String() {
 		case kb.Global.Quit:
 			return m, tea.Quit
@@ -472,8 +511,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "backspace", "delete", "d":
 			if m.focusIndex == focusAttachment && len(m.attachmentPaths) > 0 {
-				delete(m.attachmentNames, m.attachmentPaths[len(m.attachmentPaths)-1])
-				m.attachmentPaths = m.attachmentPaths[:len(m.attachmentPaths)-1]
+				m.removeSelectedAttachment()
 				return m, nil
 			}
 
@@ -626,16 +664,25 @@ func (m *Composer) View() tea.View {
 			attachmentField = blurredStyle.Render(fmt.Sprintf("  %s %s", t("composer.attachments"), attachmentText))
 		}
 	} else {
-		var names []string
-		for _, p := range m.attachmentPaths {
-			names = append(names, m.attachmentDisplayName(p))
-		}
-		attachmentText := strings.Join(names, ", ")
+		var b strings.Builder
+		headerPrefix := "  "
+		headerStyle := blurredStyle
 		if m.focusIndex == focusAttachment {
-			attachmentField = focusedStyle.Render(fmt.Sprintf("> %s (%d): %s", t("composer.attachments"), len(m.attachmentPaths), attachmentText))
-		} else {
-			attachmentField = blurredStyle.Render(fmt.Sprintf("  %s (%d): %s", t("composer.attachments"), len(m.attachmentPaths), attachmentText))
+			headerPrefix = "> "
+			headerStyle = focusedStyle
 		}
+		b.WriteString(headerStyle.Render(fmt.Sprintf("%s%s (%d):", headerPrefix, t("composer.attachments"), len(m.attachmentPaths))))
+		for i, p := range m.attachmentPaths {
+			cursor := "    "
+			style := blurredStyle
+			if m.focusIndex == focusAttachment && i == m.attachmentCursor {
+				cursor = "  > "
+				style = focusedStyle
+			}
+			b.WriteString("\n")
+			b.WriteString(style.Render(fmt.Sprintf("%s%s", cursor, m.attachmentDisplayName(p))))
+		}
+		attachmentField = b.String()
 	}
 
 	encToggle := "[ ]"
@@ -690,7 +737,7 @@ func (m *Composer) View() tea.View {
 	case focusSignature:
 		tip = "Your email signature. This will be appended to the end of the email."
 	case focusAttachment:
-		tip = "Enter: add file • backspace/d: remove last attachment"
+		tip = "Enter: add file • up/down: select attachment • backspace/d: remove selected"
 	case focusEncryptSMIME:
 		tip = "Press Space or Enter to toggle S/MIME encryption on or off."
 	case focusSend:
@@ -708,10 +755,15 @@ func (m *Composer) View() tea.View {
 		signatureLabel,
 		m.signatureInput.View(),
 		attachmentStyle.Render(attachmentField),
+	}
+	if len(m.attachmentPaths) > 0 {
+		composerViewElements = append(composerViewElements, "")
+	}
+	composerViewElements = append(composerViewElements,
 		smimeToggleStyle.Render(encField),
 		button,
 		"",
-	}
+	)
 
 	if !m.hideTips && tip != "" {
 		composerViewElements = append(composerViewElements, TipStyle.Render("Tip: "+tip))
@@ -971,6 +1023,7 @@ func NewComposerFromDraft(draft config.Draft, accounts []config.Account, hideTip
 	for _, path := range m.attachmentPaths {
 		m.attachmentNames[path] = formatAttachmentName(path)
 	}
+	m.clampAttachmentCursor()
 	if m.isCatchAllAccount() && draft.FromOverride != "" {
 		m.fromInput.SetValue(draft.FromOverride)
 	}

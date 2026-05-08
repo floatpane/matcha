@@ -249,6 +249,48 @@ func TestFormatAttachmentNameMissingFile(t *testing.T) {
 	}
 }
 
+func TestComposerAttachmentSelectionAndRemoval(t *testing.T) {
+	composer := NewComposer("", "", "", "", false)
+	composer.focusIndex = focusAttachment
+	composer.attachmentPaths = []string{"/tmp/a.txt", "/tmp/b.txt", "/tmp/c.txt"}
+	composer.attachmentNames = map[string]string{
+		"/tmp/a.txt": "a.txt",
+		"/tmp/b.txt": "b.txt",
+		"/tmp/c.txt": "c.txt",
+	}
+
+	model, _ := composer.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	composer = model.(*Composer)
+	if composer.attachmentCursor != 1 {
+		t.Fatalf("Expected attachmentCursor 1 after Down, got %d", composer.attachmentCursor)
+	}
+
+	model, _ = composer.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
+	composer = model.(*Composer)
+
+	want := []string{"/tmp/a.txt", "/tmp/c.txt"}
+	if len(composer.attachmentPaths) != len(want) {
+		t.Fatalf("Expected %d attachments after removal, got %d", len(want), len(composer.attachmentPaths))
+	}
+	for i, path := range want {
+		if composer.attachmentPaths[i] != path {
+			t.Fatalf("attachmentPaths[%d] = %q, want %q", i, composer.attachmentPaths[i], path)
+		}
+	}
+	if _, ok := composer.attachmentNames["/tmp/b.txt"]; ok {
+		t.Fatal("Expected removed attachment display name to be deleted")
+	}
+	if composer.attachmentCursor != 1 {
+		t.Fatalf("Expected cursor to stay on the next attachment, got %d", composer.attachmentCursor)
+	}
+
+	model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	composer = model.(*Composer)
+	if composer.attachmentCursor != 0 {
+		t.Fatalf("Expected attachmentCursor to wrap to 0 after Down, got %d", composer.attachmentCursor)
+	}
+}
+
 // TestComposerGetFromAddress verifies the from address formatting.
 func TestComposerGetFromAddress(t *testing.T) {
 	t.Run("With name", func(t *testing.T) {
