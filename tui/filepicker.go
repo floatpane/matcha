@@ -23,6 +23,7 @@ type FilePicker struct {
 	cursor      int
 	currentPath string
 	items       []fs.DirEntry
+	itemSizes   map[string]string
 	width       int
 	height      int
 	showHidden  bool
@@ -39,6 +40,7 @@ func NewFilePicker(startPath string) *FilePicker {
 
 	fp := &FilePicker{
 		currentPath: startPath,
+		itemSizes:   make(map[string]string),
 		pathInput:   pi,
 	}
 	fp.readDir()
@@ -49,6 +51,7 @@ func (m *FilePicker) readDir() {
 	files, err := os.ReadDir(m.currentPath)
 	if err != nil {
 		m.items = []fs.DirEntry{}
+		m.itemSizes = make(map[string]string)
 		return
 	}
 	if !m.showHidden {
@@ -61,6 +64,15 @@ func (m *FilePicker) readDir() {
 		files = filtered
 	}
 	m.items = files
+	m.itemSizes = make(map[string]string, len(files))
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		if info, err := f.Info(); err == nil {
+			m.itemSizes[filepath.Join(m.currentPath, f.Name())] = tfs(info.Size())
+		}
+	}
 	m.cursor = 0
 }
 
@@ -212,8 +224,8 @@ func (m *FilePicker) View() tea.View {
 		if item.IsDir() {
 			itemName = directoryStyle.Render(itemName + "/")
 		} else {
-			if info, err := item.Info(); err == nil {
-				sizeStr = fileSizeStyle.Render("  " + tfs(info.Size()))
+			if size, ok := m.itemSizes[filepath.Join(m.currentPath, item.Name())]; ok {
+				sizeStr = fileSizeStyle.Render("  " + size)
 			}
 		}
 
