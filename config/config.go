@@ -100,10 +100,10 @@ type Config struct {
 }
 
 // GetBodyCacheThreshold returns the email body cache threshold in bytes.
-// It defaults to 500MB if unset or zero.
+// It defaults to 100MB if unset or zero.
 func (c *Config) GetBodyCacheThreshold() int {
 	if c.BodyCacheThresholdMB <= 0 {
-		return 500 * 1024 * 1024
+		return 100 * 1024 * 1024
 	}
 	return c.BodyCacheThresholdMB * 1024 * 1024
 }

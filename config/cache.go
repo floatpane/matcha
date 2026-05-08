@@ -531,14 +531,134 @@ func calculateTotalCacheSize(cache *EmailBodyCache) int {
 	return total
 }
 
-func evict(cache *EmailBodyCache, newSize int, threshold int) {
-	sort.Slice(cache.Bodies, func(i, j int) bool {
-		return cache.Bodies[i].LastAccessedAt.Before(cache.Bodies[j].LastAccessedAt)
+type bodyCacheFileState struct {
+	path  string
+	cache EmailBodyCache
+}
+
+type bodyCacheEntryRef struct {
+	fileIndex int
+	bodyIndex int
+}
+
+func loadAllEmailBodyCaches() ([]bodyCacheFileState, error) {
+	dir, err := bodyCacheDir()
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var caches []bodyCacheFileState
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+
+		path := filepath.Join(dir, entry.Name())
+		data, err := SecureReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+
+		var cache EmailBodyCache
+		if err := json.Unmarshal(data, &cache); err != nil {
+			return nil, err
+		}
+		for i := range cache.Bodies {
+			if cache.Bodies[i].SizeBytes <= 0 {
+				cache.Bodies[i].SizeBytes = calculateEmailBodySize(&cache.Bodies[i])
+			}
+		}
+
+		caches = append(caches, bodyCacheFileState{
+			path:  path,
+			cache: cache,
+		})
+	}
+
+	return caches, nil
+}
+
+func saveEmailBodyCacheFile(state *bodyCacheFileState) error {
+	if err := os.MkdirAll(filepath.Dir(state.path), 0700); err != nil {
+		return err
+	}
+
+	state.cache.UpdatedAt = time.Now()
+	data, err := json.Marshal(&state.cache)
+	if err != nil {
+		return err
+	}
+	return SecureWriteFile(state.path, data, 0600)
+}
+
+func pruneEmailBodyCacheSize(threshold int) error {
+	if threshold <= 0 {
+		return nil
+	}
+
+	caches, err := loadAllEmailBodyCaches()
+	if err != nil {
+		return err
+	}
+
+	totalSize := 0
+	var refs []bodyCacheEntryRef
+	for fileIndex := range caches {
+		for bodyIndex, body := range caches[fileIndex].cache.Bodies {
+			totalSize += body.SizeBytes
+			refs = append(refs, bodyCacheEntryRef{
+				fileIndex: fileIndex,
+				bodyIndex: bodyIndex,
+			})
+		}
+	}
+	if totalSize <= threshold {
+		return nil
+	}
+
+	sort.Slice(refs, func(i, j int) bool {
+		left := caches[refs[i].fileIndex].cache.Bodies[refs[i].bodyIndex]
+		right := caches[refs[j].fileIndex].cache.Bodies[refs[j].bodyIndex]
+		return left.LastAccessedAt.Before(right.LastAccessedAt)
 	})
 
-	for len(cache.Bodies) > 0 && calculateTotalCacheSize(cache)+newSize > threshold {
-		cache.Bodies = cache.Bodies[1:]
+	remove := make(map[int]map[int]struct{})
+	for _, ref := range refs {
+		if totalSize <= threshold {
+			break
+		}
+
+		body := caches[ref.fileIndex].cache.Bodies[ref.bodyIndex]
+		totalSize -= body.SizeBytes
+		if remove[ref.fileIndex] == nil {
+			remove[ref.fileIndex] = make(map[int]struct{})
+		}
+		remove[ref.fileIndex][ref.bodyIndex] = struct{}{}
 	}
+
+	for fileIndex, bodyIndexes := range remove {
+		bodies := caches[fileIndex].cache.Bodies
+		kept := bodies[:0]
+		for bodyIndex, body := range bodies {
+			if _, ok := bodyIndexes[bodyIndex]; !ok {
+				kept = append(kept, body)
+			}
+		}
+		caches[fileIndex].cache.Bodies = kept
+		if err := saveEmailBodyCacheFile(&caches[fileIndex]); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // SaveEmailBody saves or updates a cached email body for a folder.
@@ -556,22 +676,23 @@ func SaveEmailBody(folderName string, body CachedEmailBody, threshold int) error
 	found := false
 	for i, b := range cache.Bodies {
 		if b.UID == body.UID && b.AccountID == body.AccountID {
-			cache.Bodies[i] = body
+			if body.SizeBytes <= threshold {
+				cache.Bodies[i] = body
+			} else {
+				cache.Bodies = append(cache.Bodies[:i], cache.Bodies[i+1:]...)
+			}
 			found = true
 			break
 		}
 	}
-	if !found {
-		if body.SizeBytes <= threshold {
-			if calculateTotalCacheSize(cache)+body.SizeBytes > threshold {
-				evict(cache, body.SizeBytes, threshold)
-			}
-
-			cache.Bodies = append(cache.Bodies, body)
-		}
+	if !found && body.SizeBytes <= threshold {
+		cache.Bodies = append(cache.Bodies, body)
 	}
 
-	return saveEmailBodyCache(cache)
+	if err := saveEmailBodyCache(cache); err != nil {
+		return err
+	}
+	return pruneEmailBodyCacheSize(threshold)
 }
 
 // PruneEmailBodyCache removes cached bodies for emails that are no longer in the folder.

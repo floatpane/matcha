@@ -46,7 +46,7 @@ Configuration is stored in `~/.config/matcha/config.json`.
   "enable_split_pane": true,
   "disable_images": true,
   "hide_tips": true,
-  "body_cache_threshold_mb": 500
+  "body_cache_threshold_mb": 100
 }
 ```
 
@@ -54,7 +54,7 @@ Configuration is stored in `~/.config/matcha/config.json`.
 
 `enable_split_pane` enables a side-by-side view where the email list and the selected email are shown on the same screen.
 
-`body_cache_threshold_mb` sets the maximum size (in megabytes) for the local email body cache. When this limit is reached, older cached emails are evicted to make room for new ones. Defaults to `500` MB if not specified.
+`body_cache_threshold_mb` sets the maximum size (in megabytes) for the local email body cache. When this limit is reached, least recently accessed cached emails are evicted across all folders to make room for new ones. Defaults to `100` MB if not specified.
 
 ## Data Locations
 
