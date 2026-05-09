@@ -77,14 +77,14 @@ type Settings struct {
 	confirmingDisable bool
 
 	// Plugin settings state
-	plugins              *plugin.Manager
-	pluginListCursor     int
-	pluginSelected       string // name of plugin whose settings are open ("" = list view)
-	pluginSettingCursor  int
-	pluginEditing        bool
-	pluginEditingKey     string
-	pluginEditingType    plugin.SettingType
-	pluginInput          textinput.Model
+	plugins             *plugin.Manager
+	pluginListCursor    int
+	pluginSelected      string // name of plugin whose settings are open ("" = list view)
+	pluginSettingCursor int
+	pluginEditing       bool
+	pluginEditingKey    string
+	pluginEditingType   plugin.SettingType
+	pluginInput         textinput.Model
 }
 
 type SettingsState struct {
