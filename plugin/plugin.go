@@ -33,6 +33,14 @@ type Manager struct {
 	bindings []KeyBinding
 	// pendingPrompt is set by matcha.prompt() and consumed by the orchestrator.
 	pendingPrompt *PendingPrompt
+
+	// pluginSchemas holds settings declarations per plugin.
+	pluginSchemas map[string][]SettingDef
+	// pluginValues holds current setting values per plugin.
+	pluginValues map[string]map[string]interface{}
+	// currentPlugin names the plugin file currently being loaded; used to
+	// attribute matcha.settings() declarations.
+	currentPlugin string
 }
 
 // NewManager creates a new plugin manager with a Lua VM.
@@ -41,6 +49,8 @@ func NewManager() *Manager {
 		hooks:         make(map[string][]*lua.LFunction),
 		statuses:      make(map[string]string),
 		pendingFields: make(map[string]string),
+		pluginSchemas: make(map[string][]SettingDef),
+		pluginValues:  make(map[string]map[string]interface{}),
 	}
 
 	L := lua.NewState(lua.Options{
@@ -100,6 +110,10 @@ func (m *Manager) LoadPlugins() {
 }
 
 func (m *Manager) loadPlugin(name, path string) {
+	prev := m.currentPlugin
+	m.currentPlugin = name
+	defer func() { m.currentPlugin = prev }()
+
 	if err := m.state.DoFile(path); err != nil {
 		log.Printf("plugin %q: load error: %v", name, err)
 		return

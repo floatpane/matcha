@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
+	"github.com/floatpane/matcha/plugin"
 	"github.com/floatpane/matcha/theme"
 )
 
@@ -35,6 +36,7 @@ const (
 	CategoryTheme
 	CategoryMailingLists
 	CategoryEncryption
+	CategoryPlugins
 )
 
 type Settings struct {
@@ -73,6 +75,16 @@ type Settings struct {
 	encError          string
 	encEnabling       bool
 	confirmingDisable bool
+
+	// Plugin settings state
+	plugins              *plugin.Manager
+	pluginListCursor     int
+	pluginSelected       string // name of plugin whose settings are open ("" = list view)
+	pluginSettingCursor  int
+	pluginEditing        bool
+	pluginEditingKey     string
+	pluginEditingType    plugin.SettingType
+	pluginInput          textinput.Model
 }
 
 type SettingsState struct {
@@ -83,6 +95,7 @@ type SettingsState struct {
 	AccountsCursor int
 	ThemeCursor    int
 	ListsCursor    int
+	PluginCursor   int
 }
 
 func NewSettings(cfg *config.Config) *Settings {
@@ -117,7 +130,14 @@ func NewSettings(cfg *config.Config) *Settings {
 		pgpKeySource:       "file",
 		encPasswordInput:   newInput("Password", "> ", true),
 		encConfirmInput:    newInput("Confirm Password", "> ", true),
+		pluginInput:        newInput("", "> ", false),
 	}
+}
+
+// SetPlugins attaches the plugin manager so the settings view can list and
+// edit plugin-declared settings.
+func (m *Settings) SetPlugins(p *plugin.Manager) {
+	m.plugins = p
 }
 
 func (m *Settings) GetState() SettingsState {
@@ -129,6 +149,7 @@ func (m *Settings) GetState() SettingsState {
 		AccountsCursor: m.accountsCursor,
 		ThemeCursor:    m.themeCursor,
 		ListsCursor:    m.listsCursor,
+		PluginCursor:   m.pluginListCursor,
 	}
 }
 
@@ -140,6 +161,7 @@ func (m *Settings) RestoreState(state SettingsState) {
 	m.accountsCursor = state.AccountsCursor
 	m.themeCursor = state.ThemeCursor
 	m.listsCursor = state.ListsCursor
+	m.pluginListCursor = state.PluginCursor
 }
 
 func (m *Settings) Init() tea.Cmd {
@@ -163,6 +185,7 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pgpPublicKeyInput.SetWidth(inputWidth)
 		m.pgpPrivateKeyInput.SetWidth(inputWidth)
 		m.pgpPINInput.SetWidth(inputWidth)
+		m.pluginInput.SetWidth(inputWidth)
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -170,7 +193,8 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.activePane == PaneContent && msg.String() == "esc" {
 			// unless we are in crypto config or encryption editing which have their own esc logic
 			if !(m.activeCategory == CategoryAccounts && m.isCryptoConfig) &&
-				!(m.activeCategory == CategoryEncryption && m.encFocusIndex > -1) {
+				!(m.activeCategory == CategoryEncryption && m.encFocusIndex > -1) &&
+				!(m.activeCategory == CategoryPlugins && (m.pluginEditing || m.pluginSelected != "")) {
 				m.activePane = PaneMenu
 				return m, nil
 			}
@@ -190,6 +214,8 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.updateMailingLists(msg)
 			case CategoryEncryption:
 				return m.updateEncryption(msg)
+			case CategoryPlugins:
+				return m.updatePlugins(msg)
 			}
 		}
 
@@ -230,6 +256,9 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 			m.pgpPINInput, cmd = m.pgpPINInput.Update(msg)
 			cmds = append(cmds, cmd)
+		} else if m.activeCategory == CategoryPlugins && m.pluginEditing {
+			m.pluginInput, cmd = m.pluginInput.Update(msg)
+			cmds = append(cmds, cmd)
 		}
 	}
 
@@ -237,7 +266,7 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Settings) updateMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	categoryCount := int(CategoryEncryption) + 1
+	categoryCount := int(CategoryPlugins) + 1
 
 	switch msg.String() {
 	case "up", "k":
@@ -291,6 +320,7 @@ func (m *Settings) View() tea.View {
 		t("settings.category_theme"),
 		t("settings.category_mailing_lists"),
 		t("settings.category_encryption"),
+		t("settings.category_plugins"),
 	}
 	for i, c := range categories {
 		cursor := "  "
@@ -330,6 +360,8 @@ func (m *Settings) View() tea.View {
 		right = m.viewMailingLists()
 	case CategoryEncryption:
 		right = m.viewEncryption()
+	case CategoryPlugins:
+		right = m.viewPlugins()
 	}
 
 	rightPanel := lipgloss.NewStyle().

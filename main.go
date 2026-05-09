@@ -150,6 +150,16 @@ func newInitialModel(cfg *config.Config, mailtoURL *url.URL) *mainModel {
 }
 
 // ensureProviders creates backend providers for all configured accounts.
+// newSettings constructs a settings model and wires it to the plugin manager
+// so the Plugins category can list and edit plugin-declared settings.
+func (m *mainModel) newSettings() *tui.Settings {
+	s := tui.NewSettings(m.config)
+	if m.plugins != nil {
+		s.SetPlugins(m.plugins)
+	}
+	return s
+}
+
 func (m *mainModel) ensureProviders() {
 	if m.config == nil {
 		return
@@ -431,7 +441,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if isEdit {
-			m.current = tui.NewSettings(m.config)
+			m.current = m.newSettings()
 		} else {
 			m.current = tui.NewChoice()
 		}
@@ -1032,7 +1042,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch curr := m.current.(type) {
 		case *tui.Settings:
 			// Preserve settings state when rebuilding
-			newSettings := tui.NewSettings(m.config)
+			newSettings := m.newSettings()
 			newSettings.RestoreState(curr.GetState())
 			m.current = newSettings
 		case *tui.Composer:
@@ -1042,7 +1052,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.current = tui.NewChoice()
 		case *tui.FolderInbox:
 			// Just rebuild settings view, folder inbox will be recreated on next navigation
-			m.current = tui.NewSettings(m.config)
+			m.current = m.newSettings()
 		default:
 			// For other views, return to choice menu
 			m.current = tui.NewChoice()
@@ -1051,7 +1061,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.current.Init()
 
 	case tui.GoToSettingsMsg:
-		m.current = tui.NewSettings(m.config)
+		m.current = m.newSettings()
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
 
@@ -1111,7 +1121,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		// Return to settings
-		m.current = tui.NewSettings(m.config)
+		m.current = m.newSettings()
 		// Try to navigate to the mailing list view internally if possible, but NewSettings will go to SettingsMain by default.
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
@@ -1203,7 +1213,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.emails = allEmails
 
 			// Go back to settings
-			m.current = tui.NewSettings(m.config)
+			m.current = m.newSettings()
 			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		}
 		return m, m.current.Init()
@@ -3884,6 +3894,9 @@ func main() {
 	// Initialize plugin system
 	plugins := plugin.NewManager()
 	plugins.LoadPlugins()
+	if initialModel.config != nil {
+		plugins.LoadSettingValues(initialModel.config.PluginSettings)
+	}
 	initialModel.plugins = plugins
 	tui.BodyTransformer = func(body string, email fetcher.Email) string {
 		folder := "INBOX"

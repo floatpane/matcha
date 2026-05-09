@@ -115,6 +115,7 @@
       "category_theme": "テーマ",
       "category_mailing_lists": "メーリングリスト",
       "category_encryption": "アプリの暗号化",
+      "category_plugins": "プラグイン",
       "help_menu": "↑/↓: 移動 • 右/enter: 選択 • esc: 戻る",
       "help_content": "esc: メニューに戻る"
     },

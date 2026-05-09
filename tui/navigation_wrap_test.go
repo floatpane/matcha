@@ -26,7 +26,7 @@ func TestSettingsNavigationWraps(t *testing.T) {
 		settings.menuCursor = 0
 		model, _ := settings.updateMenu(tea.KeyPressMsg{Code: tea.KeyUp})
 		settings = model.(*Settings)
-		if settings.menuCursor != int(CategoryEncryption) {
+		if settings.menuCursor != int(CategoryPlugins) {
 			t.Fatalf("up from first menu item should wrap to last, got %d", settings.menuCursor)
 		}
 

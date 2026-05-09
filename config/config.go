@@ -97,6 +97,10 @@ type Config struct {
 	DateFormat           string        `json:"date_format,omitempty"`
 	Language             string        `json:"language,omitempty"` // Language code (e.g., "en", "es", "de")
 	BodyCacheThresholdMB int           `json:"body_cache_threshold_mb,omitempty"`
+	// PluginSettings stores user-configurable values for installed plugins,
+	// keyed by plugin name then setting key. Values are JSON-native types
+	// (bool, float64, string) matching the plugin's declared schema.
+	PluginSettings map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
 }
 
 // GetBodyCacheThreshold returns the email body cache threshold in bytes.
@@ -394,16 +398,17 @@ type secureDiskAccount struct {
 }
 
 type secureDiskConfig struct {
-	Accounts             []secureDiskAccount `json:"accounts"`
-	DisableImages        bool                `json:"disable_images,omitempty"`
-	HideTips             bool                `json:"hide_tips,omitempty"`
-	DisableNotifications bool                `json:"disable_notifications,omitempty"`
-	EnableSplitPane      bool                `json:"enable_split_pane,omitempty"`
-	EnableThreaded       bool                `json:"enable_threaded,omitempty"`
-	Theme                string              `json:"theme,omitempty"`
-	MailingLists         []MailingList       `json:"mailing_lists,omitempty"`
-	DateFormat           string              `json:"date_format,omitempty"`
-	Language             string              `json:"language,omitempty"`
+	Accounts             []secureDiskAccount               `json:"accounts"`
+	DisableImages        bool                              `json:"disable_images,omitempty"`
+	HideTips             bool                              `json:"hide_tips,omitempty"`
+	DisableNotifications bool                              `json:"disable_notifications,omitempty"`
+	EnableSplitPane      bool                              `json:"enable_split_pane,omitempty"`
+	EnableThreaded       bool                              `json:"enable_threaded,omitempty"`
+	Theme                string                            `json:"theme,omitempty"`
+	MailingLists         []MailingList                     `json:"mailing_lists,omitempty"`
+	DateFormat           string                            `json:"date_format,omitempty"`
+	Language             string                            `json:"language,omitempty"`
+	PluginSettings       map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
 }
 
 // SaveConfig saves the given configuration to the config file and passwords to the keyring.
@@ -448,6 +453,7 @@ func SaveConfig(config *Config) error {
 			Theme:                config.Theme,
 			MailingLists:         config.MailingLists,
 			DateFormat:           config.DateFormat,
+			PluginSettings:       config.PluginSettings,
 		}
 		for _, acc := range config.Accounts {
 			sdc.Accounts = append(sdc.Accounts, secureDiskAccount{
@@ -541,17 +547,18 @@ func LoadConfig() (*Config, error) {
 		CatchAll           bool   `json:"catch_all,omitempty"`
 	}
 	type diskConfig struct {
-		Accounts             []rawAccount  `json:"accounts"`
-		DisableImages        bool          `json:"disable_images,omitempty"`
-		HideTips             bool          `json:"hide_tips,omitempty"`
-		DisableNotifications bool          `json:"disable_notifications,omitempty"`
-		EnableSplitPane      bool          `json:"enable_split_pane,omitempty"`
-		EnableThreaded       bool          `json:"enable_threaded,omitempty"`
-		Theme                string        `json:"theme,omitempty"`
-		MailingLists         []MailingList `json:"mailing_lists,omitempty"`
-		DateFormat           string        `json:"date_format,omitempty"`
-		Language             string        `json:"language,omitempty"`
-		BodyCacheThresholdMB int           `json:"body_cache_threshold_mb,omitempty"`
+		Accounts             []rawAccount                      `json:"accounts"`
+		DisableImages        bool                              `json:"disable_images,omitempty"`
+		HideTips             bool                              `json:"hide_tips,omitempty"`
+		DisableNotifications bool                              `json:"disable_notifications,omitempty"`
+		EnableSplitPane      bool                              `json:"enable_split_pane,omitempty"`
+		EnableThreaded       bool                              `json:"enable_threaded,omitempty"`
+		Theme                string                            `json:"theme,omitempty"`
+		MailingLists         []MailingList                     `json:"mailing_lists,omitempty"`
+		DateFormat           string                            `json:"date_format,omitempty"`
+		Language             string                            `json:"language,omitempty"`
+		BodyCacheThresholdMB int                               `json:"body_cache_threshold_mb,omitempty"`
+		PluginSettings       map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
 	}
 
 	var raw diskConfig
@@ -589,6 +596,7 @@ func LoadConfig() (*Config, error) {
 	config.DateFormat = raw.DateFormat
 	config.Language = raw.Language
 	config.BodyCacheThresholdMB = raw.BodyCacheThresholdMB
+	config.PluginSettings = raw.PluginSettings
 
 	for _, rawAcc := range raw.Accounts {
 		acc := Account{

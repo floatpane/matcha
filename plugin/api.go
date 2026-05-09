@@ -21,6 +21,8 @@ func (m *Manager) registerAPI() {
 		"http":              m.luaHTTP,
 		"prompt":            m.luaPrompt,
 		"style":             m.luaStyle,
+		"settings":          m.luaSettings,
+		"get_setting":       m.luaGetSetting,
 	})
 
 	L.SetField(mod, "_VERSION", lua.LString("0.1.0"))
@@ -129,6 +131,22 @@ func (m *Manager) luaStyle(L *lua.LState) int {
 
 	L.Push(lua.LString(style.Render(text)))
 	return 1
+}
+
+// matcha.settings(spec) — declare configurable settings for the current
+// plugin. spec is a table mapping setting key -> { type, default, label,
+// description }. Valid types: "boolean", "number", "string". Must be called
+// while the plugin file is being loaded (typically at the top level).
+func (m *Manager) luaSettings(L *lua.LState) int {
+	spec := L.CheckTable(1)
+	return m.declareSettings(L, spec)
+}
+
+// matcha.get_setting(key [, plugin_name]) — return the current value of a
+// setting. The optional second argument allows reading another plugin's
+// setting; defaults to the current plugin when called during load.
+func (m *Manager) luaGetSetting(L *lua.LState) int {
+	return m.getSetting(L)
 }
 
 // matcha.set_compose_field(field, value) — set a compose field value.

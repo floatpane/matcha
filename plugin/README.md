@@ -30,6 +30,8 @@ end)
 | `matcha.http(options)` | Make an HTTP request (see below) |
 | `matcha.prompt(placeholder, callback)` | Open a text input overlay in the composer (see below) |
 | `matcha.style(text, opts)` | Wrap `text` in lipgloss styling and return an ANSI-styled string (see below) |
+| `matcha.settings(spec)` | Declare configurable settings; returns a read-only proxy table for live values (see below) |
+| `matcha.get_setting(key [, plugin])` | Look up a setting value by key (defaults to current plugin) |
 
 ## Hook events
 
@@ -145,6 +147,40 @@ Caveats:
 - Returning a fully replaced string fully takes over the displayed body. To
   build styled output from scratch, compose with `matcha.style` and join with
   newlines.
+
+## User-configurable settings
+
+`matcha.settings(spec)` declares configurable options for a plugin. Call it
+once at the top level of the plugin file. `spec` is a table mapping a setting
+key to `{ type, default, label, description }`. Supported types:
+
+- `"boolean"` — toggled in the TUI with a checkbox-style on/off selector
+- `"number"` — edited with a numeric input
+- `"string"` — edited with a text input
+
+The function returns a read-only proxy table whose fields reflect the
+currently saved value (or the default when unset). Read fields anywhere,
+including inside hook callbacks:
+
+```lua
+local matcha = require("matcha")
+
+local cfg = matcha.settings({
+    threshold  = { type = "number",  default = 5,    label = "Subject length threshold" },
+    enabled    = { type = "boolean", default = true, label = "Enable warnings" },
+    suffix     = { type = "string",  default = "!",  label = "Notification suffix" },
+})
+
+matcha.on("email_received", function(email)
+    if cfg.enabled and #email.subject > cfg.threshold then
+        matcha.notify("Long subject" .. cfg.suffix, 3)
+    end
+end)
+```
+
+Values are persisted in `~/.config/matcha/config.json` under
+`plugin_settings`. Edit them in **Settings → Plugins** in the TUI; booleans
+toggle with `enter`/`space`, numbers and strings open a text editor.
 
 ## Available plugins
 

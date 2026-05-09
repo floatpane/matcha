@@ -116,6 +116,7 @@
       "category_theme": "Tema",
       "category_mailing_lists": "Listas de Correo",
       "category_encryption": "Cifrado de Aplicación",
+      "category_plugins": "Plugins",
       "help_menu": "↑/↓: navegar • derecha/enter: seleccionar • esc: volver",
       "help_content": "esc: volver al menú"
     },

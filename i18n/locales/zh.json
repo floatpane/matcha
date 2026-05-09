@@ -115,6 +115,7 @@
       "category_theme": "主题",
       "category_mailing_lists": "邮件列表",
       "category_encryption": "应用加密",
+      "category_plugins": "插件",
       "help_menu": "↑/↓: 导航 • 右/enter: 选择 • esc: 返回",
       "help_content": "esc: 返回菜单"
     },

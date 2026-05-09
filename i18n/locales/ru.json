@@ -118,6 +118,7 @@
       "category_theme": "Тема",
       "category_mailing_lists": "Списки Рассылки",
       "category_encryption": "Шифрование Приложения",
+      "category_plugins": "Плагины",
       "help_menu": "↑/↓: навигация • вправо/enter: выбор • esc: назад",
       "help_content": "esc: назад в меню"
     },

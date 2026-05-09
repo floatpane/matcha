@@ -116,6 +116,7 @@
       "category_theme": "Thème",
       "category_mailing_lists": "Listes de Diffusion",
       "category_encryption": "Chiffrement de l'Application",
+      "category_plugins": "Plugins",
       "help_menu": "↑/↓: naviguer • droite/entrée: sélectionner • esc: retour",
       "help_content": "esc: retour au menu"
     },

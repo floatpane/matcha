@@ -116,6 +116,7 @@
       "category_theme": "Theme",
       "category_mailing_lists": "Mailing Lists",
       "category_encryption": "App Encryption",
+      "category_plugins": "Plugins",
       "help_menu": "↑/↓: navigate • right/enter: select • esc: go back",
       "help_content": "esc: back to menu"
     },
