@@ -178,12 +178,15 @@ func (m *mainModel) ensureProviders() {
 
 // getProvider returns the backend provider for the given account.
 func (m *mainModel) getProvider(acct *config.Account) backend.Provider {
-	m.providersMu.RLock()
-	defer m.providersMu.RUnlock()
 	if acct == nil {
 		return nil
 	}
-	return m.providers[acct.ID]
+
+	m.providersMu.RLock()
+	p := m.providers[acct.ID]
+	m.providersMu.RUnlock()
+
+	return p
 }
 
 func (m *mainModel) Init() tea.Cmd {
