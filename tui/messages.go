@@ -416,9 +416,16 @@ type RequestRefreshMsg struct {
 // --- Folder Messages ---
 
 // FoldersFetchedMsg signals that IMAP folders have been fetched for all accounts.
+//
+// Errors holds per-account fetch failures (e.g. broken IMAP login, network
+// unreachable). Accounts that succeeded appear in FoldersByAccount; accounts
+// that failed appear in Errors. The two are disjoint by construction. This
+// lets the TUI surface a non-fatal warning instead of silently dropping the
+// affected account's folder list.
 type FoldersFetchedMsg struct {
 	FoldersByAccount map[string][]fetcher.Folder // accountID -> folders
 	MergedFolders    []fetcher.Folder            // unique folders across all accounts
+	Errors           map[string]error            // accountID -> fetch error, if any
 }
 
 // SwitchFolderMsg signals switching to a different IMAP folder.

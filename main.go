@@ -524,6 +524,44 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			go config.SaveAccountFolders(accID, names)
 		}
+		// Per-account fetch errors (e.g. broken IMAP login, unreachable
+		// server) are non-fatal: other accounts' folders are still shown.
+		// Surface them as a transient overlay so the user knows why an
+		// account's folders are missing instead of silently dropping them.
+		// Reuses the PluginNotifyMsg pattern (save current view, show
+		// status with a tea.Tick that fires RestoreViewMsg).
+		if len(msg.Errors) > 0 {
+			lookup := map[string]string{}
+			if m.config != nil {
+				for _, acc := range m.config.Accounts {
+					name := acc.Email
+					if name == "" {
+						name = acc.Name
+					}
+					if name == "" {
+						name = acc.ID
+					}
+					lookup[acc.ID] = name
+				}
+			}
+			parts := make([]string, 0, len(msg.Errors))
+			for accID, err := range msg.Errors {
+				name := lookup[accID]
+				if name == "" {
+					name = accID
+				}
+				parts = append(parts, fmt.Sprintf("%s: %v", name, err))
+			}
+			sort.Strings(parts)
+			m.previousModel = m.current
+			m.current = tui.NewStatus(fmt.Sprintf(
+				"Folder fetch failed for %d account(s): %s",
+				len(parts), strings.Join(parts, "; "),
+			))
+			return m, tea.Tick(4*time.Second, func(t time.Time) tea.Msg {
+				return tui.RestoreViewMsg{}
+			})
+		}
 		return m, nil
 
 	case tui.SwitchFolderMsg:
@@ -2675,6 +2713,7 @@ func fetchFoldersCmd(cfg *config.Config) tea.Cmd {
 			return nil
 		}
 		foldersByAccount := make(map[string][]fetcher.Folder)
+		errsByAccount := make(map[string]error)
 		seen := make(map[string]fetcher.Folder)
 		var mu sync.Mutex
 		var wg sync.WaitGroup
@@ -2685,6 +2724,9 @@ func fetchFoldersCmd(cfg *config.Config) tea.Cmd {
 				defer wg.Done()
 				folders, err := fetcher.FetchFolders(&acc)
 				if err != nil {
+					mu.Lock()
+					errsByAccount[acc.ID] = err
+					mu.Unlock()
 					return
 				}
 				mu.Lock()
@@ -2707,6 +2749,7 @@ func fetchFoldersCmd(cfg *config.Config) tea.Cmd {
 		return tui.FoldersFetchedMsg{
 			FoldersByAccount: foldersByAccount,
 			MergedFolders:    merged,
+			Errors:           errsByAccount,
 		}
 	}
 }
