@@ -31,7 +31,8 @@
   "composer": {
     "external_editor": "ctrl+e",
     "next_field": "tab",
-    "prev_field": "shift+tab"
+    "prev_field": "shift+tab",
+    "delete": "d"
   },
   "folder": {
     "next_folder": "tab",

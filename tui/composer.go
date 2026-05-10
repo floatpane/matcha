@@ -509,7 +509,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Batch(cmds...)
 
-		case "backspace", "delete", "d":
+		case kb.Composer.Delete:
 			if m.focusIndex == focusAttachment && len(m.attachmentPaths) > 0 {
 				m.removeSelectedAttachment()
 				return m, nil
@@ -622,6 +622,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Composer) View() tea.View {
 	var composerView strings.Builder
 	var button string
+	ck := config.Keybinds.Composer
 
 	if m.focusIndex == focusSend {
 		button = focusedStyle.Copy().Render("[ " + t("composer.send") + " ]")
@@ -737,7 +738,7 @@ func (m *Composer) View() tea.View {
 	case focusSignature:
 		tip = "Your email signature. This will be appended to the end of the email."
 	case focusAttachment:
-		tip = "Enter: add file • up/down: select attachment • backspace/d: remove selected"
+		tip = fmt.Sprintf("Enter: add file • up/down: select attachment • %s: remove selected", ck.Delete)
 	case focusEncryptSMIME:
 		tip = "Press Space or Enter to toggle S/MIME encryption on or off."
 	case focusSend:

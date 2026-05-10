@@ -61,6 +61,7 @@ type ComposerKeys struct {
 	ExternalEditor string `json:"external_editor"`
 	NextField      string `json:"next_field"`
 	PrevField      string `json:"prev_field"`
+	Delete         string `json:"delete"`
 }
 
 type FolderKeys struct {
@@ -105,7 +106,7 @@ func LoadKeybindsFromDir(cfgDir string) error {
 		return nil
 	}
 
-	var kb KeybindsConfig
+	kb := defaultKeybinds()
 	if err := json.Unmarshal(data, &kb); err != nil {
 		return fmt.Errorf("keybinds: parse %s: %w", path, err)
 	}
@@ -167,6 +168,7 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 		"external_editor": kb.Composer.ExternalEditor,
 		"next_field":      kb.Composer.NextField,
 		"prev_field":      kb.Composer.PrevField,
+		"delete":          kb.Composer.Delete,
 	})
 	check("folder", map[string]string{
 		"next_folder":   kb.Folder.NextFolder,
