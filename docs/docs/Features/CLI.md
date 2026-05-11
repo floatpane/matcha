@@ -98,7 +98,7 @@ matcha marketplace
 
 Use `j/k` or arrow keys to navigate, `Enter` to install a plugin, and `q` to quit. Installed plugins are marked with an `[installed]` badge.
 
-You can also access the marketplace from Matcha's main menu, or browse the [online marketplace](https://docs.matcha.floatpane.com/marketplace).
+You can also access the marketplace from Matcha's main menu, or browse the [online marketplace](https://docs.matcha.email/marketplace).
 
 ## matcha install
 

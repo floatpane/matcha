@@ -606,4 +606,4 @@ Always keep variables unchanged:
 
 ---
 
-**For more details on using translations in code, see:** [Documentation](https://docs.matcha.floatpane.com/localization).
+**For more details on using translations in code, see:** [Documentation](https://docs.matcha.email/localization).

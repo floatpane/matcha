@@ -68,7 +68,7 @@ sudo snap install matcha
 You can install Matcha via Flatpak using the following command:
 
 ```bash
-flatpak install https://matcha.floatpane.com/matcha.flatpakref
+flatpak install https://matcha.email/matcha.flatpakref
 ```
 
 ### AUR (Arch Linux) (unofficial)

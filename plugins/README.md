@@ -50,7 +50,7 @@ Anyone can add their plugin to the marketplace by submitting a PR to this reposi
 
 ### Steps
 
-1. **Write your plugin** as a `.lua` file following the [Plugin API docs](https://docs.matcha.floatpane.com/Features/Plugins).
+1. **Write your plugin** as a `.lua` file following the [Plugin API docs](https://docs.matcha.email/Features/Plugins).
 
 2. **Add an entry to `registry.json`** in this directory:
 
@@ -90,4 +90,4 @@ Anyone can add their plugin to the marketplace by submitting a PR to this reposi
 
 ## Browsing Online
 
-Visit the [Plugin Marketplace](https://docs.matcha.floatpane.com/marketplace) on the Matcha documentation site to browse all available plugins with one-line install commands.
+Visit the [Plugin Marketplace](https://docs.matcha.email/marketplace) on the Matcha documentation site to browse all available plugins with one-line install commands.

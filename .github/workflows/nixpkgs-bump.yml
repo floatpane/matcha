@@ -1,0 +1,174 @@
+name: Nixpkgs Bump PR
+
+# Triggers on stable release publish. Opens PR against NixOS/nixpkgs
+# bumping pkgs/by-name/ma/matcha/package.nix to the new version.
+# Requires:
+#   - Fork floatpane/nixpkgs to exist
+#   - NIXPKGS_BUMP_TOKEN secret: PAT with `repo` scope on floatpane/nixpkgs
+#     and permission to open PRs against NixOS/nixpkgs
+#   - Initial matcha package already merged into nixpkgs (this workflow updates, not inits)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to bump to (without v prefix)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+            VERSION="${TAG#v}"
+          fi
+          # Skip nightly / preview tags
+          if [[ "$VERSION" == nightly* || "$VERSION" == preview* ]]; then
+            echo "Skipping non-stable release: $VERSION"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Install Nix
+        if: steps.ver.outputs.skip != 'true'
+        uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Checkout nixpkgs fork
+        if: steps.ver.outputs.skip != 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: floatpane/nixpkgs
+          token: ${{ secrets.NIXPKGS_BUMP_TOKEN }}
+          path: nixpkgs
+          fetch-depth: 0
+
+      - name: Sync fork with upstream master
+        if: steps.ver.outputs.skip != 'true'
+        working-directory: nixpkgs
+        run: |
+          git config user.name "Floatpane Bot"
+          git config user.email "us@floatpane.com"
+          git remote add upstream https://github.com/NixOS/nixpkgs.git
+          git fetch upstream master
+          git checkout master
+          git reset --hard upstream/master
+          git push origin master --force-with-lease
+
+      - name: Create bump branch
+        if: steps.ver.outputs.skip != 'true'
+        working-directory: nixpkgs
+        run: |
+          BRANCH="matcha-${{ steps.ver.outputs.version }}"
+          git checkout -b "$BRANCH"
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+
+      - name: Get current version
+        if: steps.ver.outputs.skip != 'true'
+        id: current
+        working-directory: nixpkgs
+        run: |
+          PKG=pkgs/by-name/ma/matcha/package.nix
+          OLD=$(grep -E '^\s*version\s*=\s*"' "$PKG" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "old=$OLD" >> $GITHUB_OUTPUT
+
+      - name: Bump version and reset hashes
+        if: steps.ver.outputs.skip != 'true'
+        working-directory: nixpkgs
+        run: |
+          PKG=pkgs/by-name/ma/matcha/package.nix
+          NEW="${{ steps.ver.outputs.version }}"
+          # Replace version line
+          sed -i -E "s/(version\s*=\s*\")[^\"]+(\")/\1$NEW\2/" "$PKG"
+          # Reset src hash + vendorHash to fakeHash so nix build prints real ones
+          sed -i -E 's|hash = "sha256-[A-Za-z0-9+/=]+"|hash = lib.fakeHash|' "$PKG"
+          sed -i -E 's|vendorHash = "sha256-[A-Za-z0-9+/=]+"|vendorHash = lib.fakeHash|' "$PKG"
+
+      - name: Build to extract src hash
+        if: steps.ver.outputs.skip != 'true'
+        id: src_hash
+        working-directory: nixpkgs
+        run: |
+          set +e
+          OUT=$(nix-build -A matcha --no-out-link 2>&1)
+          RC=$?
+          echo "$OUT"
+          HASH=$(echo "$OUT" | grep -A1 "got:" | tail -1 | tr -d ' ')
+          if [ -z "$HASH" ]; then
+            echo "Failed to extract src hash"; exit 1
+          fi
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          sed -i -E "s|hash = lib.fakeHash|hash = \"$HASH\"|" pkgs/by-name/ma/matcha/package.nix
+
+      - name: Build to extract vendorHash
+        if: steps.ver.outputs.skip != 'true'
+        working-directory: nixpkgs
+        run: |
+          set +e
+          OUT=$(nix-build -A matcha --no-out-link 2>&1)
+          RC=$?
+          echo "$OUT"
+          HASH=$(echo "$OUT" | grep -A1 "got:" | tail -1 | tr -d ' ')
+          if [ -z "$HASH" ]; then
+            echo "Failed to extract vendorHash"; exit 1
+          fi
+          sed -i -E "s|vendorHash = lib.fakeHash|vendorHash = \"$HASH\"|" pkgs/by-name/ma/matcha/package.nix
+
+      - name: Final build (sanity check)
+        if: steps.ver.outputs.skip != 'true'
+        working-directory: nixpkgs
+        run: nix-build -A matcha --no-out-link
+
+      - name: Commit and push
+        if: steps.ver.outputs.skip != 'true'
+        working-directory: nixpkgs
+        run: |
+          git add pkgs/by-name/ma/matcha/package.nix
+          git commit -m "matcha: ${{ steps.current.outputs.old }} -> ${{ steps.ver.outputs.version }}"
+          git push -u origin "$BRANCH" --force-with-lease
+
+      - name: Open PR against NixOS/nixpkgs
+        if: steps.ver.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.NIXPKGS_BUMP_TOKEN }}
+        working-directory: nixpkgs
+        run: |
+          BODY=$(cat <<EOF
+          ## Description
+
+          Automated version bump for \`matcha\` email client.
+
+          - Old: ${{ steps.current.outputs.old }}
+          - New: ${{ steps.ver.outputs.version }}
+          - Upstream release: https://github.com/floatpane/matcha/releases/tag/v${{ steps.ver.outputs.version }}
+
+          ## Things done
+
+          - Built on \`x86_64-linux\` via GitHub Actions
+          - Hashes regenerated from upstream tarball
+          - No package metadata changes beyond version + hashes
+
+          cc maintainer for review.
+          EOF
+          )
+          gh pr create \
+            --repo NixOS/nixpkgs \
+            --base master \
+            --head "floatpane:$BRANCH" \
+            --title "matcha: ${{ steps.current.outputs.old }} -> ${{ steps.ver.outputs.version }}" \
+            --body "$BODY"

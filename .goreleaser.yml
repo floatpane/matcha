@@ -100,9 +100,31 @@ release:
   # Add a footer to the release notes featuring full changelog.
   footer: |
     ---
-    This version is also available on **[Snapcraft](https://snapcraft.io/matcha)**, **Homebrew**, **[Flatpak](https://matcha.floatpane.com/matcha.flatpakref)**!
+    This version is also available on **[Snapcraft](https://snapcraft.io/matcha)**, **Homebrew**, **[Flatpak](https://matcha.email/matcha.flatpakref)**!
 
-    View the [installation instructions](https://docs.matcha.floatpane.com/installation) for more details.
+    View the [installation instructions](https://docs.matcha.email/installation) for more details.
+
+# 'nix' configures the Nix flake publication.
+# Generates a default.nix per release fetching prebuilt tarballs,
+# pushes to floatpane/nix-matcha. Users install with:
+#   nix profile install github:floatpane/nix-matcha
+nix:
+  - name: matcha
+    repository:
+      owner: floatpane
+      name: nix-matcha
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: Floatpane Bot
+      email: us@floatpane.com
+    commit_msg_template: "matcha: bump to {{ .Tag }}"
+    homepage: "https://matcha.email"
+    description: "Beautiful and functional email client for the terminal"
+    license: "mit"
+    install: |
+      mkdir -p $out/bin
+      cp -vr ./matcha $out/bin/matcha
 
 # 'brews' configures the Homebrew tap integration.
 brews:
@@ -119,13 +141,13 @@ brews:
 
     # The commit author for the tap update.
     commit_author:
-      name: goreleaserbot
-      email: bot@goreleaser.com
+      name: Floatpane Bot
+      email: us@floatpane.com
 
     # A description for your formula.
     description: "A beautiful and functional email client for your terminal."
     # The homepage URL for your formula.
-    homepage: "https://matcha.floatpane.com"
+    homepage: "https://matcha.email"
 
     # The dependencies for your formula.
     # Since it's a pre-compiled binary, there are no runtime dependencies.
@@ -148,7 +170,7 @@ winget:
     package_identifier: floatpane.matcha
     # WinGet publisher metadata.
     publisher: floatpane
-    publisher_url: "https://matcha.floatpane.com"
+    publisher_url: "https://matcha.email"
     publisher_support_url: "https://github.com/floatpane/matcha/issues"
 
     # Package metadata.
@@ -156,7 +178,7 @@ winget:
     description: |
       A beautiful and functional email client for your terminal, built with Go and the charming Bubble Tea TUI library.
       Never leave your command line to check your inbox or send an email again!
-    homepage: "https://matcha.floatpane.com"
+    homepage: "https://matcha.email"
     license: MIT
     tags:
       - email

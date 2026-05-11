@@ -63,7 +63,7 @@ function TopNav() {
         <a href="#features">Features</a>
         <a href="#keys">Keybinds</a>
         <a href="#install">Install</a>
-        <a href="https://docs.matcha.floatpane.com">Docs ↗</a>
+        <a href="https://docs.matcha.email">Docs ↗</a>
         <a href="https://github.com/floatpane/matcha" className="nav-github">
           <span>GitHub</span>
           {stars && <span className="nav-star">★ {stars}</span>}
@@ -103,7 +103,7 @@ function Hero({ datasetKey, setDatasetKey }) {
             <span>Install</span>
             <span className="btn-k">↵</span>
           </a>
-          <a href="https://docs.matcha.floatpane.com" className="btn btn-ghost">
+          <a href="https://docs.matcha.email" className="btn btn-ghost">
             <span>Read the docs</span>
             <span className="btn-k">→</span>
           </a>
@@ -336,11 +336,8 @@ function Keybinds() {
         </div>
         <p className="section-head-r">
           Every binding is documented at{" "}
-          <a
-            href="https://docs.matcha.floatpane.com"
-            className="underline-link"
-          >
-            docs.matcha.floatpane.com
+          <a href="https://docs.matcha.email" className="underline-link">
+            docs.matcha.email
           </a>
           . Muscle-memory for vimmers, learnable for everyone else.
         </p>
@@ -377,7 +374,7 @@ const INSTALL_TABS = {
   snap: { plat: "Ubuntu · Linux", cmd: "$ sudo snap install matcha\n$ matcha" },
   flatpak: {
     plat: "Linux",
-    cmd: "$ flatpak install https://matcha.floatpane.com/matcha.flatpakref\n$ matcha",
+    cmd: "$ flatpak install https://matcha.email/matcha.flatpakref\n$ matcha",
   },
   aur: { plat: "Arch Linux", cmd: "$ yay -S matcha-client-bin\n$ matcha" },
   nix: {
@@ -482,10 +479,7 @@ function CTA() {
           <a href="#install" className="btn btn-primary btn-lg">
             make your emails secure
           </a>
-          <a
-            href="https://docs.matcha.floatpane.com"
-            className="btn btn-ghost btn-lg"
-          >
+          <a href="https://docs.matcha.email" className="btn btn-ghost btn-lg">
             read the docs →
           </a>
         </div>
@@ -516,9 +510,9 @@ function Footer() {
           </div>
           <div>
             <div className="footer-h">resources</div>
-            <a href="https://docs.matcha.floatpane.com">docs</a>
-            <a href="https://docs.matcha.floatpane.com/Configuration">config</a>
-            <a href="https://docs.matcha.floatpane.com/Features/CLI">cli</a>
+            <a href="https://docs.matcha.email">docs</a>
+            <a href="https://docs.matcha.email/Configuration">config</a>
+            <a href="https://docs.matcha.email/Features/CLI">cli</a>
             <a href="https://github.com/floatpane/matcha/blob/master/SECURITY.md">
               security
             </a>

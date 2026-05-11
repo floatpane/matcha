@@ -8,7 +8,7 @@ const config: Config = {
     "A modern, beautiful, and feature-rich email client for the terminal.",
   favicon: "img/favicon.ico",
 
-  url: "https://docs.matcha.floatpane.com",
+  url: "https://docs.matcha.email",
   baseUrl: "/",
 
   organizationName: "floatpane",

@@ -28,7 +28,7 @@
 
 ### Plugin Marketplace
 
-Matcha has a built-in plugin system with 35+ community plugins. Browse and install them from the terminal or the [online marketplace](https://docs.matcha.floatpane.com/marketplace).
+Matcha has a built-in plugin system with 35+ community plugins. Browse and install them from the terminal or the [online marketplace](https://docs.matcha.email/marketplace).
 
 ```bash
 matcha marketplace                # browse plugins in the TUI
@@ -36,7 +36,7 @@ matcha install <url_or_file>      # install a plugin
 matcha config <plugin_name>       # configure an installed plugin
 ```
 
-Anyone can submit their own plugin — just add an entry to `plugins/registry.json` and open a PR. [Learn more](https://docs.matcha.floatpane.com/Features/Plugins#submit-your-plugin)
+Anyone can submit their own plugin — just add an entry to `plugins/registry.json` and open a PR. [Learn more](https://docs.matcha.email/Features/Plugins#submit-your-plugin)
 
 ### AI Integration
 
@@ -46,15 +46,15 @@ Anyone can submit their own plugin — just add an entry to `plugins/registry.js
 matcha send --to alice@example.com --subject "Hello" --body "Sent by my AI agent"
 ```
 
-[Learn more](https://docs.matcha.floatpane.com/Features/AI_AGENTS)
+[Learn more](https://docs.matcha.email/Features/AI_AGENTS)
 
 **AI Rewrite Plugin:** Matcha includes an AI rewrite plugin that allows you to rewrite your email drafts using OpenAI, Ollama, Gemini, or Claude.
 
-[Setup Guide](https://docs.matcha.floatpane.com/setup-guides/ai-rewrite)
+[Setup Guide](https://docs.matcha.email/setup-guides/ai-rewrite)
 
 ## Documentation
 
-Matcha Documention is available on [our website](https://docs.matcha.floatpane.com)
+Matcha Documention is available on [our website](https://docs.matcha.email)
 
 ## Star History
 

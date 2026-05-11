@@ -159,7 +159,7 @@ jobs:
           cat > /tmp/matcha-nightly.rb << EOF
           class MatchaNightly < Formula
             desc "A beautiful and functional email client for your terminal (nightly)"
-            homepage "https://matcha.floatpane.com"
+            homepage "https://matcha.email"
             version "$VERSION"
 
             on_macos do
@@ -196,10 +196,100 @@ jobs:
           git clone "https://x-access-token:${GH_TOKEN}@github.com/floatpane/homebrew-matcha.git" /tmp/homebrew-matcha
           cp /tmp/matcha-nightly.rb /tmp/homebrew-matcha/matcha-nightly.rb
           cd /tmp/homebrew-matcha
-          git config user.name "goreleaserbot"
-          git config user.email "bot@goreleaser.com"
+          git config user.name "Floatpane Bot"
+          git config user.email "us@floatpane.com"
           git add matcha-nightly.rb
           git diff --cached --quiet || (git commit -m "Update matcha-nightly to $VERSION" && git push)
+
+      - name: Update Nix flake tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          VERSION="nightly-$(git rev-parse --short HEAD)"
+          DARWIN_AMD64_SHA=$(shasum -a 256 dist/matcha_nightly_darwin_amd64.tar.gz | cut -d ' ' -f 1)
+          DARWIN_ARM64_SHA=$(shasum -a 256 dist/matcha_nightly_darwin_arm64.tar.gz | cut -d ' ' -f 1)
+          LINUX_AMD64_SHA=$(shasum -a 256 dist/matcha_nightly_linux_amd64.tar.gz | cut -d ' ' -f 1)
+          LINUX_ARM64_SHA=$(shasum -a 256 dist/matcha_nightly_linux_arm64.tar.gz | cut -d ' ' -f 1)
+          BASE_URL="https://github.com/floatpane/matcha/releases/download/nightlyv0"
+
+          # Convert hex sha256 to nix SRI base64 form
+          to_sri() { printf 'sha256-%s' "$(printf '%s' "$1" | xxd -r -p | base64)"; }
+          DARWIN_AMD64_SRI=$(to_sri "$DARWIN_AMD64_SHA")
+          DARWIN_ARM64_SRI=$(to_sri "$DARWIN_ARM64_SHA")
+          LINUX_AMD64_SRI=$(to_sri "$LINUX_AMD64_SHA")
+          LINUX_ARM64_SRI=$(to_sri "$LINUX_ARM64_SHA")
+
+          mkdir -p /tmp/nix-pkg
+          cat > /tmp/nix-pkg/default.nix << EOF
+          { stdenvNoCC, fetchurl, lib }:
+          let
+            sources = {
+              x86_64-darwin = {
+                url = "$BASE_URL/matcha_nightly_darwin_amd64.tar.gz";
+                hash = "$DARWIN_AMD64_SRI";
+              };
+              aarch64-darwin = {
+                url = "$BASE_URL/matcha_nightly_darwin_arm64.tar.gz";
+                hash = "$DARWIN_ARM64_SRI";
+              };
+              x86_64-linux = {
+                url = "$BASE_URL/matcha_nightly_linux_amd64.tar.gz";
+                hash = "$LINUX_AMD64_SRI";
+              };
+              aarch64-linux = {
+                url = "$BASE_URL/matcha_nightly_linux_arm64.tar.gz";
+                hash = "$LINUX_ARM64_SRI";
+              };
+            };
+            src = sources.\${stdenvNoCC.hostPlatform.system}
+              or (throw "matcha-nightly: unsupported system \${stdenvNoCC.hostPlatform.system}");
+          in
+          stdenvNoCC.mkDerivation {
+            pname = "matcha-nightly";
+            version = "$VERSION";
+            src = fetchurl src;
+            sourceRoot = ".";
+            installPhase = ''
+              runHook preInstall
+              install -Dm755 matcha \$out/bin/matcha
+              runHook postInstall
+            '';
+            meta = {
+              description = "Beautiful and functional email client for the terminal (nightly)";
+              homepage = "https://matcha.email";
+              license = lib.licenses.mit;
+              mainProgram = "matcha";
+              platforms = builtins.attrNames sources;
+            };
+          }
+          EOF
+
+          cat > /tmp/nix-pkg/flake.nix << 'EOF'
+          {
+            description = "matcha email client — nightly";
+            inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+            outputs = { self, nixpkgs }:
+              let
+                systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+                forAll = nixpkgs.lib.genAttrs systems;
+              in {
+                packages = forAll (system: {
+                  default = nixpkgs.legacyPackages.${system}.callPackage ./default.nix { };
+                });
+              };
+          }
+          EOF
+
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/floatpane/nix-matcha.git" /tmp/nix-matcha
+          cd /tmp/nix-matcha
+          git checkout nightly 2>/dev/null || git checkout -b nightly
+          mkdir -p nightly
+          cp /tmp/nix-pkg/default.nix nightly/default.nix
+          cp /tmp/nix-pkg/flake.nix nightly/flake.nix
+          git config user.name "Floatpane Bot"
+          git config user.email "us@floatpane.com"
+          git add nightly/default.nix nightly/flake.nix
+          git diff --cached --quiet || (git commit -m "matcha-nightly: bump to $VERSION" && git push -u origin nightly)
 
   snapcraft:
     runs-on: ${{ matrix.runner }}
