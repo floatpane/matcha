@@ -158,8 +158,17 @@ func (a *accountIdle) idleOnce() error {
 	mailboxUpdates := make(chan uint32, 32)
 	c, err := connectWithHandler(a.account, &imapclient.UnilateralDataHandler{
 		Mailbox: func(data *imapclient.UnilateralDataMailbox) {
-			if data.NumMessages != nil {
-				mailboxUpdates <- *data.NumMessages
+			if data.NumMessages == nil {
+				return
+			}
+			// Non-blocking send: the callback runs on the IMAP socket-reader
+			// goroutine, so a synchronous send would stall the socket if the
+			// channel is full. The consumer only acts on the latest count
+			// (see prevExists tracking below), so dropping a stale update is
+			// safe — the next update will deliver the current count.
+			select {
+			case mailboxUpdates <- *data.NumMessages:
+			default:
 			}
 		},
 	})
