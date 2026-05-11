@@ -30,7 +30,9 @@ import (
 	"github.com/emersion/go-pgpmail"
 	"github.com/floatpane/matcha/config"
 	"go.mozilla.org/pkcs7"
+	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/ianaindex"
+	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 )
 
@@ -228,13 +230,24 @@ func decodePart(reader io.Reader, header mail.PartHeader) (string, error) {
 }
 
 func decodeReaderWithCharset(reader io.Reader, charset string) ([]byte, error) {
-	encoding, err := ianaindex.IANA.Encoding(charset)
-	if err != nil || encoding == nil {
-		encoding, _ = ianaindex.IANA.Encoding("utf-8")
-	}
-
-	transformReader := transform.NewReader(reader, encoding.NewDecoder())
+	enc := lookupCharsetEncoding(charset)
+	transformReader := transform.NewReader(reader, enc.NewDecoder())
 	return ioutil.ReadAll(transformReader)
+}
+
+// lookupCharsetEncoding resolves an IANA charset name to an encoding,
+// falling back to UTF-8 when the name is unknown, unsupported, or maps
+// to a nil encoding (which ianaindex.IANA.Encoding can return for
+// recognized-but-unimplemented names). Always returns a non-nil
+// encoding so callers can safely chain .NewDecoder().
+func lookupCharsetEncoding(charset string) encoding.Encoding {
+	if enc, err := ianaindex.IANA.Encoding(charset); err == nil && enc != nil {
+		return enc
+	}
+	if enc, err := ianaindex.IANA.Encoding("utf-8"); err == nil && enc != nil {
+		return enc
+	}
+	return unicode.UTF8
 }
 
 func bestEffortCharset(contentType string) string {
@@ -256,11 +269,14 @@ func bestEffortCharset(contentType string) string {
 func decodeHeader(header string) string {
 	dec := new(mime.WordDecoder)
 	dec.CharsetReader = func(charset string, input io.Reader) (io.Reader, error) {
-		encoding, err := ianaindex.IANA.Encoding(charset)
+		enc, err := ianaindex.IANA.Encoding(charset)
 		if err != nil {
 			return nil, err
 		}
-		return transform.NewReader(input, encoding.NewDecoder()), nil
+		if enc == nil {
+			return nil, fmt.Errorf("fetcher: no encoding implementation for charset %q", charset)
+		}
+		return transform.NewReader(input, enc.NewDecoder()), nil
 	}
 	decoded, err := dec.DecodeHeader(header)
 	if err != nil {

@@ -54,6 +54,31 @@ func TestDecodePartFallsBackToUTF8WhenMalformedContentTypeHasNoCharset(t *testin
 	}
 }
 
+// Regression: ianaindex.IANA.Encoding can return (nil, nil) for charset
+// names it recognizes but has no implementation for. The previous
+// decodeReaderWithCharset ignored that case and would nil-deref when
+// chaining .NewDecoder().
+func TestDecodeReaderWithCharsetSurvivesUnknownCharset(t *testing.T) {
+	decoded, err := decodeReaderWithCharset(strings.NewReader("hello"), "bogus-charset-name")
+	if err != nil {
+		t.Fatalf("decodeReaderWithCharset() returned error: %v", err)
+	}
+	if string(decoded) != "hello" {
+		t.Fatalf("decodeReaderWithCharset() = %q, want %q", string(decoded), "hello")
+	}
+}
+
+func TestLookupCharsetEncodingAlwaysReturnsNonNil(t *testing.T) {
+	cases := []string{"", "utf-8", "iso-8859-1", "bogus-charset-name", "this/is/not/real"}
+	for _, name := range cases {
+		t.Run(name, func(t *testing.T) {
+			if enc := lookupCharsetEncoding(name); enc == nil {
+				t.Fatalf("lookupCharsetEncoding(%q) returned nil", name)
+			}
+		})
+	}
+}
+
 // TestFetchEmails is an integration test that requires a live IMAP server and valid credentials.
 // NOTE: This test will be skipped if it cannot load a configuration file,
 // making it safe to run in a CI environment without credentials.
