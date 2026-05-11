@@ -24,6 +24,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/backend"
@@ -3008,11 +3009,27 @@ func sanitizeFilename(name string) string {
 	if len(name) > maxFilenameLen {
 		ext := filepath.Ext(name)
 		if len(ext) > maxFilenameLen {
-			ext = ext[:maxFilenameLen]
+			ext = truncateUTF8(ext, maxFilenameLen)
 		}
-		name = name[:maxFilenameLen-len(ext)] + ext
+		base := strings.TrimSuffix(name, ext)
+		name = truncateUTF8(base, maxFilenameLen-len(ext)) + ext
 	}
 	return name
+}
+
+func truncateUTF8(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(s) <= maxBytes {
+		return s
+	}
+	s = s[:maxBytes]
+	for !utf8.ValidString(s) {
+		_, size := utf8.DecodeLastRuneInString(s)
+		s = s[:len(s)-size]
+	}
+	return s
 }
 
 func downloadAttachmentCmd(account *config.Account, uid uint32, msg tui.DownloadAttachmentMsg) tea.Cmd {
