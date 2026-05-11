@@ -41,12 +41,14 @@ func (m *Settings) updatePluginList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	switch msg.String() {
-	case "up", "k":
+	kb := config.Keybinds.Global
+	key := msg.String()
+	switch {
+	case key == "up" || key == kb.NavUp:
 		m.pluginListCursor = (m.pluginListCursor - 1 + len(schemas)) % len(schemas)
-	case "down", "j":
+	case key == "down" || key == kb.NavDown:
 		m.pluginListCursor = (m.pluginListCursor + 1) % len(schemas)
-	case "enter", "right", "l":
+	case key == "enter" || key == "right" || key == "l":
 		m.pluginSelected = schemas[m.pluginListCursor].Plugin
 		m.pluginSettingCursor = 0
 	}
@@ -60,15 +62,17 @@ func (m *Settings) updatePluginSettings(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 		return m, nil
 	}
 
-	switch msg.String() {
-	case "esc", "left", "h":
+	kb := config.Keybinds.Global
+	key := msg.String()
+	switch {
+	case key == "esc" || key == "left" || key == "h" || key == kb.Cancel:
 		m.pluginSelected = ""
 		return m, nil
-	case "up", "k":
+	case key == "up" || key == kb.NavUp:
 		m.pluginSettingCursor = (m.pluginSettingCursor - 1 + len(defs)) % len(defs)
-	case "down", "j":
+	case key == "down" || key == kb.NavDown:
 		m.pluginSettingCursor = (m.pluginSettingCursor + 1) % len(defs)
-	case "enter", "space", "right", "l":
+	case key == "enter" || key == "space" || key == "right" || key == "l":
 		def := defs[m.pluginSettingCursor]
 		switch def.Type {
 		case plugin.SettingBool:
