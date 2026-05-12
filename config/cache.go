@@ -94,11 +94,17 @@ func ClearEmailCache() error {
 // --- Contacts Cache ---
 
 // Contact stores a contact's name and email address.
+//
+// For regular contacts, Email holds a single address and Addresses is empty.
+// For mailing-list virtual contacts emitted by SearchContacts, Email is empty
+// and Addresses holds the expanded list of recipients. Callers that need to
+// distinguish the two cases should check len(Addresses) > 0.
 type Contact struct {
-	Name     string    `json:"name"`
-	Email    string    `json:"email"`
-	LastUsed time.Time `json:"last_used"`
-	UseCount int       `json:"use_count"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
+	Addresses []string  `json:"addresses,omitempty"`
+	LastUsed  time.Time `json:"last_used"`
+	UseCount  int       `json:"use_count"`
 }
 
 // ContactsCache stores all known contacts.
@@ -216,12 +222,16 @@ func SearchContacts(query string) []Contact {
 	if err == nil {
 		for _, list := range cfg.MailingLists {
 			if strings.Contains(strings.ToLower(list.Name), query) {
-				// Convert mailing list to a virtual contact
+				// Convert mailing list to a virtual contact. Addresses are
+				// stored in a dedicated slice so the Email field keeps its
+				// single-address invariant -- avoids corruption by
+				// normalizeContactEmail and exact-match lookups in callers.
+				addresses := append([]string(nil), list.Addresses...)
 				matches = append(matches, Contact{
-					Name:     list.Name,
-					Email:    strings.Join(list.Addresses, ", "),
-					UseCount: 9999, // Ensure lists appear at the top
-					LastUsed: time.Now(),
+					Name:      list.Name,
+					Addresses: addresses,
+					UseCount:  9999, // Ensure lists appear at the top
+					LastUsed:  time.Now(),
 				})
 			}
 		}

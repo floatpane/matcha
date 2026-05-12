@@ -347,9 +347,9 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				selected := m.suggestions[m.selectedSuggestion]
 
 				var newEmail string
-				if strings.Contains(selected.Email, ",") {
+				if len(selected.Addresses) > 0 {
 					// It's a mailing list: insert just the addresses to maintain valid email formatting
-					newEmail = selected.Email
+					newEmail = strings.Join(selected.Addresses, ", ")
 				} else if selected.Name != "" && selected.Name != selected.Email {
 					newEmail = fmt.Sprintf("%s <%s>", selected.Name, selected.Email)
 				} else {
@@ -701,7 +701,9 @@ func (m *Composer) View() tea.View {
 		var suggestionsBuilder strings.Builder
 		for i, s := range m.suggestions {
 			display := s.Email
-			if s.Name != "" && s.Name != s.Email {
+			if len(s.Addresses) > 0 {
+				display = fmt.Sprintf("%s (%s)", s.Name, strings.Join(s.Addresses, ", "))
+			} else if s.Name != "" && s.Name != s.Email {
 				display = fmt.Sprintf("%s <%s>", s.Name, s.Email)
 			}
 			if i == m.selectedSuggestion {
