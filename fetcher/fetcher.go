@@ -235,11 +235,7 @@ func decodeReaderWithCharset(reader io.Reader, charset string) ([]byte, error) {
 	return ioutil.ReadAll(transformReader)
 }
 
-// lookupCharsetEncoding resolves an IANA charset name to an encoding,
-// falling back to UTF-8 when the name is unknown, unsupported, or maps
-// to a nil encoding (which ianaindex.IANA.Encoding can return for
-// recognized-but-unimplemented names). Always returns a non-nil
-// encoding so callers can safely chain .NewDecoder().
+// lookupCharsetEncoding resolves a charset name, falling back to UTF-8.
 func lookupCharsetEncoding(charset string) encoding.Encoding {
 	if enc, err := ianaindex.IANA.Encoding(charset); err == nil && enc != nil {
 		return enc

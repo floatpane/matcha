@@ -54,10 +54,6 @@ func TestDecodePartFallsBackToUTF8WhenMalformedContentTypeHasNoCharset(t *testin
 	}
 }
 
-// Regression: ianaindex.IANA.Encoding can return (nil, nil) for charset
-// names it recognizes but has no implementation for. The previous
-// decodeReaderWithCharset ignored that case and would nil-deref when
-// chaining .NewDecoder().
 func TestDecodeReaderWithCharsetSurvivesUnknownCharset(t *testing.T) {
 	decoded, err := decodeReaderWithCharset(strings.NewReader("hello"), "bogus-charset-name")
 	if err != nil {
