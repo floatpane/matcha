@@ -738,6 +738,17 @@ func (c *Config) HasAccounts() bool {
 	return len(c.Accounts) > 0
 }
 
+// GetAccountIDs returns the configured account IDs.
+func (c *Config) GetAccountIDs() []string {
+	ids := make([]string, 0, len(c.Accounts))
+	for _, acc := range c.Accounts {
+		if acc.ID != "" {
+			ids = append(ids, acc.ID)
+		}
+	}
+	return ids
+}
+
 // GetFirstAccount returns the first account or nil if none exist.
 func (c *Config) GetFirstAccount() *Account {
 	if len(c.Accounts) > 0 {

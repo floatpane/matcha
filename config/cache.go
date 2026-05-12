@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -91,20 +92,74 @@ func ClearEmailCache() error {
 	return os.Remove(path)
 }
 
+func removeAccountFromEmailCache(accountID string) error {
+	cache, err := LoadEmailCache()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	filtered := cache.Emails[:0]
+	for _, email := range cache.Emails {
+		if email.AccountID != accountID {
+			filtered = append(filtered, email)
+		}
+	}
+	if len(filtered) == len(cache.Emails) {
+		return nil
+	}
+	cache.Emails = filtered
+	return SaveEmailCache(cache)
+}
+
 // --- Contacts Cache ---
 
-// Contact stores a contact's name and email address.
+const legacyContactUsageKey = "__legacy__"
+
+// ContactUsage stores per-account contact usage metadata.
+type ContactUsage struct {
+	LastUsed time.Time `json:"last_used"`
+	UseCount int       `json:"use_count"`
+}
+
+// Contact stores a contact's name, email address, and per-account usage.
 //
 // For regular contacts, Email holds a single address and Addresses is empty.
 // For mailing-list virtual contacts emitted by SearchContacts, Email is empty
 // and Addresses holds the expanded list of recipients. Callers that need to
 // distinguish the two cases should check len(Addresses) > 0.
 type Contact struct {
-	Name      string    `json:"name"`
-	Email     string    `json:"email"`
-	Addresses []string  `json:"addresses,omitempty"`
-	LastUsed  time.Time `json:"last_used"`
-	UseCount  int       `json:"use_count"`
+	Name      string                  `json:"name"`
+	Email     string                  `json:"email"`
+	Addresses []string                `json:"addresses,omitempty"`
+	Usage     map[string]ContactUsage `json:"usage_by_account"`
+}
+
+// UnmarshalJSON accepts both the current usage_by_account format and the
+// legacy last_used/use_count fields so old contacts can be migrated.
+func (c *Contact) UnmarshalJSON(data []byte) error {
+	type contactAlias Contact
+	aux := struct {
+		*contactAlias
+		LastUsed time.Time `json:"last_used"`
+		UseCount int       `json:"use_count"`
+	}{
+		contactAlias: (*contactAlias)(c),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if c.Usage == nil {
+		c.Usage = make(map[string]ContactUsage)
+	}
+	if len(c.Usage) == 0 && (!aux.LastUsed.IsZero() || aux.UseCount > 0) {
+		c.Usage[legacyContactUsageKey] = ContactUsage{
+			LastUsed: aux.LastUsed,
+			UseCount: aux.UseCount,
+		}
+	}
+	return nil
 }
 
 // ContactsCache stores all known contacts.
@@ -130,6 +185,11 @@ func SaveContactsCache(cache *ContactsCache) error {
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
+	}
+	for i := range cache.Contacts {
+		if cache.Contacts[i].Usage == nil {
+			cache.Contacts[i].Usage = make(map[string]ContactUsage)
+		}
 	}
 	cache.UpdatedAt = time.Now()
 	data, err := json.MarshalIndent(cache, "", "  ")
@@ -160,8 +220,13 @@ func normalizeContactEmail(email string) string {
 	return strings.ToLower(strings.Trim(strings.TrimSpace(email), ",<>"))
 }
 
-// AddContact adds or updates a contact in the cache.
+// AddContact adds or updates a global contact in the cache.
 func AddContact(name, email string) error {
+	return AddContactForAccount(name, email, "")
+}
+
+// AddContactForAccount adds or updates a contact in the cache for an account.
+func AddContactForAccount(name, email, accountID string) error {
 	if email == "" {
 		return nil
 	}
@@ -180,8 +245,13 @@ func AddContact(name, email string) error {
 		if strings.EqualFold(c.Email, email) {
 			// Normalize the stored email to a canonical lowercase form.
 			cache.Contacts[i].Email = email
-			cache.Contacts[i].UseCount++
-			cache.Contacts[i].LastUsed = time.Now()
+			if cache.Contacts[i].Usage == nil {
+				cache.Contacts[i].Usage = make(map[string]ContactUsage)
+			}
+			usage := cache.Contacts[i].Usage[accountID]
+			usage.UseCount++
+			usage.LastUsed = time.Now()
+			cache.Contacts[i].Usage[accountID] = usage
 			// Update name if we have a better one
 			if name != "" && (c.Name == "" || c.Name == email) {
 				cache.Contacts[i].Name = name
@@ -193,18 +263,54 @@ func AddContact(name, email string) error {
 
 	if !found {
 		cache.Contacts = append(cache.Contacts, Contact{
-			Name:     name,
-			Email:    email,
-			LastUsed: time.Now(),
-			UseCount: 1,
+			Name:  name,
+			Email: email,
+			Usage: map[string]ContactUsage{
+				accountID: {
+					LastUsed: time.Now(),
+					UseCount: 1,
+				},
+			},
 		})
 	}
 
 	return SaveContactsCache(cache)
 }
 
-// SearchContacts searches for contacts matching the query.
+func contactUsageForAccount(c Contact, accountID string) (ContactUsage, bool) {
+	if len(c.Usage) == 0 {
+		return ContactUsage{}, accountID == ""
+	}
+	if accountID != "" {
+		if usage, ok := c.Usage[legacyContactUsageKey]; ok {
+			return usage, true
+		}
+		usage, ok := c.Usage[accountID]
+		return usage, ok
+	}
+	var aggregate ContactUsage
+	for _, usage := range c.Usage {
+		aggregate.UseCount += usage.UseCount
+		if usage.LastUsed.After(aggregate.LastUsed) {
+			aggregate.LastUsed = usage.LastUsed
+		}
+	}
+	return aggregate, true
+}
+
+// ContactAggregateUsage returns a contact's total usage across accounts.
+func ContactAggregateUsage(c Contact) ContactUsage {
+	usage, _ := contactUsageForAccount(c, "")
+	return usage
+}
+
+// SearchContacts searches for contacts matching the query across all accounts.
 func SearchContacts(query string) []Contact {
+	return SearchContactsForAccount(query, "")
+}
+
+// SearchContactsForAccount searches for contacts matching the query for an account.
+func SearchContactsForAccount(query, accountID string) []Contact {
 	cache, err := LoadContactsCache()
 	if err != nil {
 		return nil
@@ -230,8 +336,12 @@ func SearchContacts(query string) []Contact {
 				matches = append(matches, Contact{
 					Name:      list.Name,
 					Addresses: addresses,
-					UseCount:  9999, // Ensure lists appear at the top
-					LastUsed:  time.Now(),
+					Usage: map[string]ContactUsage{
+						accountID: {
+							UseCount: 9999, // Ensure lists appear at the top
+							LastUsed: time.Now(),
+						},
+					},
 				})
 			}
 		}
@@ -240,16 +350,20 @@ func SearchContacts(query string) []Contact {
 	for _, c := range cache.Contacts {
 		if strings.Contains(strings.ToLower(c.Email), query) ||
 			strings.Contains(strings.ToLower(c.Name), query) {
-			matches = append(matches, c)
+			if _, ok := contactUsageForAccount(c, accountID); ok {
+				matches = append(matches, c)
+			}
 		}
 	}
 
 	// Sort by use count (most used first), then by last used
 	sort.Slice(matches, func(i, j int) bool {
-		if matches[i].UseCount != matches[j].UseCount {
-			return matches[i].UseCount > matches[j].UseCount
+		left, _ := contactUsageForAccount(matches[i], accountID)
+		right, _ := contactUsageForAccount(matches[j], accountID)
+		if left.UseCount != right.UseCount {
+			return left.UseCount > right.UseCount
 		}
-		return matches[i].LastUsed.After(matches[j].LastUsed)
+		return left.LastUsed.After(right.LastUsed)
 	})
 
 	// Limit to 5 suggestions
@@ -258,6 +372,69 @@ func SearchContacts(query string) []Contact {
 	}
 
 	return matches
+}
+
+// MigrateContactsCacheUsage expands legacy global contact usage to all accounts.
+func MigrateContactsCacheUsage(accountIDs []string) error {
+	cache, err := LoadContactsCache()
+	if err != nil {
+		return nil
+	}
+
+	changed := false
+	for i := range cache.Contacts {
+		if cache.Contacts[i].Usage == nil {
+			cache.Contacts[i].Usage = make(map[string]ContactUsage)
+			changed = true
+		}
+		legacyUsage, hasLegacy := cache.Contacts[i].Usage[legacyContactUsageKey]
+		if !hasLegacy {
+			continue
+		}
+		delete(cache.Contacts[i].Usage, legacyContactUsageKey)
+		for _, accountID := range accountIDs {
+			if accountID == "" {
+				continue
+			}
+			if _, ok := cache.Contacts[i].Usage[accountID]; !ok {
+				cache.Contacts[i].Usage[accountID] = legacyUsage
+			}
+		}
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return SaveContactsCache(cache)
+}
+
+func removeAccountFromContactsCache(accountID string) error {
+	cache, err := LoadContactsCache()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	changed := false
+	filtered := cache.Contacts[:0]
+	for _, contact := range cache.Contacts {
+		if _, ok := contact.Usage[accountID]; ok {
+			delete(contact.Usage, accountID)
+			changed = true
+		}
+		if len(contact.Usage) > 0 {
+			filtered = append(filtered, contact)
+		} else {
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	cache.Contacts = filtered
+	return SaveContactsCache(cache)
 }
 
 // --- Drafts Cache ---
@@ -413,6 +590,27 @@ func HasDrafts() bool {
 		return false
 	}
 	return len(cache.Drafts) > 0
+}
+
+func removeAccountFromDraftsCache(accountID string) error {
+	cache, err := LoadDraftsCache()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	filtered := cache.Drafts[:0]
+	for _, draft := range cache.Drafts {
+		if draft.AccountID != accountID {
+			filtered = append(filtered, draft)
+		}
+	}
+	if len(filtered) == len(cache.Drafts) {
+		return nil
+	}
+	cache.Drafts = filtered
+	return SaveDraftsCache(cache)
 }
 
 // --- Email Body Cache ---
@@ -726,4 +924,79 @@ func PruneEmailBodyCache(folderName string, validUIDs map[uint32]string) error {
 
 	cache.Bodies = kept
 	return saveEmailBodyCache(cache)
+}
+
+func removeAccountFromEmailBodyCaches(accountID string) error {
+	dir, err := bodyCacheDir()
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var errs []error
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		data, err := SecureReadFile(path)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		var cache EmailBodyCache
+		if err := json.Unmarshal(data, &cache); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
+		filtered := cache.Bodies[:0]
+		for _, body := range cache.Bodies {
+			if body.AccountID != accountID {
+				filtered = append(filtered, body)
+			}
+		}
+		if len(filtered) == len(cache.Bodies) {
+			continue
+		}
+		if len(filtered) == 0 {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				errs = append(errs, err)
+			}
+			continue
+		}
+		cache.Bodies = filtered
+		cache.UpdatedAt = time.Now()
+		data, err = json.Marshal(cache)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if err := SecureWriteFile(path, data, 0600); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// CleanupAccountCache removes cached data associated with an account.
+func CleanupAccountCache(accountID string) error {
+	if accountID == "" {
+		return nil
+	}
+
+	return errors.Join(
+		removeAccountFromEmailCache(accountID),
+		removeAccountFromFolderCache(accountID),
+		removeAccountFromFolderEmailCaches(accountID),
+		removeAccountFromEmailBodyCaches(accountID),
+		removeAccountFromContactsCache(accountID),
+		removeAccountFromDraftsCache(accountID),
+	)
 }

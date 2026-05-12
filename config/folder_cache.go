@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -110,6 +111,27 @@ func SaveAccountFolders(accountID string, folders []string) error {
 	return SaveFolderCache(cache)
 }
 
+func removeAccountFromFolderCache(accountID string) error {
+	cache, err := LoadFolderCache()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	filtered := cache.Accounts[:0]
+	for _, account := range cache.Accounts {
+		if account.AccountID != accountID {
+			filtered = append(filtered, account)
+		}
+	}
+	if len(filtered) == len(cache.Accounts) {
+		return nil
+	}
+	cache.Accounts = filtered
+	return SaveFolderCache(cache)
+}
+
 // --- Per-folder email cache ---
 
 // FolderEmailCache stores cached emails for a specific folder.
@@ -182,6 +204,65 @@ func LoadFolderEmailCache(folderName string) ([]CachedEmail, error) {
 		return nil, err
 	}
 	return cache.Emails, nil
+}
+
+func removeAccountFromFolderEmailCaches(accountID string) error {
+	dir, err := folderEmailCacheDir()
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var errs []error
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		data, err := SecureReadFile(path)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		var cache FolderEmailCache
+		if err := json.Unmarshal(data, &cache); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
+		filtered := cache.Emails[:0]
+		for _, email := range cache.Emails {
+			if email.AccountID != accountID {
+				filtered = append(filtered, email)
+			}
+		}
+		if len(filtered) == len(cache.Emails) {
+			continue
+		}
+		if len(filtered) == 0 {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				errs = append(errs, err)
+			}
+			continue
+		}
+		cache.Emails = filtered
+		cache.UpdatedAt = time.Now()
+		data, err = json.Marshal(cache)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if err := SecureWriteFile(path, data, 0600); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func LoadFolderEmailHeaders(folderName string) ([]threading.EmailHeader, error) {

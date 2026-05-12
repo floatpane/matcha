@@ -348,7 +348,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				var newEmail string
 				if len(selected.Addresses) > 0 {
-					// It's a mailing list: insert just the addresses to maintain valid email formatting
+					// Mailing list: emit just the addresses to maintain valid email formatting
 					newEmail = strings.Join(selected.Addresses, ", ")
 				} else if selected.Name != "" && selected.Name != selected.Email {
 					newEmail = fmt.Sprintf("%s <%s>", selected.Name, selected.Email)
@@ -591,7 +591,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			lastPart := strings.TrimSpace(parts[len(parts)-1])
 
 			if len(lastPart) >= 2 {
-				m.suggestions = config.SearchContacts(lastPart)
+				m.suggestions = config.SearchContactsForAccount(lastPart, m.GetSelectedAccountID())
 				m.showSuggestions = len(m.suggestions) > 0
 				m.selectedSuggestion = 0
 			} else {

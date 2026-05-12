@@ -11,20 +11,23 @@ import (
 	"github.com/floatpane/matcha/config"
 )
 
+func testContact(name, email string, lastUsed time.Time, useCount int) config.Contact {
+	return config.Contact{
+		Name:  name,
+		Email: email,
+		Usage: map[string]config.ContactUsage{
+			"account-1": {
+				LastUsed: lastUsed,
+				UseCount: useCount,
+			},
+		},
+	}
+}
+
 func TestExportToJSON(t *testing.T) {
 	contacts := []config.Contact{
-		{
-			Name:     "John Doe",
-			Email:    "john@example.com",
-			LastUsed: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
-			UseCount: 5,
-		},
-		{
-			Name:     "Jane Smith",
-			Email:    "jane@test.com",
-			LastUsed: time.Date(2024, 2, 20, 14, 0, 0, 0, time.UTC),
-			UseCount: 10,
-		},
+		testContact("John Doe", "john@example.com", time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC), 5),
+		testContact("Jane Smith", "jane@test.com", time.Date(2024, 2, 20, 14, 0, 0, 0, time.UTC), 10),
 	}
 
 	data, err := exportToJSON(contacts)
@@ -48,18 +51,8 @@ func TestExportToJSON(t *testing.T) {
 
 func TestExportToCSV(t *testing.T) {
 	contacts := []config.Contact{
-		{
-			Name:     "John Doe",
-			Email:    "john@example.com",
-			LastUsed: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
-			UseCount: 5,
-		},
-		{
-			Name:     "Jane Smith",
-			Email:    "jane@test.com",
-			LastUsed: time.Date(2024, 2, 20, 14, 0, 0, 0, time.UTC),
-			UseCount: 10,
-		},
+		testContact("John Doe", "john@example.com", time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC), 5),
+		testContact("Jane Smith", "jane@test.com", time.Date(2024, 2, 20, 14, 0, 0, 0, time.UTC), 10),
 	}
 
 	data, err := exportToCSV(contacts, false)
@@ -89,18 +82,8 @@ func TestExportToCSV(t *testing.T) {
 
 func TestExportToCSVNoHeader(t *testing.T) {
 	contacts := []config.Contact{
-		{
-			Name:     "John Doe",
-			Email:    "john@example.com",
-			LastUsed: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
-			UseCount: 5,
-		},
-		{
-			Name:     "Jane Smith",
-			Email:    "jane@test.com",
-			LastUsed: time.Date(2024, 2, 20, 14, 0, 0, 0, time.UTC),
-			UseCount: 10,
-		},
+		testContact("John Doe", "john@example.com", time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC), 5),
+		testContact("Jane Smith", "jane@test.com", time.Date(2024, 2, 20, 14, 0, 0, 0, time.UTC), 10),
 	}
 
 	data, err := exportToCSV(contacts, true)
@@ -156,18 +139,8 @@ func TestEscapeCSV(t *testing.T) {
 
 func TestExportToCSVWithSpecialChars(t *testing.T) {
 	contacts := []config.Contact{
-		{
-			Name:     "Test, User",
-			Email:    "test@example.com",
-			LastUsed: time.Now(),
-			UseCount: 1,
-		},
-		{
-			Name:     `Test "Quotes"`,
-			Email:    "quotes@test.com",
-			LastUsed: time.Now(),
-			UseCount: 2,
-		},
+		testContact("Test, User", "test@example.com", time.Now(), 1),
+		testContact(`Test "Quotes"`, "quotes@test.com", time.Now(), 2),
 	}
 
 	data, err := exportToCSV(contacts, false)
@@ -195,12 +168,7 @@ func TestExportJSONToFile(t *testing.T) {
 	outputPath := filepath.Join(tmpDir, "contacts.json")
 
 	contacts := []config.Contact{
-		{
-			Name:     "Test User",
-			Email:    "test@example.com",
-			LastUsed: time.Now(),
-			UseCount: 1,
-		},
+		testContact("Test User", "test@example.com", time.Now(), 1),
 	}
 
 	data, err := exportToJSON(contacts)
@@ -233,12 +201,7 @@ func TestExportCSVToFile(t *testing.T) {
 	outputPath := filepath.Join(tmpDir, "contacts.csv")
 
 	contacts := []config.Contact{
-		{
-			Name:     "Test User",
-			Email:    "test@example.com",
-			LastUsed: time.Now(),
-			UseCount: 1,
-		},
+		testContact("Test User", "test@example.com", time.Now(), 1),
 	}
 
 	data, err := exportToCSV(contacts, false)

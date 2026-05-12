@@ -1155,6 +1155,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		config.SetSessionKey(msg.Key)
 		cfg, err := config.LoadConfig()
 		if err == nil {
+			if migrateErr := config.MigrateContactsCacheUsage(cfg.GetAccountIDs()); migrateErr != nil {
+				log.Printf("warning: contacts migration failed: %v", migrateErr)
+			}
 			if cfg.Theme != "" {
 				theme.SetTheme(cfg.Theme)
 				tui.RebuildStyles()
@@ -1213,9 +1216,13 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tui.DeleteAccountMsg:
 		if m.config != nil {
-			m.config.RemoveAccount(msg.AccountID)
-			if err := config.SaveConfig(m.config); err != nil {
-				log.Printf("could not save config: %v", err)
+			if m.config.RemoveAccount(msg.AccountID) {
+				if err := config.CleanupAccountCache(msg.AccountID); err != nil {
+					log.Printf("could not clean account cache: %v", err)
+				}
+				if err := config.SaveConfig(m.config); err != nil {
+					log.Printf("could not save config: %v", err)
+				}
 			}
 			// Remove emails for this account
 			delete(m.emailsByAcct, msg.AccountID)
@@ -1559,7 +1566,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						continue
 					}
 					name, email := parseEmailAddress(r)
-					if err := config.AddContact(name, email); err != nil {
+					if err := config.AddContactForAccount(name, email, msg.AccountID); err != nil {
 						log.Printf("Error saving contact: %v", err)
 					}
 				}
@@ -2383,7 +2390,7 @@ func saveEmailsToCache(emails []fetcher.Email) {
 		// Save sender as a contact
 		if email.From != "" {
 			name, emailAddr := parseEmailAddress(email.From)
-			if err := config.AddContact(name, emailAddr); err != nil {
+			if err := config.AddContactForAccount(name, emailAddr, email.AccountID); err != nil {
 				log.Printf("Error saving contact from email: %v", err)
 			}
 		}
@@ -3901,6 +3908,9 @@ func main() {
 	} else {
 		cfg, err := config.LoadConfig()
 		if err == nil {
+			if migrateErr := config.MigrateContactsCacheUsage(cfg.GetAccountIDs()); migrateErr != nil {
+				log.Printf("warning: contacts migration failed: %v", migrateErr)
+			}
 			if cfg.Theme != "" {
 				theme.SetTheme(cfg.Theme)
 			}

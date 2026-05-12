@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -206,11 +208,11 @@ func TestConfigGetAccountByEmail(t *testing.T) {
 func TestAddContactNormalizesEmailAndDeduplicates(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	if err := AddContact("Alice", "Alice@Example.com"); err != nil {
-		t.Fatalf("AddContact() failed: %v", err)
+	if err := AddContactForAccount("Alice", "Alice@Example.com", "account-1"); err != nil {
+		t.Fatalf("AddContactForAccount() failed: %v", err)
 	}
-	if err := AddContact("", "alice@example.com"); err != nil {
-		t.Fatalf("AddContact() failed: %v", err)
+	if err := AddContactForAccount("", "alice@example.com", "account-1"); err != nil {
+		t.Fatalf("AddContactForAccount() failed: %v", err)
 	}
 
 	cache, err := LoadContactsCache()
@@ -226,8 +228,247 @@ func TestAddContactNormalizesEmailAndDeduplicates(t *testing.T) {
 	if contact.Email != "alice@example.com" {
 		t.Errorf("Expected normalized email alice@example.com, got %s", contact.Email)
 	}
-	if contact.UseCount != 2 {
-		t.Errorf("Expected UseCount 2 after duplicate add, got %d", contact.UseCount)
+	usage := contact.Usage["account-1"]
+	if usage.UseCount != 2 {
+		t.Errorf("Expected UseCount 2 after duplicate add, got %d", usage.UseCount)
+	}
+}
+
+func TestMigrateContactsCacheUsageExpandsLegacyUsage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	lastUsed := time.Date(2024, 3, 1, 12, 0, 0, 0, time.UTC)
+	path, err := GetContactsCachePath()
+	if err != nil {
+		t.Fatalf("GetContactsCachePath() failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatalf("MkdirAll() failed: %v", err)
+	}
+	legacyJSON := `{"contacts":[{"name":"Alice","email":"alice@example.com","last_used":"` + lastUsed.Format(time.RFC3339) + `","use_count":7}]}`
+	if err := os.WriteFile(path, []byte(legacyJSON), 0600); err != nil {
+		t.Fatalf("WriteFile() failed: %v", err)
+	}
+
+	if err := MigrateContactsCacheUsage([]string{"account-1", "account-2"}); err != nil {
+		t.Fatalf("MigrateContactsCacheUsage() failed: %v", err)
+	}
+
+	cache, err := LoadContactsCache()
+	if err != nil {
+		t.Fatalf("LoadContactsCache() failed: %v", err)
+	}
+	if len(cache.Contacts) != 1 {
+		t.Fatalf("Expected 1 contact, got %d", len(cache.Contacts))
+	}
+	for _, accountID := range []string{"account-1", "account-2"} {
+		usage, ok := cache.Contacts[0].Usage[accountID]
+		if !ok {
+			t.Fatalf("Expected usage for %s", accountID)
+		}
+		if usage.UseCount != 7 || !usage.LastUsed.Equal(lastUsed) {
+			t.Fatalf("Unexpected usage for %s: %+v", accountID, usage)
+		}
+	}
+	if _, ok := cache.Contacts[0].Usage[legacyContactUsageKey]; ok {
+		t.Fatal("Legacy usage key should be removed after migration")
+	}
+}
+
+func TestSearchContactsForAccountFiltersAndSortsByUsage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	now := time.Now()
+	cache := &ContactsCache{Contacts: []Contact{
+		{
+			Name:  "Alice",
+			Email: "alice@example.com",
+			Usage: map[string]ContactUsage{
+				"account-1": {UseCount: 1, LastUsed: now},
+			},
+		},
+		{
+			Name:  "Alicia",
+			Email: "alicia@example.com",
+			Usage: map[string]ContactUsage{
+				"account-2": {UseCount: 9, LastUsed: now.Add(time.Hour)},
+			},
+		},
+		{
+			Name:  "Alina",
+			Email: "alina@example.com",
+			Usage: map[string]ContactUsage{
+				"account-1": {UseCount: 3, LastUsed: now.Add(-time.Hour)},
+			},
+		},
+	}}
+	if err := SaveContactsCache(cache); err != nil {
+		t.Fatalf("SaveContactsCache() failed: %v", err)
+	}
+
+	matches := SearchContactsForAccount("ali", "account-1")
+	if len(matches) != 2 {
+		t.Fatalf("Expected 2 account-1 matches, got %d", len(matches))
+	}
+	if matches[0].Email != "alina@example.com" {
+		t.Fatalf("Expected highest account-1 usage first, got %s", matches[0].Email)
+	}
+}
+
+func TestCleanupAccountCacheRemovesOnlyTargetAccountData(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	now := time.Now()
+	emailFor := func(accountID string, uid uint32) CachedEmail {
+		return CachedEmail{
+			UID:       uid,
+			From:      accountID + "@example.com",
+			Subject:   "subject",
+			Date:      now,
+			AccountID: accountID,
+		}
+	}
+
+	if err := SaveEmailCache(&EmailCache{Emails: []CachedEmail{
+		emailFor("account-1", 1),
+		emailFor("account-2", 2),
+	}}); err != nil {
+		t.Fatalf("SaveEmailCache() failed: %v", err)
+	}
+	if err := SaveFolderCache(&FolderCache{Accounts: []CachedFolders{
+		{AccountID: "account-1", Folders: []string{"INBOX"}},
+		{AccountID: "account-2", Folders: []string{"INBOX", "Sent"}},
+	}}); err != nil {
+		t.Fatalf("SaveFolderCache() failed: %v", err)
+	}
+	if err := SaveFolderEmailCache("INBOX", []CachedEmail{
+		emailFor("account-1", 1),
+		emailFor("account-2", 2),
+	}); err != nil {
+		t.Fatalf("SaveFolderEmailCache(INBOX) failed: %v", err)
+	}
+	if err := SaveFolderEmailCache("OnlyDeleted", []CachedEmail{
+		emailFor("account-1", 3),
+	}); err != nil {
+		t.Fatalf("SaveFolderEmailCache(OnlyDeleted) failed: %v", err)
+	}
+	if err := SaveDraftsCache(&DraftsCache{Drafts: []Draft{
+		{ID: "draft-1", AccountID: "account-1", Subject: "delete"},
+		{ID: "draft-2", AccountID: "account-2", Subject: "keep"},
+	}}); err != nil {
+		t.Fatalf("SaveDraftsCache() failed: %v", err)
+	}
+	if err := SaveContactsCache(&ContactsCache{Contacts: []Contact{
+		{
+			Name:  "Shared",
+			Email: "shared@example.com",
+			Usage: map[string]ContactUsage{
+				"account-1": {UseCount: 1, LastUsed: now},
+				"account-2": {UseCount: 2, LastUsed: now},
+			},
+		},
+		{
+			Name:  "Only Deleted",
+			Email: "deleted@example.com",
+			Usage: map[string]ContactUsage{
+				"account-1": {UseCount: 1, LastUsed: now},
+			},
+		},
+	}}); err != nil {
+		t.Fatalf("SaveContactsCache() failed: %v", err)
+	}
+	if err := SaveEmailBody("INBOX", CachedEmailBody{
+		UID:       1,
+		AccountID: "account-1",
+		Body:      "delete",
+	}, 1<<20); err != nil {
+		t.Fatalf("SaveEmailBody(account-1) failed: %v", err)
+	}
+	if err := SaveEmailBody("INBOX", CachedEmailBody{
+		UID:       2,
+		AccountID: "account-2",
+		Body:      "keep",
+	}, 1<<20); err != nil {
+		t.Fatalf("SaveEmailBody(account-2) failed: %v", err)
+	}
+	if err := SaveEmailBody("OnlyDeleted", CachedEmailBody{
+		UID:       3,
+		AccountID: "account-1",
+		Body:      "delete",
+	}, 1<<20); err != nil {
+		t.Fatalf("SaveEmailBody(OnlyDeleted) failed: %v", err)
+	}
+
+	if err := CleanupAccountCache("account-1"); err != nil {
+		t.Fatalf("CleanupAccountCache() failed: %v", err)
+	}
+
+	emailCache, err := LoadEmailCache()
+	if err != nil {
+		t.Fatalf("LoadEmailCache() failed: %v", err)
+	}
+	if len(emailCache.Emails) != 1 || emailCache.Emails[0].AccountID != "account-2" {
+		t.Fatalf("Unexpected email cache after cleanup: %+v", emailCache.Emails)
+	}
+
+	folderCache, err := LoadFolderCache()
+	if err != nil {
+		t.Fatalf("LoadFolderCache() failed: %v", err)
+	}
+	if len(folderCache.Accounts) != 1 || folderCache.Accounts[0].AccountID != "account-2" {
+		t.Fatalf("Unexpected folder cache after cleanup: %+v", folderCache.Accounts)
+	}
+
+	folderEmails, err := LoadFolderEmailCache("INBOX")
+	if err != nil {
+		t.Fatalf("LoadFolderEmailCache(INBOX) failed: %v", err)
+	}
+	if len(folderEmails) != 1 || folderEmails[0].AccountID != "account-2" {
+		t.Fatalf("Unexpected folder emails after cleanup: %+v", folderEmails)
+	}
+	onlyDeletedFolderPath, err := folderEmailCacheFile("OnlyDeleted")
+	if err != nil {
+		t.Fatalf("folderEmailCacheFile() failed: %v", err)
+	}
+	if _, err := os.Stat(onlyDeletedFolderPath); !os.IsNotExist(err) {
+		t.Fatalf("Expected folder email cache with only deleted account to be removed, stat err=%v", err)
+	}
+
+	draftsCache, err := LoadDraftsCache()
+	if err != nil {
+		t.Fatalf("LoadDraftsCache() failed: %v", err)
+	}
+	if len(draftsCache.Drafts) != 1 || draftsCache.Drafts[0].AccountID != "account-2" {
+		t.Fatalf("Unexpected drafts after cleanup: %+v", draftsCache.Drafts)
+	}
+
+	contactsCache, err := LoadContactsCache()
+	if err != nil {
+		t.Fatalf("LoadContactsCache() failed: %v", err)
+	}
+	if len(contactsCache.Contacts) != 1 || contactsCache.Contacts[0].Email != "shared@example.com" {
+		t.Fatalf("Unexpected contacts after cleanup: %+v", contactsCache.Contacts)
+	}
+	if _, ok := contactsCache.Contacts[0].Usage["account-1"]; ok {
+		t.Fatal("Deleted account usage should be removed from shared contact")
+	}
+	if _, ok := contactsCache.Contacts[0].Usage["account-2"]; !ok {
+		t.Fatal("Remaining account usage should stay on shared contact")
+	}
+
+	bodyCache, err := LoadEmailBodyCache("INBOX")
+	if err != nil {
+		t.Fatalf("LoadEmailBodyCache(INBOX) failed: %v", err)
+	}
+	if len(bodyCache.Bodies) != 1 || bodyCache.Bodies[0].AccountID != "account-2" {
+		t.Fatalf("Unexpected body cache after cleanup: %+v", bodyCache.Bodies)
+	}
+	onlyDeletedBodyPath, err := bodyCacheFile("OnlyDeleted")
+	if err != nil {
+		t.Fatalf("bodyCacheFile() failed: %v", err)
+	}
+	if _, err := os.Stat(onlyDeletedBodyPath); !os.IsNotExist(err) {
+		t.Fatalf("Expected body cache with only deleted account to be removed, stat err=%v", err)
 	}
 }
 
