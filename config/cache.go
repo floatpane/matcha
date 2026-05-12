@@ -695,16 +695,13 @@ func saveEmailBodyCache(cache *EmailBodyCache) error {
 // GetCachedEmailBody returns the cached body for a specific email, or nil if not cached.
 // LastAccessedAt is updated by SaveEmailBody, not here -- a read should not
 // mutate cache state.
-func GetCachedEmailBody(folderName string, uid uint32, accountID string) *CachedEmailBody {
-	cache, err := LoadEmailBodyCache(folderName)
-	if err != nil {
-		return nil
+func GetCachedEmailBody(folderName string, uid uint32, accountID string, threshold int) *CachedEmailBody {
+	lru := GetLRUInstance(threshold)
+
+	if node := lru.Get(folderName, uid, accountID); node != nil {
+		return node.Body
 	}
-	for i, b := range cache.Bodies {
-		if b.UID == uid && b.AccountID == accountID {
-			return &cache.Bodies[i]
-		}
-	}
+
 	return nil
 }
 
@@ -729,187 +726,39 @@ func calculateTotalCacheSize(cache *EmailBodyCache) int {
 	return total
 }
 
-type bodyCacheFileState struct {
-	path  string
-	cache EmailBodyCache
-}
+// SaveEmailBody saves or updates a cached email body for a folder.
+func SaveEmailBody(folderName string, body CachedEmailBody, threshold int) error {
+	body.CachedAt = time.Now()
+	body.SizeBytes = calculateEmailBodySize(&body)
 
-type bodyCacheEntryRef struct {
-	fileIndex int
-	bodyIndex int
-}
-
-func loadAllEmailBodyCaches() ([]bodyCacheFileState, error) {
-	dir, err := bodyCacheDir()
-	if err != nil {
-		return nil, err
-	}
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	var caches []bodyCacheFileState
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-
-		path := filepath.Join(dir, entry.Name())
-		data, err := SecureReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-
-		var cache EmailBodyCache
-		if err := json.Unmarshal(data, &cache); err != nil {
-			return nil, err
-		}
-		for i := range cache.Bodies {
-			if cache.Bodies[i].SizeBytes <= 0 {
-				cache.Bodies[i].SizeBytes = calculateEmailBodySize(&cache.Bodies[i])
-			}
-		}
-
-		caches = append(caches, bodyCacheFileState{
-			path:  path,
-			cache: cache,
-		})
-	}
-
-	return caches, nil
-}
-
-func saveEmailBodyCacheFile(state *bodyCacheFileState) error {
-	if err := os.MkdirAll(filepath.Dir(state.path), 0700); err != nil {
-		return err
-	}
-
-	state.cache.UpdatedAt = time.Now()
-	data, err := json.Marshal(&state.cache)
-	if err != nil {
-		return err
-	}
-	return SecureWriteFile(state.path, data, 0600)
-}
-
-func pruneEmailBodyCacheSize(threshold int) error {
-	if threshold <= 0 {
-		return nil
-	}
-
-	caches, err := loadAllEmailBodyCaches()
-	if err != nil {
-		return err
-	}
-
-	totalSize := 0
-	var refs []bodyCacheEntryRef
-	for fileIndex := range caches {
-		for bodyIndex, body := range caches[fileIndex].cache.Bodies {
-			totalSize += body.SizeBytes
-			refs = append(refs, bodyCacheEntryRef{
-				fileIndex: fileIndex,
-				bodyIndex: bodyIndex,
-			})
-		}
-	}
-	if totalSize <= threshold {
-		return nil
-	}
-
-	sort.Slice(refs, func(i, j int) bool {
-		left := caches[refs[i].fileIndex].cache.Bodies[refs[i].bodyIndex]
-		right := caches[refs[j].fileIndex].cache.Bodies[refs[j].bodyIndex]
-		return left.LastAccessedAt.Before(right.LastAccessedAt)
-	})
-
-	remove := make(map[int]map[int]struct{})
-	for _, ref := range refs {
-		if totalSize <= threshold {
-			break
-		}
-
-		body := caches[ref.fileIndex].cache.Bodies[ref.bodyIndex]
-		totalSize -= body.SizeBytes
-		if remove[ref.fileIndex] == nil {
-			remove[ref.fileIndex] = make(map[int]struct{})
-		}
-		remove[ref.fileIndex][ref.bodyIndex] = struct{}{}
-	}
-
-	for fileIndex, bodyIndexes := range remove {
-		bodies := caches[fileIndex].cache.Bodies
-		kept := bodies[:0]
-		for bodyIndex, body := range bodies {
-			if _, ok := bodyIndexes[bodyIndex]; !ok {
-				kept = append(kept, body)
-			}
-		}
-		caches[fileIndex].cache.Bodies = kept
-		if err := saveEmailBodyCacheFile(&caches[fileIndex]); err != nil {
-			return err
-		}
-	}
+	lru := GetLRUInstance(threshold)
+	lru.Put(folderName, body.UID, body.AccountID, &body)
 
 	return nil
 }
 
-// SaveEmailBody saves or updates a cached email body for a folder.
-func SaveEmailBody(folderName string, body CachedEmailBody, threshold int) error {
-	cache, err := LoadEmailBodyCache(folderName)
-	if err != nil {
-		cache = &EmailBodyCache{FolderName: folderName}
-	}
-
-	body.CachedAt = time.Now()
-	body.LastAccessedAt = time.Now()
-	body.SizeBytes = calculateEmailBodySize(&body)
-
-	// Replace existing or append
-	found := false
-	for i, b := range cache.Bodies {
-		if b.UID == body.UID && b.AccountID == body.AccountID {
-			if body.SizeBytes <= threshold {
-				cache.Bodies[i] = body
-			} else {
-				cache.Bodies = append(cache.Bodies[:i], cache.Bodies[i+1:]...)
-			}
-			found = true
-			break
-		}
-	}
-	if !found && body.SizeBytes <= threshold {
-		cache.Bodies = append(cache.Bodies, body)
-	}
-
-	if err := saveEmailBodyCache(cache); err != nil {
-		return err
-	}
-	return pruneEmailBodyCacheSize(threshold)
-}
-
 // PruneEmailBodyCache removes cached bodies for emails that are no longer in the folder.
 // validUIDs is a map of UID -> AccountID for emails still present.
-func PruneEmailBodyCache(folderName string, validUIDs map[uint32]string) error {
+func PruneEmailBodyCache(folderName string, validUIDs map[uint32]string, threshold int) error {
 	cache, err := LoadEmailBodyCache(folderName)
+
 	if err != nil {
-		return nil // No cache to prune
+		return nil
 	}
+
+	lru := GetLRUInstance(threshold)
 
 	var kept []CachedEmailBody
 	for _, b := range cache.Bodies {
 		if accID, ok := validUIDs[b.UID]; ok && accID == b.AccountID {
 			kept = append(kept, b)
+		} else {
+			lru.Delete(folderName, b.UID, b.AccountID)
 		}
 	}
 
 	if len(kept) == len(cache.Bodies) {
-		return nil // Nothing pruned
+		return nil
 	}
 
 	cache.Bodies = kept

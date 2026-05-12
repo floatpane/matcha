@@ -667,7 +667,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for _, e := range msg.Emails {
 				validUIDs[e.UID] = e.AccountID
 			}
-			_ = config.PruneEmailBodyCache(msg.FolderName, validUIDs)
+			_ = config.PruneEmailBodyCache(msg.FolderName, validUIDs, m.config.GetBodyCacheThreshold())
 		}()
 		// Only update the view if the user is still on this folder
 		if m.folderInbox.GetCurrentFolder() != msg.FolderName {
@@ -736,7 +736,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		folderName := m.folderInbox.GetCurrentFolder()
 		// Check cache first
-		if cached := config.GetCachedEmailBody(folderName, msg.UID, msg.AccountID); cached != nil {
+		if cached := config.GetCachedEmailBody(folderName, msg.UID, msg.AccountID, m.config.GetBodyCacheThreshold()); cached != nil {
 			var attachments []fetcher.Attachment
 			for _, ca := range cached.Attachments {
 				att := fetcher.Attachment{
@@ -1276,7 +1276,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 		}
 		// Check body cache first
-		if cached := config.GetCachedEmailBody(folderName, msg.UID, msg.AccountID); cached != nil {
+		if cached := config.GetCachedEmailBody(folderName, msg.UID, msg.AccountID, m.config.GetBodyCacheThreshold()); cached != nil {
 			// Convert cached attachments back to fetcher.Attachment
 			var attachments []fetcher.Attachment
 			for _, ca := range cached.Attachments {
