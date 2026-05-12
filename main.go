@@ -24,7 +24,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/backend"
@@ -102,8 +101,7 @@ type mainModel struct {
 	idleWatcher *fetcher.IdleWatcher
 	idleUpdates chan fetcher.IdleUpdate
 	// Multi-protocol backend providers (keyed by account ID)
-	providers   map[string]backend.Provider
-	providersMu sync.RWMutex
+	providers map[string]backend.Provider
 	// Daemon client service (daemon or direct fallback)
 	service daemonclient.Service
 	// Plugin prompt waiting for user input
@@ -152,38 +150,20 @@ func newInitialModel(cfg *config.Config, mailtoURL *url.URL) *mainModel {
 }
 
 // ensureProviders creates backend providers for all configured accounts.
-// newSettings constructs a settings model and wires it to the plugin manager
-// so the Plugins category can list and edit plugin-declared settings.
-func (m *mainModel) newSettings() *tui.Settings {
-	s := tui.NewSettings(m.config)
-	if m.plugins != nil {
-		s.SetPlugins(m.plugins)
-	}
-	return s
-}
-
 func (m *mainModel) ensureProviders() {
 	if m.config == nil {
 		return
 	}
 	for _, acct := range m.config.Accounts {
-		m.providersMu.RLock()
-		_, ok := m.providers[acct.ID]
-		m.providersMu.RUnlock()
-
-		if ok {
+		if _, ok := m.providers[acct.ID]; ok {
 			continue
 		}
-
 		p, err := backend.New(&acct)
 		if err != nil {
 			log.Printf("backend: failed to create provider for %s: %v", acct.Email, err)
 			continue
 		}
-
-		m.providersMu.Lock()
 		m.providers[acct.ID] = p
-		m.providersMu.Unlock()
 	}
 }
 
@@ -192,12 +172,7 @@ func (m *mainModel) getProvider(acct *config.Account) backend.Provider {
 	if acct == nil {
 		return nil
 	}
-
-	m.providersMu.RLock()
-	p := m.providers[acct.ID]
-	m.providersMu.RUnlock()
-
-	return p
+	return m.providers[acct.ID]
 }
 
 func (m *mainModel) Init() tea.Cmd {
@@ -456,7 +431,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if isEdit {
-			m.current = m.newSettings()
+			m.current = tui.NewSettings(m.config)
 		} else {
 			m.current = tui.NewChoice()
 		}
@@ -667,7 +642,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for _, e := range msg.Emails {
 				validUIDs[e.UID] = e.AccountID
 			}
-			_ = config.PruneEmailBodyCache(msg.FolderName, validUIDs)
+			_ = config.PruneEmailBodyCache(msg.FolderName, validUIDs, m.config.GetBodyCacheThreshold())
 		}()
 		// Only update the view if the user is still on this folder
 		if m.folderInbox.GetCurrentFolder() != msg.FolderName {
@@ -736,7 +711,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		folderName := m.folderInbox.GetCurrentFolder()
 		// Check cache first
-		if cached := config.GetCachedEmailBody(folderName, msg.UID, msg.AccountID); cached != nil {
+		if cached := config.GetCachedEmailBody(folderName, msg.UID, msg.AccountID, m.config.GetBodyCacheThreshold()); cached != nil {
 			var attachments []fetcher.Attachment
 			for _, ca := range cached.Attachments {
 				att := fetcher.Attachment{
@@ -1057,7 +1032,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch curr := m.current.(type) {
 		case *tui.Settings:
 			// Preserve settings state when rebuilding
-			newSettings := m.newSettings()
+			newSettings := tui.NewSettings(m.config)
 			newSettings.RestoreState(curr.GetState())
 			m.current = newSettings
 		case *tui.Composer:
@@ -1067,7 +1042,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.current = tui.NewChoice()
 		case *tui.FolderInbox:
 			// Just rebuild settings view, folder inbox will be recreated on next navigation
-			m.current = m.newSettings()
+			m.current = tui.NewSettings(m.config)
 		default:
 			// For other views, return to choice menu
 			m.current = tui.NewChoice()
@@ -1076,7 +1051,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.current.Init()
 
 	case tui.GoToSettingsMsg:
-		m.current = m.newSettings()
+		m.current = tui.NewSettings(m.config)
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
 
@@ -1136,7 +1111,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		// Return to settings
-		m.current = m.newSettings()
+		m.current = tui.NewSettings(m.config)
 		// Try to navigate to the mailing list view internally if possible, but NewSettings will go to SettingsMain by default.
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
@@ -1155,9 +1130,6 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		config.SetSessionKey(msg.Key)
 		cfg, err := config.LoadConfig()
 		if err == nil {
-			if migrateErr := config.MigrateContactsCacheUsage(cfg.GetAccountIDs()); migrateErr != nil {
-				log.Printf("warning: contacts migration failed: %v", migrateErr)
-			}
 			if cfg.Theme != "" {
 				theme.SetTheme(cfg.Theme)
 				tui.RebuildStyles()
@@ -1216,13 +1188,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tui.DeleteAccountMsg:
 		if m.config != nil {
-			if m.config.RemoveAccount(msg.AccountID) {
-				if err := config.CleanupAccountCache(msg.AccountID); err != nil {
-					log.Printf("could not clean account cache: %v", err)
-				}
-				if err := config.SaveConfig(m.config); err != nil {
-					log.Printf("could not save config: %v", err)
-				}
+			m.config.RemoveAccount(msg.AccountID)
+			if err := config.SaveConfig(m.config); err != nil {
+				log.Printf("could not save config: %v", err)
 			}
 			// Remove emails for this account
 			delete(m.emailsByAcct, msg.AccountID)
@@ -1235,7 +1203,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.emails = allEmails
 
 			// Go back to settings
-			m.current = m.newSettings()
+			m.current = tui.NewSettings(m.config)
 			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		}
 		return m, m.current.Init()
@@ -1276,7 +1244,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 		}
 		// Check body cache first
-		if cached := config.GetCachedEmailBody(folderName, msg.UID, msg.AccountID); cached != nil {
+		if cached := config.GetCachedEmailBody(folderName, msg.UID, msg.AccountID, m.config.GetBodyCacheThreshold()); cached != nil {
 			// Convert cached attachments back to fetcher.Attachment
 			var attachments []fetcher.Attachment
 			for _, ca := range cached.Attachments {
@@ -1566,7 +1534,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						continue
 					}
 					name, email := parseEmailAddress(r)
-					if err := config.AddContactForAccount(name, email, msg.AccountID); err != nil {
+					if err := config.AddContact(name, email); err != nil {
 						log.Printf("Error saving contact: %v", err)
 					}
 				}
@@ -2390,7 +2358,7 @@ func saveEmailsToCache(emails []fetcher.Email) {
 		// Save sender as a contact
 		if email.From != "" {
 			name, emailAddr := parseEmailAddress(email.From)
-			if err := config.AddContactForAccount(name, emailAddr, email.AccountID); err != nil {
+			if err := config.AddContact(name, emailAddr); err != nil {
 				log.Printf("Error saving contact from email: %v", err)
 			}
 		}
@@ -3016,27 +2984,11 @@ func sanitizeFilename(name string) string {
 	if len(name) > maxFilenameLen {
 		ext := filepath.Ext(name)
 		if len(ext) > maxFilenameLen {
-			ext = truncateUTF8(ext, maxFilenameLen)
+			ext = ext[:maxFilenameLen]
 		}
-		base := strings.TrimSuffix(name, ext)
-		name = truncateUTF8(base, maxFilenameLen-len(ext)) + ext
+		name = name[:maxFilenameLen-len(ext)] + ext
 	}
 	return name
-}
-
-func truncateUTF8(s string, maxBytes int) string {
-	if maxBytes <= 0 {
-		return ""
-	}
-	if len(s) <= maxBytes {
-		return s
-	}
-	s = s[:maxBytes]
-	for !utf8.ValidString(s) {
-		_, size := utf8.DecodeLastRuneInString(s)
-		s = s[:len(s)-size]
-	}
-	return s
 }
 
 func downloadAttachmentCmd(account *config.Account, uid uint32, msg tui.DownloadAttachmentMsg) tea.Cmd {
@@ -3908,9 +3860,6 @@ func main() {
 	} else {
 		cfg, err := config.LoadConfig()
 		if err == nil {
-			if migrateErr := config.MigrateContactsCacheUsage(cfg.GetAccountIDs()); migrateErr != nil {
-				log.Printf("warning: contacts migration failed: %v", migrateErr)
-			}
 			if cfg.Theme != "" {
 				theme.SetTheme(cfg.Theme)
 			}
@@ -3935,9 +3884,6 @@ func main() {
 	// Initialize plugin system
 	plugins := plugin.NewManager()
 	plugins.LoadPlugins()
-	if initialModel.config != nil {
-		plugins.LoadSettingValues(initialModel.config.PluginSettings)
-	}
 	initialModel.plugins = plugins
 	tui.BodyTransformer = func(body string, email fetcher.Email) string {
 		folder := "INBOX"
@@ -3979,7 +3925,6 @@ func main() {
 	plugins.CallHook(plugin.HookShutdown)
 	plugins.Close()
 }
-
 func runDaemonCLI(args []string) {
 	if len(args) == 0 {
 		fmt.Println("Usage: matcha daemon <start|stop|status|run>")
