@@ -39,6 +39,7 @@ const (
 	inputJMAPEndpoint // JMAP session URL
 	inputPOP3Server
 	inputPOP3Port
+	inputMaildirPath // Local Maildir root path
 	inputCount
 )
 
@@ -58,7 +59,7 @@ func NewLogin(hideTips bool) *Login {
 
 		switch i {
 		case inputProtocol:
-			t.Placeholder = "Protocol (imap, jmap, or pop3)"
+			t.Placeholder = "Protocol (imap, jmap, pop3, or maildir)"
 			t.Focus()
 			t.Prompt = "🌐 > "
 		case inputProvider:
@@ -110,6 +111,9 @@ func NewLogin(hideTips bool) *Login {
 		case inputPOP3Port:
 			t.Placeholder = "POP3 Port (default: 995)"
 			t.Prompt = "🔢 > "
+		case inputMaildirPath:
+			t.Placeholder = "Maildir Path (e.g., ~/Mail or /var/mail/user)"
+			t.Prompt = "📁 > "
 		}
 		m.inputs[i] = t
 	}
@@ -148,6 +152,9 @@ func (m *Login) visibleFields() []int {
 		// POP3: custom server fields + SMTP for sending
 		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputSendAsEmail, inputCatchAll, inputPassword,
 			inputPOP3Server, inputPOP3Port, inputSMTPServer, inputSMTPPort, inputInsecure)
+	case "maildir":
+		// Maildir: local filesystem only — no auth, no network.
+		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputSendAsEmail, inputCatchAll, inputMaildirPath)
 	default:
 		// IMAP (default): existing flow
 		fields = append(fields, inputProvider, inputName, inputEmail, inputFetchEmail, inputSendAsEmail, inputCatchAll)
@@ -309,6 +316,7 @@ func (m *Login) submitForm() func() tea.Msg {
 			JMAPEndpoint: m.inputs[inputJMAPEndpoint].Value(),
 			POP3Server:   m.inputs[inputPOP3Server].Value(),
 			POP3Port:     pop3Port,
+			MaildirPath:  m.inputs[inputMaildirPath].Value(),
 		}
 	}
 }
@@ -325,7 +333,7 @@ func (m *Login) View() tea.View {
 	tip := ""
 	switch m.focusIndex {
 	case inputProtocol:
-		tip = "Choose the protocol: imap (default), jmap, or pop3."
+		tip = "Choose the protocol: imap (default), jmap, pop3, or maildir."
 	case inputProvider:
 		tip = "Enter your email provider (e.g., gmail, outlook, icloud) or 'custom'."
 	case inputName:
@@ -358,6 +366,8 @@ func (m *Login) View() tea.View {
 		tip = "The POP3 server address for receiving emails."
 	case inputPOP3Port:
 		tip = "The port for the POP3 server (usually 995 for SSL)."
+	case inputMaildirPath:
+		tip = "Local path to a Maildir directory (cur/new/tmp). Subfolders use .Foldername (Maildir++)."
 	}
 
 	views := []string{
@@ -397,6 +407,17 @@ func (m *Login) View() tea.View {
 			m.inputs[inputSMTPServer].View(),
 			m.inputs[inputSMTPPort].View(),
 			m.inputs[inputInsecure].View(),
+		)
+	case "maildir":
+		views = append(views,
+			m.inputs[inputName].View(),
+			m.inputs[inputEmail].View(),
+			m.inputs[inputFetchEmail].View(),
+			m.inputs[inputSendAsEmail].View(),
+			m.inputs[inputCatchAll].View(),
+			"",
+			listHeader.Render("Maildir Settings:"),
+			m.inputs[inputMaildirPath].View(),
 		)
 	default:
 		// IMAP flow
@@ -449,7 +470,7 @@ func (m *Login) View() tea.View {
 }
 
 // SetEditMode sets the login form to edit an existing account.
-func (m *Login) SetEditMode(accountID, protocol, provider, name, email, fetchEmail, sendAsEmail, imapServer string, imapPort int, smtpServer string, smtpPort int, insecure bool, jmapEndpoint, pop3Server string, pop3Port int, catchAll bool) {
+func (m *Login) SetEditMode(accountID, protocol, provider, name, email, fetchEmail, sendAsEmail, imapServer string, imapPort int, smtpServer string, smtpPort int, insecure bool, jmapEndpoint, pop3Server string, pop3Port int, catchAll bool, maildirPath string) {
 	m.isEditMode = true
 	m.accountID = accountID
 
@@ -500,6 +521,9 @@ func (m *Login) SetEditMode(accountID, protocol, provider, name, email, fetchEma
 		if smtpPort != 0 {
 			m.inputs[inputSMTPPort].SetValue(strconv.Itoa(smtpPort))
 		}
+	}
+	if maildirPath != "" {
+		m.inputs[inputMaildirPath].SetValue(maildirPath)
 	}
 }
 

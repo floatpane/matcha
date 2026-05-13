@@ -73,6 +73,7 @@ type Account struct {
 	JMAPEndpoint string `json:"jmap_endpoint,omitempty"` // JMAP session URL (for protocol=jmap)
 	POP3Server   string `json:"pop3_server,omitempty"`   // POP3 server hostname (for protocol=pop3)
 	POP3Port     int    `json:"pop3_port,omitempty"`     // POP3 server port (for protocol=pop3)
+	MaildirPath  string `json:"maildir_path,omitempty"`  // Local Maildir root (for protocol=maildir)
 
 	// Per-account signature (overrides global signature)
 	Signature string `json:"signature,omitempty"`

@@ -67,6 +67,7 @@ func (m *Settings) updateAccounts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 					JMAPEndpoint: acc.JMAPEndpoint,
 					POP3Server:   acc.POP3Server,
 					POP3Port:     acc.POP3Port,
+					MaildirPath:  acc.MaildirPath,
 				}
 			}
 		}

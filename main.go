@@ -30,6 +30,7 @@ import (
 	"github.com/floatpane/matcha/backend"
 	_ "github.com/floatpane/matcha/backend/imap"
 	_ "github.com/floatpane/matcha/backend/jmap"
+	_ "github.com/floatpane/matcha/backend/maildir"
 	_ "github.com/floatpane/matcha/backend/pop3"
 	"github.com/floatpane/matcha/calendar"
 	matchaCli "github.com/floatpane/matcha/cli"
@@ -378,6 +379,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				JMAPEndpoint:    msg.JMAPEndpoint,
 				POP3Server:      msg.POP3Server,
 				POP3Port:        msg.POP3Port,
+				MaildirPath:     msg.MaildirPath,
 			}
 
 			if msg.Provider == "custom" || msg.Protocol == "pop3" {
@@ -422,6 +424,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					JMAPEndpoint:    msg.JMAPEndpoint,
 					POP3Server:      msg.POP3Server,
 					POP3Port:        msg.POP3Port,
+					MaildirPath:     msg.MaildirPath,
 				}
 
 				if msg.Provider == "custom" || msg.Protocol == "pop3" {
@@ -1138,7 +1141,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			hideTips = m.config.HideTips
 		}
 		login := tui.NewLogin(hideTips)
-		login.SetEditMode(msg.AccountID, msg.Protocol, msg.Provider, msg.Name, msg.Email, msg.FetchEmail, msg.SendAsEmail, msg.IMAPServer, msg.IMAPPort, msg.SMTPServer, msg.SMTPPort, msg.Insecure, msg.JMAPEndpoint, msg.POP3Server, msg.POP3Port, msg.CatchAll)
+		login.SetEditMode(msg.AccountID, msg.Protocol, msg.Provider, msg.Name, msg.Email, msg.FetchEmail, msg.SendAsEmail, msg.IMAPServer, msg.IMAPPort, msg.SMTPServer, msg.SMTPPort, msg.Insecure, msg.JMAPEndpoint, msg.POP3Server, msg.POP3Port, msg.CatchAll, msg.MaildirPath)
 		m.current = login
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()

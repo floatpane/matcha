@@ -61,6 +61,7 @@ type Credentials struct {
 	JMAPEndpoint string // JMAP session URL
 	POP3Server   string // POP3 server hostname
 	POP3Port     int    // POP3 server port
+	MaildirPath  string // Local Maildir root
 }
 
 // StartOAuth2Msg is sent when the user requests OAuth2 authorization for a Gmail account.
@@ -291,6 +292,7 @@ type GoToEditAccountMsg struct {
 	JMAPEndpoint string
 	POP3Server   string
 	POP3Port     int
+	MaildirPath  string
 }
 
 // GoToEditMailingListMsg signals navigation to edit an existing mailing list.
