@@ -19,3 +19,9 @@ func tn(key string, count int, data map[string]interface{}) string {
 func tpl(key string, data map[string]interface{}) string {
 	return i18n.GetManager().Tpl(key, data)
 }
+
+// tfs formats a file size using the active UI locale.
+// Example: tfs(1258291) -> "1.2 MB" in English.
+func tfs(bytes int64) string {
+	return i18n.GetManager().GetNumberFormatter().FormatFileSize(bytes)
+}

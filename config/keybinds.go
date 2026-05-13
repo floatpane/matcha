@@ -33,15 +33,16 @@ type GlobalKeys struct {
 }
 
 type InboxKeys struct {
-	VisualMode string `json:"visual_mode"`
-	Delete     string `json:"delete"`
-	Archive    string `json:"archive"`
-	Refresh    string `json:"refresh"`
-	Search     string `json:"search"`
-	Filter     string `json:"filter"`
-	Open       string `json:"open"`
-	NextTab    string `json:"next_tab"`
-	PrevTab    string `json:"prev_tab"`
+	VisualMode     string `json:"visual_mode"`
+	ToggleThreaded string `json:"toggle_threaded"`
+	Delete         string `json:"delete"`
+	Archive        string `json:"archive"`
+	Refresh        string `json:"refresh"`
+	Search         string `json:"search"`
+	Filter         string `json:"filter"`
+	Open           string `json:"open"`
+	NextTab        string `json:"next_tab"`
+	PrevTab        string `json:"prev_tab"`
 }
 
 type EmailKeys struct {
@@ -60,6 +61,7 @@ type ComposerKeys struct {
 	ExternalEditor string `json:"external_editor"`
 	NextField      string `json:"next_field"`
 	PrevField      string `json:"prev_field"`
+	Delete         string `json:"delete"`
 }
 
 type FolderKeys struct {
@@ -104,7 +106,7 @@ func LoadKeybindsFromDir(cfgDir string) error {
 		return nil
 	}
 
-	var kb KeybindsConfig
+	kb := defaultKeybinds()
 	if err := json.Unmarshal(data, &kb); err != nil {
 		return fmt.Errorf("keybinds: parse %s: %w", path, err)
 	}
@@ -140,15 +142,16 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 		"nav_down": kb.Global.NavDown,
 	})
 	check("inbox", map[string]string{
-		"visual_mode": kb.Inbox.VisualMode,
-		"delete":      kb.Inbox.Delete,
-		"archive":     kb.Inbox.Archive,
-		"refresh":     kb.Inbox.Refresh,
-		"search":      kb.Inbox.Search,
-		"filter":      kb.Inbox.Filter,
-		"open":        kb.Inbox.Open,
-		"next_tab":    kb.Inbox.NextTab,
-		"prev_tab":    kb.Inbox.PrevTab,
+		"visual_mode":     kb.Inbox.VisualMode,
+		"toggle_threaded": kb.Inbox.ToggleThreaded,
+		"delete":          kb.Inbox.Delete,
+		"archive":         kb.Inbox.Archive,
+		"refresh":         kb.Inbox.Refresh,
+		"search":          kb.Inbox.Search,
+		"filter":          kb.Inbox.Filter,
+		"open":            kb.Inbox.Open,
+		"next_tab":        kb.Inbox.NextTab,
+		"prev_tab":        kb.Inbox.PrevTab,
 	})
 	check("email", map[string]string{
 		"reply":             kb.Email.Reply,
@@ -165,6 +168,7 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 		"external_editor": kb.Composer.ExternalEditor,
 		"next_field":      kb.Composer.NextField,
 		"prev_field":      kb.Composer.PrevField,
+		"delete":          kb.Composer.Delete,
 	})
 	check("folder", map[string]string{
 		"next_folder":   kb.Folder.NextFolder,

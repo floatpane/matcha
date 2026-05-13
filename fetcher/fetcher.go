@@ -16,6 +16,7 @@ import (
 	"mime/quotedprintable"
 	"net/textproto"
 	"os"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -29,7 +30,9 @@ import (
 	"github.com/emersion/go-pgpmail"
 	"github.com/floatpane/matcha/config"
 	"go.mozilla.org/pkcs7"
+	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/ianaindex"
+	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 )
 
@@ -75,19 +78,23 @@ type Attachment struct {
 }
 
 type Email struct {
-	UID         uint32
-	From        string
-	To          []string
-	ReplyTo     []string
-	Subject     string
-	Body        string
-	Date        time.Time
-	IsRead      bool
-	MessageID   string
-	References  []string
-	Attachments []Attachment
-	AccountID   string // ID of the account this email belongs to
+	UID          uint32
+	From         string
+	To           []string
+	ReplyTo      []string
+	Subject      string
+	Body         string
+	BodyMIMEType string // "text/html" or "text/plain"; empty when unknown (legacy cache rows). Lets the renderer skip markdown→HTML for already-HTML bodies.
+	Date         time.Time
+	IsRead       bool
+	MessageID    string
+	InReplyTo    string
+	References   []string
+	Attachments  []Attachment
+	AccountID    string // ID of the account this email belongs to
 }
+
+var headerMessageIDRE = regexp.MustCompile(`<[^>]+>`)
 
 // Folder represents an IMAP mailbox/folder.
 type Folder struct {
@@ -167,6 +174,38 @@ func deliveryHeadersMatch(data []byte, fetchEmail string, account *config.Accoun
 	return false
 }
 
+func headerMessageIDs(data []byte, key string) []string {
+	if len(data) == 0 {
+		return nil
+	}
+	reader := textproto.NewReader(bufio.NewReader(bytes.NewReader(data)))
+	headers, err := reader.ReadMIMEHeader()
+	if err != nil && len(headers) == 0 {
+		return nil
+	}
+	var ids []string
+	for _, value := range headers.Values(key) {
+		matches := headerMessageIDRE.FindAllString(value, -1)
+		if len(matches) == 0 {
+			for _, field := range strings.Fields(value) {
+				ids = append(ids, strings.TrimSpace(field))
+			}
+			continue
+		}
+		for _, match := range matches {
+			ids = append(ids, strings.TrimSpace(match))
+		}
+	}
+	return ids
+}
+
+func firstEnvelopeInReplyTo(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
 func decodePart(reader io.Reader, header mail.PartHeader) (string, error) {
 	contentType := header.Get("Content-Type")
 	mediaType, params, parseErr := mime.ParseMediaType(contentType)
@@ -191,13 +230,20 @@ func decodePart(reader io.Reader, header mail.PartHeader) (string, error) {
 }
 
 func decodeReaderWithCharset(reader io.Reader, charset string) ([]byte, error) {
-	encoding, err := ianaindex.IANA.Encoding(charset)
-	if err != nil || encoding == nil {
-		encoding, _ = ianaindex.IANA.Encoding("utf-8")
-	}
-
-	transformReader := transform.NewReader(reader, encoding.NewDecoder())
+	enc := lookupCharsetEncoding(charset)
+	transformReader := transform.NewReader(reader, enc.NewDecoder())
 	return ioutil.ReadAll(transformReader)
+}
+
+// lookupCharsetEncoding resolves a charset name, falling back to UTF-8.
+func lookupCharsetEncoding(charset string) encoding.Encoding {
+	if enc, err := ianaindex.IANA.Encoding(charset); err == nil && enc != nil {
+		return enc
+	}
+	if enc, err := ianaindex.IANA.Encoding("utf-8"); err == nil && enc != nil {
+		return enc
+	}
+	return unicode.UTF8
 }
 
 func bestEffortCharset(contentType string) string {
@@ -219,11 +265,14 @@ func bestEffortCharset(contentType string) string {
 func decodeHeader(header string) string {
 	dec := new(mime.WordDecoder)
 	dec.CharsetReader = func(charset string, input io.Reader) (io.Reader, error) {
-		encoding, err := ianaindex.IANA.Encoding(charset)
+		enc, err := ianaindex.IANA.Encoding(charset)
 		if err != nil {
 			return nil, err
 		}
-		return transform.NewReader(input, encoding.NewDecoder()), nil
+		if enc == nil {
+			return nil, fmt.Errorf("fetcher: no encoding implementation for charset %q", charset)
+		}
+		return transform.NewReader(input, enc.NewDecoder()), nil
 	}
 	decoded, err := dec.DecodeHeader(header)
 	if err != nil {
@@ -456,7 +505,7 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 	// Delivery header section for matching auto-forwarded emails
 	deliveryHeaderSection := &imap.FetchItemBodySection{
 		Specifier:    imap.PartSpecifierHeader,
-		HeaderFields: []string{"Delivered-To", "X-Forwarded-To", "X-Original-To"},
+		HeaderFields: []string{"Delivered-To", "X-Forwarded-To", "X-Original-To", "References"},
 		Peek:         true,
 	}
 
@@ -542,15 +591,19 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 				continue
 			}
 
+			headerData := msg.FindBodySection(deliveryHeaderSection)
 			batchEmails = append(batchEmails, Email{
-				UID:       uint32(msg.UID),
-				From:      fromAddr,
-				To:        toAddrList,
-				ReplyTo:   replyToAddrList,
-				Subject:   decodeHeader(msg.Envelope.Subject),
-				Date:      msg.Envelope.Date,
-				IsRead:    hasSeenFlag(msg.Flags),
-				AccountID: account.ID,
+				UID:        uint32(msg.UID),
+				From:       fromAddr,
+				To:         toAddrList,
+				ReplyTo:    replyToAddrList,
+				Subject:    decodeHeader(msg.Envelope.Subject),
+				Date:       msg.Envelope.Date,
+				IsRead:     hasSeenFlag(msg.Flags),
+				MessageID:  msg.Envelope.MessageID,
+				InReplyTo:  firstEnvelopeInReplyTo(msg.Envelope.InReplyTo),
+				References: headerMessageIDs(headerData, "References"),
+				AccountID:  account.ID,
 			})
 		}
 
@@ -571,15 +624,19 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 	return allEmails, nil
 }
 
-func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint32) (string, []Attachment, error) {
+// FetchEmailBodyFromMailbox returns the chosen body, its MIME type
+// ("text/html" or "text/plain"; empty if it could not be resolved), the
+// parsed attachments, and any error. The MIME type lets the renderer
+// skip the markdown→HTML pre-pass for already-HTML bodies.
+func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint32) (string, string, []Attachment, error) {
 	c, err := connect(account)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	defer c.Close()
 
 	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 
 	uidSet := imap.UIDSetNum(imap.UID(uid))
@@ -633,11 +690,11 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 	})
 	bsMsgs, err := fetchCmd.Collect()
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 
 	if len(bsMsgs) == 0 || bsMsgs[0].BodyStructure == nil {
-		return "", nil, fmt.Errorf("no message or body structure found with UID %d", uid)
+		return "", "", nil, fmt.Errorf("no message or body structure found with UID %d", uid)
 	}
 
 	msg := bsMsgs[0]
@@ -646,6 +703,10 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 	var htmlPartID, htmlPartEncoding string
 	var attachments []Attachment
 	var extractedBody string // Used if we intercept and decrypt a payload
+	// MIME type of extractedBody. Set alongside every assignment to extractedBody
+	// so the renderer can skip the markdown→HTML pre-pass for HTML payloads while
+	// still letting markdown error messages render formatted.
+	var extractedBodyMIMEType string
 
 	var checkPart func(part *imap.BodyStructureSinglePart, partID string)
 	checkPart = func(part *imap.BodyStructureSinglePart, partID string) {
@@ -709,6 +770,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 
 			if err != nil {
 				extractedBody = fmt.Sprintf("**S/MIME Error:** Failed to fetch encrypted part from IMAP server: %v\n", err)
+				extractedBodyMIMEType = "text/plain"
 				htmlPartID = "extracted"
 			} else {
 				p7, parseErr := pkcs7.Parse(data)
@@ -724,6 +786,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 
 				if parseErr != nil {
 					extractedBody = fmt.Sprintf("**S/MIME Error:** Failed to parse PKCS7 payload: %v\n", parseErr)
+					extractedBodyMIMEType = "text/plain"
 					htmlPartID = "extracted"
 				} else {
 					var innerBytes []byte
@@ -817,15 +880,18 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 								} else {
 									if cType == "text/html" {
 										extractedBody = string(b)
+										extractedBodyMIMEType = "text/html"
 										htmlPartID = "extracted" // Skip IMAP fetch
 									} else if cType == "text/plain" && extractedBody == "" {
 										extractedBody = string(b)
+										extractedBodyMIMEType = "text/plain"
 										plainPartID = "extracted"
 									}
 								}
 							}
 						} else {
 							extractedBody = fmt.Sprintf("**S/MIME Error:** Failed to read inner decrypted MIME: %v\n\n```\n%s\n```", err, string(innerBytes))
+							extractedBodyMIMEType = "text/plain"
 							htmlPartID = "extracted"
 						}
 
@@ -838,6 +904,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 						return // Stop checking IMAP structure, we hijacked it
 					} else {
 						extractedBody = fmt.Sprintf("**S/MIME Decryption Failed:** %s\n", decryptionErr)
+						extractedBodyMIMEType = "text/plain"
 						htmlPartID = "extracted"
 					}
 				}
@@ -950,11 +1017,13 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 									if strings.HasPrefix(ct, "text/html") {
 										body, _ := io.ReadAll(p.Body)
 										extractedBody = string(body)
+										extractedBodyMIMEType = "text/html"
 										htmlPartID = "decrypted"
 									} else if strings.HasPrefix(ct, "text/plain") && extractedBody == "" {
 										body, _ := io.ReadAll(p.Body)
 										extractedBody = string(body)
-										htmlPartID = "decrypted"
+										extractedBodyMIMEType = "text/plain"
+										plainPartID = "decrypted"
 									}
 								}
 							}
@@ -968,10 +1037,12 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 						}
 					} else {
 						extractedBody = fmt.Sprintf("**PGP Decryption Failed:** %s\n", err)
+						extractedBodyMIMEType = "text/plain"
 						htmlPartID = "extracted"
 					}
 				} else {
 					extractedBody = "**PGP Encrypted:** Private key not configured\n"
+					extractedBodyMIMEType = "text/plain"
 					htmlPartID = "extracted"
 				}
 			}
@@ -1073,18 +1144,21 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 
 	// If we hijacked and decrypted the body, return it immediately
 	if extractedBody != "" {
-		return extractedBody, attachments, nil
+		return extractedBody, extractedBodyMIMEType, attachments, nil
 	}
 
 	var body string
+	var bodyMIMEType string
 	textPartID := ""
 	textPartEncoding := ""
 	if htmlPartID != "" {
 		textPartID = htmlPartID
 		textPartEncoding = htmlPartEncoding
+		bodyMIMEType = "text/html"
 	} else if plainPartID != "" {
 		textPartID = plainPartID
 		textPartEncoding = plainPartEncoding
+		bodyMIMEType = "text/plain"
 	}
 	if os.Getenv("DEBUG_KITTY_IMAGES") != "" {
 		msg := fmt.Sprintf("[kitty-img] body selection html=%s plain=%s chosen=%s\n", htmlPartID, plainPartID, textPartID)
@@ -1114,7 +1188,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 		})
 		msgs, err := fetchCmd.Collect()
 		if err != nil {
-			return "", nil, err
+			return "", "", nil, err
 		}
 
 		if len(msgs) > 0 {
@@ -1129,7 +1203,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 		}
 	}
 
-	return body, attachments, nil
+	return body, bodyMIMEType, attachments, nil
 }
 
 func FetchAttachmentFromMailbox(account *config.Account, mailbox string, uid uint32, partID string, encoding string) ([]byte, error) {
@@ -1354,11 +1428,11 @@ func FetchSentEmails(account *config.Account, limit, offset uint32) ([]Email, er
 	return FetchMailboxEmails(account, getSentMailbox(account), limit, offset)
 }
 
-func FetchEmailBody(account *config.Account, uid uint32) (string, []Attachment, error) {
+func FetchEmailBody(account *config.Account, uid uint32) (string, string, []Attachment, error) {
 	return FetchEmailBodyFromMailbox(account, "INBOX", uid)
 }
 
-func FetchSentEmailBody(account *config.Account, uid uint32) (string, []Attachment, error) {
+func FetchSentEmailBody(account *config.Account, uid uint32) (string, string, []Attachment, error) {
 	return FetchEmailBodyFromMailbox(account, getSentMailbox(account), uid)
 }
 
@@ -1494,7 +1568,7 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 	// Delivery header section for matching auto-forwarded emails
 	deliveryHeaderSection := &imap.FetchItemBodySection{
 		Specifier:    imap.PartSpecifierHeader,
-		HeaderFields: []string{"Delivered-To", "X-Forwarded-To", "X-Original-To"},
+		HeaderFields: []string{"Delivered-To", "X-Forwarded-To", "X-Original-To", "References"},
 		Peek:         true,
 	}
 
@@ -1563,14 +1637,18 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 			continue
 		}
 
+		headerData := msg.FindBodySection(deliveryHeaderSection)
 		emails = append(emails, Email{
-			UID:       uint32(msg.UID),
-			From:      fromAddr,
-			To:        toAddrList,
-			Subject:   decodeHeader(msg.Envelope.Subject),
-			Date:      msg.Envelope.Date,
-			IsRead:    hasSeenFlag(msg.Flags),
-			AccountID: account.ID,
+			UID:        uint32(msg.UID),
+			From:       fromAddr,
+			To:         toAddrList,
+			Subject:    decodeHeader(msg.Envelope.Subject),
+			Date:       msg.Envelope.Date,
+			IsRead:     hasSeenFlag(msg.Flags),
+			MessageID:  msg.Envelope.MessageID,
+			InReplyTo:  firstEnvelopeInReplyTo(msg.Envelope.InReplyTo),
+			References: headerMessageIDs(headerData, "References"),
+			AccountID:  account.ID,
 		})
 	}
 
@@ -1583,10 +1661,10 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 }
 
 // FetchTrashEmailBody fetches the body of an email from trash
-func FetchTrashEmailBody(account *config.Account, uid uint32) (string, []Attachment, error) {
+func FetchTrashEmailBody(account *config.Account, uid uint32) (string, string, []Attachment, error) {
 	c, err := connect(account)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	defer c.Close()
 
@@ -1599,10 +1677,10 @@ func FetchTrashEmailBody(account *config.Account, uid uint32) (string, []Attachm
 }
 
 // FetchArchiveEmailBody fetches the body of an email from archive
-func FetchArchiveEmailBody(account *config.Account, uid uint32) (string, []Attachment, error) {
+func FetchArchiveEmailBody(account *config.Account, uid uint32) (string, string, []Attachment, error) {
 	c, err := connect(account)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	defer c.Close()
 
@@ -1728,7 +1806,7 @@ func FetchFolderEmails(account *config.Account, folder string, limit, offset uin
 }
 
 // FetchFolderEmailBody fetches the body of an email from an arbitrary folder.
-func FetchFolderEmailBody(account *config.Account, folder string, uid uint32) (string, []Attachment, error) {
+func FetchFolderEmailBody(account *config.Account, folder string, uid uint32) (string, string, []Attachment, error) {
 	return FetchEmailBodyFromMailbox(account, folder, uid)
 }
 

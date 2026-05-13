@@ -14,12 +14,12 @@ func (m *Settings) updateTheme(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "up", "k":
-		if m.themeCursor > 0 {
-			m.themeCursor--
+		if len(themes) > 0 {
+			m.themeCursor = (m.themeCursor - 1 + len(themes)) % len(themes)
 		}
 	case "down", "j":
-		if m.themeCursor < len(themes)-1 {
-			m.themeCursor++
+		if len(themes) > 0 {
+			m.themeCursor = (m.themeCursor + 1) % len(themes)
 		}
 	case "enter", "space", "right", "l":
 		if m.themeCursor < len(themes) {

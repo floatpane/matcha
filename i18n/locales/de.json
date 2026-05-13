@@ -116,6 +116,7 @@
       "category_theme": "Design",
       "category_mailing_lists": "Mailinglisten",
       "category_encryption": "App-Verschlüsselung",
+      "category_plugins": "Plugins",
       "help_menu": "↑/↓: navigieren • rechts/enter: auswählen • esc: zurück",
       "help_content": "esc: zurück zum Menü"
     },
@@ -147,6 +148,7 @@
       "hide_tips": "Kontextuelle Tipps Ausblenden",
       "disable_notifications": "Benachrichtigungen Deaktivieren",
       "enable_split_pane": "Geteilte Ansicht",
+      "enable_threaded": "Konversations-Threads",
       "date_format": "Datumsformat",
       "language": "Sprache",
       "signature": "Signatur Bearbeiten",

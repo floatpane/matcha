@@ -22,9 +22,12 @@ Plain text, not encrypted. Edit with any text editor. Restart matcha to apply ch
   },
   "inbox": {
     "visual_mode": "v",
+    "toggle_threaded": "T",
     "delete": "d",
     "archive": "a",
     "refresh": "r",
+    "search": "/",
+    "filter": "f",
     "open": "enter",
     "next_tab": "l",
     "prev_tab": "h"

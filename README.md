@@ -14,6 +14,8 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/floatpane/matcha.svg)](https://pkg.go.dev/github.com/floatpane/matcha)
 [![Awesome](https://awesome.re/badge.svg)](https://github.com/rothgar/awesome-tuis#messaging)
 
+<a href="https://trendshift.io/repositories/26026" target="_blank"><img src="https://trendshift.io/api/badge/repositories/26026" alt="floatpane%2Fmatcha | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+
 
 </div> 
 
@@ -76,7 +78,7 @@ For urgent concerns, contact [support@floatpane.com](mailto:support@floatpane.co
 
 ## Sponsors
 >[!TIP]
-> Want to sponsor our development and be featured here? You can do so [here](https://andrinoff.com/sponsor), or discuss it via email with [our team](mailto:us@floatpane.com)
+> Want to sponsor our development and be featured here? You can do so [here](https://github.com/sponsors/floatpane) (or, if you prefer, [here](https://opencollective.com/floatpane)), or discuss it via email with [our team](mailto:us@floatpane.com)
 
 
 Thank you to our sponsors for supporting Matcha's development!

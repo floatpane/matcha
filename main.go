@@ -24,6 +24,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/backend"
@@ -101,7 +102,8 @@ type mainModel struct {
 	idleWatcher *fetcher.IdleWatcher
 	idleUpdates chan fetcher.IdleUpdate
 	// Multi-protocol backend providers (keyed by account ID)
-	providers map[string]backend.Provider
+	providers   map[string]backend.Provider
+	providersMu sync.RWMutex
 	// Daemon client service (daemon or direct fallback)
 	service daemonclient.Service
 	// Plugin prompt waiting for user input
@@ -150,20 +152,38 @@ func newInitialModel(cfg *config.Config, mailtoURL *url.URL) *mainModel {
 }
 
 // ensureProviders creates backend providers for all configured accounts.
+// newSettings constructs a settings model and wires it to the plugin manager
+// so the Plugins category can list and edit plugin-declared settings.
+func (m *mainModel) newSettings() *tui.Settings {
+	s := tui.NewSettings(m.config)
+	if m.plugins != nil {
+		s.SetPlugins(m.plugins)
+	}
+	return s
+}
+
 func (m *mainModel) ensureProviders() {
 	if m.config == nil {
 		return
 	}
 	for _, acct := range m.config.Accounts {
-		if _, ok := m.providers[acct.ID]; ok {
+		m.providersMu.RLock()
+		_, ok := m.providers[acct.ID]
+		m.providersMu.RUnlock()
+
+		if ok {
 			continue
 		}
+
 		p, err := backend.New(&acct)
 		if err != nil {
 			log.Printf("backend: failed to create provider for %s: %v", acct.Email, err)
 			continue
 		}
+
+		m.providersMu.Lock()
 		m.providers[acct.ID] = p
+		m.providersMu.Unlock()
 	}
 }
 
@@ -172,7 +192,12 @@ func (m *mainModel) getProvider(acct *config.Account) backend.Provider {
 	if acct == nil {
 		return nil
 	}
-	return m.providers[acct.ID]
+
+	m.providersMu.RLock()
+	p := m.providers[acct.ID]
+	m.providersMu.RUnlock()
+
+	return p
 }
 
 func (m *mainModel) Init() tea.Cmd {
@@ -431,7 +456,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if isEdit {
-			m.current = tui.NewSettings(m.config)
+			m.current = m.newSettings()
 		} else {
 			m.current = tui.NewChoice()
 		}
@@ -465,6 +490,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.folderInbox = tui.NewFolderInbox(cachedFolders, m.config.Accounts)
 		m.folderInbox.SetDateFormat(m.config.GetDateFormat())
+		m.folderInbox.SetDefaultThreaded(m.config.EnableThreaded)
 		// Use cached INBOX emails for instant display (memory first, then disk)
 		if cached, ok := m.folderEmails["INBOX"]; ok && len(cached) > 0 {
 			m.folderInbox.SetEmails(cached, m.config.Accounts)
@@ -732,10 +758,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, func() tea.Msg {
 				return tui.PreviewBodyFetchedMsg{
-					UID:         msg.UID,
-					Body:        cached.Body,
-					Attachments: attachments,
-					AccountID:   msg.AccountID,
+					UID:          msg.UID,
+					Body:         cached.Body,
+					BodyMIMEType: cached.BodyMIMEType,
+					Attachments:  attachments,
+					AccountID:    msg.AccountID,
 				}
 			}
 		}
@@ -758,11 +785,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			go func() {
 				err := config.SaveEmailBody(folderName, config.CachedEmailBody{
-					UID:         msg.UID,
-					AccountID:   msg.AccountID,
-					Body:        msg.Body,
-					Attachments: cachedAttachments,
-				})
+					UID:          msg.UID,
+					AccountID:    msg.AccountID,
+					Body:         msg.Body,
+					BodyMIMEType: msg.BodyMIMEType,
+					Attachments:  cachedAttachments,
+				}, m.config.GetBodyCacheThreshold())
 				if err != nil {
 					log.Printf("debug: error caching email body fails (disk full, permission denied) for UID: %d: %v", msg.UID, err)
 				}
@@ -1018,6 +1046,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				log.Printf("config reload: %v", err)
 			}
 		}
+		if m.folderInbox != nil {
+			m.folderInbox.SetDefaultThreaded(m.config.EnableThreaded)
+		}
 		return m, nil
 
 	case tui.LanguageChangedMsg:
@@ -1026,7 +1057,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch curr := m.current.(type) {
 		case *tui.Settings:
 			// Preserve settings state when rebuilding
-			newSettings := tui.NewSettings(m.config)
+			newSettings := m.newSettings()
 			newSettings.RestoreState(curr.GetState())
 			m.current = newSettings
 		case *tui.Composer:
@@ -1036,7 +1067,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.current = tui.NewChoice()
 		case *tui.FolderInbox:
 			// Just rebuild settings view, folder inbox will be recreated on next navigation
-			m.current = tui.NewSettings(m.config)
+			m.current = m.newSettings()
 		default:
 			// For other views, return to choice menu
 			m.current = tui.NewChoice()
@@ -1045,7 +1076,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.current.Init()
 
 	case tui.GoToSettingsMsg:
-		m.current = tui.NewSettings(m.config)
+		m.current = m.newSettings()
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
 
@@ -1105,7 +1136,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		// Return to settings
-		m.current = tui.NewSettings(m.config)
+		m.current = m.newSettings()
 		// Try to navigate to the mailing list view internally if possible, but NewSettings will go to SettingsMain by default.
 		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		return m, m.current.Init()
@@ -1124,6 +1155,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		config.SetSessionKey(msg.Key)
 		cfg, err := config.LoadConfig()
 		if err == nil {
+			if migrateErr := config.MigrateContactsCacheUsage(cfg.GetAccountIDs()); migrateErr != nil {
+				log.Printf("warning: contacts migration failed: %v", migrateErr)
+			}
 			if cfg.Theme != "" {
 				theme.SetTheme(cfg.Theme)
 				tui.RebuildStyles()
@@ -1182,9 +1216,13 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tui.DeleteAccountMsg:
 		if m.config != nil {
-			m.config.RemoveAccount(msg.AccountID)
-			if err := config.SaveConfig(m.config); err != nil {
-				log.Printf("could not save config: %v", err)
+			if m.config.RemoveAccount(msg.AccountID) {
+				if err := config.CleanupAccountCache(msg.AccountID); err != nil {
+					log.Printf("could not clean account cache: %v", err)
+				}
+				if err := config.SaveConfig(m.config); err != nil {
+					log.Printf("could not save config: %v", err)
+				}
 			}
 			// Remove emails for this account
 			delete(m.emailsByAcct, msg.AccountID)
@@ -1197,7 +1235,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.emails = allEmails
 
 			// Go back to settings
-			m.current = tui.NewSettings(m.config)
+			m.current = m.newSettings()
 			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
 		}
 		return m, m.current.Init()
@@ -1261,11 +1299,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, func() tea.Msg {
 				return tui.EmailBodyFetchedMsg{
-					UID:         msg.UID,
-					Body:        cached.Body,
-					Attachments: attachments,
-					AccountID:   msg.AccountID,
-					Mailbox:     msg.Mailbox,
+					UID:          msg.UID,
+					Body:         cached.Body,
+					BodyMIMEType: cached.BodyMIMEType,
+					Attachments:  attachments,
+					AccountID:    msg.AccountID,
+					Mailbox:      msg.Mailbox,
 				}
 			}
 		}
@@ -1282,7 +1321,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Update the email in our stores
-		m.updateEmailBodyByUID(msg.UID, msg.AccountID, msg.Mailbox, msg.Body, msg.Attachments)
+		m.updateEmailBodyByUID(msg.UID, msg.AccountID, msg.Mailbox, msg.Body, msg.BodyMIMEType, msg.Attachments)
 
 		// Cache the body to disk
 		folderForCache := "INBOX"
@@ -1309,11 +1348,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cachedAttachments = append(cachedAttachments, ca)
 		}
 		err := config.SaveEmailBody(folderForCache, config.CachedEmailBody{
-			UID:         msg.UID,
-			AccountID:   msg.AccountID,
-			Body:        msg.Body,
-			Attachments: cachedAttachments,
-		})
+			UID:          msg.UID,
+			AccountID:    msg.AccountID,
+			Body:         msg.Body,
+			BodyMIMEType: msg.BodyMIMEType,
+			Attachments:  cachedAttachments,
+		}, m.config.GetBodyCacheThreshold())
 
 		if err != nil {
 			log.Printf("debug: error caching email body fails (disk full, permission denied) for UID: %d: %v", msg.UID, err)
@@ -1526,7 +1566,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						continue
 					}
 					name, email := parseEmailAddress(r)
-					if err := config.AddContact(name, email); err != nil {
+					if err := config.AddContactForAccount(name, email, msg.AccountID); err != nil {
 						log.Printf("Error saving contact: %v", err)
 					}
 				}
@@ -1840,10 +1880,11 @@ func (m *mainModel) getEmailIndex(uid uint32, accountID string, mailbox tui.Mail
 	return -1
 }
 
-func (m *mainModel) updateEmailBodyByUID(uid uint32, accountID string, mailbox tui.MailboxKind, body string, attachments []fetcher.Attachment) {
+func (m *mainModel) updateEmailBodyByUID(uid uint32, accountID string, mailbox tui.MailboxKind, body, bodyMIMEType string, attachments []fetcher.Attachment) {
 	for i := range m.emails {
 		if m.emails[i].UID == uid && m.emails[i].AccountID == accountID {
 			m.emails[i].Body = body
+			m.emails[i].BodyMIMEType = bodyMIMEType
 			m.emails[i].Attachments = attachments
 			break
 		}
@@ -1852,6 +1893,7 @@ func (m *mainModel) updateEmailBodyByUID(uid uint32, accountID string, mailbox t
 		for i := range emails {
 			if emails[i].UID == uid {
 				emails[i].Body = body
+				emails[i].BodyMIMEType = bodyMIMEType
 				emails[i].Attachments = attachments
 				break
 			}
@@ -2277,14 +2319,16 @@ func emailsToCache(emails []fetcher.Email) []config.CachedEmail {
 	var cached []config.CachedEmail
 	for _, email := range emails {
 		cached = append(cached, config.CachedEmail{
-			UID:       email.UID,
-			From:      email.From,
-			To:        email.To,
-			Subject:   email.Subject,
-			Date:      email.Date,
-			MessageID: email.MessageID,
-			AccountID: email.AccountID,
-			IsRead:    email.IsRead,
+			UID:        email.UID,
+			From:       email.From,
+			To:         email.To,
+			Subject:    email.Subject,
+			Date:       email.Date,
+			MessageID:  email.MessageID,
+			InReplyTo:  email.InReplyTo,
+			References: email.References,
+			AccountID:  email.AccountID,
+			IsRead:     email.IsRead,
 		})
 	}
 	return cached
@@ -2294,14 +2338,16 @@ func cacheToEmails(cached []config.CachedEmail) []fetcher.Email {
 	var emails []fetcher.Email
 	for _, c := range cached {
 		emails = append(emails, fetcher.Email{
-			UID:       c.UID,
-			From:      c.From,
-			To:        c.To,
-			Subject:   c.Subject,
-			Date:      c.Date,
-			MessageID: c.MessageID,
-			AccountID: c.AccountID,
-			IsRead:    c.IsRead,
+			UID:        c.UID,
+			From:       c.From,
+			To:         c.To,
+			Subject:    c.Subject,
+			Date:       c.Date,
+			MessageID:  c.MessageID,
+			InReplyTo:  c.InReplyTo,
+			References: c.References,
+			AccountID:  c.AccountID,
+			IsRead:     c.IsRead,
 		})
 	}
 	return emails
@@ -2329,20 +2375,22 @@ func saveEmailsToCache(emails []fetcher.Email) {
 	var cachedEmails []config.CachedEmail
 	for _, email := range emails {
 		cachedEmails = append(cachedEmails, config.CachedEmail{
-			UID:       email.UID,
-			From:      email.From,
-			To:        email.To,
-			Subject:   email.Subject,
-			Date:      email.Date,
-			MessageID: email.MessageID,
-			AccountID: email.AccountID,
-			IsRead:    email.IsRead,
+			UID:        email.UID,
+			From:       email.From,
+			To:         email.To,
+			Subject:    email.Subject,
+			Date:       email.Date,
+			MessageID:  email.MessageID,
+			InReplyTo:  email.InReplyTo,
+			References: email.References,
+			AccountID:  email.AccountID,
+			IsRead:     email.IsRead,
 		})
 
 		// Save sender as a contact
 		if email.From != "" {
 			name, emailAddr := parseEmailAddress(email.From)
-			if err := config.AddContact(name, emailAddr); err != nil {
+			if err := config.AddContactForAccount(name, emailAddr, email.AccountID); err != nil {
 				log.Printf("Error saving contact from email: %v", err)
 			}
 		}
@@ -2378,30 +2426,32 @@ func fetchEmailBodyCmd(cfg *config.Config, uid uint32, accountID string, mailbox
 		}
 
 		var (
-			body        string
-			attachments []fetcher.Attachment
-			err         error
+			body         string
+			bodyMIMEType string
+			attachments  []fetcher.Attachment
+			err          error
 		)
 		switch mailbox {
 		case tui.MailboxSent:
-			body, attachments, err = fetcher.FetchSentEmailBody(account, uid)
+			body, bodyMIMEType, attachments, err = fetcher.FetchSentEmailBody(account, uid)
 		case tui.MailboxTrash:
-			body, attachments, err = fetcher.FetchTrashEmailBody(account, uid)
+			body, bodyMIMEType, attachments, err = fetcher.FetchTrashEmailBody(account, uid)
 		case tui.MailboxArchive:
-			body, attachments, err = fetcher.FetchArchiveEmailBody(account, uid)
+			body, bodyMIMEType, attachments, err = fetcher.FetchArchiveEmailBody(account, uid)
 		default:
-			body, attachments, err = fetcher.FetchEmailBody(account, uid)
+			body, bodyMIMEType, attachments, err = fetcher.FetchEmailBody(account, uid)
 		}
 		if err != nil {
 			return tui.EmailBodyFetchedMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
 		}
 
 		return tui.EmailBodyFetchedMsg{
-			UID:         uid,
-			Body:        body,
-			Attachments: attachments,
-			AccountID:   accountID,
-			Mailbox:     mailbox,
+			UID:          uid,
+			Body:         body,
+			BodyMIMEType: bodyMIMEType,
+			Attachments:  attachments,
+			AccountID:    accountID,
+			Mailbox:      mailbox,
 		}
 	}
 }
@@ -2758,17 +2808,18 @@ func fetchFolderEmailBodyCmd(cfg *config.Config, uid uint32, accountID string, f
 			return tui.EmailBodyFetchedMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: fmt.Errorf("account not found")}
 		}
 
-		body, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
+		body, bodyMIMEType, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
 		if err != nil {
 			return tui.EmailBodyFetchedMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
 		}
 
 		return tui.EmailBodyFetchedMsg{
-			UID:         uid,
-			Body:        body,
-			Attachments: attachments,
-			AccountID:   accountID,
-			Mailbox:     mailbox,
+			UID:          uid,
+			Body:         body,
+			BodyMIMEType: bodyMIMEType,
+			Attachments:  attachments,
+			AccountID:    accountID,
+			Mailbox:      mailbox,
 		}
 	}
 }
@@ -2780,16 +2831,17 @@ func fetchPreviewBodyCmd(cfg *config.Config, uid uint32, accountID string, folde
 			return tui.PreviewBodyFetchedMsg{UID: uid, AccountID: accountID, Err: fmt.Errorf("account not found")}
 		}
 
-		body, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
+		body, bodyMIMEType, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
 		if err != nil {
 			return tui.PreviewBodyFetchedMsg{UID: uid, AccountID: accountID, Err: err}
 		}
 
 		return tui.PreviewBodyFetchedMsg{
-			UID:         uid,
-			Body:        body,
-			Attachments: attachments,
-			AccountID:   accountID,
+			UID:          uid,
+			Body:         body,
+			BodyMIMEType: bodyMIMEType,
+			Attachments:  attachments,
+			AccountID:    accountID,
 		}
 	}
 }
@@ -2964,11 +3016,27 @@ func sanitizeFilename(name string) string {
 	if len(name) > maxFilenameLen {
 		ext := filepath.Ext(name)
 		if len(ext) > maxFilenameLen {
-			ext = ext[:maxFilenameLen]
+			ext = truncateUTF8(ext, maxFilenameLen)
 		}
-		name = name[:maxFilenameLen-len(ext)] + ext
+		base := strings.TrimSuffix(name, ext)
+		name = truncateUTF8(base, maxFilenameLen-len(ext)) + ext
 	}
 	return name
+}
+
+func truncateUTF8(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(s) <= maxBytes {
+		return s
+	}
+	s = s[:maxBytes]
+	for !utf8.ValidString(s) {
+		_, size := utf8.DecodeLastRuneInString(s)
+		s = s[:len(s)-size]
+	}
+	return s
 }
 
 func downloadAttachmentCmd(account *config.Account, uid uint32, msg tui.DownloadAttachmentMsg) tea.Cmd {
@@ -3840,6 +3908,9 @@ func main() {
 	} else {
 		cfg, err := config.LoadConfig()
 		if err == nil {
+			if migrateErr := config.MigrateContactsCacheUsage(cfg.GetAccountIDs()); migrateErr != nil {
+				log.Printf("warning: contacts migration failed: %v", migrateErr)
+			}
 			if cfg.Theme != "" {
 				theme.SetTheme(cfg.Theme)
 			}
@@ -3864,6 +3935,9 @@ func main() {
 	// Initialize plugin system
 	plugins := plugin.NewManager()
 	plugins.LoadPlugins()
+	if initialModel.config != nil {
+		plugins.LoadSettingValues(initialModel.config.PluginSettings)
+	}
 	initialModel.plugins = plugins
 	tui.BodyTransformer = func(body string, email fetcher.Email) string {
 		folder := "INBOX"

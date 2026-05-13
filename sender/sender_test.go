@@ -1,9 +1,60 @@
 package sender
 
 import (
+	"errors"
+	"io"
 	"strings"
 	"testing"
 )
+
+type failingReader struct{}
+
+func (failingReader) Read(p []byte) (int, error) {
+	return 0, errors.New("simulated crypto/rand failure")
+}
+
+// TestSMIMEOuterBoundary_RandFailure ensures that a crypto/rand failure surfaces
+// as an error rather than silently producing a predictable, time-based
+// boundary that an attacker could collide with (issue #1127).
+func TestSMIMEOuterBoundary_RandFailure(t *testing.T) {
+	orig := randReader
+	t.Cleanup(func() { randReader = orig })
+	randReader = failingReader{}
+
+	got, err := smimeOuterBoundary()
+	if err == nil {
+		t.Fatalf("expected error when crypto/rand fails, got boundary %q", got)
+	}
+	if got != "" {
+		t.Errorf("expected empty boundary on error, got %q", got)
+	}
+}
+
+// TestSMIMEOuterBoundary_Success ensures the happy path returns a non-empty,
+// random-looking boundary with the expected prefix.
+func TestSMIMEOuterBoundary_Success(t *testing.T) {
+	b1, err := smimeOuterBoundary()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.HasPrefix(b1, "signed-") {
+		t.Errorf("boundary should start with 'signed-', got %q", b1)
+	}
+	// 12 random bytes => 24 hex chars; total length 7 + 24 = 31.
+	if len(b1) != len("signed-")+24 {
+		t.Errorf("unexpected boundary length: got %d (%q)", len(b1), b1)
+	}
+	b2, err := smimeOuterBoundary()
+	if err != nil {
+		t.Fatalf("unexpected error on second call: %v", err)
+	}
+	if b1 == b2 {
+		t.Errorf("two consecutive boundaries should differ, both got %q", b1)
+	}
+}
+
+// Ensure io is referenced even if a future refactor removes it indirectly.
+var _ io.Reader = failingReader{}
 
 // TestGenerateMessageID ensures the Message-ID has the correct format.
 func TestGenerateMessageID(t *testing.T) {

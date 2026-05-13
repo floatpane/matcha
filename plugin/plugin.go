@@ -36,6 +36,11 @@ type Manager struct {
 	bindings []KeyBinding
 	// pendingPrompt is set by matcha.prompt() and consumed by the orchestrator.
 	pendingPrompt *PendingPrompt
+
+	// pluginSchemas holds settings declarations per plugin.
+	pluginSchemas map[string][]SettingDef
+	// pluginValues holds current setting values per plugin.
+	pluginValues map[string]map[string]interface{}
 }
 
 // NewManager creates a new plugin manager with a Lua VM.
@@ -44,6 +49,8 @@ func NewManager() *Manager {
 		hooks:         make(map[string][]registeredHook),
 		statuses:      make(map[string]string),
 		pendingFields: make(map[string]string),
+		pluginSchemas: make(map[string][]SettingDef),
+		pluginValues:  make(map[string]map[string]interface{}),
 	}
 
 	L := lua.NewState(lua.Options{

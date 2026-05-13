@@ -16,7 +16,9 @@ import (
 // TUI and CLI use this interface — they don't care which mode is active.
 type Service interface {
 	FetchEmails(accountID, folder string, limit, offset uint32) ([]backend.Email, error)
-	FetchEmailBody(accountID, folder string, uid uint32) (string, []backend.Attachment, error)
+	// FetchEmailBody returns body, MIME type ("text/html"|"text/plain"|""),
+	// attachments, and any error.
+	FetchEmailBody(accountID, folder string, uid uint32) (string, string, []backend.Attachment, error)
 	DeleteEmails(accountID, folder string, uids []uint32) error
 	ArchiveEmails(accountID, folder string, uids []uint32) error
 	MoveEmails(accountID string, uids []uint32, src, dst string) error
@@ -102,7 +104,7 @@ func (s *daemonService) FetchEmails(accountID, folder string, limit, offset uint
 	return emails, err
 }
 
-func (s *daemonService) FetchEmailBody(accountID, folder string, uid uint32) (string, []backend.Attachment, error) {
+func (s *daemonService) FetchEmailBody(accountID, folder string, uid uint32) (string, string, []backend.Attachment, error) {
 	var result daemonrpc.FetchEmailBodyResult
 	err := s.client.Call(daemonrpc.MethodFetchEmailBody, daemonrpc.FetchEmailBodyParams{
 		AccountID: accountID,
@@ -110,7 +112,7 @@ func (s *daemonService) FetchEmailBody(accountID, folder string, uid uint32) (st
 		UID:       uid,
 	}, &result)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 
 	var attachments []backend.Attachment
@@ -122,7 +124,7 @@ func (s *daemonService) FetchEmailBody(accountID, folder string, uid uint32) (st
 			MIMEType: a.MIMEType,
 		})
 	}
-	return result.Body, attachments, nil
+	return result.Body, result.BodyMIMEType, attachments, nil
 }
 
 func (s *daemonService) DeleteEmails(accountID, folder string, uids []uint32) error {
@@ -251,10 +253,10 @@ func (s *directService) FetchEmails(accountID, folder string, limit, offset uint
 	return p.FetchEmails(context.Background(), folder, limit, offset)
 }
 
-func (s *directService) FetchEmailBody(accountID, folder string, uid uint32) (string, []backend.Attachment, error) {
+func (s *directService) FetchEmailBody(accountID, folder string, uid uint32) (string, string, []backend.Attachment, error) {
 	p, err := s.getProvider(accountID)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	return p.FetchEmailBody(context.Background(), folder, uid)
 }

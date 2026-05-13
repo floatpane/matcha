@@ -37,13 +37,11 @@ func (m *Settings) updateAccounts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "up", "k":
-		if m.accountsCursor > 0 {
-			m.accountsCursor--
-		}
+		itemCount := len(m.cfg.Accounts) + 1
+		m.accountsCursor = (m.accountsCursor - 1 + itemCount) % itemCount
 	case "down", "j":
-		if m.accountsCursor < len(m.cfg.Accounts) {
-			m.accountsCursor++
-		}
+		itemCount := len(m.cfg.Accounts) + 1
+		m.accountsCursor = (m.accountsCursor + 1) % itemCount
 	case "d":
 		if m.accountsCursor < len(m.cfg.Accounts) && len(m.cfg.Accounts) > 0 {
 			m.confirmingDelete = true

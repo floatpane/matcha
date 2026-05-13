@@ -13,6 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
+	"github.com/floatpane/matcha/internal/threading"
 	"github.com/floatpane/matcha/theme"
 )
 
@@ -39,6 +40,12 @@ type item struct {
 	accountEmail  string
 	date          time.Time
 	isRead        bool
+	threadKey     string
+	threadCount   int
+	threadRoot    bool
+	threadChild   bool
+	threadDepth   int
+	expanded      bool
 }
 
 func (i item) Title() string       { return i.title }
@@ -79,6 +86,13 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if i.isRead {
 		statusStyle = readEmailStyle
 		statusIcon = "\uf2b6"
+	}
+	if i.threadRoot && i.threadCount > 1 {
+		if i.expanded {
+			statusIcon = "▾"
+		} else {
+			statusIcon = "▸"
+		}
 	}
 	styledIcon := statusStyle.Render(statusIcon)
 	styledSender := statusStyle.Render(sender)
@@ -139,6 +153,12 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	subjectBudget := maxLeft - prefixWidth - iconWidth - senderWidth - sepWidth
 
 	subject := i.title
+	if i.threadChild {
+		subject = strings.Repeat("  ", i.threadDepth) + "↳ " + subject
+	}
+	if i.threadRoot && i.threadCount > 1 {
+		subject = fmt.Sprintf("%s (%d)", subject, i.threadCount)
+	}
 	if subjectBudget < 4 {
 		subjectBudget = 4
 	}
@@ -300,6 +320,9 @@ type Inbox struct {
 	searchActive       bool
 	searchQuery        string
 	searchResults      []fetcher.Email
+	threaded           map[string]bool
+	expanded           map[string]bool
+	defaultThreaded    bool
 
 	// Visual mode state (Vim-style multi-select)
 	visualMode     bool              // Whether visual mode is active
@@ -370,6 +393,8 @@ func NewInboxWithMailbox(emails []fetcher.Email, accounts []config.Account, mail
 		currentAccountID: "",
 		emailCountByAcct: emailCountByAcct,
 		mailbox:          mailbox,
+		threaded:         make(map[string]bool),
+		expanded:         make(map[string]bool),
 		visualMode:       false,
 		selectedUIDs:     make(map[uint32]string),
 		selectionOrder:   []uint32{},
@@ -402,24 +427,7 @@ func (m *Inbox) updateList() {
 		showAccountLabel = true
 	}
 
-	items := make([]list.Item, len(displayEmails))
-	for i, email := range displayEmails {
-		accountEmail := ""
-		if showAccountLabel {
-			accountEmail = m.accountLabelForEmail(email)
-		}
-
-		items[i] = item{
-			title:         email.Subject,
-			desc:          email.From,
-			originalIndex: i,
-			uid:           email.UID,
-			accountID:     email.AccountID,
-			accountEmail:  accountEmail,
-			date:          email.Date,
-			isRead:        email.IsRead,
-		}
-	}
+	items := m.itemsForEmails(displayEmails, showAccountLabel)
 
 	l := list.New(items, itemDelegate{inbox: m}, 20, 14)
 	l.Title = m.getTitle()
@@ -432,6 +440,7 @@ func (m *Inbox) updateList() {
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		bindings := []key.Binding{
 			key.NewBinding(key.WithKeys("v"), key.WithHelp("v", t("inbox.visual_mode"))),
+			key.NewBinding(key.WithKeys(m.toggleThreadedKey()), key.WithHelp(m.toggleThreadedKey(), "threaded")),
 			key.NewBinding(key.WithKeys("d"), key.WithHelp("\uf014 d", t("inbox.delete"))),
 			key.NewBinding(key.WithKeys("a"), key.WithHelp("\uea98 a", t("inbox.archive"))),
 			key.NewBinding(key.WithKeys("r"), key.WithHelp("\ue348 r", t("inbox.refresh"))),
@@ -600,6 +609,95 @@ func extractEmailAddress(value string) string {
 	return strings.Trim(value, "<>")
 }
 
+func (m *Inbox) itemsForEmails(displayEmails []fetcher.Email, showAccountLabel bool) []list.Item {
+	if !m.isThreaded() {
+		items := make([]list.Item, len(displayEmails))
+		for i, email := range displayEmails {
+			items[i] = m.itemForEmail(email, i, showAccountLabel)
+		}
+		return items
+	}
+
+	emailIndex := make(map[string]int, len(displayEmails))
+	headers := make([]threading.EmailHeader, 0, len(displayEmails))
+	for i, email := range displayEmails {
+		id := inboxEmailID(email)
+		emailIndex[id] = i
+		headers = append(headers, threading.EmailHeader{
+			ID:         email.MessageID,
+			InReplyTo:  email.InReplyTo,
+			References: email.References,
+			Subject:    email.Subject,
+			Date:       email.Date,
+			EmailID:    id,
+			Sender:     email.From,
+		})
+	}
+
+	var items []list.Item
+	for _, thread := range threading.Build(headers) {
+		key := threadItemKey(thread.Root)
+		root := firstEmailNode(thread.Root)
+		if root == nil {
+			continue
+		}
+		idx := emailIndex[root.EmailID]
+		rootEmail := displayEmails[idx]
+		latest := latestEmailNode(thread.Root)
+		if latest == nil {
+			latest = root
+		}
+
+		rootItem := m.itemForEmail(rootEmail, idx, showAccountLabel)
+		rootItem.title = firstNonEmpty(root.Subject, thread.Subject)
+		rootItem.desc = latest.Sender
+		rootItem.date = thread.LatestAt
+		rootItem.isRead = threadRead(displayEmails, emailIndex, thread.Root)
+		rootItem.threadKey = key
+		rootItem.threadCount = thread.Count
+		rootItem.threadRoot = true
+		rootItem.expanded = m.expanded[key]
+		items = append(items, rootItem)
+
+		if m.expanded[key] {
+			items = appendThreadChildren(items, m, displayEmails, emailIndex, showAccountLabel, thread.Root.Children, 1)
+		}
+	}
+	return items
+}
+
+func appendThreadChildren(items []list.Item, m *Inbox, emails []fetcher.Email, emailIndex map[string]int, showAccountLabel bool, nodes []*threading.ThreadNode, depth int) []list.Item {
+	for _, node := range nodes {
+		if node.EmailID != "" {
+			idx := emailIndex[node.EmailID]
+			child := m.itemForEmail(emails[idx], idx, showAccountLabel)
+			child.threadChild = true
+			child.threadDepth = depth
+			items = append(items, child)
+		}
+		items = appendThreadChildren(items, m, emails, emailIndex, showAccountLabel, node.Children, depth+1)
+	}
+	return items
+}
+
+func (m *Inbox) itemForEmail(email fetcher.Email, index int, showAccountLabel bool) item {
+	accountEmail := ""
+	if showAccountLabel {
+		accountEmail = m.accountLabelForEmail(email)
+	}
+
+	return item{
+		title:         email.Subject,
+		desc:          email.From,
+		originalIndex: index,
+		uid:           email.UID,
+		accountID:     email.AccountID,
+		accountEmail:  accountEmail,
+		date:          email.Date,
+		isRead:        email.IsRead,
+	}
+}
+
 func (m *Inbox) getTitle() string {
 	var title string
 	if m.searchActive {
@@ -625,6 +723,9 @@ func (m *Inbox) getTitle() string {
 	if m.isFetching {
 		title += " (loading more...)"
 	}
+	if m.isThreaded() {
+		title += " (threaded)"
+	}
 	if m.pluginStatus != "" {
 		title += " (" + m.pluginStatus + ")"
 	}
@@ -645,6 +746,57 @@ func (m *Inbox) getBaseTitle() string {
 	default:
 		return "Inbox"
 	}
+}
+
+func (m *Inbox) folderKey() string {
+	if m.folderName != "" {
+		return m.folderName
+	}
+	return string(m.mailbox)
+}
+
+// SetDefaultThreaded sets the global default threading state used when no
+// per-folder override exists. Pass Config.EnableThreaded.
+func (m *Inbox) SetDefaultThreaded(v bool) {
+	m.defaultThreaded = v
+	// Drop the in-memory cache so the new default takes effect for folders
+	// without an explicit override on the next render.
+	m.threaded = nil
+	m.expanded = nil
+}
+
+func (m *Inbox) isThreaded() bool {
+	if m.threaded == nil {
+		m.threaded = make(map[string]bool)
+	}
+	if m.expanded == nil {
+		m.expanded = make(map[string]bool)
+	}
+	key := m.folderKey()
+	if _, ok := m.threaded[key]; !ok {
+		m.threaded[key] = config.IsFolderThreaded(key, m.defaultThreaded)
+	}
+	return m.threaded[key]
+}
+
+func (m *Inbox) toggleThreaded() {
+	if m.threaded == nil {
+		m.threaded = make(map[string]bool)
+	}
+	key := m.folderKey()
+	next := !m.isThreaded()
+	m.threaded[key] = next
+	if !next {
+		m.expanded = make(map[string]bool)
+	}
+	_ = config.SetFolderThreaded(key, next)
+}
+
+func (m *Inbox) toggleThreadedKey() string {
+	if config.Keybinds.Inbox.ToggleThreaded != "" {
+		return config.Keybinds.Inbox.ToggleThreaded
+	}
+	return "T"
 }
 
 func (m *Inbox) Init() tea.Cmd {
@@ -680,6 +832,10 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case searchBinding:
 			m.searchOverlay = NewSearchOverlay(m.width, m.height)
 			return m, m.searchOverlay.Init()
+		case m.toggleThreadedKey():
+			m.toggleThreaded()
+			m.updateList()
+			return m, nil
 		case kb.Inbox.VisualMode:
 			if !m.visualMode {
 				// Enter visual mode
@@ -777,7 +933,7 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				// Single delete
 				selectedItem, ok := m.list.SelectedItem().(item)
-				if ok {
+				if ok && selectedItem.uid != 0 {
 					return m, func() tea.Msg {
 						return DeleteEmailMsg{UID: selectedItem.uid, AccountID: selectedItem.accountID, Mailbox: m.mailbox}
 					}
@@ -806,7 +962,7 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				// Single archive
 				selectedItem, ok := m.list.SelectedItem().(item)
-				if ok {
+				if ok && selectedItem.uid != 0 {
 					return m, func() tea.Msg {
 						return ArchiveEmailMsg{UID: selectedItem.uid, AccountID: selectedItem.accountID, Mailbox: m.mailbox}
 					}
@@ -826,6 +982,14 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case kb.Inbox.Open:
 			selectedItem, ok := m.list.SelectedItem().(item)
 			if ok {
+				if selectedItem.threadRoot && selectedItem.threadCount > 1 {
+					m.expanded[selectedItem.threadKey] = !m.expanded[selectedItem.threadKey]
+					m.updateList()
+					return m, nil
+				}
+				if selectedItem.uid == 0 {
+					return m, nil
+				}
 				idx := selectedItem.originalIndex
 				uid := selectedItem.uid
 				accountID := selectedItem.accountID
@@ -1134,6 +1298,9 @@ func (m *Inbox) updateVisualSelection() {
 	firstAccountID := ""
 	for i := start; i <= end && i < len(items); i++ {
 		if itm, ok := items[i].(item); ok {
+			if itm.uid == 0 {
+				continue
+			}
 			// Ensure all selected emails are from the same account (prevent cross-account batch ops)
 			if firstAccountID == "" {
 				firstAccountID = itm.accountID
@@ -1229,7 +1396,7 @@ func (m *Inbox) SetSize(width, height int) {
 // SetFolderName sets a custom folder name for the inbox title.
 func (m *Inbox) SetFolderName(name string) {
 	m.folderName = name
-	m.list.Title = m.getTitle()
+	m.updateList()
 }
 
 // SetPluginStatus sets a persistent status string from plugins, shown in the title.
@@ -1275,4 +1442,86 @@ func (m *Inbox) SetEmails(emails []fetcher.Email, accounts []config.Account) {
 	}
 
 	m.updateList()
+}
+
+func inboxEmailID(email fetcher.Email) string {
+	return fmt.Sprintf("%s:%d", email.AccountID, email.UID)
+}
+
+func threadItemKey(node *threading.ThreadNode) string {
+	if node == nil {
+		return ""
+	}
+	if node.EmailID != "" {
+		return node.EmailID
+	}
+	for _, child := range node.Children {
+		if key := threadItemKey(child); key != "" {
+			return key
+		}
+	}
+	return ""
+}
+
+func firstEmailNode(node *threading.ThreadNode) *threading.ThreadNode {
+	if node == nil {
+		return nil
+	}
+	if node.EmailID != "" {
+		return node
+	}
+	for _, child := range node.Children {
+		if first := firstEmailNode(child); first != nil {
+			return first
+		}
+	}
+	return nil
+}
+
+func latestEmailNode(node *threading.ThreadNode) *threading.ThreadNode {
+	if node == nil {
+		return nil
+	}
+	var latest *threading.ThreadNode
+	if node.EmailID != "" {
+		latest = node
+	}
+	for _, child := range node.Children {
+		candidate := latestEmailNode(child)
+		if candidate == nil {
+			continue
+		}
+		if latest == nil || candidate.Date.After(latest.Date) ||
+			(candidate.Date.Equal(latest.Date) && candidate.EmailID < latest.EmailID) {
+			latest = candidate
+		}
+	}
+	return latest
+}
+
+func threadRead(emails []fetcher.Email, emailIndex map[string]int, node *threading.ThreadNode) bool {
+	if node == nil {
+		return true
+	}
+	read := true
+	if node.EmailID != "" {
+		if idx, ok := emailIndex[node.EmailID]; ok && !emails[idx].IsRead {
+			read = false
+		}
+	}
+	for _, child := range node.Children {
+		if !threadRead(emails, emailIndex, child) {
+			read = false
+		}
+	}
+	return read
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }

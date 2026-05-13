@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
@@ -73,6 +74,22 @@ func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unexpected LOGIN prompt: %s", prompt)
 	}
+}
+
+// randReader is the source of randomness for boundary generation. It is a
+// variable so tests can swap it with a deterministic or failing reader. By
+// default it is crypto/rand.Reader.
+var randReader io.Reader = rand.Reader
+
+// smimeOuterBoundary returns a fresh, high-entropy MIME boundary for an S/MIME
+// multipart/signed wrapper. If crypto/rand cannot supply randomness it returns
+// an error rather than degrading to a predictable, time-based fallback.
+func smimeOuterBoundary() (string, error) {
+	var rb [12]byte
+	if _, err := io.ReadFull(randReader, rb[:]); err != nil {
+		return "", fmt.Errorf("smime: failed to read random bytes for outer boundary: %w", err)
+	}
+	return "signed-" + fmt.Sprintf("%x", rb[:]), nil
 }
 
 // generateMessageID creates a unique Message-ID header.
@@ -278,13 +295,9 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 				return nil, err
 			}
 
-			var rb [12]byte
-			var outerBoundary string
-			if _, rerr := rand.Read(rb[:]); rerr == nil {
-				outerBoundary = "signed-" + fmt.Sprintf("%x", rb[:])
-			} else {
-				// fallback to time-based boundary if crypto/rand fails
-				outerBoundary = "signed-" + fmt.Sprintf("%d", time.Now().UnixNano())
+			outerBoundary, err := smimeOuterBoundary()
+			if err != nil {
+				return nil, err
 			}
 			var signedMsg bytes.Buffer
 			fmt.Fprintf(&signedMsg, "Content-Type: multipart/signed; protocol=\"application/pkcs7-signature\"; micalg=\"sha-256\"; boundary=\"%s\"\r\n\r\n", outerBoundary)
@@ -482,13 +495,9 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 			return nil, err
 		}
 
-		var rb [12]byte
-		var outerBoundary string
-		if _, rerr := rand.Read(rb[:]); rerr == nil {
-			outerBoundary = "signed-" + fmt.Sprintf("%x", rb[:])
-		} else {
-			// fallback to time-based boundary if crypto/rand fails
-			outerBoundary = "signed-" + fmt.Sprintf("%d", time.Now().UnixNano())
+		outerBoundary, err := smimeOuterBoundary()
+		if err != nil {
+			return nil, err
 		}
 		var signedMsg bytes.Buffer
 		fmt.Fprintf(&signedMsg, "Content-Type: multipart/signed; protocol=\"application/pkcs7-signature\"; micalg=\"sha-256\"; boundary=\"%s\"\r\n\r\n", outerBoundary)

@@ -133,6 +133,13 @@ func (m *FolderInbox) SetDateFormat(layout string) {
 	}
 }
 
+// SetDefaultThreaded propagates the global default threading toggle.
+func (m *FolderInbox) SetDefaultThreaded(v bool) {
+	if m.inbox != nil {
+		m.inbox.SetDefaultThreaded(v)
+	}
+}
+
 // NewFolderInbox creates a new FolderInbox with the given folders and accounts.
 func NewFolderInbox(folders []string, accounts []config.Account) *FolderInbox {
 	folders = sortFolders(folders)
@@ -346,6 +353,7 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Update email with body
 		email.Body = msg.Body
+		email.BodyMIMEType = msg.BodyMIMEType
 		email.Attachments = msg.Attachments
 		// Create preview pane with column offset for image rendering
 		previewWidth := m.calculatePreviewWidth()

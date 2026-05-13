@@ -23,6 +23,7 @@ type FilePicker struct {
 	cursor      int
 	currentPath string
 	items       []fs.DirEntry
+	itemSizes   map[string]string
 	width       int
 	height      int
 	showHidden  bool
@@ -39,6 +40,7 @@ func NewFilePicker(startPath string) *FilePicker {
 
 	fp := &FilePicker{
 		currentPath: startPath,
+		itemSizes:   make(map[string]string),
 		pathInput:   pi,
 	}
 	fp.readDir()
@@ -49,6 +51,7 @@ func (m *FilePicker) readDir() {
 	files, err := os.ReadDir(m.currentPath)
 	if err != nil {
 		m.items = []fs.DirEntry{}
+		m.itemSizes = make(map[string]string)
 		return
 	}
 	if !m.showHidden {
@@ -61,6 +64,15 @@ func (m *FilePicker) readDir() {
 		files = filtered
 	}
 	m.items = files
+	m.itemSizes = make(map[string]string, len(files))
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		if info, err := f.Info(); err == nil {
+			m.itemSizes[filepath.Join(m.currentPath, f.Name())] = tfs(info.Size())
+		}
+	}
 	m.cursor = 0
 }
 
@@ -120,12 +132,12 @@ func (m *FilePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Normal browsing mode
 		switch msg.String() {
 		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
+			if len(m.items) > 0 {
+				m.cursor = (m.cursor - 1 + len(m.items)) % len(m.items)
 			}
 		case "down", "j":
-			if m.cursor < len(m.items)-1 {
-				m.cursor++
+			if len(m.items) > 0 {
+				m.cursor = (m.cursor + 1) % len(m.items)
 			}
 		case "/":
 			m.editingPath = true
@@ -165,19 +177,6 @@ func (m *FilePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
-}
-
-func formatFileSize(size int64) string {
-	switch {
-	case size < 1024:
-		return fmt.Sprintf("%dB", size)
-	case size < 1024*1024:
-		return fmt.Sprintf("%.1fK", float64(size)/1024)
-	case size < 1024*1024*1024:
-		return fmt.Sprintf("%.1fM", float64(size)/(1024*1024))
-	default:
-		return fmt.Sprintf("%.1fG", float64(size)/(1024*1024*1024))
-	}
 }
 
 func (m *FilePicker) View() tea.View {
@@ -225,8 +224,8 @@ func (m *FilePicker) View() tea.View {
 		if item.IsDir() {
 			itemName = directoryStyle.Render(itemName + "/")
 		} else {
-			if info, err := item.Info(); err == nil {
-				sizeStr = fileSizeStyle.Render("  " + formatFileSize(info.Size()))
+			if size, ok := m.itemSizes[filepath.Join(m.currentPath, item.Name())]; ok {
+				sizeStr = fileSizeStyle.Render("  " + size)
 			}
 		}
 

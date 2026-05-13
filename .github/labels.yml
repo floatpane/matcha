@@ -138,3 +138,20 @@
 - name: area/docs
   color: c2e0c6
   description: Docs site / README
+
+# --- Size ---
+- name: size/XS
+  color: "3cbf00"
+  description: "Diff: 0–10 lines"
+- name: size/S
+  color: "5d9801"
+  description: "Diff: 11–50 lines"
+- name: size/M
+  color: "eebb00"
+  description: "Diff: 51–200 lines"
+- name: size/L
+  color: "ee9900"
+  description: "Diff: 201–800 lines"
+- name: size/XL
+  color: "ee5500"
+  description: "Diff: 800+ lines"

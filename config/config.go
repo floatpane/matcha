@@ -91,10 +91,25 @@ type Config struct {
 	HideTips             bool          `json:"hide_tips,omitempty"`
 	DisableNotifications bool          `json:"disable_notifications,omitempty"`
 	EnableSplitPane      bool          `json:"enable_split_pane,omitempty"`
+	EnableThreaded       bool          `json:"enable_threaded,omitempty"`
 	Theme                string        `json:"theme,omitempty"`
 	MailingLists         []MailingList `json:"mailing_lists,omitempty"`
 	DateFormat           string        `json:"date_format,omitempty"`
 	Language             string        `json:"language,omitempty"` // Language code (e.g., "en", "es", "de")
+	BodyCacheThresholdMB int           `json:"body_cache_threshold_mb,omitempty"`
+	// PluginSettings stores user-configurable values for installed plugins,
+	// keyed by plugin name then setting key. Values are JSON-native types
+	// (bool, float64, string) matching the plugin's declared schema.
+	PluginSettings map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
+}
+
+// GetBodyCacheThreshold returns the email body cache threshold in bytes.
+// It defaults to 100MB if unset or zero.
+func (c *Config) GetBodyCacheThreshold() int {
+	if c.BodyCacheThresholdMB <= 0 {
+		return 100 * 1024 * 1024
+	}
+	return c.BodyCacheThresholdMB * 1024 * 1024
 }
 
 // GetDateFormat returns the Go time reference layout translated from the
@@ -383,14 +398,17 @@ type secureDiskAccount struct {
 }
 
 type secureDiskConfig struct {
-	Accounts             []secureDiskAccount `json:"accounts"`
-	DisableImages        bool                `json:"disable_images,omitempty"`
-	HideTips             bool                `json:"hide_tips,omitempty"`
-	DisableNotifications bool                `json:"disable_notifications,omitempty"`
-	EnableSplitPane      bool                `json:"enable_split_pane,omitempty"`
-	Theme                string              `json:"theme,omitempty"`
-	MailingLists         []MailingList       `json:"mailing_lists,omitempty"`
-	DateFormat           string              `json:"date_format,omitempty"`
+	Accounts             []secureDiskAccount               `json:"accounts"`
+	DisableImages        bool                              `json:"disable_images,omitempty"`
+	HideTips             bool                              `json:"hide_tips,omitempty"`
+	DisableNotifications bool                              `json:"disable_notifications,omitempty"`
+	EnableSplitPane      bool                              `json:"enable_split_pane,omitempty"`
+	EnableThreaded       bool                              `json:"enable_threaded,omitempty"`
+	Theme                string                            `json:"theme,omitempty"`
+	MailingLists         []MailingList                     `json:"mailing_lists,omitempty"`
+	DateFormat           string                            `json:"date_format,omitempty"`
+	Language             string                            `json:"language,omitempty"`
+	PluginSettings       map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
 }
 
 // SaveConfig saves the given configuration to the config file and passwords to the keyring.
@@ -435,6 +453,7 @@ func SaveConfig(config *Config) error {
 			Theme:                config.Theme,
 			MailingLists:         config.MailingLists,
 			DateFormat:           config.DateFormat,
+			PluginSettings:       config.PluginSettings,
 		}
 		for _, acc := range config.Accounts {
 			sdc.Accounts = append(sdc.Accounts, secureDiskAccount{
@@ -528,15 +547,18 @@ func LoadConfig() (*Config, error) {
 		CatchAll           bool   `json:"catch_all,omitempty"`
 	}
 	type diskConfig struct {
-		Accounts             []rawAccount  `json:"accounts"`
-		DisableImages        bool          `json:"disable_images,omitempty"`
-		HideTips             bool          `json:"hide_tips,omitempty"`
-		DisableNotifications bool          `json:"disable_notifications,omitempty"`
-		EnableSplitPane      bool          `json:"enable_split_pane,omitempty"`
-		Theme                string        `json:"theme,omitempty"`
-		MailingLists         []MailingList `json:"mailing_lists,omitempty"`
-		DateFormat           string        `json:"date_format,omitempty"`
-		Language             string        `json:"language,omitempty"`
+		Accounts             []rawAccount                      `json:"accounts"`
+		DisableImages        bool                              `json:"disable_images,omitempty"`
+		HideTips             bool                              `json:"hide_tips,omitempty"`
+		DisableNotifications bool                              `json:"disable_notifications,omitempty"`
+		EnableSplitPane      bool                              `json:"enable_split_pane,omitempty"`
+		EnableThreaded       bool                              `json:"enable_threaded,omitempty"`
+		Theme                string                            `json:"theme,omitempty"`
+		MailingLists         []MailingList                     `json:"mailing_lists,omitempty"`
+		DateFormat           string                            `json:"date_format,omitempty"`
+		Language             string                            `json:"language,omitempty"`
+		BodyCacheThresholdMB int                               `json:"body_cache_threshold_mb,omitempty"`
+		PluginSettings       map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
 	}
 
 	var raw diskConfig
@@ -568,10 +590,14 @@ func LoadConfig() (*Config, error) {
 	config.HideTips = raw.HideTips
 	config.DisableNotifications = raw.DisableNotifications
 	config.EnableSplitPane = raw.EnableSplitPane
+	config.EnableThreaded = raw.EnableThreaded
 	config.Theme = raw.Theme
 	config.MailingLists = raw.MailingLists
 	config.DateFormat = raw.DateFormat
 	config.Language = raw.Language
+	config.BodyCacheThresholdMB = raw.BodyCacheThresholdMB
+	config.PluginSettings = raw.PluginSettings
+
 	for _, rawAcc := range raw.Accounts {
 		acc := Account{
 			ID:                 rawAcc.ID,
@@ -710,6 +736,17 @@ func (c *Config) GetAccountByEmail(email string) *Account {
 // HasAccounts returns true if there are any configured accounts.
 func (c *Config) HasAccounts() bool {
 	return len(c.Accounts) > 0
+}
+
+// GetAccountIDs returns the configured account IDs.
+func (c *Config) GetAccountIDs() []string {
+	ids := make([]string, 0, len(c.Accounts))
+	for _, acc := range c.Accounts {
+		if acc.ID != "" {
+			ids = append(ids, acc.ID)
+		}
+	}
+	return ids
 }
 
 // GetFirstAccount returns the first account or nil if none exist.

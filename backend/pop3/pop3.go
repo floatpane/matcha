@@ -15,6 +15,7 @@ import (
 	"io"
 	"mime"
 	"net/mail"
+	"regexp"
 	"strings"
 	"time"
 
@@ -26,6 +27,8 @@ import (
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/sender"
 )
+
+var pop3MessageIDRE = regexp.MustCompile(`<[^>]+>`)
 
 func init() {
 	backend.RegisterBackend("pop3", func(account *config.Account) (backend.Provider, error) {
@@ -131,21 +134,21 @@ func (p *Provider) FetchEmails(_ context.Context, _ string, limit, offset uint32
 	return emails, nil
 }
 
-func (p *Provider) FetchEmailBody(_ context.Context, _ string, uid uint32) (string, []backend.Attachment, error) {
+func (p *Provider) FetchEmailBody(_ context.Context, _ string, uid uint32) (string, string, []backend.Attachment, error) {
 	conn, err := p.connect()
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	defer conn.Quit()
 
 	msgID, err := p.findMessageByUID(conn, uid)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 
 	raw, err := conn.RetrRaw(msgID)
 	if err != nil {
-		return "", nil, fmt.Errorf("pop3 retr: %w", err)
+		return "", "", nil, fmt.Errorf("pop3 retr: %w", err)
 	}
 
 	return parseMessageBody(raw)
@@ -298,6 +301,8 @@ func entityToEmail(header *message.Header, msgInfo pop3client.MessageID, account
 	subject := header.Get("Subject")
 	dateStr := header.Get("Date")
 	messageID := header.Get("Message-ID")
+	inReplyTo := firstMessageID(header.Get("In-Reply-To"))
+	references := messageIDList(header.Get("References"))
 
 	var to []string
 	if toHeader := header.Get("To"); toHeader != "" {
@@ -339,28 +344,48 @@ func entityToEmail(header *message.Header, msgInfo pop3client.MessageID, account
 	}
 
 	return backend.Email{
-		UID:       hashUID(uidStr),
-		From:      from,
-		To:        to,
-		ReplyTo:   replyTo,
-		Subject:   subject,
-		Date:      date,
-		IsRead:    false,
-		MessageID: messageID,
-		AccountID: accountID,
+		UID:        hashUID(uidStr),
+		From:       from,
+		To:         to,
+		ReplyTo:    replyTo,
+		Subject:    subject,
+		Date:       date,
+		IsRead:     false,
+		MessageID:  messageID,
+		InReplyTo:  inReplyTo,
+		References: references,
+		AccountID:  accountID,
 	}
 }
 
+func firstMessageID(value string) string {
+	ids := messageIDList(value)
+	if len(ids) == 0 {
+		return ""
+	}
+	return ids[0]
+}
+
+func messageIDList(value string) []string {
+	matches := pop3MessageIDRE.FindAllString(value, -1)
+	if len(matches) == 0 {
+		return strings.Fields(value)
+	}
+	return matches
+}
+
 // parseMessageBody extracts the body text and attachments from a raw message.
-func parseMessageBody(r io.Reader) (string, []backend.Attachment, error) {
+func parseMessageBody(r io.Reader) (string, string, []backend.Attachment, error) {
 	mr, err := gomail.CreateReader(r)
 	if err != nil {
-		// Not a multipart message — read body directly
+		// Not a multipart message — read body directly. We don't know the
+		// content type at this layer; surface empty so the renderer falls
+		// back to its legacy markdown→HTML path.
 		body, err := io.ReadAll(r)
 		if err != nil {
-			return "", nil, err
+			return "", "", nil, err
 		}
-		return string(body), nil, nil
+		return string(body), "", nil, nil
 	}
 
 	var bodyText string
@@ -411,9 +436,9 @@ func parseMessageBody(r io.Reader) (string, []backend.Attachment, error) {
 	}
 
 	if htmlBody != "" {
-		return htmlBody, attachments, nil
+		return htmlBody, "text/html", attachments, nil
 	}
-	return bodyText, attachments, nil
+	return bodyText, "text/plain", attachments, nil
 }
 
 // findAttachmentData walks a raw message to find attachment data by partID.

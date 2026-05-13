@@ -118,6 +118,7 @@
       "category_theme": "Motyw",
       "category_mailing_lists": "Listy Mailingowe",
       "category_encryption": "Szyfrowanie Aplikacji",
+      "category_plugins": "Wtyczki",
       "help_menu": "↑/↓: nawigacja • prawo/enter: wybierz • esc: wstecz",
       "help_content": "esc: powrót do menu"
     },
@@ -151,6 +152,7 @@
       "hide_tips": "Ukryj Wskazówki Kontekstowe",
       "disable_notifications": "Wyłącz Powiadomienia",
       "enable_split_pane": "Widok podzielony",
+      "enable_threaded": "Widok wątków",
       "date_format": "Format Daty",
       "language": "Język",
       "signature": "Edytuj Podpis",
