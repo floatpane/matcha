@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,16 @@ import (
 	"github.com/floatpane/matcha/backend"
 	"github.com/floatpane/matcha/config"
 )
+
+// seenSuffix returns the on-disk suffix go-maildir appends for a message that
+// carries only the Seen flag. Windows uses ';' instead of ':' because ':' is
+// reserved in NTFS filenames.
+func seenSuffix() string {
+	if runtime.GOOS == "windows" {
+		return ";2,S"
+	}
+	return ":2,S"
+}
 
 // makeMaildir creates a root + the named Maildir++ subfolders.
 func makeMaildir(t *testing.T, subfolders ...string) string {
@@ -161,8 +172,8 @@ func TestMarkAsReadAddsSeenFlag(t *testing.T) {
 	if len(curFiles) != 1 {
 		t.Fatalf("want 1 file in cur/, got %d", len(curFiles))
 	}
-	if !strings.HasSuffix(curFiles[0].Name(), ":2,S") {
-		t.Errorf("want :2,S suffix, got %q", curFiles[0].Name())
+	if !strings.HasSuffix(curFiles[0].Name(), seenSuffix()) {
+		t.Errorf("want %s suffix, got %q", seenSuffix(), curFiles[0].Name())
 	}
 
 	emails, err = p.FetchEmails(context.Background(), "INBOX", 10, 0)
