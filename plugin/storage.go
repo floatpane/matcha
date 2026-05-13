@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"sync"
 
+	"github.com/floatpane/matcha/config"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -25,12 +27,12 @@ func newPluginStore(pluginName string) (*pluginStore, error) {
 		return nil, errors.New("invalid plugin name for storage")
 	}
 
-	home, err := os.UserHomeDir()
+	cfgDir, err := config.GetConfigDir()
 	if err != nil {
 		return nil, err
 	}
 
-	dir := filepath.Join(home, ".config", "matcha", "plugins", pluginName)
+	dir := filepath.Join(cfgDir, "plugins", pluginName)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
@@ -113,6 +115,8 @@ func (s *pluginStore) Delete(k string) error {
 	return s.flush()
 }
 
+// Keys returns the keys currently stored, sorted lexicographically so plugin
+// authors can rely on a stable iteration order across calls.
 func (s *pluginStore) Keys() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -121,6 +125,7 @@ func (s *pluginStore) Keys() []string {
 	for k := range s.data {
 		out = append(out, k)
 	}
+	sort.Strings(out)
 	return out
 }
 
@@ -190,8 +195,11 @@ func (m *Manager) luaStoreDelete(L *lua.LState) int {
 		L.RaiseError("store_delete: %v", err)
 		return 0
 	}
+	// No plugin context: silently no-op, matching store_get's behavior so
+	// read+remove operations behave the same when called outside a plugin
+	// (e.g. from a non-plugin Lua chunk). store_set still raises so a
+	// missing-context write is surfaced loudly.
 	if s == nil {
-		L.RaiseError("store_delete: no plugin context")
 		return 0
 	}
 	if err := s.Delete(key); err != nil {

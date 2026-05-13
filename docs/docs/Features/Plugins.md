@@ -222,7 +222,7 @@ end
 
 ### matcha.store_delete(key)
 
-Remove a key from this plugin's storage. Calling `store_delete` on a key that does not exist is a no-op.
+Remove a key from this plugin's storage. Calling `store_delete` on a key that does not exist is a no-op. When called from outside a plugin context (matching `store_get`'s behavior), it is also a silent no-op — only `store_set` raises an error in that case, so missing-context writes are surfaced loudly.
 
 ```lua
 matcha.store_delete("api_key")
@@ -230,7 +230,7 @@ matcha.store_delete("api_key")
 
 ### matcha.store_keys()
 
-Return a 1-indexed table of all keys currently stored by this plugin. Useful for iterating over plugin state on startup.
+Return a 1-indexed table of all keys currently stored by this plugin, sorted lexicographically. Useful for iterating over plugin state on startup with a stable order.
 
 ```lua
 for _, key in ipairs(matcha.store_keys()) do

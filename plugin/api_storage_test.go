@@ -48,6 +48,23 @@ func TestLuaStoreSetWithoutPluginContext(t *testing.T) {
 	}
 }
 
+// store_delete is intentionally a silent no-op outside a plugin context to
+// match store_get's read-side behavior. Only store_set raises in that case.
+func TestLuaStoreDeleteWithoutPluginContextIsNoOp(t *testing.T) {
+	setTestHome(t)
+
+	m := newTestManager()
+	defer m.Close()
+
+	err := m.state.DoString(`
+		local matcha = require("matcha")
+		matcha.store_delete("token")
+	`)
+	if err != nil {
+		t.Fatalf("expected store_delete to be silent without plugin context, got %v", err)
+	}
+}
+
 func TestLuaStorePluginsAreIsolated(t *testing.T) {
 	setTestHome(t)
 

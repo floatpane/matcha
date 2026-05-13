@@ -89,6 +89,28 @@ func TestPluginStoreKeys(t *testing.T) {
 	}
 }
 
+func TestPluginStoreKeysSortedOrder(t *testing.T) {
+	setTestHome(t)
+
+	store, err := newPluginStore("test_plugin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Insert in non-sorted order so map iteration order won't accidentally
+	// produce the expected result.
+	for _, k := range []string{"c", "a", "b", "z", "m"} {
+		if err := store.Set(k, k); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := store.Keys()
+	want := []string{"a", "b", "c", "m", "z"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected sorted keys %v, got %v", want, got)
+	}
+}
+
 func TestPluginStoreKeysEmpty(t *testing.T) {
 	setTestHome(t)
 

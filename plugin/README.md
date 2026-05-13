@@ -92,7 +92,7 @@ matcha.store_set("api_key", "sk-...")
 local key = matcha.store_get("api_key")
 ```
 
-Use `matcha.store_delete("api_key")` to remove a value. `matcha.store_keys()` returns a 1-indexed table of all keys stored by the current plugin.
+Use `matcha.store_delete("api_key")` to remove a value. `matcha.store_keys()` returns a 1-indexed table of all keys stored by the current plugin, sorted lexicographically.
 
 ## User input prompts
 

@@ -64,7 +64,7 @@ func (m *Manager) CallHook(event string, args ...lua.LValue) {
 // CallSendHook calls a hook with email send metadata.
 func (m *Manager) CallSendHook(event string, to, cc, subject, accountID string) {
 	callbacks, ok := m.hooks[event]
-	if !ok {
+	if !ok || len(callbacks) == 0 {
 		return
 	}
 
@@ -79,7 +79,6 @@ func (m *Manager) CallSendHook(event string, to, cc, subject, accountID string) 
 	defer func() {
 		m.currentPlugin = previousPlugin
 	}()
-
 	for _, hook := range callbacks {
 		m.currentPlugin = hook.plugin
 		if err := L.CallByParam(lua.P{
@@ -119,7 +118,7 @@ func (m *Manager) CallFolderHook(event string, folderName string) {
 // CallComposerHook calls a hook with composer state info.
 func (m *Manager) CallComposerHook(event string, body, subject, to, cc, bcc string) {
 	callbacks, ok := m.hooks[event]
-	if !ok {
+	if !ok || len(callbacks) == 0 {
 		return
 	}
 
@@ -136,7 +135,6 @@ func (m *Manager) CallComposerHook(event string, body, subject, to, cc, bcc stri
 	defer func() {
 		m.currentPlugin = previousPlugin
 	}()
-
 	for _, hook := range callbacks {
 		m.currentPlugin = hook.plugin
 		if err := L.CallByParam(lua.P{

@@ -19,6 +19,14 @@ type KeyBinding struct {
 }
 
 // Manager manages the Lua VM and loaded plugins.
+//
+// Manager is not safe for concurrent use. The Lua VM itself is single-
+// threaded, and all hook callbacks, key-binding invocations, and API calls
+// must be dispatched from the same goroutine that owns the Manager (the
+// orchestrator). Mutable Manager state (hooks, stores, bindings,
+// currentPlugin, pending* fields) is therefore unprotected by design; callers
+// that need to drive plugin events from multiple goroutines must serialize
+// access externally.
 type Manager struct {
 	state         *lua.LState
 	hooks         map[string][]registeredHook
