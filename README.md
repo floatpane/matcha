@@ -78,7 +78,7 @@ For urgent concerns, contact [support@floatpane.com](mailto:support@floatpane.co
 
 ## Sponsors
 >[!TIP]
-> Want to sponsor our development and be featured here? You can do so [here](https://andrinoff.com/sponsor), or discuss it via email with [our team](mailto:us@floatpane.com)
+> Want to sponsor our development and be featured here? You can do so [here](https://github.com/sponsors/floatpane) (or, if you prefer, [here](https://opencollective.com/floatpane)), or discuss it via email with [our team](mailto:us@floatpane.com)
 
 
 Thank you to our sponsors for supporting Matcha's development!
