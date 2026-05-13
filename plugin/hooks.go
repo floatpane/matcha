@@ -167,9 +167,15 @@ func (m *Manager) CallBodyRenderHook(email *lua.LTable, rendered, raw string) st
 	}
 
 	L := m.state
-	for _, fn := range callbacks {
+	previousPlugin := m.currentPlugin
+	defer func() {
+		m.currentPlugin = previousPlugin
+	}()
+
+	for _, hook := range callbacks {
+		m.currentPlugin = hook.plugin
 		if err := L.CallByParam(lua.P{
-			Fn:      fn,
+			Fn:      hook.fn,
 			NRet:    1,
 			Protect: true,
 		}, email, lua.LString(rendered), lua.LString(raw)); err != nil {
