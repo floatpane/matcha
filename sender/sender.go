@@ -80,6 +80,7 @@ func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
 // variable so tests can swap it with a deterministic or failing reader. By
 // default it is crypto/rand.Reader.
 var randReader io.Reader = rand.Reader
+var osHostname = os.Hostname
 
 // smimeOuterBoundary returns a fresh, high-entropy MIME boundary for an S/MIME
 // multipart/signed wrapper. If crypto/rand cannot supply randomness it returns
@@ -92,7 +93,14 @@ func smimeOuterBoundary() (string, error) {
 	return "signed-" + fmt.Sprintf("%x", rb[:]), nil
 }
 
-// generateMessageID creates a unique Message-ID header.
+func smtpHelloHostname() string {
+	hostname, err := osHostname()
+	if err != nil || strings.TrimSpace(hostname) == "" {
+		return "localhost"
+	}
+	return hostname
+}
+
 func generateMessageID(from string) string {
 	buf := make([]byte, 16)
 	_, err := rand.Read(buf)
@@ -672,7 +680,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	}
 	defer c.Close()
 
-	if err = c.Hello("localhost"); err != nil {
+	if err = c.Hello(smtpHelloHostname()); err != nil {
 		return nil, err
 	}
 
@@ -884,7 +892,7 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 	}
 	defer c.Close()
 
-	if err = c.Hello("localhost"); err != nil {
+	if err = c.Hello(smtpHelloHostname()); err != nil {
 		return nil, err
 	}
 

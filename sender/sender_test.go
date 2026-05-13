@@ -56,6 +56,26 @@ func TestSMIMEOuterBoundary_Success(t *testing.T) {
 // Ensure io is referenced even if a future refactor removes it indirectly.
 var _ io.Reader = failingReader{}
 
+func TestSMTPHelloHostname(t *testing.T) {
+	orig := osHostname
+	t.Cleanup(func() { osHostname = orig })
+
+	osHostname = func() (string, error) { return "mail.example.com", nil }
+	if got := smtpHelloHostname(); got != "mail.example.com" {
+		t.Fatalf("expected hostname, got %q", got)
+	}
+
+	osHostname = func() (string, error) { return "", nil }
+	if got := smtpHelloHostname(); got != "localhost" {
+		t.Fatalf("expected localhost fallback for empty hostname, got %q", got)
+	}
+
+	osHostname = func() (string, error) { return "ignored", errors.New("hostname unavailable") }
+	if got := smtpHelloHostname(); got != "localhost" {
+		t.Fatalf("expected localhost fallback on error, got %q", got)
+	}
+}
+
 // TestGenerateMessageID ensures the Message-ID has the correct format.
 func TestGenerateMessageID(t *testing.T) {
 	from := "test@example.com"
