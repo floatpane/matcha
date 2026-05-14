@@ -244,6 +244,7 @@ func (lru *LRU) Put(folder string, uid uint32, accountID string, body *CachedEma
 
 	if body.SizeBytes > lru.threshold {
 		lru.removeKey(key)
+		_ = removeBodyFromDisk(folder, uid, accountID)
 		return
 	}
 
