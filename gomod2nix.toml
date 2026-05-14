@@ -93,6 +93,10 @@ schema = 3
     version = 'v2.0.0-beta.8'
     hash = 'sha256-ZRjBxuk0GQ/0Sq1zwL49lcVD09R+tOFYBKXuvsCQANU='
 
+  [mod.'github.com/emersion/go-maildir']
+    version = 'v0.6.0'
+    hash = 'sha256-sch8KHqjqp6JNzTLi0IcJiP0+B22NQjj2Cq/Vmx2+os='
+
   [mod.'github.com/emersion/go-message']
     version = 'v0.18.2'
     hash = 'sha256-dzVUz7A8MKRGetgVwDt1n5J2Z5LFCMdCh47Hg2ggUtI='
