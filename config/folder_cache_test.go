@@ -15,6 +15,7 @@ import (
 // of HOME.
 func folderCacheTestSetup(t *testing.T) string {
 	t.Helper()
+	resetLRU()
 	tempDir := t.TempDir()
 	t.Setenv("HOME", tempDir)
 	t.Setenv("USERPROFILE", tempDir)

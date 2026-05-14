@@ -277,3 +277,8 @@ func (lru *LRU) Delete(folder string, uid uint32, accountID string) {
 	lru.removeKey(key)
 	_ = removeBodyFromDisk(folder, uid, accountID)
 }
+
+func resetLRU() {
+	once = sync.Once{}
+	lru = nil
+}
