@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -37,10 +38,17 @@ func GetLRUInstance(threshold int) *LRU {
 			}
 
 			if err := lru.LoadFromDisk(); err != nil {
-				fmt.Printf("Failed to load LRU from disk: %v\n", err)
+				log.Printf("Failed to load LRU from disk: %v\n", err)
 			}
 
 		})
+
+	if lru.threshold != threshold {
+		lru.threshold = threshold
+		if lru.currentSize > lru.threshold {
+			lru.evict()
+		}
+	}
 
 	return lru
 }
@@ -98,6 +106,9 @@ func (lru *LRU) LoadFromDisk() error {
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return err
 	}
 
