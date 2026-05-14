@@ -4,6 +4,7 @@ package clib
 
 import (
 	"bytes"
+	"log"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/renderer/html"
@@ -18,7 +19,8 @@ func MarkdownToHTML(md []byte) []byte {
 		),
 	)
 	if err := p.Convert(md, &buf); err != nil {
-		return md
+		log.Printf("markdown: goldmark conversion failed, falling back to escaped plain-text HTML: %v", err)
+		return markdownPlainTextHTML(md)
 	}
 	return buf.Bytes()
 }

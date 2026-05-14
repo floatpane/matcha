@@ -56,7 +56,10 @@ static char* md4c_to_html(const char* input, size_t input_len, size_t* out_len) 
 }
 */
 import "C"
-import "unsafe"
+import (
+	"log"
+	"unsafe"
+)
 
 // MarkdownToHTML converts Markdown bytes to HTML using md4c (C).
 // This is significantly faster than goldmark for large documents.
@@ -71,7 +74,8 @@ func MarkdownToHTML(md []byte) []byte {
 	var outLen C.size_t
 	result := C.md4c_to_html((*C.char)(cInput), C.size_t(len(md)), &outLen)
 	if result == nil {
-		return md // fallback to original on failure
+		log.Printf("markdown: md4c_to_html failed, falling back to escaped plain-text HTML")
+		return markdownPlainTextHTML(md)
 	}
 	defer C.free(unsafe.Pointer(result))
 
