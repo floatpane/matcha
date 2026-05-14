@@ -188,25 +188,8 @@ func (p *Provider) MarkAsUnread(_ context.Context, _ string, _ uint32) error {
 	return nil
 }
 
-func (p *Provider) DeleteEmail(_ context.Context, _ string, uid uint32) error {
-	conn, err := p.connect()
-	if err != nil {
-		return err
-	}
-
-	msgID, err := p.findMessageByUID(conn, uid)
-	if err != nil {
-		conn.Quit()
-		return err
-	}
-
-	if err := conn.Dele(msgID); err != nil {
-		conn.Quit()
-		return fmt.Errorf("pop3 dele: %w", err)
-	}
-
-	// Quit commits the deletion
-	return conn.Quit()
+func (p *Provider) DeleteEmail(ctx context.Context, folder string, uid uint32) error {
+	return p.DeleteEmails(ctx, folder, []uint32{uid})
 }
 
 func (p *Provider) ArchiveEmail(_ context.Context, _ string, _ uint32) error {
@@ -217,14 +200,36 @@ func (p *Provider) MoveEmail(_ context.Context, _ uint32, _, _ string) error {
 	return backend.ErrNotSupported
 }
 
-func (p *Provider) DeleteEmails(ctx context.Context, folder string, uids []uint32) error {
-	// POP3 doesn't support batch - loop through individual operations
+func (p *Provider) DeleteEmails(_ context.Context, _ string, uids []uint32) error {
+	if len(uids) == 0 {
+		return nil
+	}
+
+	conn, err := p.connect()
+	if err != nil {
+		return err
+	}
+
+	messageIDsByUID, err := p.buildMessageIDsByUID(conn)
+	if err != nil {
+		conn.Quit()
+		return err
+	}
+
 	for _, uid := range uids {
-		if err := p.DeleteEmail(ctx, folder, uid); err != nil {
-			return err
+		msgID, ok := messageIDsByUID[uid]
+		if !ok {
+			conn.Quit()
+			return fmt.Errorf("pop3: message with UID %d not found", uid)
+		}
+
+		if err := conn.Dele(msgID); err != nil {
+			conn.Quit()
+			return fmt.Errorf("pop3 dele: %w", err)
 		}
 	}
-	return nil
+
+	return conn.Quit()
 }
 
 func (p *Provider) ArchiveEmails(_ context.Context, _ string, _ []uint32) error {
@@ -261,31 +266,40 @@ func (p *Provider) Close() error {
 	return nil
 }
 
-// Verify interface compliance at compile time.
-var _ backend.Provider = (*Provider)(nil)
-
-// findMessageByUID finds a POP3 message ID by matching the UID hash.
-func (p *Provider) findMessageByUID(conn *pop3client.Conn, uid uint32) (int, error) {
+func (p *Provider) buildMessageIDsByUID(conn *pop3client.Conn) (map[uint32]int, error) {
 	msgs, err := conn.Uidl(0)
 	if err != nil {
 		msgs, err = conn.List(0)
 		if err != nil {
-			return 0, fmt.Errorf("pop3 list: %w", err)
+			return nil, fmt.Errorf("pop3 list: %w", err)
 		}
+
+		messageIDsByUID := make(map[uint32]int, len(msgs))
 		for _, m := range msgs {
-			if hashUID(fmt.Sprintf("%d", m.ID)) == uid {
-				return m.ID, nil
-			}
+			messageIDsByUID[hashUID(fmt.Sprintf("%d", m.ID))] = m.ID
 		}
-		return 0, fmt.Errorf("pop3: message with UID %d not found", uid)
+		return messageIDsByUID, nil
 	}
 
+	messageIDsByUID := make(map[uint32]int, len(msgs))
 	for _, m := range msgs {
-		if hashUID(m.UID) == uid {
-			return m.ID, nil
-		}
+		messageIDsByUID[hashUID(m.UID)] = m.ID
 	}
-	return 0, fmt.Errorf("pop3: message with UID %d not found", uid)
+	return messageIDsByUID, nil
+}
+
+// findMessageByUID finds a POP3 message ID by matching the UID hash.
+func (p *Provider) findMessageByUID(conn *pop3client.Conn, uid uint32) (int, error) {
+	messageIDsByUID, err := p.buildMessageIDsByUID(conn)
+	if err != nil {
+		return 0, err
+	}
+
+	msgID, ok := messageIDsByUID[uid]
+	if !ok {
+		return 0, fmt.Errorf("pop3: message with UID %d not found", uid)
+	}
+	return msgID, nil
 }
 
 // hashUID converts a POP3 UIDL string to a uint32 hash.
@@ -299,6 +313,9 @@ func hashUID(uidl string) uint32 {
 	}
 	return hash
 }
+
+// Verify interface compliance at compile time.
+var _ backend.Provider = (*Provider)(nil)
 
 // entityToEmail converts message headers to a backend.Email.
 func entityToEmail(header *message.Header, msgInfo pop3client.MessageID, accountID string) backend.Email {
