@@ -108,7 +108,7 @@ jobs:
           OUT=$(nix-build -A matcha --no-out-link 2>&1)
           RC=$?
           echo "$OUT"
-          HASH=$(echo "$OUT" | grep -A1 "got:" | tail -1 | tr -d ' ')
+          HASH=$(echo "$OUT" | grep -oE 'got:[[:space:]]+sha256-[A-Za-z0-9+/=]+' | head -1 | awk '{print $2}')
           if [ -z "$HASH" ]; then
             echo "Failed to extract src hash"; exit 1
           fi
@@ -123,7 +123,7 @@ jobs:
           OUT=$(nix-build -A matcha --no-out-link 2>&1)
           RC=$?
           echo "$OUT"
-          HASH=$(echo "$OUT" | grep -A1 "got:" | tail -1 | tr -d ' ')
+          HASH=$(echo "$OUT" | grep -oE 'got:[[:space:]]+sha256-[A-Za-z0-9+/=]+' | head -1 | awk '{print $2}')
           if [ -z "$HASH" ]; then
             echo "Failed to extract vendorHash"; exit 1
           fi
