@@ -23,6 +23,7 @@ type LRU struct {
 	currentSize int
 	cache       map[string]*list.Element
 	ll          *list.List
+	mu          sync.Mutex
 }
 
 var lru *LRU
@@ -42,6 +43,9 @@ func GetLRUInstance(threshold int) *LRU {
 			}
 
 		})
+
+	lru.mu.Lock()
+	defer lru.mu.Unlock()
 
 	if lru.threshold != threshold {
 		lru.threshold = threshold
@@ -211,6 +215,9 @@ func saveEmailBodyToDisk(folder string, body *CachedEmailBody) error {
 }
 
 func (lru *LRU) Get(folder string, uid uint32, accountID string) *Node {
+	lru.mu.Lock()
+	defer lru.mu.Unlock()
+
 	key := lru.makeKey(folder, uid, accountID)
 
 	e, ok := lru.cache[key]
@@ -240,6 +247,9 @@ func (lru *LRU) removeKey(key string) {
 }
 
 func (lru *LRU) Put(folder string, uid uint32, accountID string, body *CachedEmailBody) {
+	lru.mu.Lock()
+	defer lru.mu.Unlock()
+
 	key := lru.makeKey(folder, uid, accountID)
 
 	if body.SizeBytes > lru.threshold {
@@ -273,6 +283,9 @@ func (lru *LRU) Put(folder string, uid uint32, accountID string, body *CachedEma
 }
 
 func (lru *LRU) Delete(folder string, uid uint32, accountID string) {
+	lru.mu.Lock()
+	defer lru.mu.Unlock()
+
 	key := lru.makeKey(folder, uid, accountID)
 	lru.removeKey(key)
 	_ = removeBodyFromDisk(folder, uid, accountID)
