@@ -99,7 +99,9 @@ func TestDaemon_PingHandler(t *testing.T) {
 		t.Fatal("expected Response")
 	}
 	var result daemonrpc.PingResult
-	json.Unmarshal(msg.Response.Result, &result)
+	if err := json.Unmarshal(msg.Response.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal ping result: %v", err)
+	}
 	if !result.Pong {
 		t.Error("expected pong=true")
 	}
@@ -115,7 +117,9 @@ func TestDaemon_StatusHandler(t *testing.T) {
 	msg := handlerTest(t, d, &daemonrpc.Request{ID: 1, Method: daemonrpc.MethodGetStatus})
 
 	var result daemonrpc.StatusResult
-	json.Unmarshal(msg.Response.Result, &result)
+	if err := json.Unmarshal(msg.Response.Result, &result); err != nil {
+		t.Fatalf("failed to unmarshal status result: %v", err)
+	}
 
 	if !result.Running {
 		t.Error("expected running=true")
