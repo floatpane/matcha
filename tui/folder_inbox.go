@@ -133,6 +133,13 @@ func (m *FolderInbox) SetDateFormat(layout string) {
 	}
 }
 
+// SetDetailedDates propagates the detailed date display toggle.
+func (m *FolderInbox) SetDetailedDates(enabled bool) {
+	if m.inbox != nil {
+		m.inbox.SetDetailedDates(enabled)
+	}
+}
+
 // SetDefaultThreaded propagates the global default threading toggle.
 func (m *FolderInbox) SetDefaultThreaded(v bool) {
 	if m.inbox != nil {

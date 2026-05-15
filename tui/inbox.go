@@ -105,10 +105,12 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Format and right-align date
 	layout := ""
+	detailedDates := false
 	if d.inbox != nil {
 		layout = d.inbox.dateFormat
+		detailedDates = d.inbox.detailedDates
 	}
-	dateStr := formatRelativeDate(i.date, layout)
+	dateStr := formatInboxDate(i.date, layout, detailedDates)
 	listWidth := m.Width() - 2 // account for PaddingLeft(2) in itemStyle
 	isSelected := index == m.Index()
 
@@ -215,14 +217,18 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprint(w, fn(str+strings.Repeat(" ", padding)+styledDate))
 }
 
-// formatRelativeDate formats a time as relative if within the last week,
-// otherwise as an absolute date using the caller-supplied Go time layout.
+// formatInboxDate formats a time as relative unless detailed dates are enabled
+// or the timestamp is older than a week. Absolute dates use the caller-supplied
+// Go time layout.
 // When layout is empty, falls back to the built-in short/long defaults.
-func formatRelativeDate(timestamp time.Time, layout string) string {
+func formatInboxDate(timestamp time.Time, layout string, detailedDates bool) string {
 	if timestamp.IsZero() {
 		return ""
 	}
 	now := time.Now()
+	if detailedDates {
+		return formatAbsoluteDate(timestamp, layout, now)
+	}
 	d := now.Sub(timestamp)
 
 	switch {
@@ -238,15 +244,19 @@ func formatRelativeDate(timestamp time.Time, layout string) string {
 		days := int(d.Hours() / 24)
 		return tn("time.day_ago", days, map[string]interface{}{"count": days})
 	default:
-		timestamp = timestamp.Local()
-		if layout != "" {
-			return timestamp.Format(layout)
-		}
-		if timestamp.Year() == now.Year() {
-			return timestamp.Format("Jan 02")
-		}
-		return timestamp.Format("Jan 02, 2006")
+		return formatAbsoluteDate(timestamp, layout, now)
 	}
+}
+
+func formatAbsoluteDate(timestamp time.Time, layout string, now time.Time) string {
+	timestamp = timestamp.Local()
+	if layout != "" {
+		return timestamp.Format(layout)
+	}
+	if timestamp.Year() == now.Year() {
+		return timestamp.Format("Jan 02")
+	}
+	return timestamp.Format("Jan 02, 2006")
 }
 
 // parseSenderName extracts the display name from a "Name <email>" string,
@@ -332,7 +342,8 @@ type Inbox struct {
 
 	// dateFormat is the Go reference-time layout used for absolute dates
 	// older than a week. When empty, the built-in defaults apply.
-	dateFormat string
+	dateFormat    string
+	detailedDates bool
 }
 
 // SetDateFormat configures the Go time layout used to render absolute
@@ -340,6 +351,13 @@ type Inbox struct {
 // config.Config.GetDateFormat.
 func (m *Inbox) SetDateFormat(layout string) {
 	m.dateFormat = layout
+}
+
+// SetDetailedDates configures whether the email list should always render
+// absolute dates instead of recent relative dates.
+func (m *Inbox) SetDetailedDates(enabled bool) {
+	m.detailedDates = enabled
+	m.updateList()
 }
 
 func NewInbox(emails []fetcher.Email, accounts []config.Account) *Inbox {

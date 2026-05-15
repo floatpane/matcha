@@ -149,6 +149,7 @@
       "disable_notifications": "Disable Notifications",
       "enable_split_pane": "Split Pane View",
       "enable_threaded": "Threaded Conversation View",
+      "enable_detailed_dates": "Detailed Dates",
       "date_format": "Date Format",
       "language": "Language",
       "signature": "Edit Signature",
