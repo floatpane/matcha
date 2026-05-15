@@ -44,6 +44,8 @@ Configuration is stored in `~/.config/matcha/config.json`.
   ],
   "theme": "Matcha",
   "enable_split_pane": true,
+  "enable_detailed_dates": true,
+  "date_format": "DD/MM/YYYY HH:MM",
   "disable_images": true,
   "hide_tips": true,
   "body_cache_threshold_mb": 100
@@ -53,6 +55,8 @@ Configuration is stored in `~/.config/matcha/config.json`.
 `send_as_email` is optional. When set, Matcha uses it for the outgoing `From` header while continuing to authenticate with the account's login address.
 
 `enable_split_pane` enables a side-by-side view where the email list and the selected email are shown on the same screen.
+
+`enable_detailed_dates` shows absolute inbox dates using your configured `date_format` instead of relative labels like "2 hours ago".
 
 `body_cache_threshold_mb` sets the maximum size (in megabytes) for the local email body cache. When this limit is reached, least recently accessed cached emails are evicted across all folders to make room for new ones. Defaults to `100` MB if not specified.
 
