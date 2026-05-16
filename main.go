@@ -261,7 +261,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Check plugin key bindings for the current view
 		if m.plugins != nil {
-			m.handlePluginKeyBinding(keyMsg)
+			if bindingCmd := m.handlePluginKeyBinding(keyMsg); bindingCmd != nil {
+				cmds = append(cmds, bindingCmd)
+			}
 		}
 	}
 
@@ -724,7 +726,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.folderInbox.SetLoadingEmails(false)
 		m.syncPluginStatus()
 		m.syncPluginKeyBindings()
-		return m, m.pluginNotifyCmd()
+		return m, tea.Batch(append(m.pluginFlagCmds(), m.pluginNotifyCmd())...)
 
 	case tui.FetchFolderMoreEmailsMsg:
 		if msg.AccountID == "" || m.config == nil {
@@ -1295,16 +1297,18 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.folderInbox != nil {
 			folderName = m.folderInbox.GetCurrentFolder()
 		}
+		suppressRead := false
 		if m.plugins != nil {
 			t := m.plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, folderName)
 			m.plugins.CallHook(plugin.HookEmailViewed, t)
+			suppressRead = m.plugins.TakeAutoReadSuppressed()
 		}
 		// Split pane mode: open in split view instead of full screen
 		if m.config.EnableSplitPane && m.folderInbox != nil {
 			m.folderInbox.OpenSplitPreview(msg.UID, msg.AccountID, email)
 			m.current = m.folderInbox
 			// Mark as read
-			if !email.IsRead {
+			if !email.IsRead && !suppressRead {
 				m.markEmailAsReadInStores(msg.UID, msg.AccountID)
 				account := m.config.GetAccountByID(msg.AccountID)
 				if account != nil {
@@ -1312,9 +1316,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			// Fetch body
-			return m, tea.Batch(cmd, func() tea.Msg {
+			return m, tea.Batch(append(m.pluginFlagCmds(), cmd, func() tea.Msg {
 				return tui.UpdatePreviewMsg{UID: msg.UID, AccountID: msg.AccountID}
-			})
+			})...)
 		}
 		// Check body cache first
 		if cached := config.GetCachedEmailBody(folderName, msg.UID, msg.AccountID, m.config.GetBodyCacheThreshold()); cached != nil {
@@ -1350,7 +1354,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.current = tui.NewStatus("Fetching email content...")
-		return m, tea.Batch(m.current.Init(), fetchFolderEmailBodyCmd(m.config, msg.UID, msg.AccountID, folderName, msg.Mailbox), m.pluginNotifyCmd())
+		return m, tea.Batch(append(m.pluginFlagCmds(), m.current.Init(), fetchFolderEmailBodyCmd(m.config, msg.UID, msg.AccountID, folderName, msg.Mailbox), m.pluginNotifyCmd())...)
 
 	case tui.EmailBodyFetchedMsg:
 		if msg.Err != nil {
@@ -1408,9 +1412,10 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Mark as read in UI immediately and on the server
+		// Mark as read in UI immediately and on the server (unless plugin suppressed it)
 		var markReadCmd tea.Cmd
-		if !email.IsRead {
+		pluginSuppressed := m.plugins != nil && m.plugins.TakeAutoReadSuppressed()
+		if !email.IsRead && !pluginSuppressed {
 			m.markEmailAsReadInStores(msg.UID, msg.AccountID)
 
 			folderName := "INBOX"
@@ -1433,6 +1438,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if markReadCmd != nil {
 			cmds = append(cmds, markReadCmd)
 		}
+		cmds = append(cmds, m.pluginFlagCmds()...)
 		return m, tea.Batch(cmds...)
 
 	case tui.ReplyToEmailMsg:
@@ -1715,6 +1721,13 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncUnreadBadge()
 		return m, nil
 
+	case tui.EmailMarkedUnreadMsg:
+		if msg.Err != nil {
+			log.Printf("Error marking email as unread: %v", msg.Err)
+		}
+		m.syncUnreadBadge()
+		return m, nil
+
 	case tui.EmailActionDoneMsg:
 		if msg.Err != nil {
 			log.Printf("Action failed: %v", msg.Err)
@@ -1985,6 +1998,36 @@ func (m *mainModel) markEmailAsReadInStores(uid uint32, accountID string) {
 	}
 }
 
+func (m *mainModel) markEmailAsUnreadInStores(uid uint32, accountID string) {
+	for i := range m.emails {
+		if m.emails[i].UID == uid && m.emails[i].AccountID == accountID {
+			m.emails[i].IsRead = false
+			break
+		}
+	}
+	if emails, ok := m.emailsByAcct[accountID]; ok {
+		for i := range emails {
+			if emails[i].UID == uid {
+				emails[i].IsRead = false
+				break
+			}
+		}
+	}
+	for folderName, folderEmails := range m.folderEmails {
+		for i := range folderEmails {
+			if folderEmails[i].UID == uid && folderEmails[i].AccountID == accountID {
+				folderEmails[i].IsRead = false
+				m.folderEmails[folderName] = folderEmails
+				go saveFolderEmailsToCache(folderName, folderEmails)
+				break
+			}
+		}
+	}
+	if m.folderInbox != nil {
+		m.folderInbox.GetInbox().MarkEmailAsUnread(uid, accountID)
+	}
+}
+
 func (m *mainModel) removeEmailFromStores(uid uint32, accountID string) {
 	var filtered []fetcher.Email
 	for _, e := range m.emails {
@@ -2002,6 +2045,33 @@ func (m *mainModel) removeEmailFromStores(uid uint32, accountID string) {
 		}
 		m.emailsByAcct[accountID] = filteredAcct
 	}
+}
+
+// pluginFlagCmds drains pending flag ops from plugins and returns the corresponding tea.Cmds.
+func (m *mainModel) pluginFlagCmds() []tea.Cmd {
+	if m.plugins == nil {
+		return nil
+	}
+	ops := m.plugins.TakePendingFlagOps()
+	if len(ops) == 0 {
+		return nil
+	}
+	var cmds []tea.Cmd
+	for _, op := range ops {
+		op := op
+		account := m.config.GetAccountByID(op.AccountID)
+		if account == nil {
+			continue
+		}
+		if op.Read {
+			m.markEmailAsReadInStores(op.UID, op.AccountID)
+			cmds = append(cmds, markEmailAsReadCmd(account, op.UID, op.AccountID, op.Folder))
+		} else {
+			m.markEmailAsUnreadInStores(op.UID, op.AccountID)
+			cmds = append(cmds, markEmailAsUnreadCmd(account, op.UID, op.AccountID, op.Folder))
+		}
+	}
+	return cmds
 }
 
 // pluginNotifyCmd checks for a pending plugin notification and returns a command if one exists.
@@ -2032,7 +2102,7 @@ func (m *mainModel) syncPluginStatus() {
 	}
 }
 
-func (m *mainModel) handlePluginKeyBinding(msg tea.KeyPressMsg) {
+func (m *mainModel) handlePluginKeyBinding(msg tea.KeyPressMsg) tea.Cmd {
 	keyStr := msg.String()
 
 	var area string
@@ -2046,7 +2116,7 @@ func (m *mainModel) handlePluginKeyBinding(msg tea.KeyPressMsg) {
 	case *tui.Composer:
 		area = plugin.StatusComposer
 	default:
-		return
+		return nil
 	}
 
 	bindings := m.plugins.Bindings(area)
@@ -2095,8 +2165,9 @@ func (m *mainModel) handlePluginKeyBinding(msg tea.KeyPressMsg) {
 		}
 
 		m.syncPluginStatus()
-		return
+		return tea.Batch(m.pluginFlagCmds()...)
 	}
+	return nil
 }
 
 func (m *mainModel) syncPluginKeyBindings() {
@@ -2896,6 +2967,13 @@ func markEmailAsReadCmd(account *config.Account, uid uint32, accountID string, f
 	return func() tea.Msg {
 		err := fetcher.MarkEmailAsReadInMailbox(account, folderName, uid)
 		return tui.EmailMarkedReadMsg{UID: uid, AccountID: accountID, Err: err}
+	}
+}
+
+func markEmailAsUnreadCmd(account *config.Account, uid uint32, accountID string, folderName string) tea.Cmd {
+	return func() tea.Msg {
+		err := fetcher.MarkEmailAsUnreadInMailbox(account, folderName, uid)
+		return tui.EmailMarkedUnreadMsg{UID: uid, AccountID: accountID, Err: err}
 	}
 }
 

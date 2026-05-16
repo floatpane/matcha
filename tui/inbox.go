@@ -1276,6 +1276,25 @@ func (m *Inbox) MarkEmailAsRead(uid uint32, accountID string) {
 	m.updateList()
 }
 
+// MarkEmailAsUnread marks an email as unread by UID and account ID, updating it in all stores.
+func (m *Inbox) MarkEmailAsUnread(uid uint32, accountID string) {
+	for i := range m.allEmails {
+		if m.allEmails[i].UID == uid && m.allEmails[i].AccountID == accountID {
+			m.allEmails[i].IsRead = false
+			break
+		}
+	}
+	if emails, ok := m.emailsByAccount[accountID]; ok {
+		for i := range emails {
+			if emails[i].UID == uid {
+				emails[i].IsRead = false
+				break
+			}
+		}
+	}
+	m.updateList()
+}
+
 // updateVisualSelection updates the selected UIDs based on anchor and current index
 func (m *Inbox) updateVisualSelection() {
 	if !m.visualMode {

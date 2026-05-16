@@ -18,6 +18,14 @@ type KeyBinding struct {
 	Plugin      string
 }
 
+// FlagOp is a pending flag change queued by a plugin via matcha.mark_read / matcha.mark_unread.
+type FlagOp struct {
+	UID       uint32
+	AccountID string
+	Folder    string
+	Read      bool // true = mark read, false = mark unread
+}
+
 // Manager manages the Lua VM and loaded plugins.
 //
 // Manager is not safe for concurrent use. The Lua VM itself is single-
@@ -44,6 +52,10 @@ type Manager struct {
 	bindings []KeyBinding
 	// pendingPrompt is set by matcha.prompt() and consumed by the orchestrator.
 	pendingPrompt *PendingPrompt
+	// pendingFlagOps queues flag changes (read/unread) requested by plugins.
+	pendingFlagOps []FlagOp
+	// suppressAutoRead is set by matcha.suppress_auto_read() inside email_viewed callbacks.
+	suppressAutoRead bool
 
 	// pluginSchemas holds settings declarations per plugin.
 	pluginSchemas map[string][]SettingDef
@@ -181,6 +193,24 @@ func (m *Manager) Bindings(area string) []KeyBinding {
 // StatusText returns the plugin status string for the given view area.
 func (m *Manager) StatusText(area string) string {
 	return m.statuses[area]
+}
+
+// TakePendingFlagOps returns and clears all pending flag operations.
+func (m *Manager) TakePendingFlagOps() []FlagOp {
+	if len(m.pendingFlagOps) == 0 {
+		return nil
+	}
+	ops := m.pendingFlagOps
+	m.pendingFlagOps = nil
+	return ops
+}
+
+// TakeAutoReadSuppressed returns true (and resets the flag) if a plugin
+// called matcha.suppress_auto_read() during the current email_viewed callback.
+func (m *Manager) TakeAutoReadSuppressed() bool {
+	v := m.suppressAutoRead
+	m.suppressAutoRead = false
+	return v
 }
 
 // LuaState returns the Lua VM state for building tables.

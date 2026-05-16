@@ -23,6 +23,7 @@ type Service interface {
 	ArchiveEmails(accountID, folder string, uids []uint32) error
 	MoveEmails(accountID string, uids []uint32, src, dst string) error
 	MarkRead(accountID, folder string, uids []uint32) error
+	MarkUnread(accountID, folder string, uids []uint32) error
 	FetchFolders(accountID string) ([]backend.Folder, error)
 	RefreshFolder(accountID, folder string) error
 	Subscribe(accountID, folder string) error
@@ -161,6 +162,15 @@ func (s *daemonService) MarkRead(accountID, folder string, uids []uint32) error 
 	}, nil)
 }
 
+func (s *daemonService) MarkUnread(accountID, folder string, uids []uint32) error {
+	return s.client.Call(daemonrpc.MethodMarkRead, daemonrpc.MarkReadParams{
+		AccountID: accountID,
+		Folder:    folder,
+		UIDs:      uids,
+		Read:      false,
+	}, nil)
+}
+
 func (s *daemonService) FetchFolders(accountID string) ([]backend.Folder, error) {
 	var folders []backend.Folder
 	err := s.client.Call(daemonrpc.MethodFetchFolders, daemonrpc.FetchFoldersParams{
@@ -292,6 +302,19 @@ func (s *directService) MarkRead(accountID, folder string, uids []uint32) error 
 	}
 	for _, uid := range uids {
 		if err := p.MarkAsRead(context.Background(), folder, uid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *directService) MarkUnread(accountID, folder string, uids []uint32) error {
+	p, err := s.getProvider(accountID)
+	if err != nil {
+		return err
+	}
+	for _, uid := range uids {
+		if err := p.MarkAsUnread(context.Background(), folder, uid); err != nil {
 			return err
 		}
 	}

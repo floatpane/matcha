@@ -263,10 +263,15 @@ func (d *Daemon) handleMarkRead(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), mutateTimeout)
 	defer cancel()
 
-	// MarkAsRead only supports one UID at a time in the Provider interface.
 	for _, uid := range params.UIDs {
-		if err := p.MarkAsRead(ctx, params.Folder, uid); err != nil {
-			log.Printf("daemon: mark read %d failed: %v", uid, err)
+		var err error
+		if params.Read {
+			err = p.MarkAsRead(ctx, params.Folder, uid)
+		} else {
+			err = p.MarkAsUnread(ctx, params.Folder, uid)
+		}
+		if err != nil {
+			log.Printf("daemon: mark read=%v %d failed: %v", params.Read, uid, err)
 		}
 	}
 	conn.SendResponse(req.ID, true)

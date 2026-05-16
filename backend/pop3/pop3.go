@@ -183,6 +183,11 @@ func (p *Provider) MarkAsRead(_ context.Context, _ string, _ uint32) error {
 	return nil
 }
 
+func (p *Provider) MarkAsUnread(_ context.Context, _ string, _ uint32) error {
+	// POP3 has no concept of read/unread flags — this is a no-op
+	return nil
+}
+
 func (p *Provider) DeleteEmail(_ context.Context, _ string, uid uint32) error {
 	conn, err := p.connect()
 	if err != nil {

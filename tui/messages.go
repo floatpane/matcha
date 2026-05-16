@@ -489,6 +489,13 @@ type EmailMarkedReadMsg struct {
 	Err       error
 }
 
+// EmailMarkedUnreadMsg signals that an email was marked as unread.
+type EmailMarkedUnreadMsg struct {
+	UID       uint32
+	AccountID string
+	Err       error
+}
+
 // FetchFolderMoreEmailsMsg signals a request to fetch more emails from a folder (pagination).
 type FetchFolderMoreEmailsMsg struct {
 	Offset     uint32

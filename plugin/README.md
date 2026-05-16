@@ -36,6 +36,9 @@ end)
 | `matcha.style(text, opts)` | Wrap `text` in lipgloss styling and return an ANSI-styled string (see below) |
 | `matcha.settings(spec)` | Declare configurable settings; returns a read-only proxy table for live values (see below) |
 | `matcha.get_setting(key [, plugin])` | Look up a setting value by key (defaults to current plugin) |
+| `matcha.mark_read(uid, account_id, folder)` | Queue a mark-as-read operation; dispatched after the hook or keybinding returns |
+| `matcha.mark_unread(uid, account_id, folder)` | Queue a mark-as-unread operation; dispatched after the hook or keybinding returns |
+| `matcha.suppress_auto_read()` | Prevent the viewed email from being auto-marked as read; only effective inside an `email_viewed` callback |
 
 ## Hook events
 
@@ -44,7 +47,7 @@ end)
 | `startup` | — | Matcha has started |
 | `shutdown` | — | Matcha is exiting |
 | `email_received` | Lua table with `uid`, `from`, `to`, `subject`, `date`, `is_read`, `account_id`, `folder` | New email arrived |
-| `email_viewed` | Same as `email_received` | User opened an email |
+| `email_viewed` | Same as `email_received` | User opened an email. Call `matcha.suppress_auto_read()` here to prevent automatic mark-as-read. |
 | `email_send_before` | Table with `to`, `cc`, `subject`, `account_id` | About to send an email |
 | `email_send_after` | Same as `email_send_before` | Email sent successfully |
 | `folder_changed` | Folder name (string) | User switched folders |
@@ -202,19 +205,50 @@ Values are persisted in `~/.config/matcha/config.json` under
 `plugin_settings`. Edit them in **Settings → Plugins** in the TUI; booleans
 toggle with `enter`/`space`, numbers and strings open a text editor.
 
+## Flag management
+
+Plugins can programmatically change the read/unread state of any email. The operations are queued and dispatched by the orchestrator after the hook or keybinding callback returns, so the UI and IMAP/backend stay in sync.
+
+```lua
+local matcha = require("matcha")
+
+-- Mark as read from a keybinding
+matcha.bind_key("r", "inbox", "Mark read", function(email)
+    if not email then return end
+    matcha.mark_read(email.uid, email.account_id, email.folder)
+end)
+
+-- Mark as unread from a keybinding
+matcha.bind_key("U", "inbox", "Mark unread", function(email)
+    if not email then return end
+    matcha.mark_unread(email.uid, email.account_id, email.folder)
+end)
+
+-- Suppress auto-read for a specific sender
+matcha.on("email_viewed", function(email)
+    if email.from:find("newsletter@") then
+        matcha.suppress_auto_read()
+    end
+end)
+```
+
+`matcha.suppress_auto_read()` must be called inside an `email_viewed` callback. Any other call site is a no-op.
+
 ## Available plugins
 
 The following example plugins ship in `~/.config/matcha/plugins/`:
 
 - `email_age.lua`
 - `recipient_counter.lua`
+- `toggle_read.lua` — toggle read/unread on a selected email (configurable keybind)
+- `prevent_auto_read.lua` — suppress auto-mark-as-read when opening emails (on/off setting)
 
 ## Files
 
 | File | Description |
 |------|-------------|
-| `plugin.go` | Plugin manager — Lua VM setup, plugin discovery and loading, notification/status state |
+| `plugin.go` | Plugin manager — Lua VM setup, plugin discovery and loading, notification/status state; `FlagOp` type and pending flag-ops queue |
 | `hooks.go` | Hook definitions, callback registration, and hook invocation helpers |
-| `api.go` | `matcha` Lua module registration (`on`, `log`, `notify`, `set_status`, `set_compose_field`, `bind_key`, `http`, `prompt`, `style`) |
+| `api.go` | `matcha` Lua module registration — all API functions including `mark_read`, `mark_unread`, `suppress_auto_read` |
 | `http.go` | `matcha.http()` implementation — HTTP client with timeout and body size limits |
 | `prompt.go` | `matcha.prompt()` implementation — user input overlay for the composer |

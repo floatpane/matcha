@@ -12,21 +12,24 @@ func (m *Manager) registerAPI() {
 	L := m.state
 
 	mod := L.RegisterModule("matcha", map[string]lua.LGFunction{
-		"on":                m.luaOn,
-		"log":               m.luaLog,
-		"notify":            m.luaNotify,
-		"set_status":        m.luaSetStatus,
-		"set_compose_field": m.luaSetComposeField,
-		"bind_key":          m.luaBindKey,
-		"http":              m.luaHTTP,
-		"prompt":            m.luaPrompt,
-		"store_set":         m.luaStoreSet,
-		"store_get":         m.luaStoreGet,
-		"store_delete":      m.luaStoreDelete,
-		"store_keys":        m.luaStoreKeys,
-		"style":             m.luaStyle,
-		"settings":          m.luaSettings,
-		"get_setting":       m.luaGetSetting,
+		"on":                  m.luaOn,
+		"log":                 m.luaLog,
+		"notify":              m.luaNotify,
+		"set_status":          m.luaSetStatus,
+		"set_compose_field":   m.luaSetComposeField,
+		"bind_key":            m.luaBindKey,
+		"http":                m.luaHTTP,
+		"prompt":              m.luaPrompt,
+		"store_set":           m.luaStoreSet,
+		"store_get":           m.luaStoreGet,
+		"store_delete":        m.luaStoreDelete,
+		"store_keys":          m.luaStoreKeys,
+		"style":               m.luaStyle,
+		"settings":            m.luaSettings,
+		"get_setting":         m.luaGetSetting,
+		"mark_read":           m.luaMarkRead,
+		"mark_unread":         m.luaMarkUnread,
+		"suppress_auto_read":  m.luaSuppressAutoRead,
 	})
 
 	L.SetField(mod, "_VERSION", lua.LString("0.1.0"))
@@ -152,6 +155,32 @@ func (m *Manager) luaSettings(L *lua.LState) int {
 // setting; defaults to the current plugin when called during load.
 func (m *Manager) luaGetSetting(L *lua.LState) int {
 	return m.getSetting(L)
+}
+
+// matcha.mark_read(uid, account_id, folder) — queue a mark-as-read op for the given email.
+// The orchestrator dispatches the IMAP/backend call after the hook or keybinding returns.
+func (m *Manager) luaMarkRead(L *lua.LState) int {
+	uid := uint32(L.CheckInt(1))
+	accountID := L.CheckString(2)
+	folder := L.CheckString(3)
+	m.pendingFlagOps = append(m.pendingFlagOps, FlagOp{UID: uid, AccountID: accountID, Folder: folder, Read: true})
+	return 0
+}
+
+// matcha.mark_unread(uid, account_id, folder) — queue a mark-as-unread op for the given email.
+func (m *Manager) luaMarkUnread(L *lua.LState) int {
+	uid := uint32(L.CheckInt(1))
+	accountID := L.CheckString(2)
+	folder := L.CheckString(3)
+	m.pendingFlagOps = append(m.pendingFlagOps, FlagOp{UID: uid, AccountID: accountID, Folder: folder, Read: false})
+	return 0
+}
+
+// matcha.suppress_auto_read() — prevent the currently viewed email from being
+// automatically marked as read. Must be called inside an email_viewed callback.
+func (m *Manager) luaSuppressAutoRead(L *lua.LState) int {
+	m.suppressAutoRead = true
+	return 0
 }
 
 // matcha.set_compose_field(field, value) — set a compose field value.

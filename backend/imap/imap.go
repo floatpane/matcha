@@ -60,6 +60,10 @@ func (p *Provider) MarkAsRead(_ context.Context, folder string, uid uint32) erro
 	return fetcher.MarkEmailAsReadInMailbox(p.account, folder, uid)
 }
 
+func (p *Provider) MarkAsUnread(_ context.Context, folder string, uid uint32) error {
+	return fetcher.MarkEmailAsUnreadInMailbox(p.account, folder, uid)
+}
+
 func (p *Provider) DeleteEmail(_ context.Context, folder string, uid uint32) error {
 	return fetcher.DeleteEmailFromMailbox(p.account, folder, uid)
 }

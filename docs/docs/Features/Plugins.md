@@ -190,6 +190,43 @@ matcha.bind_key("ctrl+r", "composer", "rewrite", function(state)
 end)
 ```
 
+### matcha.mark_read(uid, account_id, folder)
+
+Mark an email as read. The change is applied after the hook or keybinding callback returns — both the local UI and the server (IMAP/JMAP/Maildir) are updated.
+
+```lua
+matcha.bind_key("r", "inbox", "Mark read", function(email)
+    if email then
+        matcha.mark_read(email.uid, email.account_id, email.folder)
+    end
+end)
+```
+
+### matcha.mark_unread(uid, account_id, folder)
+
+Mark an email as unread. Same dispatch behaviour as `mark_read`.
+
+```lua
+matcha.bind_key("U", "inbox", "Mark unread", function(email)
+    if email then
+        matcha.mark_unread(email.uid, email.account_id, email.folder)
+    end
+end)
+```
+
+### matcha.suppress_auto_read()
+
+Prevent the currently viewed email from being automatically marked as read. Must be called inside an `email_viewed` callback; calling it elsewhere is a no-op.
+
+```lua
+-- Keep newsletter emails unread after opening them
+matcha.on("email_viewed", function(email)
+    if email.from:find("newsletter@") then
+        matcha.suppress_auto_read()
+    end
+end)
+```
+
 ### matcha.notify(message [, seconds])
 
 Show a temporary notification in the Matcha UI. The optional second argument sets how long the notification is displayed (default 2 seconds).
@@ -287,9 +324,16 @@ end)
 
 Fired when you open an email to read it. Receives the same email table as `email_received`.
 
+Call `matcha.suppress_auto_read()` inside this callback to prevent Matcha from automatically marking the email as read.
+
 ```lua
 matcha.on("email_viewed", function(email)
   matcha.log("Reading: " .. email.subject)
+end)
+
+-- Keep all emails unread after viewing
+matcha.on("email_viewed", function(email)
+  matcha.suppress_auto_read()
 end)
 ```
 
@@ -481,6 +525,8 @@ The repository includes 35+ example plugins. Here are a few to get started:
 | `webhook_notify.lua` | Posts to a webhook when emails arrive        |
 | `weather_status.lua` | Shows current weather in the inbox status bar |
 | `ai_rewrite.lua`   | AI-powered email rewriting in the composer     |
+| `toggle_read.lua`  | Toggle read/unread on the selected email (configurable keybind) |
+| `prevent_auto_read.lua` | Prevent emails from being auto-marked as read when opened |
 
 Browse the full list in the [Plugin Marketplace](/marketplace) or run `matcha marketplace`.
 

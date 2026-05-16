@@ -1283,6 +1283,25 @@ func MarkEmailAsReadInMailbox(account *config.Account, mailbox string, uid uint3
 	}, nil).Close()
 }
 
+func MarkEmailAsUnreadInMailbox(account *config.Account, mailbox string, uid uint32) error {
+	c, err := connect(account)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
+		return err
+	}
+
+	uidSet := imap.UIDSetNum(imap.UID(uid))
+	return c.Store(uidSet, &imap.StoreFlags{
+		Op:     imap.StoreFlagsDel,
+		Silent: true,
+		Flags:  []imap.Flag{imap.FlagSeen},
+	}, nil).Close()
+}
+
 func DeleteEmailFromMailbox(account *config.Account, mailbox string, uid uint32) error {
 	c, err := connect(account)
 	if err != nil {

@@ -36,6 +36,7 @@ type EmailReader interface {
 // EmailWriter modifies email state.
 type EmailWriter interface {
 	MarkAsRead(ctx context.Context, folder string, uid uint32) error
+	MarkAsUnread(ctx context.Context, folder string, uid uint32) error
 	DeleteEmail(ctx context.Context, folder string, uid uint32) error
 	ArchiveEmail(ctx context.Context, folder string, uid uint32) error
 	MoveEmail(ctx context.Context, uid uint32, srcFolder, dstFolder string) error

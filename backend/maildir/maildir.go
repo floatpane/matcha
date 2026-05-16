@@ -229,6 +229,25 @@ func (p *Provider) MarkAsRead(_ context.Context, folder string, uid uint32) erro
 	return msg.SetFlags(append(flags, emaildir.FlagSeen))
 }
 
+// MarkAsUnread removes the Seen flag while preserving the others.
+func (p *Provider) MarkAsUnread(_ context.Context, folder string, uid uint32) error {
+	msg, err := p.findMessageByUID(folder, uid)
+	if err != nil {
+		return err
+	}
+	flags := msg.Flags()
+	filtered := flags[:0]
+	for _, fl := range flags {
+		if fl != emaildir.FlagSeen {
+			filtered = append(filtered, fl)
+		}
+	}
+	if len(filtered) == len(flags) {
+		return nil // already unread
+	}
+	return msg.SetFlags(filtered)
+}
+
 // DeleteEmail removes the message file from disk.
 func (p *Provider) DeleteEmail(_ context.Context, folder string, uid uint32) error {
 	msg, err := p.findMessageByUID(folder, uid)

@@ -378,6 +378,24 @@ func (p *Provider) MarkAsRead(_ context.Context, _ string, uid uint32) error {
 	return err
 }
 
+func (p *Provider) MarkAsUnread(_ context.Context, _ string, uid uint32) error {
+	jmapID, err := p.lookupJMAPID(uid)
+	if err != nil {
+		return err
+	}
+
+	req := &jmapclient.Request{}
+	req.Invoke(&email.Set{
+		Account: p.accountID,
+		Update: map[jmapclient.ID]jmapclient.Patch{
+			jmapID: {"keywords/$seen": nil},
+		},
+	})
+
+	_, err = p.client.Do(req)
+	return err
+}
+
 func (p *Provider) DeleteEmail(_ context.Context, _ string, uid uint32) error {
 	jmapID, err := p.lookupJMAPID(uid)
 	if err != nil {
