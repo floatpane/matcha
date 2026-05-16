@@ -147,6 +147,7 @@
       "disable_notifications": "禁用通知",
       "enable_split_pane": "分屏视图",
       "enable_threaded": "会话视图",
+      "enable_detailed_dates": "详细日期",
       "date_format": "日期格式",
       "language": "语言",
       "signature": "编辑签名",

@@ -149,6 +149,7 @@
       "disable_notifications": "Désactiver les Notifications",
       "enable_split_pane": "Vue divisée",
       "enable_threaded": "Vue par conversation",
+      "enable_detailed_dates": "Dates détaillées",
       "date_format": "Format de Date",
       "language": "Langue",
       "signature": "Modifier la Signature",
