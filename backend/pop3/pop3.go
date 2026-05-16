@@ -219,12 +219,10 @@ func (p *Provider) DeleteEmails(_ context.Context, _ string, uids []uint32) erro
 	for _, uid := range uids {
 		msgID, ok := messageIDsByUID[uid]
 		if !ok {
-			conn.Quit()
 			return fmt.Errorf("pop3: message with UID %d not found", uid)
 		}
 
 		if err := conn.Dele(msgID); err != nil {
-			conn.Quit()
 			return fmt.Errorf("pop3 dele: %w", err)
 		}
 	}
