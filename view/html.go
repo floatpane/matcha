@@ -806,7 +806,7 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 				debugImageProtocol("no payload for src=%s", src)
 			}
 			if hyperlinkSupported() {
-				text.WriteString(hyperlink(src, fmt.Sprintf("\n [Click here to view image: %s] \n", alt)))
+				text.WriteString(fmt.Sprintf("\n %s \n", hyperlink(src, fmt.Sprintf("[Click here to view image: %s]", alt))))
 			} else {
 				text.WriteString(fmt.Sprintf("\n %s \n", linkStyle().Render(fmt.Sprintf("[Image: %s, %s]", alt, src))))
 			}
