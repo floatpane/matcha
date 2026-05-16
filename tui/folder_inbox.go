@@ -97,6 +97,9 @@ type FolderInbox struct {
 	moveAccountID    string
 	moveSourceFolder string
 
+	// Image rendering preference, propagated from config.
+	disableImages bool
+
 	// Split pane state
 	previewPane        *EmailView
 	previewedUID       uint32
@@ -138,6 +141,12 @@ func (m *FolderInbox) SetDefaultThreaded(v bool) {
 	if m.inbox != nil {
 		m.inbox.SetDefaultThreaded(v)
 	}
+}
+
+// SetDisableImages propagates the global image-display preference. Affects
+// future split-view previews; an already-open preview keeps its current state.
+func (m *FolderInbox) SetDisableImages(v bool) {
+	m.disableImages = v
 }
 
 // NewFolderInbox creates a new FolderInbox with the given folders and accounts.
@@ -359,7 +368,7 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		previewWidth := m.calculatePreviewWidth()
 		inboxWidth := m.calculateInboxWidth()
 		colOffset := sidebarWidth + 2 + inboxWidth + 2 // borders + padding
-		m.previewPane = NewEmailViewPreview(*email, previewWidth, m.height, colOffset, false)
+		m.previewPane = NewEmailViewPreview(*email, previewWidth, m.height, colOffset, m.disableImages)
 		return m, nil
 	}
 
