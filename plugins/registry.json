@@ -114,10 +114,22 @@
     "file": "reading_time.lua"
   },
   {
+    "name": "prevent_auto_read",
+    "title": "Prevent Auto Read",
+    "description": "Prevents emails from being automatically marked as read when opened. Toggle on/off in Settings → Plugins.",
+    "file": "prevent_auto_read.lua"
+  },
+  {
     "name": "read_tracker",
     "title": "Read Tracker",
     "description": "Displays a running count of emails you've read this session.",
     "file": "read_tracker.lua"
+  },
+  {
+    "name": "toggle_read",
+    "title": "Toggle Read",
+    "description": "Press a configurable key (default: u) in the inbox or email view to toggle read/unread on the selected email.",
+    "file": "toggle_read.lua"
   },
   {
     "name": "recipient_counter",
