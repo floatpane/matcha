@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,6 +9,35 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/config"
 )
+
+func TestMailingListSuggestionTruncates(t *testing.T) {
+	composer := NewComposer("", "", "", "", false)
+	composer.width = 60
+
+	addresses := make([]string, 20)
+	for i := range addresses {
+		addresses[i] = fmt.Sprintf("very.long.recipient.%02d@example.com", i)
+	}
+
+	display := suggestionDisplay(config.Contact{
+		Name:      "Team",
+		Addresses: addresses,
+	}, suggestionDisplayWidth(composer.width))
+
+	if got, want := len([]rune(display)), suggestionDisplayWidth(composer.width); got > want {
+		t.Fatalf("Expected mailing-list suggestion to be at most %d runes, got %d: %q", want, got, display)
+	}
+
+	singleAddress := config.Contact{
+		Name:  "Very Long Contact Name That Should Stay Fully Visible",
+		Email: "very.long.single.address.that.exceeds.width@example.com",
+	}
+	singleDisplay := suggestionDisplay(singleAddress, suggestionDisplayWidth(composer.width))
+	expected := fmt.Sprintf("%s <%s>", singleAddress.Name, singleAddress.Email)
+	if singleDisplay != expected {
+		t.Fatalf("Expected single-address suggestion to stay untruncated, got %q", singleDisplay)
+	}
+}
 
 // TestComposerUpdate verifies the state transitions in the email composer.
 func TestComposerUpdate(t *testing.T) {

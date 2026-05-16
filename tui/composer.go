@@ -275,6 +275,38 @@ func (m *Composer) removeSelectedAttachment() {
 	m.clampAttachmentCursor()
 }
 
+func suggestionDisplay(s config.Contact, suggestionWidth int) string {
+	display := s.Email
+	if len(s.Addresses) > 0 {
+		display = fmt.Sprintf("%s (%s)", s.Name, strings.Join(s.Addresses, ", "))
+		return truncateSuggestionDisplay(display, suggestionWidth)
+	} else if s.Name != "" && s.Name != s.Email {
+		display = fmt.Sprintf("%s <%s>", s.Name, s.Email)
+	}
+	return display
+}
+
+func suggestionDisplayWidth(width int) int {
+	if width > 12 {
+		return width - 6
+	}
+	return 40
+}
+
+func truncateSuggestionDisplay(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	if maxLen <= 0 {
+		return ""
+	}
+	if maxLen <= 3 {
+		return string(runes[:maxLen])
+	}
+	return string(runes[:maxLen-3]) + "..."
+}
+
 func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
@@ -699,13 +731,9 @@ func (m *Composer) View() tea.View {
 	toFieldView := m.toInput.View()
 	if m.showSuggestions && len(m.suggestions) > 0 {
 		var suggestionsBuilder strings.Builder
+		suggestionWidth := suggestionDisplayWidth(m.width)
 		for i, s := range m.suggestions {
-			display := s.Email
-			if len(s.Addresses) > 0 {
-				display = fmt.Sprintf("%s (%s)", s.Name, strings.Join(s.Addresses, ", "))
-			} else if s.Name != "" && s.Name != s.Email {
-				display = fmt.Sprintf("%s <%s>", s.Name, s.Email)
-			}
+			display := suggestionDisplay(s, suggestionWidth)
 			if i == m.selectedSuggestion {
 				suggestionsBuilder.WriteString(selectedSuggestionStyle.Render("> "+display) + "\n")
 			} else {
