@@ -129,6 +129,91 @@ func TestGenerateRSVP(t *testing.T) {
 	}
 }
 
+// buildICS wraps DTSTART/DTEND lines into a minimal VCALENDAR for ParseICS.
+func buildICS(dtstart, dtend string) []byte {
+	return []byte("BEGIN:VCALENDAR\r\n" +
+		"VERSION:2.0\r\n" +
+		"PRODID:-//Test//Test//EN\r\n" +
+		"BEGIN:VEVENT\r\n" +
+		"UID:date-only@example.com\r\n" +
+		"DTSTAMP:20260415T120000Z\r\n" +
+		dtstart + "\r\n" +
+		dtend + "\r\n" +
+		"SUMMARY:Test\r\n" +
+		"END:VEVENT\r\n" +
+		"END:VCALENDAR\r\n")
+}
+
+func TestParseICS_DateOnly(t *testing.T) {
+	wantStart := time.Date(2026, 4, 21, 0, 0, 0, 0, time.UTC)
+	wantEnd := time.Date(2026, 4, 22, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name    string
+		dtstart string
+		dtend   string
+	}{
+		{
+			name:    "VALUE=DATE without TZID",
+			dtstart: "DTSTART;VALUE=DATE:20260421",
+			dtend:   "DTEND;VALUE=DATE:20260422",
+		},
+		{
+			// Regression: TZID present on a date-only value must be ignored
+			// (RFC 5545 forbids TZID with VALUE=DATE; some producers emit it anyway).
+			name:    "VALUE=DATE with TZID is ignored",
+			dtstart: "DTSTART;TZID=America/New_York;VALUE=DATE:20260421",
+			dtend:   "DTEND;TZID=America/New_York;VALUE=DATE:20260422",
+		},
+		{
+			// Shape-only detection: no VALUE param, but YYYYMMDD value with TZID.
+			name:    "YYYYMMDD shape with TZID is treated as date-only",
+			dtstart: "DTSTART;TZID=America/Los_Angeles:20260421",
+			dtend:   "DTEND;TZID=America/Los_Angeles:20260422",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			event, err := ParseICS(buildICS(tt.dtstart, tt.dtend))
+			if err != nil {
+				t.Fatalf("ParseICS failed: %v", err)
+			}
+			if !event.Start.Equal(wantStart) {
+				t.Errorf("Start = %v, want %v", event.Start.UTC(), wantStart)
+			}
+			if !event.End.Equal(wantEnd) {
+				t.Errorf("End = %v, want %v", event.End.UTC(), wantEnd)
+			}
+		})
+	}
+}
+
+func TestParseICS_TimedWithTZID(t *testing.T) {
+	// Existing behavior: timed values with TZID keep their zone semantics.
+	event, err := ParseICS(buildICS(
+		"DTSTART;TZID=America/New_York:20260421T140000",
+		"DTEND;TZID=America/New_York:20260421T153000",
+	))
+	if err != nil {
+		t.Fatalf("ParseICS failed: %v", err)
+	}
+
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skipf("America/New_York unavailable on this system: %v", err)
+	}
+	wantStart := time.Date(2026, 4, 21, 14, 0, 0, 0, loc)
+	wantEnd := time.Date(2026, 4, 21, 15, 30, 0, 0, loc)
+
+	if !event.Start.Equal(wantStart) {
+		t.Errorf("Start = %v, want %v", event.Start, wantStart)
+	}
+	if !event.End.Equal(wantEnd) {
+		t.Errorf("End = %v, want %v", event.End, wantEnd)
+	}
+}
+
 func TestExtractEmail(t *testing.T) {
 	tests := []struct {
 		input    string

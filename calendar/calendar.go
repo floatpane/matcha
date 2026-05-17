@@ -147,10 +147,18 @@ func parseEventTimestamp(vevent *ics.VEvent, prop ics.ComponentProperty) (time.T
 
 	value := p.Value
 	var tzid string
+	var isDateOnly bool
 	if params := p.ICalParameters; params != nil {
 		if tzids := params["TZID"]; len(tzids) > 0 {
 			tzid = tzids[0]
 		}
+		if vals := params["VALUE"]; len(vals) > 0 && strings.EqualFold(vals[0], "DATE") {
+			isDateOnly = true
+		}
+	}
+	// RFC 5545 DATE form is YYYYMMDD (8 chars, no time component).
+	if !isDateOnly && len(value) == 8 {
+		isDateOnly = true
 	}
 
 	// Try parsing with timezone
@@ -176,8 +184,9 @@ func parseEventTimestamp(vevent *ics.VEvent, prop ics.ComponentProperty) (time.T
 		return time.Time{}, fmt.Errorf("parse timestamp: %w", err)
 	}
 
-	// Apply timezone if specified
-	if tzid != "" && !strings.HasSuffix(value, "Z") {
+	// Apply timezone if specified. RFC 5545: VALUE=DATE has no timezone, so
+	// TZID must be ignored for date-only values even when present.
+	if tzid != "" && !strings.HasSuffix(value, "Z") && !isDateOnly {
 		if loc, locErr := time.LoadLocation(tzid); locErr == nil {
 			t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), loc)
 		}
