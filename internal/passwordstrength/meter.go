@@ -9,7 +9,6 @@ const (
 )
 
 const (
-	weakEntropyBits   = 30
 	mediumEntropyBits = 50
 	strongEntropyBits = 70
 )
