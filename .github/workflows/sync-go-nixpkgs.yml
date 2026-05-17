@@ -67,7 +67,7 @@ jobs:
 
       - name: Open PR
         if: steps.bump.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
           committer: "Floatpane Bot <us@floatpane.com>"
