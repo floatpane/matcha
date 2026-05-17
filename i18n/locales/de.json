@@ -170,6 +170,12 @@
       "disable_confirm": "Verschlüsselung deaktivieren?",
       "disable_warning": "Alle Daten werden unverschlüsselt gespeichert.",
       "encrypting": "Daten werden verschlüsselt...",
+      "passwords_match": "✓ Passwörter stimmen überein",
+      "passwords_do_not_match": "✗ Passwörter stimmen nicht überein",
+      "strength_label": "Stärke:",
+      "strength_weak": "schwach",
+      "strength_medium": "mittel",
+      "strength_strong": "stark",
       "error_empty": "Passwort darf nicht leer sein",
       "error_mismatch": "Passwörter stimmen nicht überein",
       "help": "tab: nächstes • enter: speichern"

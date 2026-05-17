@@ -170,6 +170,12 @@
       "disable_confirm": "Desativar criptografia?",
       "disable_warning": "Todos os dados serão armazenados sem criptografia.",
       "encrypting": "Criptografando dados...",
+      "passwords_match": "✓ As senhas coincidem",
+      "passwords_do_not_match": "✗ As senhas não coincidem",
+      "strength_label": "Força:",
+      "strength_weak": "fraca",
+      "strength_medium": "média",
+      "strength_strong": "forte",
       "error_empty": "A senha não pode estar vazia",
       "error_mismatch": "As senhas não coincidem",
       "help": "tab: próximo • enter: salvar"

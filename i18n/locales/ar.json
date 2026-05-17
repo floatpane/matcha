@@ -174,6 +174,12 @@
       "disable_confirm": "تعطيل التشفير؟",
       "disable_warning": "سيتم تخزين جميع البيانات بدون تشفير.",
       "encrypting": "جاري تشفير البيانات...",
+      "passwords_match": "✓ كلمات المرور متطابقة",
+      "passwords_do_not_match": "✗ كلمات المرور غير متطابقة",
+      "strength_label": "القوة:",
+      "strength_weak": "ضعيف",
+      "strength_medium": "متوسط",
+      "strength_strong": "قوي",
       "error_empty": "لا يمكن أن تكون كلمة المرور فارغة",
       "error_mismatch": "كلمات المرور غير متطابقة",
       "help": "tab: التالي • enter: حفظ"

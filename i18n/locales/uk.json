@@ -172,6 +172,12 @@
       "disable_confirm": "Вимкнути шифрування?",
       "disable_warning": "Всі дані будуть зберігатися без шифрування.",
       "encrypting": "Шифрування даних...",
+      "passwords_match": "✓ Паролі співпадають",
+      "passwords_do_not_match": "✗ Паролі не співпадають",
+      "strength_label": "Надійність:",
+      "strength_weak": "слабкий",
+      "strength_medium": "середній",
+      "strength_strong": "сильний",
       "error_empty": "Пароль не може бути порожнім",
       "error_mismatch": "Паролі не співпадають",
       "help": "tab: далі • enter: зберегти"
