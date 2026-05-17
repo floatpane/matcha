@@ -1,16 +1,15 @@
 name: Nixpkgs Bump PR
 
-# Triggers on stable release publish. Opens PR against NixOS/nixpkgs
-# bumping pkgs/by-name/ma/matcha/package.nix to the new version.
+# Manual dispatch only. r-ryantm bot handles automated bumps in nixpkgs.
+# This workflow exists for emergency / out-of-band bumps.
+# Uses whatever Go version is current on nixpkgs master.
 # Requires:
 #   - Fork floatpane/nixpkgs to exist
-#   - NIXPKGS_BUMP_TOKEN secret: PAT with `repo` scope on floatpane/nixpkgs
+#   - HOMEBREW_GITHUB_TOKEN secret: PAT with `repo` scope on floatpane/nixpkgs
 #     and permission to open PRs against NixOS/nixpkgs
-#   - Initial matcha package already merged into nixpkgs (this workflow updates, not inits)
+#   - Initial matcha package already merged into nixpkgs
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -24,33 +23,13 @@ jobs:
   bump:
     runs-on: ubuntu-latest
     steps:
-      - name: Determine version
-        id: ver
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ inputs.version }}"
-          else
-            TAG="${{ github.event.release.tag_name }}"
-            VERSION="${TAG#v}"
-          fi
-          # Skip nightly / preview tags
-          if [[ "$VERSION" == nightly* || "$VERSION" == preview* ]]; then
-            echo "Skipping non-stable release: $VERSION"
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
       - name: Install Nix
-        if: steps.ver.outputs.skip != 'true'
         uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
       - name: Checkout nixpkgs fork
-        if: steps.ver.outputs.skip != 'true'
         uses: actions/checkout@v6
         with:
           repository: floatpane/nixpkgs
@@ -59,19 +38,17 @@ jobs:
           fetch-depth: 0
 
       - name: Sync fork with upstream master
-        if: steps.ver.outputs.skip != 'true'
         working-directory: nixpkgs
         run: |
           git config user.name "Floatpane Bot"
           git config user.email "us@floatpane.com"
           git remote add upstream https://github.com/NixOS/nixpkgs.git
-          git fetch upstream master staging
+          git fetch upstream master
           git checkout master
           git reset --hard upstream/master
           git push origin master --force-with-lease
 
       - name: Get current version (from master)
-        if: steps.ver.outputs.skip != 'true'
         id: current
         working-directory: nixpkgs
         run: |
@@ -79,54 +56,28 @@ jobs:
           OLD=$(grep -E '^\s*version\s*=\s*"' "$PKG" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
           echo "old=$OLD" >> $GITHUB_OUTPUT
 
-      - name: Write go overlay from staging
-        if: steps.ver.outputs.skip != 'true'
-        working-directory: nixpkgs
-        run: |
-          # master nixpkgs heavily cached. Staging has go_1_26 = 1.26.3.
-          # Overlay swaps only go_1_26 → minimal rebuild.
-          STAGING_REV=$(git rev-parse upstream/staging)
-          echo "STAGING_REV=$STAGING_REV" >> $GITHUB_ENV
-          cat > /tmp/go-overlay.nix <<EOF
-          let
-            staging = import (builtins.fetchTarball
-              "https://github.com/NixOS/nixpkgs/archive/$STAGING_REV.tar.gz") {};
-          in final: prev: {
-            go_1_26 = staging.go_1_26;
-            go = staging.go_1_26;
-            buildGoModule = prev.buildGoModule.override { go = staging.go_1_26; };
-          }
-          EOF
-          cat /tmp/go-overlay.nix
-
       - name: Create bump branch
-        if: steps.ver.outputs.skip != 'true'
         working-directory: nixpkgs
         run: |
-          BRANCH="matcha-${{ steps.ver.outputs.version }}"
+          BRANCH="matcha-${{ inputs.version }}"
           git checkout -b "$BRANCH"
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
 
       - name: Bump version and reset hashes
-        if: steps.ver.outputs.skip != 'true'
         working-directory: nixpkgs
         run: |
           PKG=pkgs/by-name/ma/matcha/package.nix
-          NEW="${{ steps.ver.outputs.version }}"
-          # Replace version line
+          NEW="${{ inputs.version }}"
           sed -i -E "s/(version\s*=\s*\")[^\"]+(\")/\1$NEW\2/" "$PKG"
-          # Reset src hash + vendorHash to fakeHash so nix build prints real ones
           sed -i -E 's|hash = "sha256-[A-Za-z0-9+/=]+"|hash = lib.fakeHash|' "$PKG"
           sed -i -E 's|vendorHash = "sha256-[A-Za-z0-9+/=]+"|vendorHash = lib.fakeHash|' "$PKG"
 
       - name: Prefetch src hash (no build)
-        if: steps.ver.outputs.skip != 'true'
         id: src_hash
         working-directory: nixpkgs
         run: |
-          NEW="${{ steps.ver.outputs.version }}"
+          NEW="${{ inputs.version }}"
           URL="https://github.com/floatpane/matcha/archive/refs/tags/v$NEW.tar.gz"
-          # --unpack matches fetchFromGitHub (NAR hash of unpacked tarball)
           BASE32=$(nix-prefetch-url --unpack "$URL")
           HASH=$(nix hash to-sri --type sha256 "$BASE32")
           echo "Resolved SRI hash: $HASH"
@@ -134,13 +85,10 @@ jobs:
           sed -i -E "s|hash = lib.fakeHash|hash = \"$HASH\"|" pkgs/by-name/ma/matcha/package.nix
 
       - name: Build to extract vendorHash
-        if: steps.ver.outputs.skip != 'true'
         working-directory: nixpkgs
         run: |
           set +e
-          nix-build ./. -A matcha --no-out-link \
-            --arg overlays "[ (import /tmp/go-overlay.nix) ]" \
-            2>&1 | tee /tmp/build-vendor.log
+          nix-build ./. -A matcha --no-out-link 2>&1 | tee /tmp/build-vendor.log
           HASH=$(grep -oE 'got:[[:space:]]+sha256-[A-Za-z0-9+/=]+' /tmp/build-vendor.log | head -1 | awk '{print $2}')
           if [ -z "$HASH" ]; then
             echo "Failed to extract vendorHash"; exit 1
@@ -148,22 +96,18 @@ jobs:
           sed -i -E "s|vendorHash = lib.fakeHash|vendorHash = \"$HASH\"|" pkgs/by-name/ma/matcha/package.nix
 
       - name: Final build (sanity check)
-        if: steps.ver.outputs.skip != 'true'
         working-directory: nixpkgs
         run: |
-          nix-build ./. -A matcha --no-out-link \
-            --arg overlays "[ (import /tmp/go-overlay.nix) ]"
+          nix-build ./. -A matcha --no-out-link
 
       - name: Commit and push
-        if: steps.ver.outputs.skip != 'true'
         working-directory: nixpkgs
         run: |
           git add pkgs/by-name/ma/matcha/package.nix
-          git commit -m "matcha: ${{ steps.current.outputs.old }} -> ${{ steps.ver.outputs.version }}"
+          git commit -m "matcha: ${{ steps.current.outputs.old }} -> ${{ inputs.version }}"
           git push -u origin "$BRANCH" --force-with-lease
 
       - name: Open PR against NixOS/nixpkgs
-        if: steps.ver.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
         working-directory: nixpkgs
@@ -171,11 +115,11 @@ jobs:
           BODY=$(cat <<EOF
           ## Description
 
-          Automated version bump for \`matcha\` email client.
+          Manual version bump for \`matcha\` email client.
 
           - Old: ${{ steps.current.outputs.old }}
-          - New: ${{ steps.ver.outputs.version }}
-          - Upstream release: https://github.com/floatpane/matcha/releases/tag/v${{ steps.ver.outputs.version }}
+          - New: ${{ inputs.version }}
+          - Upstream release: https://github.com/floatpane/matcha/releases/tag/v${{ inputs.version }}
 
           ## Things done
 
@@ -190,5 +134,5 @@ jobs:
             --repo NixOS/nixpkgs \
             --base master \
             --head "floatpane:$BRANCH" \
-            --title "matcha: ${{ steps.current.outputs.old }} -> ${{ steps.ver.outputs.version }}" \
+            --title "matcha: ${{ steps.current.outputs.old }} -> ${{ inputs.version }}" \
             --body "$BODY"

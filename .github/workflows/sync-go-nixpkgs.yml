@@ -1,0 +1,86 @@
+name: Sync go.mod minimum from nixpkgs master
+
+# Renovate manages `toolchain` directive (preferred Go).
+# This workflow manages `go` directive (minimum Go) to track nixpkgs master.
+# Keeps r-ryantm / nixpkgs sandbox builds passing.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Get nixpkgs master Go version
+        id: nixgo
+        run: |
+          VER=$(nix eval --raw --impure --expr \
+            '(import (builtins.fetchTarball "https://github.com/NixOS/nixpkgs/archive/master.tar.gz") {}).go_1_26.version')
+          echo "version=$VER"
+          echo "version=$VER" >> $GITHUB_OUTPUT
+
+      - name: Get current go.mod values
+        id: current
+        run: |
+          GO=$(grep -E '^go [0-9.]+$' go.mod | awk '{print $2}')
+          TC=$(grep -E '^toolchain go[0-9.]+$' go.mod | sed 's/toolchain go//')
+          echo "go=$GO" >> $GITHUB_OUTPUT
+          echo "toolchain=$TC" >> $GITHUB_OUTPUT
+
+      - name: Bump go.mod if needed
+        id: bump
+        run: |
+          NEW="${{ steps.nixgo.outputs.version }}"
+          GO="${{ steps.current.outputs.go }}"
+          TC="${{ steps.current.outputs.toolchain }}"
+          CHANGED=false
+          if [ "$GO" != "$NEW" ]; then
+            sed -i -E "s/^go [0-9.]+$/go $NEW/" go.mod
+            CHANGED=true
+          fi
+          # If toolchain now < go minimum, raise toolchain to match
+          if [ -n "$TC" ]; then
+            LOWER=$(printf '%s\n%s\n' "$TC" "$NEW" | sort -V | head -1)
+            if [ "$LOWER" = "$TC" ] && [ "$TC" != "$NEW" ]; then
+              sed -i -E "s/^toolchain go[0-9.]+$/toolchain go$NEW/" go.mod
+              CHANGED=true
+            fi
+          fi
+          echo "changed=$CHANGED" >> $GITHUB_OUTPUT
+          echo "old=$GO" >> $GITHUB_OUTPUT
+          echo "new=$NEW" >> $GITHUB_OUTPUT
+
+      - name: Open PR
+        if: steps.bump.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          committer: "Floatpane Bot <us@floatpane.com>"
+          author: "Floatpane Bot <us@floatpane.com>"
+          commit-message: "chore: bump go.mod minimum to ${{ steps.bump.outputs.new }} (nixpkgs master)"
+          branch: sync-go-nixpkgs
+          delete-branch: true
+          title: "chore: bump go.mod minimum to ${{ steps.bump.outputs.new }}"
+          body: |
+            nixpkgs master ships Go `${{ steps.bump.outputs.new }}`.
+            Bump `go` directive in `go.mod` to match (was `${{ steps.bump.outputs.old }}`).
+
+            Keeps r-ryantm / nixpkgs sandbox builds passing.
+            `toolchain` directive raised only if it fell below the new minimum.
+          labels: |
+            dependencies

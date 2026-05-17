@@ -10,7 +10,15 @@
     {
       "matchManagers": ["gomod"],
       "matchDepNames": ["go"],
-      "rangeStrategy": "bump"
+      "matchDepTypes": ["golang"],
+      "enabled": false
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchDepNames": ["go"],
+      "matchDepTypes": ["toolchain"],
+      "rangeStrategy": "bump",
+      "groupName": "go toolchain"
     },
     {
       "matchManagers": ["github-actions"],
