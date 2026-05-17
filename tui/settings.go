@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
+	"github.com/floatpane/matcha/internal/passwordstrength"
 	"github.com/floatpane/matcha/plugin"
 	"github.com/floatpane/matcha/theme"
 )
@@ -16,6 +17,7 @@ var (
 	selectedAccountItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("42")).Bold(true)
 	accountEmailStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	dangerStyle              = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	successStyle             = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 
 	settingsFocusedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 	settingsBlurredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
@@ -69,12 +71,14 @@ type Settings struct {
 	pgpPINInput        textinput.Model
 
 	// Encryption fields
-	encPasswordInput  textinput.Model
-	encConfirmInput   textinput.Model
-	encFocusIndex     int
-	encError          string
-	encEnabling       bool
-	confirmingDisable bool
+	encPasswordInput    textinput.Model
+	encConfirmInput     textinput.Model
+	encFocusIndex       int
+	encError            string
+	encEnabling         bool
+	confirmingDisable   bool
+	passwordMeter       passwordstrength.Meter
+	encPasswordStrength passwordstrength.Strength
 
 	// Plugin settings state
 	plugins             *plugin.Manager
@@ -130,6 +134,7 @@ func NewSettings(cfg *config.Config) *Settings {
 		pgpKeySource:       "file",
 		encPasswordInput:   newInput("Password", "> ", true),
 		encConfirmInput:    newInput("Confirm Password", "> ", true),
+		passwordMeter:      passwordstrength.NewLibMeter(),
 		pluginInput:        newInput("", "> ", false),
 	}
 }
@@ -292,6 +297,7 @@ func (m *Settings) updateMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.encError = ""
 			m.encPasswordInput.SetValue("")
 			m.encConfirmInput.SetValue("")
+			m.encPasswordStrength = ""
 			m.encFocusIndex = 0
 			m.confirmingDisable = false
 			m.encEnabling = false
