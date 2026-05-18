@@ -3,9 +3,20 @@ package i18n
 import (
 	"errors"
 	"testing"
+
+	"golang.org/x/text/language"
 )
 
 func TestParseLocale(t *testing.T) {
+	RegisterLanguage(&Locale{
+		Tag:        language.Arabic,
+		Code:       "ar",
+		Name:       "Arabic",
+		NativeName: "Arabic",
+		Direction:  "rtl",
+		PluralFunc: ArabicPlural,
+	})
+
 	tests := []struct {
 		name          string
 		code          string
@@ -36,6 +47,12 @@ func TestParseLocale(t *testing.T) {
 			code:          "eo",
 			wantCode:      "eo",
 			wantDirection: "ltr",
+		},
+		{
+			name:          "registered rtl language",
+			code:          "ar",
+			wantCode:      "ar",
+			wantDirection: "rtl",
 		},
 		{
 			name:    "empty code",
