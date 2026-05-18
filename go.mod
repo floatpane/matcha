@@ -24,6 +24,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/knadh/go-pop3 v1.0.2
 	github.com/mattn/go-sixel v0.0.9
+	github.com/wagslane/go-password-validator v0.3.0
 	github.com/yuin/goldmark v1.8.2
 	github.com/yuin/gopher-lua v1.1.2
 	github.com/zalando/go-keyring v0.2.8

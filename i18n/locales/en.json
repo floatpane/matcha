@@ -170,6 +170,12 @@
       "disable_confirm": "Disable encryption?",
       "disable_warning": "All data will be stored unencrypted.",
       "encrypting": "Encrypting data...",
+      "passwords_match": "✓ Passwords match",
+      "passwords_do_not_match": "✗ Passwords do not match",
+      "strength_label": "Strength:",
+      "strength_weak": "weak",
+      "strength_medium": "medium",
+      "strength_strong": "strong",
       "error_empty": "Password cannot be empty",
       "error_mismatch": "Passwords do not match",
       "help": "tab: next • enter: save"

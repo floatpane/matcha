@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
+	"github.com/floatpane/matcha/internal/passwordstrength"
 )
 
 func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -38,6 +39,7 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		// Clear inputs and return to menu
 		m.encPasswordInput.SetValue("")
 		m.encConfirmInput.SetValue("")
+		m.encPasswordStrength = ""
 		m.encPasswordInput.Blur()
 		m.encConfirmInput.Blur()
 		m.encError = ""
@@ -98,7 +100,11 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		// Forward input to focused textinput
 		var cmd tea.Cmd
 		if m.encFocusIndex == 0 {
+			before := m.encPasswordInput.Value()
 			m.encPasswordInput, cmd = m.encPasswordInput.Update(msg)
+			if m.encPasswordInput.Value() != before {
+				m.handlePasswordChanged()
+			}
 		} else if m.encFocusIndex == 1 {
 			m.encConfirmInput, cmd = m.encConfirmInput.Update(msg)
 		}
@@ -137,13 +143,20 @@ func (m *Settings) viewEncryption() string {
 			b.WriteString(settingsBlurredStyle.Render(t("settings_encryption.password_label") + "\n"))
 		}
 		b.WriteString(m.encPasswordInput.View() + "\n\n")
+		if m.encPasswordStrength != "" {
+			b.WriteString("  " + m.renderPasswordStrength() + "\n\n")
+		}
 
 		if m.encFocusIndex == 1 {
 			b.WriteString(settingsFocusedStyle.Render(t("settings_encryption.confirm_label") + "\n"))
 		} else {
 			b.WriteString(settingsBlurredStyle.Render(t("settings_encryption.confirm_label") + "\n"))
 		}
-		b.WriteString(m.encConfirmInput.View() + "\n\n")
+		b.WriteString(m.encConfirmInput.View() + "\n")
+		if status := m.renderPasswordMatch(); status != "" {
+			b.WriteString("  " + status + "\n")
+		}
+		b.WriteString("\n")
 
 		saveBtn := "[ " + t("settings_encryption.enable_button") + " ]"
 		if m.encFocusIndex == 2 {
@@ -164,4 +177,36 @@ func (m *Settings) viewEncryption() string {
 	}
 
 	return b.String()
+}
+
+func (m *Settings) renderPasswordMatch() string {
+	password := m.encPasswordInput.Value()
+	confirm := m.encConfirmInput.Value()
+	if confirm == "" {
+		return ""
+	}
+	if password == confirm {
+		return successStyle.Render(t("settings_encryption.passwords_match"))
+	}
+	return dangerStyle.Render(t("settings_encryption.passwords_do_not_match"))
+}
+
+func (m *Settings) handlePasswordChanged() {
+	password := m.encPasswordInput.Value()
+	if password == "" {
+		m.encPasswordStrength = ""
+		return
+	}
+	m.encPasswordStrength = m.passwordMeter.Strength(password)
+}
+
+func (m *Settings) renderPasswordStrength() string {
+	switch m.encPasswordStrength {
+	case passwordstrength.Strong:
+		return successStyle.Render(t("settings_encryption.strength_label") + " " + t("settings_encryption.strength_strong"))
+	case passwordstrength.Medium:
+		return settingsFocusedStyle.Render(t("settings_encryption.strength_label") + " " + t("settings_encryption.strength_medium"))
+	default:
+		return dangerStyle.Render(t("settings_encryption.strength_label") + " " + t("settings_encryption.strength_weak"))
+	}
 }

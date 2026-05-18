@@ -170,6 +170,12 @@
       "disable_confirm": "Désactiver le chiffrement ?",
       "disable_warning": "Toutes les données seront stockées non chiffrées.",
       "encrypting": "Chiffrement des données...",
+      "passwords_match": "✓ Les mots de passe correspondent",
+      "passwords_do_not_match": "✗ Les mots de passe ne correspondent pas",
+      "strength_label": "Force :",
+      "strength_weak": "faible",
+      "strength_medium": "moyen",
+      "strength_strong": "fort",
       "error_empty": "Le mot de passe ne peut pas être vide",
       "error_mismatch": "Les mots de passe ne correspondent pas",
       "help": "tab: suivant • entrée: enregistrer"

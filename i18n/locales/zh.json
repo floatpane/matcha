@@ -168,6 +168,12 @@
       "disable_confirm": "禁用加密?",
       "disable_warning": "所有数据将以未加密方式存储。",
       "encrypting": "正在加密数据...",
+      "passwords_match": "✓ 密码匹配",
+      "passwords_do_not_match": "✗ 密码不匹配",
+      "strength_label": "强度:",
+      "strength_weak": "弱",
+      "strength_medium": "中等",
+      "strength_strong": "强",
       "error_empty": "密码不能为空",
       "error_mismatch": "密码不匹配",
       "help": "tab: 下一项 • enter: 保存"

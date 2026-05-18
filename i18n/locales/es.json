@@ -170,6 +170,12 @@
       "disable_confirm": "¿Deshabilitar cifrado?",
       "disable_warning": "Todos los datos se almacenarán sin cifrar.",
       "encrypting": "Cifrando datos...",
+      "passwords_match": "✓ Las contraseñas coinciden",
+      "passwords_do_not_match": "✗ Las contraseñas no coinciden",
+      "strength_label": "Fortaleza:",
+      "strength_weak": "débil",
+      "strength_medium": "media",
+      "strength_strong": "fuerte",
       "error_empty": "La contraseña no puede estar vacía",
       "error_mismatch": "Las contraseñas no coinciden",
       "help": "tab: siguiente • enter: guardar"

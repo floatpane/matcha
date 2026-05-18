@@ -174,6 +174,12 @@
       "disable_confirm": "Wyłączyć szyfrowanie?",
       "disable_warning": "Wszystkie dane będą przechowywane bez szyfrowania.",
       "encrypting": "Szyfrowanie danych...",
+      "passwords_match": "✓ Hasła pasują do siebie",
+      "passwords_do_not_match": "✗ Hasła nie pasują do siebie",
+      "strength_label": "Siła:",
+      "strength_weak": "słabe",
+      "strength_medium": "średnie",
+      "strength_strong": "silne",
       "error_empty": "Hasło nie może być puste",
       "error_mismatch": "Hasła nie pasują do siebie",
       "help": "tab: następny • enter: zapisz"
