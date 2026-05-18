@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"time"
@@ -184,6 +185,11 @@ func (d *Daemon) initProviders() {
 }
 
 func (d *Daemon) acceptLoop() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("daemon: acceptLoop panic recovered: %v\n%s", r, debug.Stack())
+		}
+	}()
 	for {
 		conn, err := d.listener.Accept()
 		if err != nil {
