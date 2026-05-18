@@ -310,9 +310,9 @@ func (d *Daemon) handleRefreshFolder(conn *daemonrpc.Conn, req *daemonrpc.Reques
 
 	// Async: fetch in background, push events when done.
 	go func() {
-
 		defer func() {
 			if r := recover(); r != nil {
+				log.Printf("daemon: refresh panic for account = %s folder = %s: %v", params.AccountID, params.Folder, r)
 				d.broadcastToSubscribers(params.AccountID, params.Folder, daemonrpc.EventSyncError, daemonrpc.SyncErrorEvent{
 					AccountID: params.AccountID,
 					Folder:    params.Folder,
