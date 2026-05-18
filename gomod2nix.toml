@@ -157,6 +157,10 @@ schema = 3
     version = 'v1.0.0'
     hash = 'sha256-6PzSE8lSOPqO7Y7axqmL+7CioDPap+Rgb2ETmhqBoHg='
 
+  [mod.'github.com/wagslane/go-password-validator']
+    version = 'v0.3.0'
+    hash = 'sha256-4Os6DWAt2B3EWVYfInUmYnGtwDTjS023YHykq/CXBLU='
+
   [mod.'github.com/xo/terminfo']
     version = 'v0.0.0-20220910002029-abceb7e1c41e'
     hash = 'sha256-GyCDxxMQhXA3Pi/TsWXpA8cX5akEoZV7CFx4RO3rARU='
