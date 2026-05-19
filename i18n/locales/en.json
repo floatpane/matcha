@@ -41,7 +41,7 @@
       "sent": "Email sent successfully",
       "draft_saved": "Draft saved",
       "invalid_email": "✗ Invalid email address",
-      "invalid_email_fields": "One or more recipient fields are invalid",
+      "invalid_email_fields": "One or more email fields are invalid",
       "recipient_required": "Add at least one recipient"
     },
     "inbox": {

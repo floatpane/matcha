@@ -56,6 +56,7 @@ type Composer struct {
 	toInput          textinput.Model
 	ccInput          textinput.Model
 	bccInput         textinput.Model
+	fromError        string
 	toError          string
 	ccError          string
 	bccError         string
@@ -213,6 +214,21 @@ func (m *Composer) hideComposerNotice() {
 	m.noticeText = ""
 }
 
+func (m *Composer) validateFromField() bool {
+	if !m.isCatchAllAccount() {
+		m.fromError = ""
+		return true
+	}
+	value := strings.TrimSpace(m.fromInput.Value())
+	addr, err := mail.ParseAddress(value)
+	if value == "" || err != nil || addr.Address == "" {
+		m.fromError = t("composer.invalid_email")
+		return false
+	}
+	m.fromError = ""
+	return true
+}
+
 func (m *Composer) validateEmailField(focus int) bool {
 	var input *textinput.Model
 	var setError func(string)
@@ -241,10 +257,11 @@ func (m *Composer) validateEmailField(focus int) bool {
 }
 
 func (m *Composer) canSendEmail() bool {
+	m.validateFromField()
 	m.validateEmailField(focusTo)
 	m.validateEmailField(focusCc)
 	m.validateEmailField(focusBcc)
-	return m.toError == "" && m.ccError == "" && m.bccError == ""
+	return m.fromError == "" && m.toError == "" && m.ccError == "" && m.bccError == ""
 }
 
 // updateSignature updates the signature input based on the current selected account.
@@ -615,7 +632,9 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusIndex = maxFocus
 			}
 
-			if previousFocus != m.focusIndex {
+			if previousFocus == focusFrom {
+				m.validateFromField()
+			} else if previousFocus != m.focusIndex {
 				m.validateEmailField(previousFocus)
 			}
 
@@ -718,8 +737,12 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.focusIndex {
 	case focusFrom:
 		if m.isCatchAllAccount() {
+			previousFromValue := m.fromInput.Value()
 			m.fromInput, cmd = m.fromInput.Update(msg)
 			cmds = append(cmds, cmd)
+			if m.fromInput.Value() != previousFromValue {
+				m.fromError = ""
+			}
 		}
 	case focusTo:
 		previousToValue := m.toInput.Value()
@@ -799,6 +822,9 @@ func (m *Composer) View() tea.View {
 			}
 		} else {
 			fromField = "  " + t("composer.from") + " " + fromAddrView
+		}
+		if m.fromError != "" {
+			fromField += "\n" + composerErrorStyle.Render(m.fromError)
 		}
 	} else if len(m.accounts) > 1 {
 		if m.focusIndex == focusFrom {
