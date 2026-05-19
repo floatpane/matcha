@@ -670,6 +670,106 @@ func TestProcessBodyWithHyperlinkSupport(t *testing.T) {
 	}
 }
 
+func TestProcessBodySanitizesUnsafeHTMLLinks(t *testing.T) {
+	origTerm := os.Getenv("TERM")
+	origTermProgram := os.Getenv("TERM_PROGRAM")
+	origVTEVersion := os.Getenv("VTE_VERSION")
+	defer func() {
+		os.Setenv("TERM", origTerm)
+		os.Setenv("TERM_PROGRAM", origTermProgram)
+		os.Setenv("VTE_VERSION", origVTEVersion)
+	}()
+
+	os.Setenv("TERM", "xterm-kitty")
+	os.Setenv("TERM_PROGRAM", "")
+	os.Unsetenv("VTE_VERSION")
+
+	h1Style := lipgloss.NewStyle()
+	h2Style := lipgloss.NewStyle()
+	bodyStyle := lipgloss.NewStyle()
+
+	tests := []struct {
+		name              string
+		input             string
+		wantContains      string
+		forbiddenContains []string
+	}{
+		{
+			name:         "javascript link is rendered as text only",
+			input:        `<a href="javascript:alert(1)">Click here</a>`,
+			wantContains: "Click here",
+			forbiddenContains: []string{
+				"javascript:",
+				"\x1b]8;;javascript:",
+			},
+		},
+		{
+			name:         "mixed-case javascript link is rejected",
+			input:        `<a href="JaVaScRiPt:alert(1)">Click here</a>`,
+			wantContains: "Click here",
+			forbiddenContains: []string{
+				"JaVaScRiPt:",
+				"javascript:",
+			},
+		},
+		{
+			name:         "unsafe image source is not linked",
+			input:        `<img src="javascript:alert(1)" alt="bad image">After`,
+			wantContains: "After",
+			forbiddenContains: []string{
+				"javascript:",
+				"bad image",
+				"Click here to view image",
+			},
+		},
+		{
+			name:         "data image href is not rendered as a link",
+			input:        `<a href="data:image/png;base64,iVBORw0KGgo=">data link</a>`,
+			wantContains: "data link",
+			forbiddenContains: []string{
+				"data:image",
+				"\x1b]8;;data:",
+			},
+		},
+		{
+			name:         "cid href is not rendered as a link",
+			input:        `<a href="cid:test-image@example.com">cid link</a>`,
+			wantContains: "cid link",
+			forbiddenContains: []string{
+				"cid:test-image",
+				"\x1b]8;;cid:",
+			},
+		},
+		{
+			name:         "OSC control characters are stripped from safe links",
+			input:        "<a href=\"https://example.com/\x1b]8;;file:///tmp/pwn\x07\">safe</a>",
+			wantContains: "safe",
+			forbiddenContains: []string{
+				"\x1b]8;;file:",
+				"file:///tmp/pwn",
+				"\x07",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			processed, _, err := ProcessBody(tt.input, BodyMIMETypeHTML, h1Style, h2Style, bodyStyle, false)
+			if err != nil {
+				t.Fatalf("ProcessBody() failed: %v", err)
+			}
+			if !strings.Contains(processed, tt.wantContains) {
+				t.Fatalf("processed body does not contain %q:\n%q", tt.wantContains, processed)
+			}
+			for _, forbidden := range tt.forbiddenContains {
+				if strings.Contains(processed, forbidden) {
+					t.Fatalf("processed body contains forbidden %q:\n%q", forbidden, processed)
+				}
+			}
+		})
+	}
+}
+
 func TestProcessBodyWithImageProtocol(t *testing.T) {
 	// Save original environment variables
 	origTerm := os.Getenv("TERM")

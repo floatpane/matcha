@@ -13,11 +13,14 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/clib"
+	"github.com/floatpane/matcha/internal/htmlsanitizer"
 	"github.com/floatpane/matcha/internal/httpclient"
 	"github.com/floatpane/matcha/internal/loglevel"
 	"github.com/floatpane/matcha/theme"
 	lru "github.com/hashicorp/golang-lru/v2"
 )
+
+var htmlSanitizer htmlsanitizer.Sanitizer = htmlsanitizer.NewLibSanitizer()
 
 const termGhostty = "ghostty"
 
@@ -107,6 +110,8 @@ func hyperlinkSupported() bool {
 
 // hyperlink formats a string as either a terminal-clickable hyperlink or plain text with URL.
 func hyperlink(url, text string) string {
+	url = strings.TrimSpace(url)
+	text = stripTerminalControls(text)
 	if text == "" {
 		text = url
 	}
@@ -122,6 +127,24 @@ func hyperlink(url, text string) string {
 		return fmt.Sprintf("<%s>", linkStyle().Render(url))
 	}
 	return fmt.Sprintf("%s <%s>", linkStyle().Render(text), linkStyle().Render(url))
+}
+
+func stripTerminalControls(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if r < 0x20 || r == 0x7f || r == 0x9c {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+func hasTerminalControls(s string) bool {
+	return strings.IndexFunc(s, func(r rune) bool {
+		return r < 0x20 || r == 0x7f || r == 0x9c
+	}) != -1
 }
 
 func decodeQuotedPrintable(s string) (string, error) {
@@ -589,6 +612,7 @@ func processBody(rawBody, mimeType string, inline map[string]string, h1Style, h2
 	} else {
 		htmlBody = markdownToHTML([]byte(decodedBody))
 	}
+	htmlBody = htmlSanitizer.SanitizeBytes(htmlBody)
 
 	result, placements, err := renderHTMLToText(htmlBody, inline, h1Style, h2Style, disableImages)
 	if err != nil {
@@ -601,7 +625,8 @@ func processBody(rawBody, mimeType string, inline map[string]string, h1Style, h2
 	// keep these alive. Retry through the markdown pre-pass when the direct
 	// HTML path produces nothing.
 	if directHTML && strings.TrimSpace(result) == "" {
-		result, placements, err = renderHTMLToText(markdownToHTML([]byte(decodedBody)), inline, h1Style, h2Style, disableImages)
+		fallbackHTML := htmlSanitizer.SanitizeBytes(markdownToHTML([]byte(decodedBody)))
+		result, placements, err = renderHTMLToText(fallbackHTML, inline, h1Style, h2Style, disableImages)
 		if err != nil {
 			return "", nil, err
 		}
@@ -643,11 +668,18 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 			text.WriteString("\n\n")
 
 		case clib.HElemLink:
-			text.WriteString(hyperlink(elem.Attr1, elem.Text))
+			if hasTerminalControls(elem.Attr1) {
+				text.WriteString(stripTerminalControls(elem.Text))
+			} else {
+				text.WriteString(hyperlink(elem.Attr1, elem.Text))
+			}
 
 		case clib.HElemImage:
-			src := elem.Attr1
-			alt := elem.Attr2
+			src := strings.TrimSpace(elem.Attr1)
+			alt := stripTerminalControls(elem.Attr2)
+			if hasTerminalControls(src) {
+				continue
+			}
 
 			if !disableImages && imageProtocolSupported() {
 				var payload string

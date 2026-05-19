@@ -23,6 +23,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/knadh/go-pop3 v1.0.2
 	github.com/mattn/go-sixel v0.0.9
+	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/wagslane/go-password-validator v0.3.0
 	github.com/yuin/goldmark v1.8.2
 	github.com/yuin/gopher-lua v1.1.2
@@ -37,6 +38,7 @@ require (
 require (
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
+	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260416155717-489999b90468 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
@@ -47,6 +49,7 @@ require (
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
+	github.com/gorilla/css v1.0.1 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
