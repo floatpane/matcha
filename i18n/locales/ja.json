@@ -39,7 +39,10 @@
       "exit_confirm": "終了してもよろしいですか?この下書きは保存されます",
       "sending": "メール送信中...",
       "sent": "メールが正常に送信されました",
-      "draft_saved": "下書きを保存しました"
+      "draft_saved": "下書きを保存しました",
+      "invalid_email": "✗ 無効なメールアドレス",
+      "invalid_email_fields": "1つ以上の宛先フィールドが無効です",
+      "recipient_required": "少なくとも1人の宛先を追加してください"
     },
     "inbox": {
       "title": "受信トレイ",

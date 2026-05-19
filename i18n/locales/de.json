@@ -39,7 +39,10 @@
       "exit_confirm": "Sind Sie sicher, dass Sie beenden möchten? Dieser Entwurf wird gespeichert",
       "sending": "E-Mail wird gesendet...",
       "sent": "E-Mail erfolgreich gesendet",
-      "draft_saved": "Entwurf gespeichert"
+      "draft_saved": "Entwurf gespeichert",
+      "invalid_email": "✗ Ungültige E-Mail-Adresse",
+      "invalid_email_fields": "Ein oder mehrere Empfängerfelder sind ungültig",
+      "recipient_required": "Mindestens einen Empfänger hinzufügen"
     },
     "inbox": {
       "title": "Posteingang",

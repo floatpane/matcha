@@ -39,7 +39,10 @@
       "exit_confirm": "确定要退出吗?此草稿将被保存",
       "sending": "正在发送邮件...",
       "sent": "邮件发送成功",
-      "draft_saved": "草稿已保存"
+      "draft_saved": "草稿已保存",
+      "invalid_email": "✗ 无效的电子邮件地址",
+      "invalid_email_fields": "一个或多个收件人字段无效",
+      "recipient_required": "请至少添加一个收件人"
     },
     "inbox": {
       "title": "收件箱",

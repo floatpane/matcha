@@ -39,7 +39,10 @@
       "exit_confirm": "Czy na pewno chcesz wyjść? Ten szkic zostanie zapisany",
       "sending": "Wysyłanie wiadomości...",
       "sent": "Wiadomość wysłana pomyślnie",
-      "draft_saved": "Szkic zapisany"
+      "draft_saved": "Szkic zapisany",
+      "invalid_email": "✗ Nieprawidłowy adres e-mail",
+      "invalid_email_fields": "Jedno lub więcej pól odbiorców jest nieprawidłowych",
+      "recipient_required": "Dodaj co najmniej jednego odbiorcę"
     },
     "inbox": {
       "title": "Skrzynka odbiorcza",

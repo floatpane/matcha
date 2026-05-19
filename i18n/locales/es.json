@@ -39,7 +39,10 @@
       "exit_confirm": "¿Está seguro de que desea salir? Este borrador se guardará",
       "sending": "Enviando correo...",
       "sent": "Correo enviado exitosamente",
-      "draft_saved": "Borrador guardado"
+      "draft_saved": "Borrador guardado",
+      "invalid_email": "✗ Dirección de correo no válida",
+      "invalid_email_fields": "Uno o más campos de destinatarios son inválidos",
+      "recipient_required": "Añade al menos un destinatario"
     },
     "inbox": {
       "title": "Bandeja de entrada",

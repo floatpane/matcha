@@ -39,7 +39,10 @@
       "exit_confirm": "Tem certeza de que deseja sair? Este rascunho será salvo",
       "sending": "Enviando e-mail...",
       "sent": "E-mail enviado com sucesso",
-      "draft_saved": "Rascunho salvo"
+      "draft_saved": "Rascunho salvo",
+      "invalid_email": "✗ Endereço de e-mail inválido",
+      "invalid_email_fields": "Um ou mais campos de destinatários são inválidos",
+      "recipient_required": "Adicione pelo menos um destinatário"
     },
     "inbox": {
       "title": "Caixa de entrada",
