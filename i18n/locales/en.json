@@ -39,7 +39,10 @@
       "exit_confirm": "Are you sure you want to exit? This draft will be saved",
       "sending": "Sending email...",
       "sent": "Email sent successfully",
-      "draft_saved": "Draft saved"
+      "draft_saved": "Draft saved",
+      "invalid_email": "✗ Invalid email address",
+      "invalid_email_fields": "One or more recipient fields are invalid",
+      "recipient_required": "Add at least one recipient"
     },
     "inbox": {
       "title": "Inbox",

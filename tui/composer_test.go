@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -36,6 +37,130 @@ func TestMailingListSuggestionTruncates(t *testing.T) {
 	expected := fmt.Sprintf("%s <%s>", singleAddress.Name, singleAddress.Email)
 	if singleDisplay != expected {
 		t.Fatalf("Expected single-address suggestion to stay untruncated, got %q", singleDisplay)
+	}
+}
+
+func TestNormalizeEmailList(t *testing.T) {
+	got, ok := normalizeEmailList("Alice Example <alice@example.com>, bob@example.com")
+	if !ok {
+		t.Fatal("Expected valid email list")
+	}
+	if want := "alice@example.com, bob@example.com"; got != want {
+		t.Fatalf("normalizeEmailList() = %q, want %q", got, want)
+	}
+
+	if _, ok := normalizeEmailList("not-an-email"); ok {
+		t.Fatal("Expected invalid email list")
+	}
+}
+
+func TestComposerEmailValidationOnFieldBlur(t *testing.T) {
+	composer := NewComposer("", "", "", "", false)
+	composer.toInput.SetValue("not-an-email")
+
+	model, _ := composer.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	composer = model.(*Composer)
+
+	if composer.toError == "" {
+		t.Fatal("Expected To validation error after leaving invalid field")
+	}
+	if !strings.Contains(fmt.Sprint(composer.View()), composer.toError) {
+		t.Fatal("Expected validation error to be rendered below To field")
+	}
+}
+
+func TestComposerEmailValidationClearsWhenTyping(t *testing.T) {
+	composer := NewComposer("", "", "", "", false)
+	composer.toInput.SetValue("not-an-email")
+
+	model, _ := composer.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	composer = model.(*Composer)
+	if composer.toError == "" {
+		t.Fatal("Expected To validation error after leaving invalid field")
+	}
+
+	composer.focusIndex = focusTo
+	composer.toInput.Focus()
+	model, _ = composer.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	composer = model.(*Composer)
+
+	if composer.toError != "" {
+		t.Fatalf("Expected To validation error to clear when typing, got %q", composer.toError)
+	}
+}
+
+func TestComposerSendValidatesEmailFields(t *testing.T) {
+	tests := []struct {
+		name        string
+		to          string
+		cc          string
+		wantNotice  string
+		wantCcError bool
+	}{
+		{
+			name:        "invalid cc",
+			to:          "recipient@example.com",
+			cc:          "not-an-email",
+			wantNotice:  "One or more recipient fields are invalid",
+			wantCcError: true,
+		},
+		{
+			name:       "no recipients",
+			wantNotice: "Add at least one recipient",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			composer := NewComposer("", "", "", "", false)
+			composer.toInput.SetValue(tt.to)
+			composer.ccInput.SetValue(tt.cc)
+			composer.subjectInput.SetValue("Test Subject")
+			composer.bodyInput.SetValue("This is the body.")
+			composer.focusIndex = focusSend
+
+			model, cmd := composer.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			composer = model.(*Composer)
+
+			if cmd == nil {
+				t.Fatal("Expected auto-close command for composer notice")
+			}
+			if !composer.showNotice {
+				t.Fatal("Expected composer notice to be shown after send attempt")
+			}
+			if !strings.Contains(fmt.Sprint(composer.View()), tt.wantNotice) {
+				t.Fatalf("Expected notice %q to be rendered after send attempt", tt.wantNotice)
+			}
+			if tt.wantCcError && composer.ccError == "" {
+				t.Fatal("Expected Cc validation error after send attempt")
+			}
+
+			model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			composer = model.(*Composer)
+
+			if composer.showNotice {
+				t.Fatal("Expected composer notice to close on Enter")
+			}
+			if tt.wantCcError && !strings.Contains(fmt.Sprint(composer.View()), composer.ccError) {
+				t.Fatal("Expected Cc validation error to be rendered after closing notice")
+			}
+		})
+	}
+}
+
+func TestComposerContactSuggestionUsesDisplayName(t *testing.T) {
+	composer := NewComposer("", "", "", "", false)
+	composer.showSuggestions = true
+	composer.suggestions = []config.Contact{{
+		Name:  "Alice Example",
+		Email: "alice@example.com",
+	}}
+
+	model, _ := composer.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	composer = model.(*Composer)
+
+	if got, want := composer.toInput.Value(), "Alice Example <alice@example.com>, "; got != want {
+		t.Fatalf("Expected suggestion to insert display-name address, got %q, want %q", got, want)
 	}
 }
 

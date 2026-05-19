@@ -2,9 +2,11 @@ package tui
 
 import (
 	"fmt"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
@@ -30,6 +32,7 @@ var (
 	attachmentStyle     = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("245"))
 	fromSelectorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	smimeToggleStyle    = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("245"))
+	composerErrorStyle  = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("196"))
 )
 
 const (
@@ -45,12 +48,17 @@ const (
 	focusSend
 )
 
+type hideComposerNoticeMsg struct{}
+
 // Composer model holds the state of the email composition UI.
 type Composer struct {
 	focusIndex       int
 	toInput          textinput.Model
 	ccInput          textinput.Model
 	bccInput         textinput.Model
+	toError          string
+	ccError          string
+	bccError         string
 	subjectInput     textinput.Model
 	bodyInput        textarea.Model
 	signatureInput   textarea.Model
@@ -61,6 +69,8 @@ type Composer struct {
 	width            int
 	height           int
 	confirmingExit   bool
+	showNotice       bool
+	noticeText       string
 	hideTips         bool
 
 	// Multi-account support
@@ -157,6 +167,84 @@ func NewComposer(from, to, subject, body string, hideTips bool) *Composer {
 	m.toInput.Focus()
 
 	return m
+}
+
+func normalizeEmailList(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", true
+	}
+
+	parts := strings.Split(value, ",")
+	addresses := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		addr, err := mail.ParseAddress(part)
+		if err != nil || addr.Address == "" {
+			return value, false
+		}
+		addresses = append(addresses, addr.Address)
+	}
+	if len(addresses) == 0 {
+		return "", true
+	}
+	return strings.Join(addresses, ", "), true
+}
+
+func (m *Composer) hasAnyRecipient() bool {
+	return strings.TrimSpace(m.toInput.Value()) != "" ||
+		strings.TrimSpace(m.ccInput.Value()) != "" ||
+		strings.TrimSpace(m.bccInput.Value()) != ""
+}
+
+func (m *Composer) showComposerNotice(message string) tea.Cmd {
+	m.noticeText = message
+	m.showNotice = true
+	return tea.Tick(5*time.Second, func(time.Time) tea.Msg {
+		return hideComposerNoticeMsg{}
+	})
+}
+
+func (m *Composer) hideComposerNotice() {
+	m.showNotice = false
+	m.noticeText = ""
+}
+
+func (m *Composer) validateEmailField(focus int) bool {
+	var input *textinput.Model
+	var setError func(string)
+	switch focus {
+	case focusTo:
+		input = &m.toInput
+		setError = func(err string) { m.toError = err }
+	case focusCc:
+		input = &m.ccInput
+		setError = func(err string) { m.ccError = err }
+	case focusBcc:
+		input = &m.bccInput
+		setError = func(err string) { m.bccError = err }
+	default:
+		return true
+	}
+
+	normalized, ok := normalizeEmailList(input.Value())
+	if !ok {
+		setError(t("composer.invalid_email"))
+		return false
+	}
+	input.SetValue(normalized)
+	setError("")
+	return true
+}
+
+func (m *Composer) canSendEmail() bool {
+	m.validateEmailField(focusTo)
+	m.validateEmailField(focusCc)
+	m.validateEmailField(focusBcc)
+	return m.toError == "" && m.ccError == "" && m.bccError == ""
 }
 
 // updateSignature updates the signature input based on the current selected account.
@@ -342,6 +430,10 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.signatureInput.SetHeight(sigHeight)
 		}
 
+	case hideComposerNoticeMsg:
+		m.hideComposerNotice()
+		return m, nil
+
 	case FileSelectedMsg:
 		// Avoid duplicates and add all selected paths
 		for _, newPath := range msg.Paths {
@@ -406,6 +498,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				m.toInput.SetValue(finalValue)
 				m.toInput.SetCursor(len(finalValue))
+				m.toError = ""
 				m.lastToValue = m.toInput.Value()
 				m.showSuggestions = false
 				m.suggestions = nil
@@ -471,6 +564,14 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		if m.showNotice {
+			switch msg.String() {
+			case "enter", "esc", " ":
+				m.hideComposerNotice()
+			}
+			return m, nil
+		}
+
 		kb := config.Keybinds
 		attachmentPathSize := len(m.attachmentPaths)
 		if m.focusIndex == focusAttachment && attachmentPathSize > 0 {
@@ -494,6 +595,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case kb.Composer.NextField, kb.Composer.PrevField:
+			previousFocus := m.focusIndex
 			if msg.String() == kb.Composer.PrevField {
 				m.focusIndex--
 			} else {
@@ -511,6 +613,10 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusIndex = minFocus
 			} else if m.focusIndex < minFocus {
 				m.focusIndex = maxFocus
+			}
+
+			if previousFocus != m.focusIndex {
+				m.validateEmailField(previousFocus)
 			}
 
 			m.fromInput.Blur()
@@ -570,6 +676,12 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case focusSend:
 				if msg.String() == "enter" {
+					if !m.canSendEmail() {
+						return m, m.showComposerNotice(t("composer.invalid_email_fields"))
+					}
+					if !m.hasAnyRecipient() {
+						return m, m.showComposerNotice(t("composer.recipient_required"))
+					}
 					acc := m.getSelectedAccount()
 					accountID := ""
 					if acc != nil {
@@ -610,12 +722,16 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 	case focusTo:
+		previousToValue := m.toInput.Value()
 		m.toInput, cmd = m.toInput.Update(msg)
 		cmds = append(cmds, cmd)
 
 		// Check if To field value changed and update suggestions
 		currentValue := m.toInput.Value()
 		if currentValue != m.lastToValue {
+			if currentValue != previousToValue {
+				m.toError = ""
+			}
 			m.lastToValue = currentValue
 
 			// Extract the last comma-separated part for searching
@@ -632,11 +748,19 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case focusCc:
+		previousCcValue := m.ccInput.Value()
 		m.ccInput, cmd = m.ccInput.Update(msg)
 		cmds = append(cmds, cmd)
+		if m.ccInput.Value() != previousCcValue {
+			m.ccError = ""
+		}
 	case focusBcc:
+		previousBccValue := m.bccInput.Value()
 		m.bccInput, cmd = m.bccInput.Update(msg)
 		cmds = append(cmds, cmd)
+		if m.bccInput.Value() != previousBccValue {
+			m.bccError = ""
+		}
 	case focusSubject:
 		m.subjectInput, cmd = m.subjectInput.Update(msg)
 		cmds = append(cmds, cmd)
@@ -729,6 +853,9 @@ func (m *Composer) View() tea.View {
 
 	// Build To field with suggestions
 	toFieldView := m.toInput.View()
+	if m.toError != "" {
+		toFieldView += "\n" + composerErrorStyle.Render(m.toError)
+	}
 	if m.showSuggestions && len(m.suggestions) > 0 {
 		var suggestionsBuilder strings.Builder
 		suggestionWidth := suggestionDisplayWidth(m.width)
@@ -741,6 +868,16 @@ func (m *Composer) View() tea.View {
 			}
 		}
 		toFieldView = toFieldView + "\n" + suggestionBoxStyle.Render(strings.TrimSuffix(suggestionsBuilder.String(), "\n"))
+	}
+
+	ccFieldView := m.ccInput.View()
+	if m.ccError != "" {
+		ccFieldView += "\n" + composerErrorStyle.Render(m.ccError)
+	}
+
+	bccFieldView := m.bccInput.View()
+	if m.bccError != "" {
+		bccFieldView += "\n" + composerErrorStyle.Render(m.bccError)
 	}
 
 	// Signature field label
@@ -779,8 +916,8 @@ func (m *Composer) View() tea.View {
 		t("composer.title"),
 		fromField,
 		toFieldView,
-		m.ccInput.View(),
-		m.bccInput.View(),
+		ccFieldView,
+		bccFieldView,
 		m.subjectInput.View(),
 		m.bodyInput.View(),
 		signatureLabel,
@@ -867,6 +1004,16 @@ func (m *Composer) View() tea.View {
 			lipgloss.JoinVertical(lipgloss.Center,
 				t("composer.exit_confirm"),
 				HelpStyle.Render("\n(y/n)"),
+			),
+		)
+		return tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
+	}
+
+	if m.showNotice {
+		dialog := DialogBoxStyle.Render(
+			lipgloss.JoinVertical(lipgloss.Center,
+				dangerStyle.Render(m.noticeText),
+				HelpStyle.Render("\nenter/esc: close"),
 			),
 		)
 		return tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
