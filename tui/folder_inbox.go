@@ -685,6 +685,11 @@ func (m *FolderInbox) GetCurrentFolder() string {
 	return m.currentFolder
 }
 
+// HasSplitPreview reports whether the split preview pane is currently open.
+func (m *FolderInbox) HasSplitPreview() bool {
+	return m.previewPane != nil
+}
+
 // GetInbox returns the embedded inbox.
 func (m *FolderInbox) GetInbox() *Inbox {
 	return m.inbox

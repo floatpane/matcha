@@ -235,6 +235,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	searchWasActive := false
 	filterWasActive := false
+	splitWasOpen := false
 
 	if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == config.Keybinds.Global.Cancel {
 		switch current := m.current.(type) {
@@ -246,6 +247,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				searchWasActive = inbox.IsSearchActive()
 				filterWasActive = inbox.IsFilterActive()
 			}
+			splitWasOpen = current.HasSplitPreview()
 		}
 	}
 
@@ -287,7 +289,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case *tui.FilePicker:
 				return m, func() tea.Msg { return tui.CancelFilePickerMsg{} }
 			case *tui.FolderInbox, *tui.Inbox, *tui.Login:
-				if searchWasActive || filterWasActive {
+				if searchWasActive || filterWasActive || splitWasOpen {
 					return m, tea.Batch(cmds...)
 				}
 				m.idleWatcher.StopAll()
