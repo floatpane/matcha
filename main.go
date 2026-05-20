@@ -4068,6 +4068,7 @@ func main() {
 	} else {
 		cfg, err := config.LoadConfig()
 		if err == nil {
+			loglevel.Verbosef("matcha: loaded config with %d account(s)", len(cfg.GetAccountIDs()))
 			if migrateErr := config.MigrateContactsCacheUsage(cfg.GetAccountIDs()); migrateErr != nil {
 				log.Printf("warning: contacts migration failed: %v", migrateErr)
 			}
