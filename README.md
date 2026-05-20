@@ -48,6 +48,18 @@ matcha send --to alice@example.com --subject "Hello" --body "Sent by my AI agent
 
 [Learn more](https://docs.matcha.email/Features/AI_AGENTS)
 
+### Logging
+
+Matcha supports global logging verbosity flags before the main command or subcommand:
+
+```bash
+matcha --verbose              # enable verbose logging
+matcha -V daemon status       # short form for verbose logging
+matcha --debug daemon status  # enable debug logging
+```
+
+The existing `-v` and `--version` flags continue to print the Matcha version.
+
 **AI Rewrite Plugin:** Matcha includes an AI rewrite plugin that allows you to rewrite your email drafts using OpenAI, Ollama, Gemini, or Claude.
 
 [Setup Guide](https://docs.matcha.email/setup-guides/ai-rewrite)

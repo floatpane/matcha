@@ -44,6 +44,7 @@ import (
 	"github.com/floatpane/matcha/i18n"
 	_ "github.com/floatpane/matcha/i18n/languages"
 	"github.com/floatpane/matcha/internal/httpclient"
+	"github.com/floatpane/matcha/internal/loglevel"
 	"github.com/floatpane/matcha/notify"
 	"github.com/floatpane/matcha/plugin"
 	"github.com/floatpane/matcha/sender"
@@ -837,7 +838,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Attachments:  cachedAttachments,
 				}, m.config.GetBodyCacheThreshold())
 				if err != nil {
-					log.Printf("debug: error caching email body fails (disk full, permission denied) for UID: %d: %v", msg.UID, err)
+					loglevel.Debugf("error caching email body fails (disk full, permission denied) for UID: %d: %v", msg.UID, err)
 				}
 			}()
 		}
@@ -1406,7 +1407,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}, m.config.GetBodyCacheThreshold())
 
 		if err != nil {
-			log.Printf("debug: error caching email body fails (disk full, permission denied) for UID: %d: %v", msg.UID, err)
+			loglevel.Debugf("error caching email body fails (disk full, permission denied) for UID: %d: %v", msg.UID, err)
 		}
 
 		email := m.getEmailByUIDAndAccount(msg.UID, msg.AccountID, msg.Mailbox)
@@ -3912,7 +3913,37 @@ func filterUnique(existing, incoming []fetcher.Email) []fetcher.Email {
 	return unique
 }
 
+func parseGlobalFlags(args []string) ([]string, loglevel.Level) {
+	level := loglevel.LevelInfo
+	if len(args) <= 1 {
+		return args, level
+	}
+
+	filtered := make([]string, 0, len(args))
+	filtered = append(filtered, args[0])
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--debug":
+			level = loglevel.LevelDebug
+		case "--verbose", "-V":
+			if level < loglevel.LevelVerbose {
+				level = loglevel.LevelVerbose
+			}
+		default:
+			filtered = append(filtered, args[i:]...)
+			return filtered, level
+		}
+	}
+
+	return filtered, level
+}
+
 func main() {
+	args, level := parseGlobalFlags(os.Args)
+	os.Args = args
+	loglevel.Set(level)
+
 	// If invoked with version flag, print version and exit
 	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version" || os.Args[1] == "version") {
 		fmt.Printf("matcha version %s", version)
