@@ -523,8 +523,17 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.service.Subscribe(acct.ID, "INBOX")
 			}
 		} else {
-			// Start IDLE watchers for all accounts on INBOX
+			// Start IDLE watchers for IMAP accounts on INBOX.
+			// IDLE is IMAP-only; other protocols use polling or their own
+			// notification mechanism (e.g. JMAP push, maildir filesystem).
 			for i := range m.config.Accounts {
+				protocol := m.config.Accounts[i].Protocol
+				if protocol == "" {
+					protocol = "imap"
+				}
+				if protocol != "imap" {
+					continue
+				}
 				m.idleWatcher.Watch(&m.config.Accounts[i], "INBOX")
 			}
 		}
@@ -532,7 +541,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		batchCmds := []tea.Cmd{
 			m.current.Init(),
 			m.fetchFoldersCmd(),
-			fetchFolderEmailsCmd(m.config, "INBOX"),
+			m.fetchFolderEmailsCmd("INBOX"),
 			listenForIdleUpdates(m.idleUpdates),
 		}
 		if m.service.IsDaemon() {
@@ -620,7 +629,13 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.service.Subscribe(m.config.Accounts[i].ID, msg.FolderName)
 			} else {
-				m.idleWatcher.Watch(&m.config.Accounts[i], msg.FolderName)
+				protocol := m.config.Accounts[i].Protocol
+				if protocol == "" {
+					protocol = "imap"
+				}
+				if protocol == "imap" {
+					m.idleWatcher.Watch(&m.config.Accounts[i], msg.FolderName)
+				}
 			}
 		}
 		if m.plugins != nil {
@@ -656,12 +671,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.folderInbox.SetLoadingEmails(false)
 			}
 			// Still fetch fresh emails in background
-			return m, tea.Batch(fetchFolderEmailsCmd(m.config, msg.FolderName), m.pluginNotifyCmd())
+			return m, tea.Batch(m.fetchFolderEmailsCmd(msg.FolderName), m.pluginNotifyCmd())
 		}
 		if m.folderInbox != nil {
 			m.folderInbox.SetLoadingEmails(true)
 		}
-		return m, tea.Batch(fetchFolderEmailsCmd(m.config, msg.FolderName), m.pluginNotifyCmd())
+		return m, tea.Batch(m.fetchFolderEmailsCmd(msg.FolderName), m.pluginNotifyCmd())
 
 	case tui.PluginNotifyMsg:
 		m.previousModel = m.current
@@ -745,7 +760,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(
 			func() tea.Msg { return tui.FetchingMoreEmailsMsg{} },
-			fetchFolderEmailsPaginatedCmd(account, msg.FolderName, limit, msg.Offset),
+			m.fetchFolderEmailsPaginatedCmd(account, msg.FolderName, limit, msg.Offset),
 		)
 
 	case tui.FolderEmailsAppendedMsg:
@@ -773,7 +788,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.previousModel = m.current
 		m.current = tui.NewStatus("Moving email...")
-		return m, tea.Batch(m.current.Init(), moveEmailToFolderCmd(account, msg.UID, msg.AccountID, msg.SourceFolder, msg.DestFolder))
+		return m, tea.Batch(m.current.Init(), m.moveEmailToFolderCmd(account, msg.UID, msg.AccountID, msg.SourceFolder, msg.DestFolder))
 
 	case tui.UpdatePreviewMsg:
 		// Trigger preview body fetch
@@ -812,7 +827,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		return m, fetchPreviewBodyCmd(m.config, msg.UID, msg.AccountID, folderName)
+		return m, m.fetchPreviewBodyCmd(msg.UID, msg.AccountID, folderName)
 
 	case tui.PreviewBodyFetchedMsg:
 		// Cache body and forward to FolderInbox
@@ -873,7 +888,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.folderInbox == nil {
 			return m, nil
 		}
-		return m, fetchFolderEmailsCmd(m.config, m.folderInbox.GetCurrentFolder())
+		return m, m.fetchFolderEmailsCmd(m.folderInbox.GetCurrentFolder())
 
 	case tui.IdleNewMailMsg:
 		// Send desktop notification for new mail (if enabled)
@@ -890,7 +905,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// IDLE detected new mail — refetch the folder if we're viewing it
 		if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == msg.FolderName {
 			return m, tea.Batch(
-				fetchFolderEmailsCmd(m.config, msg.FolderName),
+				m.fetchFolderEmailsCmd(msg.FolderName),
 				listenForIdleUpdates(m.idleUpdates),
 			)
 		}
@@ -921,14 +936,14 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
-					cmds = append(cmds, fetchFolderEmailsCmd(m.config, ev.Folder))
+					cmds = append(cmds, m.fetchFolderEmailsCmd(ev.Folder))
 				}
 			}
 		case daemonrpc.EventSyncComplete:
 			var ev daemonrpc.SyncCompleteEvent
 			if err := json.Unmarshal(msg.Event.Data, &ev); err == nil {
 				if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
-					cmds = append(cmds, fetchFolderEmailsCmd(m.config, ev.Folder))
+					cmds = append(cmds, m.fetchFolderEmailsCmd(ev.Folder))
 				}
 			}
 		}
@@ -941,11 +956,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.folderInbox != nil {
 				m.folderInbox.SetRefreshing(true)
 			}
-			return m, fetchFolderEmailsCmd(m.config, msg.FolderName)
+			return m, m.fetchFolderEmailsCmd(msg.FolderName)
 		}
 		return m, tea.Batch(
 			func() tea.Msg { return tui.RefreshingEmailsMsg{Mailbox: msg.Mailbox} },
-			refreshEmails(m.config, msg.Mailbox, msg.Counts),
+			m.refreshEmails(msg.Mailbox, msg.Counts),
 		)
 
 	case tui.EmailsRefreshedMsg:
@@ -1016,7 +1031,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(
 			func() tea.Msg { return tui.FetchingMoreEmailsMsg{} },
-			fetchFolderEmailsPaginatedCmd(account, folderName, limit, msg.Offset),
+			m.fetchFolderEmailsPaginatedCmd(account, folderName, limit, msg.Offset),
 		)
 
 	case tui.SearchRequestedMsg:
@@ -1318,7 +1333,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.markEmailAsReadInStores(msg.UID, msg.AccountID)
 				account := m.config.GetAccountByID(msg.AccountID)
 				if account != nil {
-					cmd = markEmailAsReadCmd(account, msg.UID, msg.AccountID, folderName)
+					cmd = m.markEmailAsReadCmd(account, msg.UID, msg.AccountID, folderName)
 				}
 			}
 			// Fetch body
@@ -1360,7 +1375,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.current = tui.NewStatus("Fetching email content...")
-		return m, tea.Batch(append(m.pluginFlagCmds(), m.current.Init(), fetchFolderEmailBodyCmd(m.config, msg.UID, msg.AccountID, folderName, msg.Mailbox), m.pluginNotifyCmd())...)
+		return m, tea.Batch(append(m.pluginFlagCmds(), m.current.Init(), m.fetchFolderEmailBodyCmd(msg.UID, msg.AccountID, folderName, msg.Mailbox), m.pluginNotifyCmd())...)
 
 	case tui.EmailBodyFetchedMsg:
 		if msg.Err != nil {
@@ -1430,7 +1445,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			account := m.config.GetAccountByID(msg.AccountID)
 			if account != nil {
-				markReadCmd = markEmailAsReadCmd(account, msg.UID, msg.AccountID, folderName)
+				markReadCmd = m.markEmailAsReadCmd(account, msg.UID, msg.AccountID, folderName)
 			}
 		}
 
@@ -1699,7 +1714,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.folderInbox != nil {
 			folderName = m.folderInbox.GetCurrentFolder()
 		}
-		return m, tea.Batch(m.current.Init(), deleteFolderEmailCmd(account, msg.UID, msg.AccountID, folderName, msg.Mailbox))
+		return m, tea.Batch(m.current.Init(), m.deleteFolderEmailCmd(account, msg.UID, msg.AccountID, folderName, msg.Mailbox))
 
 	case tui.ArchiveEmailMsg:
 		tui.ClearKittyGraphics()
@@ -1718,7 +1733,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.folderInbox != nil {
 			folderName = m.folderInbox.GetCurrentFolder()
 		}
-		return m, tea.Batch(m.current.Init(), archiveFolderEmailCmd(account, msg.UID, msg.AccountID, folderName, msg.Mailbox))
+		return m, tea.Batch(m.current.Init(), m.archiveFolderEmailCmd(account, msg.UID, msg.AccountID, folderName, msg.Mailbox))
 
 	case tui.EmailMarkedReadMsg:
 		if msg.Err != nil {
@@ -2071,10 +2086,10 @@ func (m *mainModel) pluginFlagCmds() []tea.Cmd {
 		}
 		if op.Read {
 			m.markEmailAsReadInStores(op.UID, op.AccountID)
-			cmds = append(cmds, markEmailAsReadCmd(account, op.UID, op.AccountID, op.Folder))
+			cmds = append(cmds, m.markEmailAsReadCmd(account, op.UID, op.AccountID, op.Folder))
 		} else {
 			m.markEmailAsUnreadInStores(op.UID, op.AccountID)
-			cmds = append(cmds, markEmailAsUnreadCmd(account, op.UID, op.AccountID, op.Folder))
+			cmds = append(cmds, m.markEmailAsUnreadCmd(account, op.UID, op.AccountID, op.Folder))
 		}
 	}
 	return cmds
@@ -2368,10 +2383,37 @@ func backendEmailsToFetcher(emails []backend.Email) []fetcher.Email {
 		result[i] = fetcher.Email{
 			UID: e.UID, From: e.From, To: e.To, ReplyTo: e.ReplyTo,
 			Subject: e.Subject, Body: e.Body, Date: e.Date, IsRead: e.IsRead,
-			MessageID: e.MessageID, References: e.References, AccountID: e.AccountID,
+			MessageID: e.MessageID, InReplyTo: e.InReplyTo,
+			References: e.References, AccountID: e.AccountID,
+			Attachments: backendAttachmentsToFetcher(e.Attachments),
 		}
 	}
 	return result
+}
+
+func backendAttachmentsToFetcher(atts []backend.Attachment) []fetcher.Attachment {
+	if len(atts) == 0 {
+		return nil
+	}
+	out := make([]fetcher.Attachment, len(atts))
+	for i, a := range atts {
+		out[i] = fetcher.Attachment{
+			Filename:         a.Filename,
+			PartID:           a.PartID,
+			Data:             a.Data,
+			Encoding:         a.Encoding,
+			MIMEType:         a.MIMEType,
+			ContentID:        a.ContentID,
+			Inline:           a.Inline,
+			IsSMIMESignature: a.IsSMIMESignature,
+			SMIMEVerified:    a.SMIMEVerified,
+			IsSMIMEEncrypted: a.IsSMIMEEncrypted,
+			IsPGPSignature:   a.IsPGPSignature,
+			PGPVerified:      a.PGPVerified,
+			IsPGPEncrypted:   a.IsPGPEncrypted,
+		}
+	}
+	return out
 }
 
 func sortFetcherEmails(emails []fetcher.Email) {
@@ -2393,7 +2435,47 @@ func loadCachedEmails() tea.Cmd {
 	}
 }
 
-func refreshEmails(cfg *config.Config, mailbox tui.MailboxKind, counts map[string]int) tea.Cmd {
+// mailboxFolderName resolves a TUI MailboxKind to a backend folder name.
+// IMAP-specific provider quirks (Gmail's "[Gmail]/Sent Mail" etc.) are
+// preserved via ServiceProvider; non-IMAP backends use logical names.
+func mailboxFolderName(acc *config.Account, mailbox tui.MailboxKind) string {
+	switch mailbox {
+	case tui.MailboxSent:
+		switch acc.ServiceProvider {
+		case "gmail":
+			return "[Gmail]/Sent Mail"
+		case "outlook":
+			return "Sent Items"
+		case "icloud":
+			return "Sent Messages"
+		default:
+			return "Sent"
+		}
+	case tui.MailboxTrash:
+		switch acc.ServiceProvider {
+		case "gmail":
+			return "[Gmail]/Trash"
+		case "outlook":
+			return "Deleted Items"
+		case "icloud":
+			return "Deleted Messages"
+		default:
+			return "Trash"
+		}
+	case tui.MailboxArchive:
+		switch acc.ServiceProvider {
+		case "gmail":
+			return "[Gmail]/All Mail"
+		default:
+			return "Archive"
+		}
+	default:
+		return "INBOX"
+	}
+}
+
+func (m *mainModel) refreshEmails(mailbox tui.MailboxKind, counts map[string]int) tea.Cmd {
+	cfg := m.config
 	return func() tea.Msg {
 		emailsByAccount := make(map[string][]fetcher.Email)
 		var mu sync.Mutex
@@ -2413,7 +2495,14 @@ func refreshEmails(cfg *config.Config, mailbox tui.MailboxKind, counts map[strin
 					}
 				}
 
-				if mailbox == tui.MailboxSent {
+				if p := m.getProvider(&acc); p != nil {
+					folder := mailboxFolderName(&acc, mailbox)
+					var be []backend.Email
+					be, err = p.FetchEmails(context.Background(), folder, limit, 0)
+					if err == nil {
+						emails = backendEmailsToFetcher(be)
+					}
+				} else if mailbox == tui.MailboxSent {
 					emails, err = fetcher.FetchSentEmails(&acc, limit, 0)
 				} else {
 					emails, err = fetcher.FetchEmails(&acc, limit, 0)
@@ -2884,7 +2973,8 @@ func (m *mainModel) fetchFoldersCmd() tea.Cmd {
 	}
 }
 
-func fetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
+func (m *mainModel) fetchFolderEmailsCmd(folderName string) tea.Cmd {
+	cfg := m.config
 	return func() tea.Msg {
 		emailsByAccount := make(map[string][]fetcher.Email)
 		var mu sync.Mutex
@@ -2894,7 +2984,17 @@ func fetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
 			wg.Add(1)
 			go func(acc config.Account) {
 				defer wg.Done()
-				emails, err := fetcher.FetchFolderEmails(&acc, folderName, initialEmailLimit, 0)
+				var emails []fetcher.Email
+				var err error
+				if p := m.getProvider(&acc); p != nil {
+					var be []backend.Email
+					be, err = p.FetchEmails(context.Background(), folderName, initialEmailLimit, 0)
+					if err == nil {
+						emails = backendEmailsToFetcher(be)
+					}
+				} else {
+					emails, err = fetcher.FetchFolderEmails(&acc, folderName, initialEmailLimit, 0)
+				}
 				if err != nil {
 					// Folder may not exist for this account — silently skip
 					return
@@ -2928,9 +3028,19 @@ func fetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
 	}
 }
 
-func fetchFolderEmailsPaginatedCmd(account *config.Account, folderName string, limit, offset uint32) tea.Cmd {
+func (m *mainModel) fetchFolderEmailsPaginatedCmd(account *config.Account, folderName string, limit, offset uint32) tea.Cmd {
 	return func() tea.Msg {
-		emails, err := fetcher.FetchFolderEmails(account, folderName, limit, offset)
+		var emails []fetcher.Email
+		var err error
+		if p := m.getProvider(account); p != nil {
+			var be []backend.Email
+			be, err = p.FetchEmails(context.Background(), folderName, limit, offset)
+			if err == nil {
+				emails = backendEmailsToFetcher(be)
+			}
+		} else {
+			emails, err = fetcher.FetchFolderEmails(account, folderName, limit, offset)
+		}
 		if err != nil {
 			return tui.FetchErr(err)
 		}
@@ -2942,14 +3052,26 @@ func fetchFolderEmailsPaginatedCmd(account *config.Account, folderName string, l
 	}
 }
 
-func fetchFolderEmailBodyCmd(cfg *config.Config, uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
+func (m *mainModel) fetchFolderEmailBodyCmd(uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
+	cfg := m.config
 	return func() tea.Msg {
 		account := cfg.GetAccountByID(accountID)
 		if account == nil {
 			return tui.EmailBodyFetchedMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: fmt.Errorf("account not found")}
 		}
 
-		body, bodyMIMEType, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
+		var body, bodyMIMEType string
+		var attachments []fetcher.Attachment
+		var err error
+		if p := m.getProvider(account); p != nil {
+			var ba []backend.Attachment
+			body, bodyMIMEType, ba, err = p.FetchEmailBody(context.Background(), folderName, uid)
+			if err == nil {
+				attachments = backendAttachmentsToFetcher(ba)
+			}
+		} else {
+			body, bodyMIMEType, attachments, err = fetcher.FetchFolderEmailBody(account, folderName, uid)
+		}
 		if err != nil {
 			return tui.EmailBodyFetchedMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
 		}
@@ -2965,14 +3087,26 @@ func fetchFolderEmailBodyCmd(cfg *config.Config, uid uint32, accountID string, f
 	}
 }
 
-func fetchPreviewBodyCmd(cfg *config.Config, uid uint32, accountID string, folderName string) tea.Cmd {
+func (m *mainModel) fetchPreviewBodyCmd(uid uint32, accountID string, folderName string) tea.Cmd {
+	cfg := m.config
 	return func() tea.Msg {
 		account := cfg.GetAccountByID(accountID)
 		if account == nil {
 			return tui.PreviewBodyFetchedMsg{UID: uid, AccountID: accountID, Err: fmt.Errorf("account not found")}
 		}
 
-		body, bodyMIMEType, attachments, err := fetcher.FetchFolderEmailBody(account, folderName, uid)
+		var body, bodyMIMEType string
+		var attachments []fetcher.Attachment
+		var err error
+		if p := m.getProvider(account); p != nil {
+			var ba []backend.Attachment
+			body, bodyMIMEType, ba, err = p.FetchEmailBody(context.Background(), folderName, uid)
+			if err == nil {
+				attachments = backendAttachmentsToFetcher(ba)
+			}
+		} else {
+			body, bodyMIMEType, attachments, err = fetcher.FetchFolderEmailBody(account, folderName, uid)
+		}
 		if err != nil {
 			return tui.PreviewBodyFetchedMsg{UID: uid, AccountID: accountID, Err: err}
 		}
@@ -2987,30 +3121,50 @@ func fetchPreviewBodyCmd(cfg *config.Config, uid uint32, accountID string, folde
 	}
 }
 
-func markEmailAsReadCmd(account *config.Account, uid uint32, accountID string, folderName string) tea.Cmd {
+func (m *mainModel) markEmailAsReadCmd(account *config.Account, uid uint32, accountID string, folderName string) tea.Cmd {
 	return func() tea.Msg {
-		err := fetcher.MarkEmailAsReadInMailbox(account, folderName, uid)
+		var err error
+		if p := m.getProvider(account); p != nil {
+			err = p.MarkAsRead(context.Background(), folderName, uid)
+		} else {
+			err = fetcher.MarkEmailAsReadInMailbox(account, folderName, uid)
+		}
 		return tui.EmailMarkedReadMsg{UID: uid, AccountID: accountID, Err: err}
 	}
 }
 
-func markEmailAsUnreadCmd(account *config.Account, uid uint32, accountID string, folderName string) tea.Cmd {
+func (m *mainModel) markEmailAsUnreadCmd(account *config.Account, uid uint32, accountID string, folderName string) tea.Cmd {
 	return func() tea.Msg {
-		err := fetcher.MarkEmailAsUnreadInMailbox(account, folderName, uid)
+		var err error
+		if p := m.getProvider(account); p != nil {
+			err = p.MarkAsUnread(context.Background(), folderName, uid)
+		} else {
+			err = fetcher.MarkEmailAsUnreadInMailbox(account, folderName, uid)
+		}
 		return tui.EmailMarkedUnreadMsg{UID: uid, AccountID: accountID, Err: err}
 	}
 }
 
-func deleteFolderEmailCmd(account *config.Account, uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
+func (m *mainModel) deleteFolderEmailCmd(account *config.Account, uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
 	return func() tea.Msg {
-		err := fetcher.DeleteFolderEmail(account, folderName, uid)
+		var err error
+		if p := m.getProvider(account); p != nil {
+			err = p.DeleteEmail(context.Background(), folderName, uid)
+		} else {
+			err = fetcher.DeleteFolderEmail(account, folderName, uid)
+		}
 		return tui.EmailActionDoneMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
 	}
 }
 
-func archiveFolderEmailCmd(account *config.Account, uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
+func (m *mainModel) archiveFolderEmailCmd(account *config.Account, uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
 	return func() tea.Msg {
-		err := fetcher.ArchiveFolderEmail(account, folderName, uid)
+		var err error
+		if p := m.getProvider(account); p != nil {
+			err = p.ArchiveEmail(context.Background(), folderName, uid)
+		} else {
+			err = fetcher.ArchiveFolderEmail(account, folderName, uid)
+		}
 		return tui.EmailActionDoneMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
 	}
 }
@@ -3129,9 +3283,14 @@ func (m *mainModel) batchMoveEmailsCmd(account *config.Account, uids []uint32, a
 	}
 }
 
-func moveEmailToFolderCmd(account *config.Account, uid uint32, accountID string, sourceFolder, destFolder string) tea.Cmd {
+func (m *mainModel) moveEmailToFolderCmd(account *config.Account, uid uint32, accountID string, sourceFolder, destFolder string) tea.Cmd {
 	return func() tea.Msg {
-		err := fetcher.MoveEmailToFolder(account, uid, sourceFolder, destFolder)
+		var err error
+		if p := m.getProvider(account); p != nil {
+			err = p.MoveEmail(context.Background(), uid, sourceFolder, destFolder)
+		} else {
+			err = fetcher.MoveEmailToFolder(account, uid, sourceFolder, destFolder)
+		}
 		return tui.EmailMovedMsg{
 			UID:          uid,
 			AccountID:    accountID,

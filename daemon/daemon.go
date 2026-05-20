@@ -478,27 +478,47 @@ func (d *Daemon) fetchAndCache(accountID, folder string) {
 		return
 	}
 
-	emails, err := fetcher.FetchFolderEmails(acct, folder, 50, 0)
-	if err != nil {
-		log.Printf("daemon: cache fetch for %s/%s failed: %v", accountID, folder, err)
-		return
-	}
-
-	// Convert to cache format and save.
 	var cached []config.CachedEmail
-	for _, e := range emails {
-		cached = append(cached, config.CachedEmail{
-			UID:        e.UID,
-			From:       e.From,
-			To:         e.To,
-			Subject:    e.Subject,
-			Date:       e.Date,
-			MessageID:  e.MessageID,
-			InReplyTo:  e.InReplyTo,
-			References: e.References,
-			AccountID:  e.AccountID,
-			IsRead:     e.IsRead,
-		})
+	if p, err := d.getProvider(accountID); err == nil {
+		emails, err := p.FetchEmails(context.Background(), folder, 50, 0)
+		if err != nil {
+			log.Printf("daemon: cache fetch for %s/%s failed: %v", accountID, folder, err)
+			return
+		}
+		for _, e := range emails {
+			cached = append(cached, config.CachedEmail{
+				UID:        e.UID,
+				From:       e.From,
+				To:         e.To,
+				Subject:    e.Subject,
+				Date:       e.Date,
+				MessageID:  e.MessageID,
+				InReplyTo:  e.InReplyTo,
+				References: e.References,
+				AccountID:  e.AccountID,
+				IsRead:     e.IsRead,
+			})
+		}
+	} else {
+		emails, ferr := fetcher.FetchFolderEmails(acct, folder, 50, 0)
+		if ferr != nil {
+			log.Printf("daemon: cache fetch for %s/%s failed: %v", accountID, folder, ferr)
+			return
+		}
+		for _, e := range emails {
+			cached = append(cached, config.CachedEmail{
+				UID:        e.UID,
+				From:       e.From,
+				To:         e.To,
+				Subject:    e.Subject,
+				Date:       e.Date,
+				MessageID:  e.MessageID,
+				InReplyTo:  e.InReplyTo,
+				References: e.References,
+				AccountID:  e.AccountID,
+				IsRead:     e.IsRead,
+			})
+		}
 	}
 
 	if err := d.updateFolderCache(folder, accountID, cached); err != nil {
@@ -512,7 +532,7 @@ func (d *Daemon) fetchAndCache(accountID, folder string) {
 	d.broadcastToSubscribers(accountID, folder, daemonrpc.EventSyncComplete, daemonrpc.SyncCompleteEvent{
 		AccountID:  accountID,
 		Folder:     folder,
-		EmailCount: len(emails),
+		EmailCount: len(cached),
 	})
 }
 
