@@ -531,7 +531,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Fetch folders and INBOX emails in parallel (background refresh)
 		batchCmds := []tea.Cmd{
 			m.current.Init(),
-			fetchFoldersCmd(m.config),
+			m.fetchFoldersCmd(),
 			fetchFolderEmailsCmd(m.config, "INBOX"),
 			listenForIdleUpdates(m.idleUpdates),
 		}
@@ -2819,7 +2819,8 @@ func listenForDaemonEvents(ch <-chan *daemonrpc.Event) tea.Cmd {
 
 // --- Folder-based command functions ---
 
-func fetchFoldersCmd(cfg *config.Config) tea.Cmd {
+func (m *mainModel) fetchFoldersCmd() tea.Cmd {
+	cfg := m.config
 	return func() tea.Msg {
 		if !cfg.HasAccounts() {
 			return nil
@@ -2834,7 +2835,24 @@ func fetchFoldersCmd(cfg *config.Config) tea.Cmd {
 			wg.Add(1)
 			go func(acc config.Account) {
 				defer wg.Done()
-				folders, err := fetcher.FetchFolders(&acc)
+				var folders []fetcher.Folder
+				var err error
+				if p := m.getProvider(&acc); p != nil {
+					var bf []backend.Folder
+					bf, err = p.FetchFolders(context.Background())
+					if err == nil {
+						folders = make([]fetcher.Folder, len(bf))
+						for i, f := range bf {
+							folders[i] = fetcher.Folder{
+								Name:       f.Name,
+								Delimiter:  f.Delimiter,
+								Attributes: f.Attributes,
+							}
+						}
+					}
+				} else {
+					folders, err = fetcher.FetchFolders(&acc)
+				}
 				if err != nil {
 					mu.Lock()
 					errsByAccount[acc.ID] = err
