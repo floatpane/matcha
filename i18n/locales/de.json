@@ -41,7 +41,7 @@
       "sent": "E-Mail erfolgreich gesendet",
       "draft_saved": "Entwurf gespeichert",
       "invalid_email": "✗ Ungültige E-Mail-Adresse",
-      "invalid_email_fields": "Ein oder mehrere Empfängerfelder sind ungültig",
+      "invalid_email_fields": "Ein oder mehrere E-Mail-Felder sind ungültig",
       "recipient_required": "Mindestens einen Empfänger hinzufügen"
     },
     "inbox": {

@@ -41,7 +41,7 @@
       "sent": "E-mail enviado com sucesso",
       "draft_saved": "Rascunho salvo",
       "invalid_email": "✗ Endereço de e-mail inválido",
-      "invalid_email_fields": "Um ou mais campos de destinatários são inválidos",
+      "invalid_email_fields": "Um ou mais campos de e-mail são inválidos",
       "recipient_required": "Adicione pelo menos um destinatário"
     },
     "inbox": {

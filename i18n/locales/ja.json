@@ -41,7 +41,7 @@
       "sent": "メールが正常に送信されました",
       "draft_saved": "下書きを保存しました",
       "invalid_email": "✗ 無効なメールアドレス",
-      "invalid_email_fields": "1つ以上の宛先フィールドが無効です",
+      "invalid_email_fields": "1つ以上のメールフィールドが無効です",
       "recipient_required": "少なくとも1人の宛先を追加してください"
     },
     "inbox": {
