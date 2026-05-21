@@ -554,6 +554,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		certsDir := filepath.Join(cfgDir, "certs")
 		var certs []*x509.Certificate
 		var missingCerts []string
+		var missingCertErr error
 
 		for _, em := range allRecipients {
 			em = strings.TrimSpace(em)
@@ -574,16 +575,25 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 
 			certData, err := os.ReadFile(certPath)
 			if err != nil {
+				if missingCertErr == nil {
+					missingCertErr = err
+				}
 				missingCerts = append(missingCerts, em)
 				continue
 			}
 			block, _ := pem.Decode(certData)
 			if block == nil {
+				if missingCertErr == nil {
+					missingCertErr = fmt.Errorf("failed to parse S/MIME certificate PEM: %s", certPath)
+				}
 				missingCerts = append(missingCerts, em)
 				continue
 			}
 			cert, err := x509.ParseCertificate(block.Bytes)
 			if err != nil {
+				if missingCertErr == nil {
+					missingCertErr = err
+				}
 				missingCerts = append(missingCerts, em)
 				continue
 			}
@@ -591,6 +601,9 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		}
 
 		if len(missingCerts) > 0 {
+			if missingCertErr != nil {
+				return nil, fmt.Errorf("cannot encrypt: missing or invalid S/MIME certificates for: %s: %w", strings.Join(missingCerts, ", "), missingCertErr)
+			}
 			return nil, fmt.Errorf("cannot encrypt: missing or invalid S/MIME certificates for: %s", strings.Join(missingCerts, ", "))
 		}
 

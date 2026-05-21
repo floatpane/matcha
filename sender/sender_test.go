@@ -3,8 +3,11 @@ package sender
 import (
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/floatpane/matcha/config"
 )
 
 type failingReader struct{}
@@ -26,6 +29,41 @@ func TestWriteQuotedPrintablePropagatesFlushError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "quoted-printable encoding failed") {
 		t.Fatalf("expected quoted-printable context, got %v", err)
+	}
+}
+
+func TestSendEmailSMIMEEncryptionWrapsMissingCertError(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	account := &config.Account{
+		Email:           "sender@example.com",
+		ServiceProvider: "custom",
+		SMTPServer:      "smtp.example.com",
+		SMTPPort:        587,
+	}
+
+	_, err := SendEmail(
+		account,
+		[]string{"recipient@example.com"},
+		nil,
+		nil,
+		"Subject",
+		"plain body",
+		"",
+		nil,
+		nil,
+		"",
+		nil,
+		false,
+		true,
+		false,
+		false,
+	)
+	if err == nil {
+		t.Fatal("SendEmail() error = nil, want missing S/MIME certificate error")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("SendEmail() error = %v, want errors.Is(os.ErrNotExist)", err)
 	}
 }
 
