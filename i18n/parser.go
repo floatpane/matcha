@@ -15,7 +15,7 @@ type TranslationFile struct {
 func ParseJSON(data []byte) (MessageMap, error) {
 	var file TranslationFile
 	if err := json.Unmarshal(data, &file); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrParseFailed, err)
+		return nil, fmt.Errorf("%w: %w", ErrParseFailed, err)
 	}
 
 	messages := make(MessageMap)
