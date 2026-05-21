@@ -1,6 +1,7 @@
 package sender
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"strings"
@@ -89,6 +90,23 @@ func TestSMTPHelloHostname(t *testing.T) {
 	osHostname = func() (string, error) { return "ignored", errors.New("hostname unavailable") }
 	if got := smtpHelloHostname(); got != "localhost" {
 		t.Fatalf("expected localhost fallback on error, got %q", got)
+	}
+}
+
+func TestWritePlainTextPartHeadersDoesNotClaimFormatFlowed(t *testing.T) {
+	var buf bytes.Buffer
+
+	writePlainTextPartHeaders(&buf)
+
+	got := buf.String()
+	if strings.Contains(got, "format=flowed") {
+		t.Fatalf("plaintext headers should not claim format=flowed: %q", got)
+	}
+	if !strings.Contains(got, "Content-Type: text/plain; charset=UTF-8\r\n") {
+		t.Fatalf("plaintext headers missing content type: %q", got)
+	}
+	if !strings.Contains(got, "Content-Transfer-Encoding: quoted-printable\r\n\r\n") {
+		t.Fatalf("plaintext headers missing quoted-printable encoding: %q", got)
 	}
 }
 

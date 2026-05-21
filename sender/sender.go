@@ -195,6 +195,11 @@ func writeQuotedPrintable(w io.Writer, body string) error {
 	return nil
 }
 
+func writePlainTextPartHeaders(w io.Writer) {
+	fmt.Fprintf(w, "Content-Type: text/plain; charset=UTF-8\r\n")
+	fmt.Fprintf(w, "Content-Transfer-Encoding: quoted-printable\r\n\r\n")
+}
+
 // SendEmail constructs a multipart message with plain text, HTML, embedded images, and attachments.
 func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody, htmlBody string, images map[string][]byte, attachments map[string][]byte, inReplyTo string, references []string, signSMIME bool, encryptSMIME bool, signPGP bool, encryptPGP bool) ([]byte, error) {
 	smtpServer := account.GetSMTPServer()
@@ -263,8 +268,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 
 		// Build the canonical MIME part (headers + body) used for signing/encryption
 		var partBuf bytes.Buffer
-		fmt.Fprintf(&partBuf, "Content-Type: text/plain; charset=UTF-8; format=flowed\r\n")
-		fmt.Fprintf(&partBuf, "Content-Transfer-Encoding: quoted-printable\r\n\r\n")
+		writePlainTextPartHeaders(&partBuf)
 		partBuf.Write(encodedBody)
 		canonicalPart := partBuf.Bytes()
 
@@ -349,8 +353,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 				payloadToEncrypt = canonicalBody
 			} else {
 				// Write Content-Type and body as top-level single part
-				fmt.Fprintf(&msg, "Content-Type: text/plain; charset=UTF-8; format=flowed\r\n")
-				fmt.Fprintf(&msg, "Content-Transfer-Encoding: quoted-printable\r\n\r\n")
+				writePlainTextPartHeaders(&msg)
 				msg.Write(encodedBody)
 			}
 		}
