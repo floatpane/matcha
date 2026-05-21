@@ -27,6 +27,7 @@ import (
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/backend"
 	_ "github.com/floatpane/matcha/backend/imap"
 	_ "github.com/floatpane/matcha/backend/jmap"
@@ -44,6 +45,7 @@ import (
 	"github.com/floatpane/matcha/i18n"
 	_ "github.com/floatpane/matcha/i18n/languages"
 	"github.com/floatpane/matcha/internal/httpclient"
+	"github.com/floatpane/matcha/internal/logging"
 	"github.com/floatpane/matcha/internal/loglevel"
 	"github.com/floatpane/matcha/notify"
 	"github.com/floatpane/matcha/plugin"
@@ -112,6 +114,14 @@ type mainModel struct {
 	pendingPrompt *plugin.PendingPrompt
 	// mailto: URL parsed from os.Args
 	mailtoURL *url.URL
+	// Optional in-app log panel.
+	showLogPanel bool
+	logCh        <-chan logging.Entry
+	logPanel     *tui.LogPanel
+}
+
+type logEntryMsg struct {
+	entry logging.Entry
 }
 
 func newInitialModel(cfg *config.Config, mailtoURL *url.URL) *mainModel {
@@ -203,7 +213,18 @@ func (m *mainModel) getProvider(acct *config.Account) backend.Provider {
 }
 
 func (m *mainModel) Init() tea.Cmd {
-	return tea.Batch(m.current.Init(), checkForUpdatesCmd())
+	cmds := []tea.Cmd{m.current.Init(), checkForUpdatesCmd()}
+	if m.showLogPanel && m.logCh != nil {
+		cmds = append(cmds, waitForLogEntry(m.logCh))
+	}
+	return tea.Batch(cmds...)
+}
+
+func waitForLogEntry(ch <-chan logging.Entry) tea.Cmd {
+	return func() tea.Msg {
+		entry := <-ch
+		return logEntryMsg{entry: entry}
+	}
 }
 
 func (m *mainModel) syncUnreadBadge() {
@@ -236,6 +257,18 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	searchWasActive := false
 	filterWasActive := false
 	splitWasOpen := false
+
+	if msg, ok := msg.(logEntryMsg); ok {
+		_ = msg.entry
+		return m, waitForLogEntry(m.logCh)
+	}
+
+	if msg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = msg.Width
+		m.height = msg.Height
+		m.current, cmd = m.current.Update(m.currentWindowSize())
+		return m, cmd
+	}
 
 	if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == config.Keybinds.Global.Cancel {
 		switch current := m.current.(type) {
@@ -271,11 +304,6 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		return m, nil
-
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			m.idleWatcher.StopAll()
@@ -294,7 +322,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.idleWatcher.StopAll()
 				m.current = tui.NewChoice()
-				m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+				m.current, _ = m.current.Update(m.currentWindowSize())
 				return m, m.current.Init()
 			}
 		}
@@ -304,7 +332,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.current = m.folderInbox
 		} else {
 			m.current = tui.NewChoice()
-			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			m.current, _ = m.current.Update(m.currentWindowSize())
 		}
 		return m, nil
 
@@ -316,7 +344,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.current = tui.NewChoice()
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, nil
 
 	case tui.DiscardDraftMsg:
@@ -330,7 +358,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		}
 		m.current = tui.NewChoice()
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.OAuth2CompleteMsg:
@@ -339,7 +367,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// After OAuth2 flow, go to the choice menu so user can proceed
 		m.current = tui.NewChoice()
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.Credentials:
@@ -470,7 +498,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.current = tui.NewChoice()
 		}
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.GoToInboxMsg:
@@ -516,7 +544,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.folderInbox.SetEmails(diskCached, m.config.Accounts)
 		}
 		m.current = m.folderInbox
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		// Initialize daemon service if not already set.
 		if m.service == nil {
 			m.service = daemonclient.NewService(m.config)
@@ -1052,14 +1080,14 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.current = tui.NewComposer("", msg.To, msg.Subject, msg.Body, hideTips)
 		}
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		m.syncPluginKeyBindings()
 		return m, m.current.Init()
 
 	case tui.GoToDraftsMsg:
 		drafts := config.GetAllDrafts()
 		m.current = tui.NewDrafts(drafts)
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.OpenDraftMsg:
@@ -1071,7 +1099,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		composer := tui.NewComposerFromDraft(msg.Draft, accounts, hideTips)
 		m.current = composer
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		m.syncPluginKeyBindings()
 		return m, m.current.Init()
 
@@ -1087,7 +1115,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tui.GoToMarketplaceMsg:
 		m.current = tui.NewMarketplace(false)
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.ConfigSavedMsg:
@@ -1125,12 +1153,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// For other views, return to choice menu
 			m.current = tui.NewChoice()
 		}
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.GoToSettingsMsg:
 		m.current = m.newSettings()
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.GoToAddAccountMsg:
@@ -1139,12 +1167,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			hideTips = m.config.HideTips
 		}
 		m.current = tui.NewLogin(hideTips)
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.GoToAddMailingListMsg:
 		m.current = tui.NewMailingListEditor()
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.GoToEditAccountMsg:
@@ -1155,14 +1183,14 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		login := tui.NewLogin(hideTips)
 		login.SetEditMode(msg.AccountID, msg.Protocol, msg.Provider, msg.Name, msg.Email, msg.FetchEmail, msg.SendAsEmail, msg.IMAPServer, msg.IMAPPort, msg.SMTPServer, msg.SMTPPort, msg.Insecure, msg.JMAPEndpoint, msg.POP3Server, msg.POP3Port, msg.CatchAll, msg.MaildirPath)
 		m.current = login
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.GoToEditMailingListMsg:
 		editor := tui.NewMailingListEditor()
 		editor.SetEditMode(msg.Index, msg.Name, msg.Addresses)
 		m.current = editor
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.SaveMailingListMsg:
@@ -1191,12 +1219,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Return to settings
 		m.current = m.newSettings()
 		// Try to navigate to the mailing list view internally if possible, but NewSettings will go to SettingsMain by default.
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.GoToSignatureEditorMsg:
 		m.current = tui.NewSignatureEditor(msg.AccountID)
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.PasswordVerifiedMsg:
@@ -1247,7 +1275,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.current = tui.NewChoice()
 			}
 		}
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.SecureModeEnabledMsg:
@@ -1264,7 +1292,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tui.GoToChoiceMenuMsg:
 		m.current = tui.NewChoice()
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.DeleteAccountMsg:
@@ -1289,7 +1317,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Go back to settings
 			m.current = m.newSettings()
-			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			m.current, _ = m.current.Update(m.currentWindowSize())
 		}
 		return m, m.current.Init()
 
@@ -1506,7 +1534,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		composer.SetReplyContext(inReplyTo, references)
 
 		m.current = composer
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		m.syncPluginKeyBindings()
 		return m, m.current.Init()
 
@@ -1542,7 +1570,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.current = composer
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		m.syncPluginKeyBindings()
 		return m, m.current.Init()
 
@@ -1577,7 +1605,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.previousModel = m.current
 		wd, _ := os.Getwd()
 		m.current = tui.NewFilePicker(wd)
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.FileSelectedMsg, tui.CancelFilePickerMsg:
@@ -1654,7 +1682,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != nil {
 			log.Printf("Failed to send RSVP: %v", msg.Err)
 			m.previousModel = tui.NewChoice()
-			m.previousModel, _ = m.previousModel.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			m.previousModel, _ = m.previousModel.Update(m.currentWindowSize())
 			m.current = tui.NewStatus(fmt.Sprintf("RSVP error: %v", msg.Err))
 			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 				return tui.RestoreViewMsg{}
@@ -1673,7 +1701,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != nil {
 			log.Printf("Failed to send email: %v", msg.Err)
 			m.previousModel = tui.NewChoice()
-			m.previousModel, _ = m.previousModel.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			m.previousModel, _ = m.previousModel.Update(m.currentWindowSize())
 			m.current = tui.NewStatus(fmt.Sprintf("Error: %v", msg.Err))
 			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 				return tui.RestoreViewMsg{}
@@ -1683,7 +1711,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.plugins.CallHook(plugin.HookEmailSendAfter)
 		}
 		m.current = tui.NewChoice()
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.DeleteEmailMsg:
@@ -1756,11 +1784,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.folderInbox != nil {
 			m.folderInbox.RemoveEmail(msg.UID, msg.AccountID)
 			m.current = m.folderInbox
-			m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+			m.current, _ = m.current.Update(m.currentWindowSize())
 			return m, m.current.Init()
 		}
 		m.current = tui.NewChoice()
-		m.current, _ = m.current.Update(tea.WindowSizeMsg{Width: m.width, Height: m.height})
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.BatchDeleteEmailsMsg:
@@ -1915,8 +1943,56 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *mainModel) View() tea.View {
 	v := m.current.View()
+	if m.showLogPanel {
+		v.Content = m.renderWithLogPanel(v.Content)
+	}
 	v.AltScreen = true
 	return v
+}
+
+func (m *mainModel) currentWindowSize() tea.WindowSizeMsg {
+	return tea.WindowSizeMsg{
+		Width:  m.width,
+		Height: m.contentHeight(),
+	}
+}
+
+func (m *mainModel) contentHeight() int {
+	height := m.height - m.logPanelHeight()
+	if height < 1 {
+		return 1
+	}
+	return height
+}
+
+func (m *mainModel) renderWithLogPanel(content string) string {
+	panelHeight := m.logPanelHeight()
+	if panelHeight == 0 {
+		return content
+	}
+
+	contentHeight := m.contentHeight()
+
+	mainContent := lipgloss.NewStyle().
+		MaxHeight(contentHeight).
+		Height(contentHeight).
+		Render(content)
+
+	if m.logPanel == nil {
+		return mainContent
+	}
+	m.logPanel.SetSize(m.width, panelHeight)
+	return lipgloss.JoinVertical(lipgloss.Left, mainContent, m.logPanel.View())
+}
+
+func (m *mainModel) logPanelHeight() int {
+	if !m.showLogPanel || m.height < 12 || m.width < 20 {
+		return 0
+	}
+	if m.height < 20 {
+		return 4
+	}
+	return 7
 }
 
 func (m *mainModel) getEmailByIndex(index int, mailbox tui.MailboxKind) *fetcher.Email {
@@ -3917,10 +3993,11 @@ func filterUnique(existing, incoming []fetcher.Email) []fetcher.Email {
 	return unique
 }
 
-func parseGlobalFlags(args []string) ([]string, loglevel.Level) {
+func parseGlobalFlags(args []string) ([]string, loglevel.Level, bool) {
 	level := loglevel.LevelInfo
+	showLogPanel := false
 	if len(args) <= 1 {
-		return args, level
+		return args, level, showLogPanel
 	}
 
 	filtered := make([]string, 0, len(args))
@@ -3934,17 +4011,19 @@ func parseGlobalFlags(args []string) ([]string, loglevel.Level) {
 			if level < loglevel.LevelVerbose {
 				level = loglevel.LevelVerbose
 			}
+		case "--logs":
+			showLogPanel = true
 		default:
 			filtered = append(filtered, args[i:]...)
-			return filtered, level
+			return filtered, level, showLogPanel
 		}
 	}
 
-	return filtered, level
+	return filtered, level, showLogPanel
 }
 
 func main() {
-	args, level := parseGlobalFlags(os.Args)
+	args, level, showLogPanel := parseGlobalFlags(os.Args)
 	os.Args = args
 	loglevel.Set(level)
 
@@ -4095,6 +4174,14 @@ func main() {
 		} else {
 			initialModel = newInitialModel(cfg, mailtoURL)
 		}
+	}
+
+	if showLogPanel {
+		logger := logging.NewBuffer(logging.DefaultMaxEntries)
+		log.SetOutput(logger)
+		initialModel.showLogPanel = true
+		initialModel.logCh = logger.Subscribe()
+		initialModel.logPanel = tui.NewLogPanel(logger)
 	}
 
 	// Initialize plugin system
