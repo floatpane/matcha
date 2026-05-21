@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"log"
 	"mime/quotedprintable"
 	"os"
 	"regexp"
@@ -15,6 +14,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/internal/httpclient"
+	"github.com/floatpane/matcha/internal/loglevel"
 	"github.com/floatpane/matcha/theme"
 	lru "github.com/hashicorp/golang-lru/v2"
 )
@@ -278,7 +278,7 @@ var (
 	debugImageProtocolOpenLogFile = func(path string) (debugImageProtocolLogFile, error) {
 		return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	}
-	debugImageProtocolLogErrorf = log.Printf
+	debugImageProtocolLogErrorf = loglevel.Infof
 )
 
 func debugImageProtocol(format string, args ...interface{}) {
@@ -286,7 +286,7 @@ func debugImageProtocol(format string, args ...interface{}) {
 		return
 	}
 	msg := fmt.Sprintf("[img-protocol] "+format+"\n", args...)
-	fmt.Print(msg)
+	loglevel.Infof("%s", strings.TrimSuffix(msg, "\n"))
 	if path := os.Getenv("DEBUG_IMAGE_PROTOCOL_LOG"); path != "" {
 		writeDebugImageProtocolLog(path, msg)
 	} else if path := os.Getenv("DEBUG_KITTY_LOG"); path != "" {

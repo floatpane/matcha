@@ -29,6 +29,7 @@ import (
 	"github.com/emersion/go-message/mail"
 	"github.com/emersion/go-pgpmail"
 	"github.com/floatpane/matcha/config"
+	"github.com/floatpane/matcha/internal/loglevel"
 	"go.mozilla.org/pkcs7"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/ianaindex"
@@ -52,7 +53,7 @@ var (
 	debugKittyOpenLogFile = func(path string) (debugKittyLogFile, error) {
 		return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	}
-	debugKittyLogErrorf = log.Printf
+	debugKittyLogErrorf = loglevel.Infof
 )
 
 func getDebugIMAPWriter() io.Writer {
@@ -1190,7 +1191,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 	}
 	if os.Getenv("DEBUG_KITTY_IMAGES") != "" {
 		msg := fmt.Sprintf("[kitty-img] body selection html=%s plain=%s chosen=%s\n", htmlPartID, plainPartID, textPartID)
-		log.Print(msg)
+		loglevel.Infof("%s", strings.TrimSuffix(msg, "\n"))
 		if path := os.Getenv("DEBUG_KITTY_LOG"); path != "" {
 			writeDebugKittyLog(path, msg)
 		}
