@@ -84,6 +84,13 @@ var (
 	osHostname           = os.Hostname
 )
 
+const (
+	recommendedHeaderLineLen   = 78
+	maxReferencesHeaderLineLen = 998
+	referencesHeaderPrefix     = "References: "
+	referencesFoldPrefix       = " "
+)
+
 // smimeOuterBoundary returns a fresh, high-entropy MIME boundary for an S/MIME
 // multipart/signed wrapper. If crypto/rand cannot supply randomness it returns
 // an error rather than degrading to a predictable, time-based fallback.
@@ -113,6 +120,67 @@ func generateMessageID(from string) string {
 		return fmt.Sprintf("<%d.%s>", time.Now().UnixNano(), from)
 	}
 	return fmt.Sprintf("<%x@%s>", buf, from)
+}
+
+func referencesHeaderValue(inReplyTo string, references []string) string {
+	ids := make([]string, 0, len(references)+1)
+	for _, reference := range references {
+		reference = strings.TrimSpace(reference)
+		if reference != "" {
+			ids = append(ids, reference)
+		}
+	}
+	inReplyTo = strings.TrimSpace(inReplyTo)
+	if inReplyTo != "" {
+		ids = append(ids, inReplyTo)
+	}
+	if len(ids) == 0 {
+		return ""
+	}
+
+	ids = trimReferencesHeaderIDs(ids)
+	return foldReferencesHeaderIDs(ids)
+}
+
+func trimReferencesHeaderIDs(ids []string) []string {
+	ids = append([]string(nil), ids...)
+	for len(ids) > 1 && len(referencesHeaderPrefix)+len(strings.Join(ids, " ")) > maxReferencesHeaderLineLen {
+		if len(ids) > 2 {
+			ids = append(ids[:1], ids[2:]...)
+		} else {
+			ids = ids[1:]
+		}
+	}
+	return ids
+}
+
+func foldReferencesHeaderIDs(ids []string) string {
+	firstLineLimit := recommendedHeaderLineLen - len(referencesHeaderPrefix)
+	continuationLineLimit := recommendedHeaderLineLen - len(referencesFoldPrefix)
+	lines := make([]string, 0, len(ids))
+	current := ""
+	currentLimit := firstLineLimit
+
+	for _, id := range ids {
+		if current == "" {
+			current = id
+			continue
+		}
+
+		if len(current)+1+len(id) <= currentLimit {
+			current += " " + id
+			continue
+		}
+
+		lines = append(lines, current)
+		current = id
+		currentLimit = continuationLineLimit
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+
+	return strings.Join(lines, "\r\n"+referencesFoldPrefix)
 }
 
 // containsMarkup returns true if the string contains Markdown or HTML elements.
@@ -225,11 +293,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 
 	if inReplyTo != "" {
 		headers["In-Reply-To"] = inReplyTo
-		if len(references) > 0 {
-			headers["References"] = strings.Join(references, " ") + " " + inReplyTo
-		} else {
-			headers["References"] = inReplyTo
-		}
+		headers["References"] = referencesHeaderValue(inReplyTo, references)
 	}
 
 	// prepare final message buffer and S/MIME payload placeholder
@@ -797,11 +861,7 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 
 	if inReplyTo != "" {
 		fmt.Fprintf(&msg, "In-Reply-To: %s\r\n", inReplyTo)
-		if len(references) > 0 {
-			fmt.Fprintf(&msg, "References: %s %s\r\n", strings.Join(references, " "), inReplyTo)
-		} else {
-			fmt.Fprintf(&msg, "References: %s\r\n", inReplyTo)
-		}
+		fmt.Fprintf(&msg, "References: %s\r\n", referencesHeaderValue(inReplyTo, references))
 	}
 
 	// Build multipart/mixed containing:

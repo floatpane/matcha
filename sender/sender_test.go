@@ -2,6 +2,7 @@ package sender
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -89,6 +90,48 @@ func TestSMTPHelloHostname(t *testing.T) {
 	osHostname = func() (string, error) { return "ignored", errors.New("hostname unavailable") }
 	if got := smtpHelloHostname(); got != "localhost" {
 		t.Fatalf("expected localhost fallback on error, got %q", got)
+	}
+}
+
+func TestReferencesHeaderValueFoldsLines(t *testing.T) {
+	references := []string{
+		"<11111111111111111111111111111111@example.com>",
+		"<22222222222222222222222222222222@example.com>",
+		"<33333333333333333333333333333333@example.com>",
+	}
+
+	value := referencesHeaderValue("<reply@example.com>", references)
+	if !strings.Contains(value, "\r\n ") {
+		t.Fatalf("expected folded References value, got %q", value)
+	}
+
+	for _, line := range strings.Split("References: "+value, "\r\n") {
+		if len(line) > recommendedHeaderLineLen {
+			t.Fatalf("expected folded line to stay within %d chars, got %d: %q", recommendedHeaderLineLen, len(line), line)
+		}
+	}
+}
+
+func TestReferencesHeaderValueTrimsOldestMiddleIDs(t *testing.T) {
+	references := make([]string, 0, 80)
+	for i := 0; i < 80; i++ {
+		references = append(references, fmt.Sprintf("<%032d@example.com>", i))
+	}
+	inReplyTo := "<final@example.com>"
+
+	value := referencesHeaderValue(inReplyTo, references)
+	unfolded := strings.ReplaceAll(value, "\r\n ", " ")
+	if len("References: "+unfolded) > maxReferencesHeaderLineLen {
+		t.Fatalf("expected trimmed References header within %d chars, got %d", maxReferencesHeaderLineLen, len("References: "+unfolded))
+	}
+	if !strings.Contains(unfolded, references[0]) {
+		t.Fatalf("expected root reference %q to be retained in %q", references[0], unfolded)
+	}
+	if strings.Contains(unfolded, references[1]) {
+		t.Fatalf("expected older middle reference %q to be trimmed from %q", references[1], unfolded)
+	}
+	if !strings.Contains(unfolded, inReplyTo) {
+		t.Fatalf("expected in-reply-to %q to be retained in %q", inReplyTo, unfolded)
 	}
 }
 
