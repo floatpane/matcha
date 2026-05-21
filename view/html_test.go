@@ -113,6 +113,38 @@ func TestDebugImageProtocolReportsLogCloseError(t *testing.T) {
 	}
 }
 
+func TestDebugImageProtocolReportsLogOpenError(t *testing.T) {
+	originalOpenLogFile := debugImageProtocolOpenLogFile
+	originalLogErrorf := debugImageProtocolLogErrorf
+	defer func() {
+		debugImageProtocolOpenLogFile = originalOpenLogFile
+		debugImageProtocolLogErrorf = originalLogErrorf
+	}()
+
+	openErr := errors.New("open failed")
+	debugImageProtocolOpenLogFile = func(string) (debugImageProtocolLogFile, error) {
+		return nil, openErr
+	}
+
+	var logged []string
+	debugImageProtocolLogErrorf = func(format string, args ...interface{}) {
+		logged = append(logged, fmt.Sprintf(format, args...))
+	}
+
+	t.Setenv("DEBUG_IMAGE_PROTOCOL", "1")
+	t.Setenv("DEBUG_IMAGE_PROTOCOL_LOG", "/tmp/matcha-debug.log")
+
+	debugImageProtocol("hello")
+
+	joined := strings.Join(logged, "\n")
+	if !strings.Contains(joined, "failed to open debug image protocol log") {
+		t.Fatalf("expected open error to be logged, got %q", joined)
+	}
+	if !strings.Contains(joined, openErr.Error()) {
+		t.Fatalf("expected logged error to contain %q, got %q", openErr, joined)
+	}
+}
+
 func TestDecodeQuotedPrintable(t *testing.T) {
 	testCases := []struct {
 		name     string

@@ -297,6 +297,7 @@ func debugImageProtocol(format string, args ...interface{}) {
 func writeDebugImageProtocolLog(path, msg string) {
 	f, err := debugImageProtocolOpenLogFile(path)
 	if err != nil {
+		debugImageProtocolLogErrorf("failed to open debug image protocol log %s: %v", path, err)
 		return
 	}
 	if _, err := f.WriteString(msg); err != nil {

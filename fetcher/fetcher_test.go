@@ -2,6 +2,8 @@ package fetcher
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -24,6 +26,66 @@ func (h testPartHeader) Get(key string) string {
 
 func (h testPartHeader) Set(key, value string) {
 	h[key] = value
+}
+
+type failingDebugKittyLogFile struct {
+	writeErr error
+	closeErr error
+}
+
+func (f failingDebugKittyLogFile) WriteString(s string) (int, error) {
+	if f.writeErr != nil {
+		return 0, f.writeErr
+	}
+	return len(s), nil
+}
+
+func (f failingDebugKittyLogFile) Close() error {
+	return f.closeErr
+}
+
+func TestWriteDebugKittyLogReportsOpenWriteAndCloseErrors(t *testing.T) {
+	originalOpenLogFile := debugKittyOpenLogFile
+	originalLogErrorf := debugKittyLogErrorf
+	defer func() {
+		debugKittyOpenLogFile = originalOpenLogFile
+		debugKittyLogErrorf = originalLogErrorf
+	}()
+
+	var logged []string
+	debugKittyLogErrorf = func(format string, args ...interface{}) {
+		logged = append(logged, fmt.Sprintf(format, args...))
+	}
+
+	openErr := errors.New("open failed")
+	debugKittyOpenLogFile = func(string) (debugKittyLogFile, error) {
+		return nil, openErr
+	}
+	writeDebugKittyLog("/tmp/matcha-kitty.log", "hello")
+
+	writeErr := errors.New("write failed")
+	closeErr := errors.New("close failed")
+	debugKittyOpenLogFile = func(string) (debugKittyLogFile, error) {
+		return failingDebugKittyLogFile{
+			writeErr: writeErr,
+			closeErr: closeErr,
+		}, nil
+	}
+	writeDebugKittyLog("/tmp/matcha-kitty.log", "hello")
+
+	joined := strings.Join(logged, "\n")
+	for _, want := range []string{
+		"failed to open debug kitty log",
+		openErr.Error(),
+		"failed to write debug kitty log",
+		writeErr.Error(),
+		"failed to close debug kitty log",
+		closeErr.Error(),
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("expected logged output to contain %q, got %q", want, joined)
+		}
+	}
 }
 
 func TestDecodePartUsesCharsetWhenContentTypeIsMalformed(t *testing.T) {

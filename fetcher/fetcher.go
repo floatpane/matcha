@@ -43,6 +43,18 @@ var (
 	debugIMAPOnce sync.Once
 )
 
+type debugKittyLogFile interface {
+	WriteString(string) (int, error)
+	Close() error
+}
+
+var (
+	debugKittyOpenLogFile = func(path string) (debugKittyLogFile, error) {
+		return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	}
+	debugKittyLogErrorf = log.Printf
+)
+
 func getDebugIMAPWriter() io.Writer {
 	debugIMAPOnce.Do(func() {
 		if path := os.Getenv("DEBUG_IMAP"); path != "" {
@@ -56,6 +68,22 @@ func getDebugIMAPWriter() io.Writer {
 		return debugIMAPFile
 	}
 	return nil
+}
+
+func writeDebugKittyLog(path, msg string) {
+	f, err := debugKittyOpenLogFile(path)
+	if err != nil {
+		debugKittyLogErrorf("failed to open debug kitty log %s: %v", path, err)
+		return
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			debugKittyLogErrorf("failed to close debug kitty log %s: %v", path, err)
+		}
+	}()
+	if _, err := f.WriteString(msg); err != nil {
+		debugKittyLogErrorf("failed to write debug kitty log %s: %v", path, err)
+	}
 }
 
 // Attachment holds data for an email attachment.
@@ -1164,16 +1192,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 		msg := fmt.Sprintf("[kitty-img] body selection html=%s plain=%s chosen=%s\n", htmlPartID, plainPartID, textPartID)
 		log.Print(msg)
 		if path := os.Getenv("DEBUG_KITTY_LOG"); path != "" {
-			// Use a closure with defer so a panic between open and
-			// WriteString doesn't leak the file descriptor (#894).
-			func() {
-				f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-				if err != nil {
-					return
-				}
-				defer f.Close()
-				_, _ = f.WriteString(msg)
-			}()
+			writeDebugKittyLog(path, msg)
 		}
 	}
 	if textPartID != "" {
