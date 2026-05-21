@@ -25,8 +25,8 @@ func (p *LogPanel) SetSize(width, height int) {
 }
 
 func (p *LogPanel) View() string {
-	innerHeight := max(p.height - 1, 2)
-	visibleLogLines := max(innerHeight - 1, 1)
+	innerHeight := max(p.height-1, 2)
+	visibleLogLines := max(innerHeight-1, 1)
 
 	lines := p.tailLines(visibleLogLines)
 	if len(lines) == 0 {
