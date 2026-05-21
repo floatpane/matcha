@@ -260,9 +260,15 @@ func buildSignaturePacket(signedContent []byte, signer crypto.Signer, pubKey *pa
 	// Wrap in an OpenPGP packet (new-format header)
 	var pkt bytes.Buffer
 	bodyBytes := body.Bytes()
-	pkt.WriteByte(0xC2) // new-format packet tag for signature (type 2)
-	writeNewFormatLength(&pkt, len(bodyBytes))
-	pkt.Write(bodyBytes)
+	if err := pkt.WriteByte(0xC2); err != nil { // new-format packet tag for signature (type 2)
+		return nil, fmt.Errorf("failed to write OpenPGP signature packet tag: %w", err)
+	}
+	if err := writeNewFormatLength(&pkt, len(bodyBytes)); err != nil {
+		return nil, err
+	}
+	if _, err := pkt.Write(bodyBytes); err != nil {
+		return nil, fmt.Errorf("failed to write OpenPGP signature packet body: %w", err)
+	}
 
 	return pkt.Bytes(), nil
 }
@@ -409,20 +415,26 @@ func bitLength(b byte) int {
 	return n
 }
 
+func writeOpenPGPPacketLengthBytes(w io.Writer, data []byte) error {
+	if _, err := w.Write(data); err != nil {
+		return fmt.Errorf("failed to write OpenPGP packet length: %w", err)
+	}
+	return nil
+}
+
 // writeNewFormatLength writes an OpenPGP new-format packet body length.
-func writeNewFormatLength(w *bytes.Buffer, length int) {
+func writeNewFormatLength(w io.Writer, length int) error {
 	if length < 192 {
-		w.WriteByte(byte(length))
+		return writeOpenPGPPacketLengthBytes(w, []byte{byte(length)})
 	} else if length < 8384 {
 		length -= 192
-		w.WriteByte(byte(length>>8) + 192)
-		w.WriteByte(byte(length))
-	} else {
-		w.WriteByte(255)
-		buf := make([]byte, 4)
-		binary.BigEndian.PutUint32(buf, uint32(length))
-		w.Write(buf)
+		return writeOpenPGPPacketLengthBytes(w, []byte{byte(length>>8) + 192, byte(length)})
 	}
+
+	buf := make([]byte, 5)
+	buf[0] = 255
+	binary.BigEndian.PutUint32(buf[1:], uint32(length))
+	return writeOpenPGPPacketLengthBytes(w, buf)
 }
 
 // parseASN1Signature extracts r and s from an ASN.1 DER encoded ECDSA signature.

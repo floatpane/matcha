@@ -2,10 +2,18 @@ package pgp
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+type failingLengthWriter struct{}
+
+func (failingLengthWriter) Write(_ []byte) (int, error) {
+	return 0, errors.New("simulated length write failure")
+}
 
 // TestParseASN1Signature_TruncatedDoesNotPanic covers the bounds-check path
 // added for #613. Each input would have panicked in the original parser
@@ -110,3 +118,39 @@ func TestGenerateMIMEBoundaryFallsBackToUnixNano(t *testing.T) {
 		t.Fatalf("fallback boundary suffix is not a UnixNano timestamp: %v", err)
 	}
 }
+
+func TestWriteNewFormatLengthEncodings(t *testing.T) {
+	cases := []struct {
+		length int
+		want   []byte
+	}{
+		{length: 191, want: []byte{0xbf}},
+		{length: 192, want: []byte{0xc0, 0x00}},
+		{length: 8383, want: []byte{0xdf, 0xff}},
+		{length: 8384, want: []byte{0xff, 0x00, 0x00, 0x20, 0xc0}},
+	}
+
+	for _, tc := range cases {
+		t.Run(fmt.Sprint(tc.length), func(t *testing.T) {
+			var got strings.Builder
+			if err := writeNewFormatLength(&got, tc.length); err != nil {
+				t.Fatalf("writeNewFormatLength() returned error: %v", err)
+			}
+			if string(tc.want) != got.String() {
+				t.Fatalf("writeNewFormatLength(%d) = %x, want %x", tc.length, got.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestWriteNewFormatLengthPropagatesWriteError(t *testing.T) {
+	err := writeNewFormatLength(failingLengthWriter{}, 8384)
+	if err == nil {
+		t.Fatal("expected write error, got nil")
+	}
+	if !strings.Contains(err.Error(), "OpenPGP packet length") {
+		t.Fatalf("expected length write context, got %v", err)
+	}
+}
+
+var _ io.Writer = failingLengthWriter{}
