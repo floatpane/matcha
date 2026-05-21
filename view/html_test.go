@@ -1,7 +1,10 @@
 package view
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -65,6 +68,56 @@ func TestDecodeQuotedPrintable(t *testing.T) {
 				t.Errorf("Expected %q, got %q", tc.expected, decoded)
 			}
 		})
+	}
+}
+
+func TestDebugImageProtocolUsesLogger(t *testing.T) {
+	t.Setenv("DEBUG_IMAGE_PROTOCOL", "1")
+	t.Setenv("DEBUG_IMAGE_PROTOCOL_LOG", "")
+	t.Setenv("DEBUG_KITTY_IMAGES", "")
+	t.Setenv("DEBUG_KITTY_LOG", "")
+
+	var logBuf bytes.Buffer
+	originalLogOutput := log.Writer()
+	originalLogFlags := log.Flags()
+	log.SetOutput(&logBuf)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(originalLogOutput)
+		log.SetFlags(originalLogFlags)
+	})
+
+	originalStdout := os.Stdout
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = readPipe.Close()
+		_ = writePipe.Close()
+	})
+	os.Stdout = writePipe
+	t.Cleanup(func() {
+		os.Stdout = originalStdout
+	})
+
+	debugImageProtocol("hello %s", "world")
+
+	if err := writePipe.Close(); err != nil {
+		t.Fatalf("closing stdout pipe failed: %v", err)
+	}
+	os.Stdout = originalStdout
+	stdout, err := io.ReadAll(readPipe)
+	if err != nil {
+		t.Fatalf("reading stdout pipe failed: %v", err)
+	}
+	if got := string(stdout); got != "" {
+		t.Fatalf("debugImageProtocol wrote to stdout: %q", got)
+	}
+
+	want := "[img-protocol] hello world\n"
+	if got := logBuf.String(); got != want {
+		t.Fatalf("debugImageProtocol log output = %q, want %q", got, want)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"mime/quotedprintable"
 	"os"
 	"regexp"
@@ -273,7 +274,7 @@ func debugImageProtocol(format string, args ...interface{}) {
 		return
 	}
 	msg := fmt.Sprintf("[img-protocol] "+format+"\n", args...)
-	fmt.Print(msg)
+	log.Print(msg)
 	if path := os.Getenv("DEBUG_IMAGE_PROTOCOL_LOG"); path != "" {
 		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
 			_, _ = f.WriteString(msg)
