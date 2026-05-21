@@ -75,6 +75,20 @@ func TestLookupCharsetEncodingAlwaysReturnsNonNil(t *testing.T) {
 	}
 }
 
+func TestFormatPartPathEmptyPath(t *testing.T) {
+	cases := map[string][]int{
+		"nil":   nil,
+		"empty": {},
+	}
+	for name, path := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := formatPartPath(path); got != "" {
+				t.Fatalf("formatPartPath(%v) = %q, want empty string", path, got)
+			}
+		})
+	}
+}
+
 // TestFetchEmails is an integration test that requires a live IMAP server and valid credentials.
 // NOTE: This test will be skipped if it cannot load a configuration file,
 // making it safe to run in a CI environment without credentials.

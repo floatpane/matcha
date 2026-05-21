@@ -323,7 +323,7 @@ func parsePartID(partID string) []int {
 // formatPartPath converts a Walk path like []int{1, 2, 3} to "1.2.3".
 func formatPartPath(path []int) string {
 	if len(path) == 0 {
-		return "1"
+		return ""
 	}
 	parts := make([]string, len(path))
 	for i, p := range path {
