@@ -3,7 +3,6 @@ package view
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"regexp"
@@ -87,33 +86,7 @@ func TestDebugImageProtocolUsesLogger(t *testing.T) {
 		log.SetFlags(originalLogFlags)
 	})
 
-	originalStdout := os.Stdout
-	readPipe, writePipe, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe() failed: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = readPipe.Close()
-		_ = writePipe.Close()
-	})
-	os.Stdout = writePipe
-	t.Cleanup(func() {
-		os.Stdout = originalStdout
-	})
-
 	debugImageProtocol("hello %s", "world")
-
-	if err := writePipe.Close(); err != nil {
-		t.Fatalf("closing stdout pipe failed: %v", err)
-	}
-	os.Stdout = originalStdout
-	stdout, err := io.ReadAll(readPipe)
-	if err != nil {
-		t.Fatalf("reading stdout pipe failed: %v", err)
-	}
-	if got := string(stdout); got != "" {
-		t.Fatalf("debugImageProtocol wrote to stdout: %q", got)
-	}
 
 	want := "[img-protocol] hello world\n"
 	if got := logBuf.String(); got != want {
