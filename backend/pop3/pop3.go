@@ -465,16 +465,18 @@ func parseMessageBody(r io.Reader) (string, string, []backend.Attachment, error)
 func findAttachmentData(r io.Reader, targetPartID string) ([]byte, error) {
 	mr, err := gomail.CreateReader(r)
 	if err != nil {
-		return nil, fmt.Errorf("not a multipart message")
+		return nil, fmt.Errorf("pop3: not a multipart message: %w", err)
 	}
 
 	partIdx := 0
+	var scanErr error
 	for {
 		part, err := mr.NextPart()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
+			scanErr = err
 			break
 		}
 		partIdx++
@@ -484,5 +486,9 @@ func findAttachmentData(r io.Reader, targetPartID string) ([]byte, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("pop3: attachment part %s not found", targetPartID)
+	if scanErr != nil {
+		return nil, fmt.Errorf("pop3: failed to scan attachment parts: %w", scanErr)
+	}
+
+	return nil, fmt.Errorf("pop3: attachment part %s not found (scanned %d parts)", targetPartID, partIdx)
 }
