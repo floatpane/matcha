@@ -32,7 +32,7 @@ func RunConfig(args []string) error {
 	}
 
 	if _, err := os.Stat(target); os.IsNotExist(err) {
-		return fmt.Errorf("file not found: %s", target)
+		return fmt.Errorf("file not found: %s: %w", target, err)
 	}
 
 	cmd := exec.Command(editor, target)
