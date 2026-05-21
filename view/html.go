@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"mime/quotedprintable"
 	"os"
 	"regexp"
@@ -268,6 +269,18 @@ func imageProtocolSupported() bool {
 		weztermSupported() || waystSupported() || warpSupported() || konsoleSupported()
 }
 
+type debugImageProtocolLogFile interface {
+	WriteString(string) (int, error)
+	Close() error
+}
+
+var (
+	debugImageProtocolOpenLogFile = func(path string) (debugImageProtocolLogFile, error) {
+		return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	}
+	debugImageProtocolLogErrorf = log.Printf
+)
+
 func debugImageProtocol(format string, args ...interface{}) {
 	if os.Getenv("DEBUG_IMAGE_PROTOCOL") == "" && os.Getenv("DEBUG_KITTY_IMAGES") == "" {
 		return
@@ -275,15 +288,22 @@ func debugImageProtocol(format string, args ...interface{}) {
 	msg := fmt.Sprintf("[img-protocol] "+format+"\n", args...)
 	fmt.Print(msg)
 	if path := os.Getenv("DEBUG_IMAGE_PROTOCOL_LOG"); path != "" {
-		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			_, _ = f.WriteString(msg)
-			_ = f.Close()
-		}
+		writeDebugImageProtocolLog(path, msg)
 	} else if path := os.Getenv("DEBUG_KITTY_LOG"); path != "" {
-		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			_, _ = f.WriteString(msg)
-			_ = f.Close()
-		}
+		writeDebugImageProtocolLog(path, msg)
+	}
+}
+
+func writeDebugImageProtocolLog(path, msg string) {
+	f, err := debugImageProtocolOpenLogFile(path)
+	if err != nil {
+		return
+	}
+	if _, err := f.WriteString(msg); err != nil {
+		debugImageProtocolLogErrorf("failed to write debug image protocol log %s: %v", path, err)
+	}
+	if err := f.Close(); err != nil {
+		debugImageProtocolLogErrorf("failed to close debug image protocol log %s: %v", path, err)
 	}
 }
 

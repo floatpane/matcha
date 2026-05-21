@@ -1,6 +1,7 @@
 package view
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -30,6 +31,86 @@ func clearAllTerminalEnv() {
 	// Set basic terminal that doesn't support anything special
 	os.Setenv("TERM", "xterm")
 	os.Setenv("TERM_PROGRAM", "basic")
+}
+
+type failingDebugImageProtocolLogFile struct {
+	writeErr error
+	closeErr error
+}
+
+func (f failingDebugImageProtocolLogFile) WriteString(s string) (int, error) {
+	if f.writeErr != nil {
+		return 0, f.writeErr
+	}
+	return len(s), nil
+}
+
+func (f failingDebugImageProtocolLogFile) Close() error {
+	return f.closeErr
+}
+
+func TestDebugImageProtocolReportsLogWriteError(t *testing.T) {
+	originalOpenLogFile := debugImageProtocolOpenLogFile
+	originalLogErrorf := debugImageProtocolLogErrorf
+	defer func() {
+		debugImageProtocolOpenLogFile = originalOpenLogFile
+		debugImageProtocolLogErrorf = originalLogErrorf
+	}()
+
+	writeErr := errors.New("write failed")
+	debugImageProtocolOpenLogFile = func(string) (debugImageProtocolLogFile, error) {
+		return failingDebugImageProtocolLogFile{writeErr: writeErr}, nil
+	}
+
+	var logged []string
+	debugImageProtocolLogErrorf = func(format string, args ...interface{}) {
+		logged = append(logged, fmt.Sprintf(format, args...))
+	}
+
+	t.Setenv("DEBUG_IMAGE_PROTOCOL", "1")
+	t.Setenv("DEBUG_IMAGE_PROTOCOL_LOG", "/tmp/matcha-debug.log")
+
+	debugImageProtocol("hello")
+
+	joined := strings.Join(logged, "\n")
+	if !strings.Contains(joined, "failed to write debug image protocol log") {
+		t.Fatalf("expected write error to be logged, got %q", joined)
+	}
+	if !strings.Contains(joined, writeErr.Error()) {
+		t.Fatalf("expected logged error to contain %q, got %q", writeErr, joined)
+	}
+}
+
+func TestDebugImageProtocolReportsLogCloseError(t *testing.T) {
+	originalOpenLogFile := debugImageProtocolOpenLogFile
+	originalLogErrorf := debugImageProtocolLogErrorf
+	defer func() {
+		debugImageProtocolOpenLogFile = originalOpenLogFile
+		debugImageProtocolLogErrorf = originalLogErrorf
+	}()
+
+	closeErr := errors.New("close failed")
+	debugImageProtocolOpenLogFile = func(string) (debugImageProtocolLogFile, error) {
+		return failingDebugImageProtocolLogFile{closeErr: closeErr}, nil
+	}
+
+	var logged []string
+	debugImageProtocolLogErrorf = func(format string, args ...interface{}) {
+		logged = append(logged, fmt.Sprintf(format, args...))
+	}
+
+	t.Setenv("DEBUG_IMAGE_PROTOCOL", "1")
+	t.Setenv("DEBUG_KITTY_LOG", "/tmp/matcha-kitty.log")
+
+	debugImageProtocol("hello")
+
+	joined := strings.Join(logged, "\n")
+	if !strings.Contains(joined, "failed to close debug image protocol log") {
+		t.Fatalf("expected close error to be logged, got %q", joined)
+	}
+	if !strings.Contains(joined, closeErr.Error()) {
+		t.Fatalf("expected logged error to contain %q, got %q", closeErr, joined)
+	}
 }
 
 func TestDecodeQuotedPrintable(t *testing.T) {
