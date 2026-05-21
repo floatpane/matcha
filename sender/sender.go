@@ -184,6 +184,17 @@ func detectPlaintextOnly(body string, images, attachments map[string][]byte) boo
 	return !containsMarkup(body)
 }
 
+func writeQuotedPrintable(w io.Writer, body string) error {
+	qp := quotedprintable.NewWriter(w)
+	if _, err := fmt.Fprint(qp, body); err != nil {
+		return fmt.Errorf("quoted-printable encoding failed: %w", err)
+	}
+	if err := qp.Close(); err != nil {
+		return fmt.Errorf("quoted-printable encoding failed: %w", err)
+	}
+	return nil
+}
+
 // SendEmail constructs a multipart message with plain text, HTML, embedded images, and attachments.
 func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody, htmlBody string, images map[string][]byte, attachments map[string][]byte, inReplyTo string, references []string, signSMIME bool, encryptSMIME bool, signPGP bool, encryptPGP bool) ([]byte, error) {
 	smtpServer := account.GetSMTPServer()
@@ -245,9 +256,9 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 
 		// Build quoted-printable encoded body
 		var encBody bytes.Buffer
-		qp := quotedprintable.NewWriter(&encBody)
-		fmt.Fprint(qp, plainBody)
-		qp.Close()
+		if err := writeQuotedPrintable(&encBody, plainBody); err != nil {
+			return nil, err
+		}
 		encodedBody := encBody.Bytes()
 
 		// Build the canonical MIME part (headers + body) used for signing/encryption
@@ -381,9 +392,9 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		if err != nil {
 			return nil, err
 		}
-		qpText := quotedprintable.NewWriter(textPart)
-		fmt.Fprint(qpText, plainBody)
-		qpText.Close()
+		if err := writeQuotedPrintable(textPart, plainBody); err != nil {
+			return nil, err
+		}
 
 		// HTML part
 		htmlHeader := textproto.MIMEHeader{
@@ -394,9 +405,9 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		if err != nil {
 			return nil, err
 		}
-		qpHTML := quotedprintable.NewWriter(htmlPart)
-		fmt.Fprint(qpHTML, htmlBody)
-		qpHTML.Close()
+		if err := writeQuotedPrintable(htmlPart, htmlBody); err != nil {
+			return nil, err
+		}
 
 		altWriter.Close() // Finish the alternative part
 

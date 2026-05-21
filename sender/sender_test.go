@@ -13,6 +13,22 @@ func (failingReader) Read(p []byte) (int, error) {
 	return 0, errors.New("simulated crypto/rand failure")
 }
 
+type failingWriter struct{}
+
+func (failingWriter) Write(p []byte) (int, error) {
+	return 0, errors.New("simulated write failure")
+}
+
+func TestWriteQuotedPrintablePropagatesFlushError(t *testing.T) {
+	err := writeQuotedPrintable(failingWriter{}, "hello")
+	if err == nil {
+		t.Fatal("expected quoted-printable write error, got nil")
+	}
+	if !strings.Contains(err.Error(), "quoted-printable encoding failed") {
+		t.Fatalf("expected quoted-printable context, got %v", err)
+	}
+}
+
 // TestSMIMEOuterBoundary_RandFailure ensures that a crypto/rand failure surfaces
 // as an error rather than silently producing a predictable, time-based
 // boundary that an attacker could collide with (issue #1127).
