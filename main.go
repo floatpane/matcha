@@ -3760,9 +3760,12 @@ func runUpdateCLI() (err error) {
 		return fmt.Errorf("could not create temp file: %w", err)
 	}
 	_, err = io.Copy(outFile, respAsset.Body)
-	outFile.Close()
 	if err != nil {
+		outFile.Close()
 		return fmt.Errorf("could not write asset to disk: %w", err)
+	}
+	if err := outFile.Close(); err != nil {
+		return fmt.Errorf("could not finalize asset file: %w", err)
 	}
 
 	// Determine the expected binary name based on the OS.
