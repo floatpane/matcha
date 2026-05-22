@@ -48,14 +48,22 @@ func TestHTTPGet(t *testing.T) {
 		t.Fatalf("expected table, got %T", res)
 	}
 
-	if status := tbl.RawGetString("status"); status.(lua.LNumber) != 200 {
+	status, ok := tbl.RawGetString("status").(lua.LNumber)
+	if !ok {
+		t.Fatalf("expected status to be LNumber, got %T", tbl.RawGetString("status"))
+	}
+	if status != 200 {
 		t.Errorf("expected status 200, got %v", status)
 	}
 	if body := tbl.RawGetString("body"); body.String() != "ok" {
 		t.Errorf("expected body 'ok', got %q", body.String())
 	}
 
-	headers := tbl.RawGetString("headers").(*lua.LTable)
+	headersVal := tbl.RawGetString("headers")
+	headers, ok := headersVal.(*lua.LTable)
+	if !ok {
+		t.Fatalf("expected headers to be LTable, got %T", headersVal)
+	}
 	if v := headers.RawGetString("x-test"); v.String() != "hello" {
 		t.Errorf("expected header x-test='hello', got %q", v.String())
 	}
@@ -96,7 +104,10 @@ func TestHTTPPostWithBodyAndHeaders(t *testing.T) {
 	}
 
 	res := m.state.GetGlobal("res")
-	tbl := res.(*lua.LTable)
+	tbl, ok := res.(*lua.LTable)
+	if !ok {
+		t.Fatalf("expected table, got %T", res)
+	}
 	if body := tbl.RawGetString("body"); body.String() != `{"key":"value"}` {
 		t.Errorf("expected echoed body, got %q", body.String())
 	}
