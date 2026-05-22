@@ -59,6 +59,13 @@ func getDebugIMAPWriter() io.Writer {
 	return nil
 }
 
+// CloseDebugFiles cleans up debug file handles opened during the session.
+func CloseDebugFiles() {
+	if debugIMAPFile != nil {
+		debugIMAPFile.Close()
+	}
+}
+
 // Attachment holds data for an email attachment.
 type Attachment struct {
 	Filename         string

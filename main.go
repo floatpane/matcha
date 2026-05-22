@@ -3947,6 +3947,7 @@ func main() {
 	args, level := parseGlobalFlags(os.Args)
 	os.Args = args
 	loglevel.Set(level)
+	defer fetcher.CloseDebugFiles()
 
 	// If invoked with version flag, print version and exit
 	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version" || os.Args[1] == "version") {
