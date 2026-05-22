@@ -3,6 +3,7 @@ package plugin
 import (
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	lua "github.com/yuin/gopher-lua"
@@ -36,8 +37,16 @@ func (m *Manager) luaHTTP(L *lua.LState) int {
 	}
 	rawURL := urlVal.String()
 
+	// URL format validation.
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		L.Push(lua.LNil)
+		L.Push(lua.LString("invalid URL: " + err.Error()))
+		return 2
+	}
+
 	// Scheme validation.
-	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
 		L.Push(lua.LNil)
 		L.Push(lua.LString("unsupported URL scheme: only http and https are allowed"))
 		return 2
