@@ -514,11 +514,16 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Load cached folders from all accounts, merge unique names
 		seen := make(map[string]bool)
 		var cachedFolders []string
+		unread := make(map[string]int)
 		for _, acc := range m.config.Accounts {
-			for _, f := range config.GetCachedFolders(acc.ID) {
+			folders, counters := config.GetCachedFolders(acc.ID)
+			for _, f := range folders {
 				if !seen[f] {
 					seen[f] = true
 					cachedFolders = append(cachedFolders, f)
+				}
+				if count, ok := counters[f]; ok {
+					unread[f] += count
 				}
 			}
 		}
@@ -527,6 +532,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cachedFolders = append([]string{"INBOX"}, cachedFolders...)
 		}
 		m.folderInbox = tui.NewFolderInbox(cachedFolders, m.config.Accounts)
+		m.folderInbox.SetUnreadCounts(unread)
 		m.folderInbox.SetDateFormat(m.config.GetDateFormat())
 		m.folderInbox.SetDetailedDates(m.config.EnableDetailedDates)
 		m.folderInbox.SetDefaultThreaded(m.config.EnableThreaded)
@@ -589,10 +595,14 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Cache folder lists per account
 		for accID, folders := range msg.FoldersByAccount {
 			var names []string
+			unread := make(map[string]int)
 			for _, f := range folders {
 				names = append(names, f.Name)
+				if f.Unread > 0 {
+					unread[f.Name] = int(f.Unread)
+				}
 			}
-			go config.SaveAccountFolders(accID, names)
+			go config.SaveAccountFolders(accID, names, unread)
 		}
 		// Per-account fetch errors (e.g. broken IMAP login, unreachable
 		// server) are non-fatal: other accounts' folders are still shown.
@@ -641,7 +651,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update IDLE watchers to monitor the new folder
 		for i := range m.config.Accounts {
 			// Only start IDLE for accounts that actually have this folder
-			folders := config.GetCachedFolders(m.config.Accounts[i].ID)
+			folders, _ := config.GetCachedFolders(m.config.Accounts[i].ID)
 			if !slices.Contains(folders, msg.FolderName) {
 				if m.service != nil && m.service.IsDaemon() {
 					m.service.Unsubscribe(m.config.Accounts[i].ID, msg.PreviousFolder)
@@ -2091,6 +2101,7 @@ func (m *mainModel) markEmailAsReadInStores(uid uint32, accountID string) {
 			for _, e := range folderEmails {
 				if e.UID == uid && e.AccountID == accountID {
 					m.folderInbox.DecrementUnreadCount(folderName)
+					config.SaveAccountFolders(accountID, m.folderInbox.GetFolders(), m.folderInbox.GetUnreadCountsCopy())
 					return
 				}
 			}

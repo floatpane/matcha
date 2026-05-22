@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -110,6 +111,15 @@ type FolderInbox struct {
 	// findEmailByUID falls back to it when allEmails has no match.
 	previewSearchEmail *fetcher.Email
 	focusedPane        PaneType
+}
+
+func (m *FolderInbox) GetUnreadCountsCopy() map[string]int {
+	if m.unread == nil {
+		return make(map[string]int)
+	}
+	result := make(map[string]int)
+	maps.Copy(result, m.unread)
+	return result
 }
 
 // sortFolders sorts folder names with INBOX always first, then alphabetically.
