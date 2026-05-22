@@ -182,12 +182,12 @@ schema = 3
     hash = 'sha256-CfehtVHTyFsIqbTk4il0pKWh6m6RvgOFbxn2HDY2P1k='
 
   [mod.'golang.org/x/crypto']
-    version = 'v0.51.0'
-    hash = 'sha256-/R74sc1mcOaOuBeXRQzrXrHAgA5VhNWc6SfQJaxb17U='
+    version = 'v0.52.0'
+    hash = 'sha256-/6Ajm6bIPt5xXNL5mmeNfJh4EZjgFgVlHEwp1TiC5cM='
 
   [mod.'golang.org/x/net']
-    version = 'v0.53.0'
-    hash = 'sha256-G9gKLmyaf6lIV429NKX+YlL6oUPJwlv+BrG6qGhzvmU='
+    version = 'v0.54.0'
+    hash = 'sha256-/EoIXzTQzK/yP/lxOyx0Z/bhns4FdPTIF4uyt4gIP80='
 
   [mod.'golang.org/x/oauth2']
     version = 'v0.4.0'
