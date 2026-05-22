@@ -577,10 +577,15 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		var folderNames []string
+		unread := make(map[string]int)
 		for _, f := range msg.MergedFolders {
 			folderNames = append(folderNames, f.Name)
+			if f.Unread > 0 {
+				unread[f.Name] = int(f.Unread)
+			}
 		}
 		m.folderInbox.SetFolders(folderNames)
+		m.folderInbox.SetUnreadCounts(unread)
 		// Cache folder lists per account
 		for accID, folders := range msg.FoldersByAccount {
 			var names []string
@@ -2081,6 +2086,15 @@ func (m *mainModel) markEmailAsReadInStores(uid uint32, accountID string) {
 	// Update the inbox UI
 	if m.folderInbox != nil {
 		m.folderInbox.GetInbox().MarkEmailAsRead(uid, accountID)
+
+		for folderName, folderEmails := range m.folderEmails {
+			for _, e := range folderEmails {
+				if e.UID == uid && e.AccountID == accountID {
+					m.folderInbox.DecrementUnreadCount(folderName)
+					return
+				}
+			}
+		}
 	}
 }
 

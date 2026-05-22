@@ -101,6 +101,7 @@ var headerMessageIDRE = regexp.MustCompile(`<[^>]+>`)
 type Folder struct {
 	Name       string
 	Delimiter  string
+	Unread     uint32
 	Attributes []string
 }
 
@@ -1789,7 +1790,11 @@ func FetchFolders(account *config.Account) ([]Folder, error) {
 	}
 	defer c.Close()
 
-	listCmd := c.List("", "*", nil)
+	listCmd := c.List("", "*", &imap.ListOptions{
+		ReturnStatus: &imap.StatusOptions{
+			NumUnseen: true,
+		},
+	})
 	defer listCmd.Close()
 
 	var folders []Folder
@@ -1802,6 +1807,12 @@ func FetchFolders(account *config.Account) ([]Folder, error) {
 		if data.Delim != 0 {
 			delim = string(data.Delim)
 		}
+
+		var unread uint32
+		if data.Status != nil {
+			unread = *data.Status.NumUnseen
+		}
+
 		var attrs []string
 		for _, a := range data.Attrs {
 			attrs = append(attrs, string(a))
@@ -1809,6 +1820,7 @@ func FetchFolders(account *config.Account) ([]Folder, error) {
 		folders = append(folders, Folder{
 			Name:       data.Mailbox,
 			Delimiter:  delim,
+			Unread:     unread,
 			Attributes: attrs,
 		})
 	}
