@@ -88,7 +88,7 @@ func TestDebugImageProtocolUsesLogger(t *testing.T) {
 
 	debugImageProtocol("hello %s", "world")
 
-	want := "[img-protocol] hello world\n"
+	want := "info: [img-protocol] hello world\n"
 	if got := logBuf.String(); got != want {
 		t.Fatalf("debugImageProtocol log output = %q, want %q", got, want)
 	}
