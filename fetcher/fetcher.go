@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"mime"
 	"mime/quotedprintable"
@@ -233,7 +232,7 @@ func decodePart(reader io.Reader, header mail.PartHeader) (string, error) {
 func decodeReaderWithCharset(reader io.Reader, charset string) ([]byte, error) {
 	enc := lookupCharsetEncoding(charset)
 	transformReader := transform.NewReader(reader, enc.NewDecoder())
-	return ioutil.ReadAll(transformReader)
+	return io.ReadAll(transformReader)
 }
 
 // lookupCharsetEncoding resolves a charset name, falling back to UTF-8.
@@ -286,13 +285,13 @@ func decodeAttachmentData(rawBytes []byte, encoding string) ([]byte, error) {
 	switch strings.ToLower(encoding) {
 	case "base64":
 		decoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(rawBytes))
-		data, err := ioutil.ReadAll(decoder)
+		data, err := io.ReadAll(decoder)
 		if err != nil {
 			return nil, err
 		}
 		return data, nil
 	case "quoted-printable":
-		data, err := ioutil.ReadAll(quotedprintable.NewReader(bytes.NewReader(rawBytes)))
+		data, err := io.ReadAll(quotedprintable.NewReader(bytes.NewReader(rawBytes)))
 		if err != nil {
 			return nil, err
 		}
