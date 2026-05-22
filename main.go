@@ -2774,7 +2774,12 @@ func openExternalEditor(body string) tea.Cmd {
 			return tui.EditorFinishedMsg{Err: fmt.Errorf("writing temp file: %w", err)}
 		}
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpPath)
+		return func() tea.Msg {
+			return tui.EditorFinishedMsg{Err: fmt.Errorf("closing temp file: %w", err)}
+		}
+	}
 
 	parts := strings.Fields(editor)
 	args := append(parts[1:], tmpPath)
