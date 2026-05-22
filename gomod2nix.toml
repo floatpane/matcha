@@ -198,8 +198,8 @@ schema = 3
     hash = 'sha256-ybcjhCfK6lroUM0yswUvWooW8MOQZBXyiSqoxG6Uy0Y='
 
   [mod.'golang.org/x/sys']
-    version = 'v0.44.0'
-    hash = 'sha256-JDlj+PKsG6I6kjv5JyOUNreY51u5An0oZ5OZMHZSk+A='
+    version = 'v0.45.0'
+    hash = 'sha256-hkBoNazrDA67ER6sWhb+EKxx9nJ24+nz3zGy+zT5Hvw='
 
   [mod.'golang.org/x/term']
     version = 'v0.43.0'
