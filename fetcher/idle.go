@@ -1,6 +1,7 @@
 package fetcher
 
 import (
+	"errors"
 	"log"
 	"strings"
 	"sync"
@@ -19,9 +20,13 @@ type IdleUpdate struct {
 // IdleWatcher manages IDLE connections for multiple accounts.
 type IdleWatcher struct {
 	mu       sync.Mutex
+	wg       sync.WaitGroup
 	watchers map[string]*accountIdle // key: account ID
 	notify   chan<- IdleUpdate
 }
+
+// ErrStopTimeout is returned when IDLE watcher goroutines do not stop before the timeout.
+var ErrStopTimeout = errors.New("idle watcher: stop timed out")
 
 // accountIdle manages a single IDLE connection for one account.
 type accountIdle struct {
@@ -60,7 +65,11 @@ func (w *IdleWatcher) Watch(account *config.Account, folder string) {
 		done:    make(chan struct{}),
 	}
 	w.watchers[account.ID] = a
-	go a.run()
+	w.wg.Add(1)
+	go func() {
+		defer w.wg.Done()
+		a.run()
+	}()
 }
 
 // Stop stops the IDLE watcher for a specific account.
@@ -99,6 +108,30 @@ func (w *IdleWatcher) StopAllAndWait() {
 
 	for _, done := range pending {
 		<-done
+	}
+	w.wg.Wait()
+}
+
+// StopAllAndWaitTimeout stops all IDLE watchers and waits for them to finish up to d.
+func (w *IdleWatcher) StopAllAndWaitTimeout(d time.Duration) error {
+	w.mu.Lock()
+	for id, a := range w.watchers {
+		close(a.stop)
+		delete(w.watchers, id)
+	}
+	w.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		w.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-time.After(d):
+		return ErrStopTimeout
 	}
 }
 
