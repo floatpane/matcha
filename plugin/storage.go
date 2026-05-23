@@ -152,7 +152,7 @@ func (m *Manager) currentStore() (*pluginStore, error) {
 	return s, nil
 }
 
-func (m *Manager) luaStoreSet(L *lua.LState) int  { //nolint:gocritic
+func (m *Manager) luaStoreSet(L *lua.LState) int { //nolint:gocritic
 	key := L.CheckString(1)
 	val := L.CheckString(2)
 
@@ -171,7 +171,7 @@ func (m *Manager) luaStoreSet(L *lua.LState) int  { //nolint:gocritic
 	return 0
 }
 
-func (m *Manager) luaStoreGet(L *lua.LState) int  { //nolint:gocritic
+func (m *Manager) luaStoreGet(L *lua.LState) int { //nolint:gocritic
 	key := L.CheckString(1)
 
 	s, err := m.currentStore()
@@ -191,7 +191,7 @@ func (m *Manager) luaStoreGet(L *lua.LState) int  { //nolint:gocritic
 	return 1
 }
 
-func (m *Manager) luaStoreDelete(L *lua.LState) int  { //nolint:gocritic
+func (m *Manager) luaStoreDelete(L *lua.LState) int { //nolint:gocritic
 	key := L.CheckString(1)
 
 	s, err := m.currentStore()
@@ -208,7 +208,7 @@ func (m *Manager) luaStoreDelete(L *lua.LState) int  { //nolint:gocritic
 	return 0
 }
 
-func (m *Manager) luaStoreKeys(L *lua.LState) int  { //nolint:gocritic
+func (m *Manager) luaStoreKeys(L *lua.LState) int { //nolint:gocritic
 	s, err := m.currentStore()
 	if errors.Is(err, ErrNoActivePlugin) {
 		L.Push(L.NewTable())

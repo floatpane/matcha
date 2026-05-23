@@ -2664,7 +2664,7 @@ func openExternalEditor(body string) tea.Cmd {
 	tmpFile.Close() //nolint:errcheck,gosec
 
 	parts := strings.Fields(editor)
-	args := append(parts[1:], tmpPath) //nolint:gocritic
+	args := append(parts[1:], tmpPath)   //nolint:gocritic
 	c := exec.Command(parts[0], args...) //nolint:gosec,noctx
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		defer os.Remove(tmpPath) //nolint:errcheck,gosec
