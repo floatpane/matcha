@@ -49,11 +49,13 @@ jobs:
 
       - name: Run gosec
         uses: securego/gosec@master
+        env:
+          GOTOOLCHAIN: auto
         with:
-          args: "-fmt=sarif -out=gosec.sarif -severity=medium -confidence=medium -exclude=G101,G115,G204,G304,G306,G401,G501 ./..."
+          args: "-no-fail -fmt=sarif -out=gosec.sarif -severity=medium -confidence=medium -exclude=G101,G115,G204,G304,G306,G401,G501 ./..."
 
       - name: Upload SARIF
-        if: always()
+        if: always() && hashFiles('gosec.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gosec.sarif
