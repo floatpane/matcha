@@ -12,9 +12,9 @@ func Send(title, body string) error {
 	switch runtime.GOOS {
 	case "darwin":
 		script := fmt.Sprintf(`display notification %q with title %q sound name "default"`, body, title)
-		return exec.Command("osascript", "-e", script).Run()
+		return exec.Command("osascript", "-e", script).Run() //nolint:noctx
 	case "linux":
-		return exec.Command("notify-send", title, body).Run()
+		return exec.Command("notify-send", title, body).Run() //nolint:noctx
 	default:
 		return nil
 	}

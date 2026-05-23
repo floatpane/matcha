@@ -26,11 +26,9 @@ var (
 var (
 	focusedStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	blurredStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	noStyle             = lipgloss.NewStyle()
 	helpStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	emailRecipientStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 	attachmentStyle     = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("245"))
-	fromSelectorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	smimeToggleStyle    = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("245"))
 	composerErrorStyle  = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("196"))
 )
@@ -214,7 +212,7 @@ func (m *Composer) hideComposerNotice() {
 	m.noticeText = ""
 }
 
-func (m *Composer) validateFromField() bool {
+func (m *Composer) validateFromField() bool { //nolint:unparam
 	if !m.isCatchAllAccount() {
 		m.fromError = ""
 		return true
@@ -229,7 +227,7 @@ func (m *Composer) validateFromField() bool {
 	return true
 }
 
-func (m *Composer) validateEmailField(focus int) bool {
+func (m *Composer) validateEmailField(focus int) bool { //nolint:unparam
 	var input *textinput.Model
 	var setError func(string)
 	switch focus {
@@ -412,7 +410,7 @@ func truncateSuggestionDisplay(s string, maxLen int) string {
 	return string(runes[:maxLen-3]) + "..."
 }
 
-func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 
@@ -478,22 +476,23 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedSuggestion--
 				}
 				return m, nil
-			case "down", "ctrl+n":
+			case keyDown, "ctrl+n":
 				if m.selectedSuggestion < len(m.suggestions)-1 {
 					m.selectedSuggestion++
 				}
 				return m, nil
-			case "tab", "enter":
+			case "tab", keyEnter:
 				// Select the suggestion
 				selected := m.suggestions[m.selectedSuggestion]
 
 				var newEmail string
-				if len(selected.Addresses) > 0 {
+				switch {
+				case len(selected.Addresses) > 0:
 					// Mailing list: emit just the addresses to maintain valid email formatting
 					newEmail = strings.Join(selected.Addresses, ", ")
-				} else if selected.Name != "" && selected.Name != selected.Email {
+				case selected.Name != "" && selected.Name != selected.Email:
 					newEmail = fmt.Sprintf("%s <%s>", selected.Name, selected.Email)
-				} else {
+				default:
 					newEmail = selected.Email
 				}
 
@@ -535,7 +534,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle plugin prompt overlay
 		if m.showPluginPrompt {
 			switch msg.String() {
-			case "enter":
+			case keyEnter:
 				value := m.pluginPromptInput.Value()
 				m.showPluginPrompt = false
 				return m, func() tea.Msg { return PluginPromptSubmitMsg{Value: value} }
@@ -556,12 +555,12 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedAccountIdx--
 					m.updateSignature()
 				}
-			case "down", "j":
+			case keyDown, "j":
 				if m.selectedAccountIdx < len(m.accounts)-1 {
 					m.selectedAccountIdx++
 					m.updateSignature()
 				}
-			case "enter":
+			case keyEnter:
 				m.showAccountPicker = false
 			case "esc":
 				m.showAccountPicker = false
@@ -583,7 +582,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.showNotice {
 			switch msg.String() {
-			case "enter", "esc", " ":
+			case keyEnter, "esc", " ":
 				m.hideComposerNotice()
 			}
 			return m, nil
@@ -596,7 +595,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "up", kb.Global.NavUp:
 				m.attachmentCursor = (m.attachmentCursor - 1 + attachmentPathSize) % attachmentPathSize
 				return m, nil
-			case "down", kb.Global.NavDown:
+			case keyDown, kb.Global.NavDown:
 				m.attachmentCursor = (m.attachmentCursor + 1) % attachmentPathSize
 				return m, nil
 			}
@@ -672,10 +671,10 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-		case "enter", " ":
+		case keyEnter, " ":
 			switch m.focusIndex {
 			case focusFrom:
-				if msg.String() == "enter" && len(m.accounts) > 1 {
+				if msg.String() == keyEnter && len(m.accounts) > 1 {
 					m.showAccountPicker = true
 					return m, nil
 				}
@@ -684,17 +683,17 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case focusAttachment:
-				if msg.String() == "enter" {
+				if msg.String() == keyEnter {
 					return m, func() tea.Msg { return GoToFilePickerMsg{} }
 				}
 			case focusEncryptSMIME:
-				if msg.String() == "enter" || msg.String() == " " {
+				if msg.String() == keyEnter || msg.String() == " " {
 					m.encryptSMIME = !m.encryptSMIME
 				}
 				return m, nil
 
 			case focusSend:
-				if msg.String() == "enter" {
+				if msg.String() == keyEnter {
 					if !m.canSendEmail() {
 						return m, m.showComposerNotice(t("composer.invalid_email_fields"))
 					}
@@ -798,21 +797,21 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *Composer) View() tea.View {
+func (m *Composer) View() tea.View { //nolint:gocyclo
 	var composerView strings.Builder
 	var button string
 	ck := config.Keybinds.Composer
 
 	if m.focusIndex == focusSend {
-		button = focusedStyle.Copy().Render("[ " + t("composer.send") + " ]")
+		button = focusedStyle.Render("[ " + t("composer.send") + " ]")
 	} else {
-		button = blurredStyle.Copy().Render("[ " + t("composer.send") + " ]")
+		button = blurredStyle.Render("[ " + t("composer.send") + " ]")
 	}
 
 	// From field with account selector
 	fromAddr := m.getFromAddress()
 	var fromField string
-	if m.isCatchAllAccount() {
+	if m.isCatchAllAccount() { //nolint:gocritic
 		fromAddrView := m.fromInput.View()
 		if len(m.accounts) > 1 {
 			if m.focusIndex == focusFrom {

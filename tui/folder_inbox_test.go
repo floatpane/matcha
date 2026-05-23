@@ -17,7 +17,7 @@ func TestFolderInboxSplitPreviewRendersSearchHit(t *testing.T) {
 	accounts := []config.Account{
 		{ID: "account-1", Email: "host.example.com", FetchEmail: "first@example.com"},
 	}
-	fi := NewFolderInbox([]string{"INBOX", "Archive"}, accounts)
+	fi := NewFolderInbox([]string{keyINBOX, "Archive"}, accounts)
 	// Force a non-zero canvas so calculate*Width does not panic on Update.
 	model, _ := fi.Update(tea.WindowSizeMsg{Width: 200, Height: 60})
 	fi = model.(*FolderInbox)
@@ -68,7 +68,7 @@ func TestFolderInboxSplitPreviewPrefersAllEmails(t *testing.T) {
 	accounts := []config.Account{
 		{ID: "account-1", Email: "host.example.com", FetchEmail: "first@example.com"},
 	}
-	fi := NewFolderInbox([]string{"INBOX"}, accounts)
+	fi := NewFolderInbox([]string{keyINBOX}, accounts)
 	model, _ := fi.Update(tea.WindowSizeMsg{Width: 200, Height: 60})
 	fi = model.(*FolderInbox)
 
@@ -96,7 +96,7 @@ func TestSearchOverlayKeysNotIntercepted(t *testing.T) {
 	accounts := []config.Account{
 		{ID: "account-1", Email: "host.example.com", FetchEmail: "first@example.com"},
 	}
-	fi := NewFolderInbox([]string{"INBOX", "Archive"}, accounts)
+	fi := NewFolderInbox([]string{keyINBOX, "Archive"}, accounts)
 	model, _ := fi.Update(tea.WindowSizeMsg{Width: 200, Height: 60})
 	fi = model.(*FolderInbox)
 

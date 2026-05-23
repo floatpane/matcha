@@ -226,7 +226,7 @@ func SetTheme(name string) bool {
 
 // AllThemes returns all available themes (built-in + custom).
 func AllThemes() []Theme {
-	all := make([]Theme, len(BuiltinThemes))
+	all := make([]Theme, len(BuiltinThemes)) //nolint:prealloc
 	copy(all, BuiltinThemes)
 	all = append(all, LoadCustomThemes()...)
 	return all

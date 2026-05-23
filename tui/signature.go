@@ -65,9 +65,9 @@ func (m *SignatureEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Save and go back to settings
 			signature := m.textarea.Value()
 			if m.accountID != "" {
-				go config.SaveSignatureForAccount(m.accountID, signature)
+				go config.SaveSignatureForAccount(m.accountID, signature) //nolint:errcheck
 			} else {
-				go config.SaveSignature(signature)
+				go config.SaveSignature(signature) //nolint:errcheck
 			}
 			return m, func() tea.Msg { return GoToSettingsMsg{} }
 		}

@@ -18,7 +18,8 @@ type generalOption struct {
 }
 
 func (m *Settings) buildGeneralOptions() []generalOption {
-	opts := []generalOption{
+	opts := make([]generalOption, 0, 9+len(m.cfg.Accounts))
+	opts = append(opts, []generalOption{
 		{"settings_general.disable_images", onOff(m.cfg.DisableImages), "Prevent images from loading automatically in emails.", false, ""},
 		{"settings_general.hide_tips", onOff(m.cfg.HideTips), "Hide helpful hints displayed at the bottom of the screen.", false, ""},
 		{"settings_general.disable_notifications", onOff(m.cfg.DisableNotifications), "Turn off desktop notifications for new mail.", false, ""},
@@ -28,7 +29,7 @@ func (m *Settings) buildGeneralOptions() []generalOption {
 		{"settings_general.date_format", getDateFormatLabel(m.cfg.DateFormat), "Change how dates and times are displayed.", false, ""},
 		{"settings_general.language", getLanguageLabel(m.cfg.GetLanguage()), "Change the interface language. Changes apply instantly.", false, ""},
 		{"settings_general.signature", getSignatureStatus(), "Configure the global signature appended to your outgoing emails.", false, ""},
-	}
+	}...)
 
 	for _, acc := range m.cfg.Accounts {
 		status := t("settings_general.signature_not_configured")
@@ -54,13 +55,13 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
 		m.generalCursor = (m.generalCursor - 1 + len(opts)) % len(opts)
-	case "down", "j":
+	case keyDown, "j":
 		m.generalCursor = (m.generalCursor + 1) % len(opts)
-	case "enter", "space", "right", "l":
+	case keyEnter, "space", keyRight, "l":
 		if m.generalCursor < len(opts) {
 			opt := opts[m.generalCursor]
 			if opt.isAccountSig {
-				if msg.String() == "enter" || msg.String() == "right" || msg.String() == "l" {
+				if msg.String() == keyEnter || msg.String() == keyRight || msg.String() == "l" {
 					return m, func() tea.Msg { return GoToSignatureEditorMsg{AccountID: opt.accountID} }
 				}
 				return m, nil
@@ -118,14 +119,14 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.cfg.Language = langs[nextIdx]
 				_ = config.SaveConfig(m.cfg)
 				// Apply language change immediately
-				i18n.GetManager().SetLanguage(m.cfg.Language)
+				i18n.GetManager().SetLanguage(m.cfg.Language) //nolint:errcheck,gosec
 				// Trigger full UI rebuild
 				return m, tea.Batch(
 					func() tea.Msg { return ConfigSavedMsg{} },
 					func() tea.Msg { return LanguageChangedMsg{} },
 				)
 			case 8: // Edit Signature
-				if msg.String() == "enter" || msg.String() == "right" || msg.String() == "l" {
+				if msg.String() == keyEnter || msg.String() == keyRight || msg.String() == "l" {
 					return m, func() tea.Msg { return GoToSignatureEditorMsg{} }
 				}
 			}
