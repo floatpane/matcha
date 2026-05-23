@@ -520,11 +520,7 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 
 	// Loop until we have enough emails or run out of messages
 	for len(allEmails) < int(limit) && cursor > 0 {
-		// Determine chunk size
 		chunkSize := limit
-		if chunkSize < 50 {
-			chunkSize = 50
-		}
 
 		from := uint32(1)
 		if cursor > chunkSize {
