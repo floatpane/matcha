@@ -157,12 +157,12 @@ func (m *Manager) luaStoreSet(L *lua.LState) int {
 	val := L.CheckString(2)
 
 	s, err := m.currentStore()
-	if err != nil {
-		L.RaiseError("store_set: %v", err)
+	if errors.Is(err, ErrNoActivePlugin) {
+		L.RaiseError("store_set: no plugin context")
 		return 0
 	}
-	if s == nil {
-		L.RaiseError("store_set: no plugin context")
+	if err != nil {
+		L.RaiseError("store_set: %v", err)
 		return 0
 	}
 	if err := s.Set(key, val); err != nil {
@@ -175,13 +175,13 @@ func (m *Manager) luaStoreGet(L *lua.LState) int {
 	key := L.CheckString(1)
 
 	s, err := m.currentStore()
+	if errors.Is(err, ErrNoActivePlugin) {
+		L.Push(lua.LNil)
+		return 1
+	}
 	if err != nil {
 		L.RaiseError("store_get: %v", err)
 		return 0
-	}
-	if s == nil {
-		L.Push(lua.LNil)
-		return 1
 	}
 	if v, ok := s.Get(key); ok {
 		L.Push(lua.LString(v))
@@ -195,15 +195,11 @@ func (m *Manager) luaStoreDelete(L *lua.LState) int {
 	key := L.CheckString(1)
 
 	s, err := m.currentStore()
+	if errors.Is(err, ErrNoActivePlugin) {
+		return 0 // silent no-op outside plugin context, matching store_get behavior
+	}
 	if err != nil {
 		L.RaiseError("store_delete: %v", err)
-		return 0
-	}
-	// No plugin context: silently no-op, matching store_get's behavior so
-	// read+remove operations behave the same when called outside a plugin
-	// (e.g. from a non-plugin Lua chunk). store_set still raises so a
-	// missing-context write is surfaced loudly.
-	if s == nil {
 		return 0
 	}
 	if err := s.Delete(key); err != nil {
@@ -214,13 +210,13 @@ func (m *Manager) luaStoreDelete(L *lua.LState) int {
 
 func (m *Manager) luaStoreKeys(L *lua.LState) int {
 	s, err := m.currentStore()
+	if errors.Is(err, ErrNoActivePlugin) {
+		L.Push(L.NewTable())
+		return 1
+	}
 	if err != nil {
 		L.RaiseError("store_keys: %v", err)
 		return 0
-	}
-	if s == nil {
-		L.Push(L.NewTable())
-		return 1
 	}
 
 	t := L.NewTable()
