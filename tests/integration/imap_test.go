@@ -144,6 +144,7 @@ func newTestAccount(env testEnv, user, pass string) *config.Account {
 		SMTPPort:        env.smtpPort,
 		Insecure:        true,
 		Protocol:        "imap",
+		SC:              &config.SessionCache{},
 	}
 }
 
