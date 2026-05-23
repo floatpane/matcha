@@ -15,8 +15,6 @@ services:
       - "3993:3993"   # IMAPS (implicit TLS)
       - "3995:3995"   # POP3S
       - "8080:8080"   # REST API
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/service/readiness || exit 1"]
-      interval: 2s
-      timeout: 2s
-      retries: 30
+    # greenmail/standalone image lacks wget/curl, so we can't run an
+    # in-container healthcheck. Wait externally:
+    #   until curl -sf http://127.0.0.1:8080/api/service/readiness; do sleep 1; done

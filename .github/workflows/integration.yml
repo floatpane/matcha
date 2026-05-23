@@ -25,11 +25,8 @@ jobs:
           - 8080:8080
         env:
           GREENMAIL_OPTS: "-Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.auth.disabled -Dgreenmail.verbose"
-        options: >-
-          --health-cmd "wget -qO- http://localhost:8080/api/service/readiness || exit 1"
-          --health-interval 2s
-          --health-timeout 2s
-          --health-retries 60
+        # No --health-cmd: greenmail/standalone image has no wget/curl.
+        # The runner step below polls /api/service/readiness externally instead.
 
     steps:
       - uses: actions/checkout@v6
