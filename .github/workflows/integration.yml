@@ -14,7 +14,7 @@ jobs:
 
     services:
       greenmail:
-        image: greenmail/standalone:2.1.3
+        image: greenmail/standalone:2.1.8
         ports:
           - 3025:3025
           - 3110:3110
