@@ -116,7 +116,7 @@ func GenerateRSVP(originalData []byte, userEmail, response string) ([]byte, erro
 			// Attendee not found in original - add ourselves with full parameters
 			vevent.AddAttendee("mailto:"+userEmail,
 				ics.WithRSVP(true),
-				ics.ParticipationStatus(ics.ParticipationStatusNeedsAction),
+				ics.ParticipationStatusNeedsAction,
 				ics.CalendarUserTypeIndividual,
 				ics.ParticipationRoleReqParticipant,
 			)

@@ -197,9 +197,9 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Global shortcut to return to menu from content pane
 		if m.activePane == PaneContent && msg.String() == "esc" {
 			// unless we are in crypto config or encryption editing which have their own esc logic
-			if !(m.activeCategory == CategoryAccounts && m.isCryptoConfig) &&
-				!(m.activeCategory == CategoryEncryption && m.encFocusIndex > -1) &&
-				!(m.activeCategory == CategoryPlugins && (m.pluginEditing || m.pluginSelected != "")) {
+			if (m.activeCategory != CategoryAccounts || !m.isCryptoConfig) &&
+				(m.activeCategory != CategoryEncryption || m.encFocusIndex <= -1) &&
+				(m.activeCategory != CategoryPlugins || (!m.pluginEditing && m.pluginSelected == "")) {
 				m.activePane = PaneMenu
 				return m, nil
 			}
@@ -207,21 +207,20 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.activePane == PaneMenu {
 			return m.updateMenu(msg)
-		} else {
-			switch m.activeCategory {
-			case CategoryGeneral:
-				return m.updateGeneral(msg)
-			case CategoryAccounts:
-				return m.updateAccounts(msg)
-			case CategoryTheme:
-				return m.updateTheme(msg)
-			case CategoryMailingLists:
-				return m.updateMailingLists(msg)
-			case CategoryEncryption:
-				return m.updateEncryption(msg)
-			case CategoryPlugins:
-				return m.updatePlugins(msg)
-			}
+		}
+		switch m.activeCategory {
+		case CategoryGeneral:
+			return m.updateGeneral(msg)
+		case CategoryAccounts:
+			return m.updateAccounts(msg)
+		case CategoryTheme:
+			return m.updateTheme(msg)
+		case CategoryMailingLists:
+			return m.updateMailingLists(msg)
+		case CategoryEncryption:
+			return m.updateEncryption(msg)
+		case CategoryPlugins:
+			return m.updatePlugins(msg)
 		}
 
 	case SecureModeEnabledMsg:
@@ -276,9 +275,9 @@ func (m *Settings) updateMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
 		m.menuCursor = (m.menuCursor - 1 + categoryCount) % categoryCount
-	case "down", "j":
+	case keyDown, "j":
 		m.menuCursor = (m.menuCursor + 1) % categoryCount
-	case "right", "l", "enter":
+	case keyRight, "l", keyEnter:
 		m.activeCategory = SettingsCategory(m.menuCursor)
 		m.activePane = PaneContent
 

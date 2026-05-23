@@ -35,7 +35,7 @@ func RunConfig(args []string) error {
 		return fmt.Errorf("file not found: %s", target)
 	}
 
-	cmd := exec.Command(editor, target)
+	cmd := exec.Command(editor, target) //nolint:gosec
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

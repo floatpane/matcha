@@ -64,7 +64,7 @@ func (m *Manager) luaHTTP(L *lua.LState) int {
 		bodyReader = strings.NewReader(v.String())
 	}
 
-	req, err := http.NewRequest(method, rawURL, bodyReader)
+	req, err := http.NewRequest(method, rawURL, bodyReader) //nolint:noctx
 	if err != nil {
 		L.Push(lua.LNil)
 		L.Push(lua.LString(err.Error()))
@@ -86,7 +86,7 @@ func (m *Manager) luaHTTP(L *lua.LState) int {
 		L.Push(lua.LString(err.Error()))
 		return 2
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, httpMaxBodySize))
 	if err != nil {

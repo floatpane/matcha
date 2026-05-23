@@ -10,6 +10,7 @@ package maildir
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -165,7 +166,7 @@ func (p *Provider) readHeader(msg *emaildir.Message) (backend.Email, error) {
 	if err != nil {
 		return backend.Email{}, err
 	}
-	defer rc.Close()
+	defer rc.Close() //nolint:errcheck
 
 	entity, err := message.Read(rc)
 	if err != nil && entity == nil {
@@ -194,7 +195,7 @@ func (p *Provider) FetchEmailBody(_ context.Context, folder string, uid uint32) 
 	if err != nil {
 		return "", "", nil, fmt.Errorf("maildir open: %w", err)
 	}
-	defer rc.Close()
+	defer rc.Close() //nolint:errcheck
 
 	return parseMessageBody(rc)
 }
@@ -209,7 +210,7 @@ func (p *Provider) FetchAttachment(_ context.Context, folder string, uid uint32,
 	if err != nil {
 		return nil, fmt.Errorf("maildir open: %w", err)
 	}
-	defer rc.Close()
+	defer rc.Close() //nolint:errcheck
 
 	return findAttachmentData(rc, partID)
 }
@@ -348,7 +349,7 @@ func (p *Provider) matchOpen(msg *emaildir.Message) (backend.Email, string, erro
 	if err != nil {
 		return backend.Email{}, "", err
 	}
-	defer rc.Close()
+	defer rc.Close() //nolint:errcheck
 
 	entity, err := message.Read(rc)
 	if err != nil && entity == nil {
@@ -552,7 +553,7 @@ func parseMessageBody(r io.Reader) (string, string, []backend.Attachment, error)
 
 	for {
 		part, err := mr.NextPart()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -608,7 +609,7 @@ func findAttachmentData(r io.Reader, targetPartID string) ([]byte, error) {
 	partIdx := 0
 	for {
 		part, err := mr.NextPart()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

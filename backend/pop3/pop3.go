@@ -11,6 +11,7 @@ package pop3
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -78,7 +79,7 @@ func (p *Provider) connect() (*pop3client.Conn, error) {
 	}
 
 	if err := conn.Auth(p.account.Email, p.account.Password); err != nil {
-		conn.Quit()
+		_ = conn.Quit()
 		return nil, fmt.Errorf("pop3 auth: %w", err)
 	}
 
@@ -90,7 +91,7 @@ func (p *Provider) FetchEmails(_ context.Context, _ string, limit, offset uint32
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Quit()
+	defer conn.Quit() //nolint:errcheck
 
 	// Get message list with UIDs
 	msgs, err := conn.Uidl(0)
@@ -139,7 +140,7 @@ func (p *Provider) FetchEmailBody(_ context.Context, _ string, uid uint32) (stri
 	if err != nil {
 		return "", "", nil, err
 	}
-	defer conn.Quit()
+	defer conn.Quit() //nolint:errcheck
 
 	msgID, err := p.findMessageByUID(conn, uid)
 	if err != nil {
@@ -159,7 +160,7 @@ func (p *Provider) FetchAttachment(_ context.Context, _ string, uid uint32, part
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Quit()
+	defer conn.Quit() //nolint:errcheck
 
 	msgID, err := p.findMessageByUID(conn, uid)
 	if err != nil {
@@ -212,7 +213,7 @@ func (p *Provider) DeleteEmails(_ context.Context, _ string, uids []uint32) erro
 
 	messageIDsByUID, err := p.buildMessageIDsByUID(conn)
 	if err != nil {
-		conn.Quit()
+		_ = conn.Quit()
 		return err
 	}
 
@@ -415,7 +416,7 @@ func parseMessageBody(r io.Reader) (string, string, []backend.Attachment, error)
 
 	for {
 		part, err := mr.NextPart()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -472,7 +473,7 @@ func findAttachmentData(r io.Reader, targetPartID string) ([]byte, error) {
 	var scanErr error
 	for {
 		part, err := mr.NextPart()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

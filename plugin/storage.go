@@ -16,6 +16,10 @@ import (
 
 var validPluginStoreName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
+// ErrNoActivePlugin is returned when a storage operation is attempted without
+// an active plugin context.
+var ErrNoActivePlugin = errors.New("plugin: no active plugin")
+
 type pluginStore struct {
 	path string
 	mu   sync.Mutex
@@ -75,14 +79,14 @@ func (s *pluginStore) flush() error {
 		return err
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
+	defer os.Remove(tmpPath) //nolint:errcheck
 
 	if _, err := tmp.Write(raw); err != nil {
-		tmp.Close()
+		tmp.Close() //nolint:errcheck
 		return err
 	}
 	if err := os.Chmod(tmpPath, 0o600); err != nil {
-		tmp.Close()
+		tmp.Close() //nolint:errcheck
 		return err
 	}
 	if err := tmp.Close(); err != nil {
@@ -131,7 +135,7 @@ func (s *pluginStore) Keys() []string {
 
 func (m *Manager) currentStore() (*pluginStore, error) {
 	if m.currentPlugin == "" {
-		return nil, nil
+		return nil, ErrNoActivePlugin
 	}
 	if m.stores == nil {
 		m.stores = make(map[string]*pluginStore)
