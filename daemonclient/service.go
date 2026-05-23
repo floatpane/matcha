@@ -68,7 +68,7 @@ func tryConnect() *daemonService {
 		return nil
 	}
 	if err := client.Ping(); err != nil {
-		client.Close()
+		client.Close() //nolint:errcheck,gosec
 		return nil
 	}
 	return &daemonService{client: client}
@@ -80,7 +80,7 @@ func autoStartDaemon() error {
 		return err
 	}
 
-	cmd := exec.Command(exe, "daemon", "run")
+	cmd := exec.Command(exe, "daemon", "run") //nolint:noctx
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil
@@ -361,7 +361,7 @@ func (s *directService) IsDaemon() bool { return false }
 
 func (s *directService) Close() error {
 	for _, p := range s.providers {
-		p.Close()
+		p.Close() //nolint:errcheck,gosec
 	}
 	close(s.events)
 	return nil

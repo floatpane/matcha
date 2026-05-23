@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"mime"
 	"mime/quotedprintable"
@@ -44,10 +43,16 @@ var (
 	debugIMAPOnce sync.Once
 )
 
+const (
+	mimeTextPlain = "text/plain"
+	mimeTextHTML  = "text/html"
+	partExtracted = "extracted"
+)
+
 func getDebugIMAPWriter() io.Writer {
 	debugIMAPOnce.Do(func() {
 		if path := os.Getenv("DEBUG_IMAP"); path != "" {
-			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600) //nolint:gosec
 			if err == nil {
 				debugIMAPFile = f
 			}
@@ -85,7 +90,7 @@ type Email struct {
 	ReplyTo      []string
 	Subject      string
 	Body         string
-	BodyMIMEType string // "text/html" or "text/plain"; empty when unknown (legacy cache rows). Lets the renderer skip markdown→HTML for already-HTML bodies.
+	BodyMIMEType string // mimeTextHTML or mimeTextPlain; empty when unknown (legacy cache rows). Lets the renderer skip markdown→HTML for already-HTML bodies.
 	Date         time.Time
 	IsRead       bool
 	MessageID    string
@@ -233,7 +238,7 @@ func decodePart(reader io.Reader, header mail.PartHeader) (string, error) {
 func decodeReaderWithCharset(reader io.Reader, charset string) ([]byte, error) {
 	enc := lookupCharsetEncoding(charset)
 	transformReader := transform.NewReader(reader, enc.NewDecoder())
-	return ioutil.ReadAll(transformReader)
+	return io.ReadAll(transformReader)
 }
 
 // lookupCharsetEncoding resolves a charset name, falling back to UTF-8.
@@ -286,13 +291,13 @@ func decodeAttachmentData(rawBytes []byte, encoding string) ([]byte, error) {
 	switch strings.ToLower(encoding) {
 	case "base64":
 		decoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(rawBytes))
-		data, err := ioutil.ReadAll(decoder)
+		data, err := io.ReadAll(decoder)
 		if err != nil {
 			return nil, err
 		}
 		return data, nil
 	case "quoted-printable":
-		data, err := ioutil.ReadAll(quotedprintable.NewReader(bytes.NewReader(rawBytes)))
+		data, err := io.ReadAll(quotedprintable.NewReader(bytes.NewReader(rawBytes)))
 		if err != nil {
 			return nil, err
 		}
@@ -375,7 +380,7 @@ func connectWithOptions(account *config.Account, extraOpts *imapclient.Options) 
 	options := &imapclient.Options{
 		TLSConfig: &tls.Config{
 			ServerName:         imapServer,
-			InsecureSkipVerify: account.Insecure,
+			InsecureSkipVerify: account.Insecure, //nolint:gosec
 			MinVersion:         tls.VersionTLS12,
 			ClientSessionCache: account.GetClientSessionCache(),
 			VerifyConnection: func(cs tls.ConnectionState) error {
@@ -410,7 +415,7 @@ func connectWithOptions(account *config.Account, extraOpts *imapclient.Options) 
 	}
 
 	if err := c.WaitGreeting(); err != nil {
-		c.Close()
+		c.Close() //nolint:errcheck,gosec
 		return nil, err
 	}
 
@@ -434,7 +439,7 @@ func connectWithOptions(account *config.Account, extraOpts *imapclient.Options) 
 
 func getSentMailbox(account *config.Account) string {
 	switch account.ServiceProvider {
-	case "gmail":
+	case config.ProviderGmail:
 		return "[Gmail]/Sent Mail"
 	case "outlook":
 		return "Sent Items"
@@ -448,7 +453,7 @@ func getSentMailbox(account *config.Account) string {
 // getMailboxByAttr finds a mailbox with the given IMAP attribute (e.g., \All, \Sent, \Trash).
 func getMailboxByAttr(c *imapclient.Client, attr imap.MailboxAttr) (string, error) {
 	listCmd := c.List("", "*", nil)
-	defer listCmd.Close()
+	defer listCmd.Close() //nolint:errcheck
 
 	var foundMailbox string
 	for {
@@ -480,7 +485,7 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	selectData, err := c.Select(mailbox, nil).Wait()
 	if err != nil {
@@ -494,12 +499,10 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 	var allEmails []Email
 
 	// Start from the top minus offset
-	cursor := uint32(0)
-	if selectData.NumMessages > offset {
-		cursor = selectData.NumMessages - offset
-	} else {
+	if selectData.NumMessages <= offset {
 		return []Email{}, nil
 	}
+	cursor := selectData.NumMessages - offset
 
 	// Determine if we should filter
 	fetchEmail := strings.ToLower(strings.TrimSpace(account.FetchEmail))
@@ -524,8 +527,8 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 		}
 
 		from := uint32(1)
-		if cursor > uint32(chunkSize) {
-			from = cursor - uint32(chunkSize) + 1
+		if cursor > chunkSize {
+			from = cursor - chunkSize + 1
 		}
 
 		var seqset imap.SeqSet
@@ -569,9 +572,10 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 			}
 
 			matched := false
-			if account.CatchAll {
+			switch {
+			case account.CatchAll:
 				matched = true
-			} else if isSentMailbox {
+			case isSentMailbox:
 				var senderEmail string
 				if len(msg.Envelope.From) > 0 {
 					senderEmail = msg.Envelope.From[0].Addr()
@@ -579,7 +583,7 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 				if addressMatches(senderEmail, fetchEmail, account) {
 					matched = true
 				}
-			} else {
+			default:
 				for _, r := range toAddrList {
 					if addressMatches(r, fetchEmail, account) {
 						matched = true
@@ -631,15 +635,15 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 }
 
 // FetchEmailBodyFromMailbox returns the chosen body, its MIME type
-// ("text/html" or "text/plain"; empty if it could not be resolved), the
+// (mimeTextHTML or mimeTextPlain; empty if it could not be resolved), the
 // parsed attachments, and any error. The MIME type lets the renderer
 // skip the markdown→HTML pre-pass for already-HTML bodies.
-func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint32) (string, string, []Attachment, error) {
+func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint32) (string, string, []Attachment, error) { //nolint:gocyclo
 	c, err := connect(account)
 	if err != nil {
 		return "", "", nil, err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return "", "", nil, err
@@ -714,7 +718,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 	// still letting markdown error messages render formatted.
 	var extractedBodyMIMEType string
 
-	var checkPart func(part *imap.BodyStructureSinglePart, partID string)
+	var checkPart func(part *imap.BodyStructureSinglePart, partID string) //nolint:staticcheck
 	checkPart = func(part *imap.BodyStructureSinglePart, partID string) {
 		// Check for text content (prefer html over plain)
 		if strings.EqualFold(part.Type, "text") {
@@ -776,8 +780,8 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 
 			if err != nil {
 				extractedBody = fmt.Sprintf("**S/MIME Error:** Failed to fetch encrypted part from IMAP server: %v\n", err)
-				extractedBodyMIMEType = "text/plain"
-				htmlPartID = "extracted"
+				extractedBodyMIMEType = mimeTextPlain
+				htmlPartID = partExtracted
 			} else {
 				p7, parseErr := pkcs7.Parse(data)
 				if parseErr != nil {
@@ -792,8 +796,8 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 
 				if parseErr != nil {
 					extractedBody = fmt.Sprintf("**S/MIME Error:** Failed to parse PKCS7 payload: %v\n", parseErr)
-					extractedBodyMIMEType = "text/plain"
-					htmlPartID = "extracted"
+					extractedBodyMIMEType = mimeTextPlain
+					htmlPartID = partExtracted
 				} else {
 					var innerBytes []byte
 					isEncrypted, isOpaqueSigned, smimeTrusted := false, false, false
@@ -874,7 +878,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 									continue
 								}
 
-								if disp == "attachment" || disp == "inline" || (!strings.HasPrefix(cType, "multipart/") && cType != "text/plain" && cType != "text/html") {
+								if disp == "attachment" || disp == "inline" || (!strings.HasPrefix(cType, "multipart/") && cType != mimeTextPlain && cType != mimeTextHTML) {
 									fn := dParams["filename"]
 									if fn == "" {
 										_, cp, _ := mime.ParseMediaType(p.Header.Get("Content-Type"))
@@ -884,21 +888,21 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 										Filename: fn, Data: b, MIMEType: cType, Inline: disp == "inline",
 									})
 								} else {
-									if cType == "text/html" {
+									if cType == mimeTextHTML {
 										extractedBody = string(b)
-										extractedBodyMIMEType = "text/html"
-										htmlPartID = "extracted" // Skip IMAP fetch
-									} else if cType == "text/plain" && extractedBody == "" {
+										extractedBodyMIMEType = mimeTextHTML
+										htmlPartID = partExtracted // Skip IMAP fetch
+									} else if cType == mimeTextPlain && extractedBody == "" {
 										extractedBody = string(b)
-										extractedBodyMIMEType = "text/plain"
-										plainPartID = "extracted"
+										extractedBodyMIMEType = mimeTextPlain
+										plainPartID = partExtracted
 									}
 								}
 							}
 						} else {
 							extractedBody = fmt.Sprintf("**S/MIME Error:** Failed to read inner decrypted MIME: %v\n\n```\n%s\n```", err, string(innerBytes))
-							extractedBodyMIMEType = "text/plain"
-							htmlPartID = "extracted"
+							extractedBodyMIMEType = mimeTextPlain
+							htmlPartID = partExtracted
 						}
 
 						attachments = append(attachments, Attachment{
@@ -908,11 +912,10 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 							IsSMIMEEncrypted: isEncrypted,
 						})
 						return // Stop checking IMAP structure, we hijacked it
-					} else {
-						extractedBody = fmt.Sprintf("**S/MIME Decryption Failed:** %s\n", decryptionErr)
-						extractedBodyMIMEType = "text/plain"
-						htmlPartID = "extracted"
 					}
+					extractedBody = fmt.Sprintf("**S/MIME Decryption Failed:** %s\n", decryptionErr)
+					extractedBodyMIMEType = mimeTextPlain
+					htmlPartID = partExtracted
 				}
 			}
 		}
@@ -968,7 +971,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 									if err := p7.VerifyWithChain(roots); err == nil {
 										att.SMIMEVerified = true
 									} else {
-										p7.Content = append(canonical, '\r', '\n')
+										p7.Content = append(canonical, '\r', '\n') //nolint:gocritic
 										if err := p7.VerifyWithChain(roots); err == nil {
 											att.SMIMEVerified = true
 										} else {
@@ -988,13 +991,9 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 		}
 
 		// === PGP ENCRYPTED MESSAGE DETECTION ===
-		if mimeType == "application/pgp-encrypted" || (mimeType == "multipart/encrypted" && strings.Contains(part.Subtype, "pgp")) {
-			// PGP encrypted messages typically have two parts:
-			// 1. Version info (application/pgp-encrypted)
-			// 2. Encrypted data (application/octet-stream)
-			// We'll handle decryption when we find the encrypted data part
-			// Skip this part and continue processing
-		}
+		// PGP encrypted messages have two parts: version info and encrypted data.
+		// We handle decryption when we find the encrypted data part (application/octet-stream).
+		// Skip the version info part (application/pgp-encrypted) and continue processing.
 
 		// Detect encrypted data part of PGP message
 		if strings.Contains(filename, ".asc") || (mimeType == "application/octet-stream" && part.Encoding == "7bit") {
@@ -1010,25 +1009,24 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 						if err == nil {
 							for {
 								p, err := mr.NextPart()
-								if err == io.EOF {
+								if errors.Is(err, io.EOF) {
 									break
 								}
 								if err != nil {
 									break
 								}
 
-								switch h := p.Header.(type) {
-								case *mail.InlineHeader:
+								if h, ok := p.Header.(*mail.InlineHeader); ok {
 									ct, _, _ := h.ContentType()
-									if strings.HasPrefix(ct, "text/html") {
+									if strings.HasPrefix(ct, mimeTextHTML) {
 										body, _ := io.ReadAll(p.Body)
 										extractedBody = string(body)
-										extractedBodyMIMEType = "text/html"
+										extractedBodyMIMEType = mimeTextHTML
 										htmlPartID = "decrypted"
-									} else if strings.HasPrefix(ct, "text/plain") && extractedBody == "" {
+									} else if strings.HasPrefix(ct, mimeTextPlain) && extractedBody == "" {
 										body, _ := io.ReadAll(p.Body)
 										extractedBody = string(body)
-										extractedBodyMIMEType = "text/plain"
+										extractedBodyMIMEType = mimeTextPlain
 										plainPartID = "decrypted"
 									}
 								}
@@ -1043,19 +1041,19 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 						}
 					} else {
 						extractedBody = fmt.Sprintf("**PGP Decryption Failed:** %s\n", err)
-						extractedBodyMIMEType = "text/plain"
-						htmlPartID = "extracted"
+						extractedBodyMIMEType = mimeTextPlain
+						htmlPartID = partExtracted
 					}
 				} else {
 					extractedBody = "**PGP Encrypted:** Private key not configured\n"
-					extractedBodyMIMEType = "text/plain"
-					htmlPartID = "extracted"
+					extractedBodyMIMEType = mimeTextPlain
+					htmlPartID = partExtracted
 				}
 			}
 		}
 
 		// === PGP DETACHED SIGNATURE VERIFICATION ===
-		if filename == "signature.asc" || mimeType == "application/pgp-signature" {
+		if filename == "signature.asc" || mimeType == "application/pgp-signature" { //nolint:gocritic
 			att := Attachment{
 				Filename:       filename,
 				PartID:         partID,
@@ -1160,11 +1158,11 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 	if htmlPartID != "" {
 		textPartID = htmlPartID
 		textPartEncoding = htmlPartEncoding
-		bodyMIMEType = "text/html"
+		bodyMIMEType = mimeTextHTML
 	} else if plainPartID != "" {
 		textPartID = plainPartID
 		textPartEncoding = plainPartEncoding
-		bodyMIMEType = "text/plain"
+		bodyMIMEType = mimeTextPlain
 	}
 	if os.Getenv("DEBUG_KITTY_IMAGES") != "" {
 		msg := fmt.Sprintf("[kitty-img] body selection html=%s plain=%s chosen=%s\n", htmlPartID, plainPartID, textPartID)
@@ -1173,11 +1171,11 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 			// Use a closure with defer so a panic between open and
 			// WriteString doesn't leak the file descriptor (#894).
 			func() {
-				f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+				f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644) //nolint:gosec
 				if err != nil {
 					return
 				}
-				defer f.Close()
+				defer f.Close() //nolint:errcheck
 				_, _ = f.WriteString(msg)
 			}()
 		}
@@ -1217,7 +1215,7 @@ func FetchAttachmentFromMailbox(account *config.Account, mailbox string, uid uin
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return nil, err
@@ -1259,7 +1257,7 @@ func moveEmail(account *config.Account, uid uint32, sourceMailbox, destMailbox s
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(sourceMailbox, nil).Wait(); err != nil {
 		return err
@@ -1275,7 +1273,7 @@ func MarkEmailAsReadInMailbox(account *config.Account, mailbox string, uid uint3
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return err
@@ -1294,7 +1292,7 @@ func MarkEmailAsUnreadInMailbox(account *config.Account, mailbox string, uid uin
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return err
@@ -1313,7 +1311,7 @@ func DeleteEmailFromMailbox(account *config.Account, mailbox string, uid uint32)
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return err
@@ -1336,11 +1334,11 @@ func ArchiveEmailFromMailbox(account *config.Account, mailbox string, uid uint32
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	var archiveMailbox string
 	switch account.ServiceProvider {
-	case "gmail":
+	case config.ProviderGmail:
 		// For Gmail, find the mailbox with the \All attribute
 		archiveMailbox, err = getMailboxByAttr(c, imap.MailboxAttrAll)
 		if err != nil {
@@ -1372,7 +1370,7 @@ func DeleteEmailsFromMailbox(account *config.Account, mailbox string, uids []uin
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return err
@@ -1400,11 +1398,11 @@ func ArchiveEmailsFromMailbox(account *config.Account, mailbox string, uids []ui
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	var archiveMailbox string
 	switch account.ServiceProvider {
-	case "gmail":
+	case config.ProviderGmail:
 		archiveMailbox, err = getMailboxByAttr(c, imap.MailboxAttrAll)
 		if err != nil {
 			archiveMailbox = "[Gmail]/All Mail"
@@ -1432,7 +1430,7 @@ func MoveEmailsToFolder(account *config.Account, uids []uint32, sourceFolder, de
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(sourceFolder, nil).Wait(); err != nil {
 		return err
@@ -1491,7 +1489,7 @@ func AppendToSentMailbox(account *config.Account, rawMsg []byte) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	sentMailbox := getSentMailbox(account)
 	appendCmd := c.Append(sentMailbox, int64(len(rawMsg)), &imap.AppendOptions{
@@ -1511,7 +1509,7 @@ func AppendToSentMailbox(account *config.Account, rawMsg []byte) error {
 // getTrashMailbox returns the trash mailbox name for the account
 func getTrashMailbox(account *config.Account) string {
 	switch account.ServiceProvider {
-	case "gmail":
+	case config.ProviderGmail:
 		return "[Gmail]/Trash"
 	case "outlook":
 		return "Deleted Items"
@@ -1525,7 +1523,7 @@ func getTrashMailbox(account *config.Account) string {
 // getArchiveMailbox returns the archive/all mail mailbox name for the account
 func getArchiveMailbox(account *config.Account) string {
 	switch account.ServiceProvider {
-	case "gmail":
+	case config.ProviderGmail:
 		return "[Gmail]/All Mail"
 	case "outlook", "icloud":
 		return "Archive"
@@ -1540,7 +1538,7 @@ func FetchTrashEmails(account *config.Account, limit, offset uint32) ([]Email, e
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	// Try to find trash by attribute first
 	trashMailbox, err := getMailboxByAttr(c, imap.MailboxAttrTrash)
@@ -1559,7 +1557,7 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	// Try to find archive by attribute first (Gmail uses \All)
 	archiveMailbox, err := getMailboxByAttr(c, imap.MailboxAttrAll)
@@ -1691,7 +1689,7 @@ func FetchTrashEmailBody(account *config.Account, uid uint32) (string, string, [
 	if err != nil {
 		return "", "", nil, err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	trashMailbox, err := getMailboxByAttr(c, imap.MailboxAttrTrash)
 	if err != nil {
@@ -1707,7 +1705,7 @@ func FetchArchiveEmailBody(account *config.Account, uid uint32) (string, string,
 	if err != nil {
 		return "", "", nil, err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	archiveMailbox, err := getMailboxByAttr(c, imap.MailboxAttrAll)
 	if err != nil {
@@ -1723,7 +1721,7 @@ func FetchTrashAttachment(account *config.Account, uid uint32, partID string, en
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	trashMailbox, err := getMailboxByAttr(c, imap.MailboxAttrTrash)
 	if err != nil {
@@ -1739,7 +1737,7 @@ func FetchArchiveAttachment(account *config.Account, uid uint32, partID string, 
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	archiveMailbox, err := getMailboxByAttr(c, imap.MailboxAttrAll)
 	if err != nil {
@@ -1755,7 +1753,7 @@ func DeleteTrashEmail(account *config.Account, uid uint32) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	trashMailbox, err := getMailboxByAttr(c, imap.MailboxAttrTrash)
 	if err != nil {
@@ -1771,7 +1769,7 @@ func DeleteArchiveEmail(account *config.Account, uid uint32) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	archiveMailbox, err := getMailboxByAttr(c, imap.MailboxAttrAll)
 	if err != nil {
@@ -1787,10 +1785,10 @@ func FetchFolders(account *config.Account) ([]Folder, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	listCmd := c.List("", "*", nil)
-	defer listCmd.Close()
+	defer listCmd.Close() //nolint:errcheck
 
 	var folders []Folder
 	for {

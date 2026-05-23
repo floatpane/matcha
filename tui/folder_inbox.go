@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
@@ -118,10 +117,10 @@ func sortFolders(folders []string) []string {
 	sort.SliceStable(sorted, func(i, j int) bool {
 		iUpper := strings.ToUpper(sorted[i])
 		jUpper := strings.ToUpper(sorted[j])
-		if iUpper == "INBOX" {
+		if iUpper == keyINBOX {
 			return true
 		}
-		if jUpper == "INBOX" {
+		if jUpper == keyINBOX {
 			return false
 		}
 		return sorted[i] < sorted[j]
@@ -159,7 +158,7 @@ func (m *FolderInbox) SetDisableImages(v bool) {
 // NewFolderInbox creates a new FolderInbox with the given folders and accounts.
 func NewFolderInbox(folders []string, accounts []config.Account) *FolderInbox {
 	folders = sortFolders(folders)
-	currentFolder := "INBOX"
+	currentFolder := keyINBOX
 	if len(folders) > 0 {
 		currentFolder = folders[0]
 	}
@@ -182,7 +181,7 @@ func (m *FolderInbox) Init() tea.Cmd {
 	return nil
 }
 
-func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	// If move overlay is active, handle its input
 	if m.movingEmail {
 		return m.updateMoveOverlay(msg)
@@ -260,18 +259,17 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.moveSourceFolder = m.currentFolder
 				return m, nil
-			} else {
-				// Single move
-				selectedItem, ok := m.inbox.list.SelectedItem().(item)
-				if ok {
-					m.movingEmail = true
-					m.moveTargetIdx = 0
-					m.moveUID = selectedItem.uid
-					m.moveUIDs = []uint32{selectedItem.uid}
-					m.moveAccountID = selectedItem.accountID
-					m.moveSourceFolder = m.currentFolder
-					return m, nil
-				}
+			}
+			// Single move
+			selectedItem, ok := m.inbox.list.SelectedItem().(item)
+			if ok {
+				m.movingEmail = true
+				m.moveTargetIdx = 0
+				m.moveUID = selectedItem.uid
+				m.moveUIDs = []uint32{selectedItem.uid}
+				m.moveAccountID = selectedItem.accountID
+				m.moveSourceFolder = m.currentFolder
+				return m, nil
 			}
 		}
 
@@ -417,8 +415,7 @@ func (m *FolderInbox) wrapInboxCmd(cmd tea.Cmd) tea.Cmd {
 
 func (m *FolderInbox) updateMoveOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
 	kb := config.Keybinds
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
+	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		switch msg.String() {
 		case kb.Global.Cancel:
 			m.movingEmail = false
@@ -429,14 +426,14 @@ func (m *FolderInbox) updateMoveOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.moveTargetIdx = len(m.moveFolderChoices()) - 1
 			}
 			return m, nil
-		case "down", kb.Global.NavDown:
+		case keyDown, kb.Global.NavDown:
 			m.moveTargetIdx++
 			choices := m.moveFolderChoices()
 			if m.moveTargetIdx >= len(choices) {
 				m.moveTargetIdx = 0
 			}
 			return m, nil
-		case "enter":
+		case keyEnter:
 			choices := m.moveFolderChoices()
 			if len(choices) > 0 && m.moveTargetIdx < len(choices) {
 				destFolder := choices[m.moveTargetIdx]
@@ -461,15 +458,14 @@ func (m *FolderInbox) updateMoveOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
 							DestFolder:   destFolder,
 						}
 					}
-				} else {
-					// Single move
-					return m, func() tea.Msg {
-						return MoveEmailToFolderMsg{
-							UID:          m.moveUID,
-							AccountID:    m.moveAccountID,
-							SourceFolder: m.moveSourceFolder,
-							DestFolder:   destFolder,
-						}
+				}
+				// Single move
+				return m, func() tea.Msg {
+					return MoveEmailToFolderMsg{
+						UID:          m.moveUID,
+						AccountID:    m.moveAccountID,
+						SourceFolder: m.moveSourceFolder,
+						DestFolder:   destFolder,
 					}
 				}
 			}
@@ -511,17 +507,18 @@ func (m *FolderInbox) View() tea.View {
 
 	var content string
 
-	if m.previewPane != nil {
+	switch {
+	case m.previewPane != nil:
 		// Three-pane layout: folders | inbox | email preview
 		inboxPane := m.renderInboxPane()
 		previewPane := m.renderPreviewPane()
 		content = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, inboxPane, previewPane)
-	} else if m.previewedUID != 0 {
+	case m.previewedUID != 0:
 		// Split pane loading state (body being fetched)
 		inboxPane := m.renderInboxPane()
 		emptyPreview := m.renderEmptyPreview()
 		content = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, inboxPane, emptyPreview)
-	} else {
+	default:
 		// Two-pane layout (original): folders | inbox
 		inboxView := m.inbox.View().Content
 		content = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, inboxView)
@@ -594,7 +591,7 @@ func (m *FolderInbox) renderWithMoveOverlay(content string) string {
 	title := t("folder_inbox.move_to_folder")
 	if len(m.moveUIDs) > 1 {
 		title = tn("folder_inbox.move_multiple", len(m.moveUIDs), map[string]interface{}{
-			"count": len(m.moveUIDs),
+			keyCount: len(m.moveUIDs),
 		})
 	}
 	b.WriteString(moveOverlayTitleStyle.Render(title))
@@ -741,11 +738,6 @@ func (m *FolderInbox) SetRefreshing(refreshing bool) {
 // GetFolders returns the current folder list.
 func (m *FolderInbox) GetFolders() []string {
 	return m.folders
-}
-
-// Helper to get the formatted inbox title
-func folderInboxTitle(folder string) string {
-	return fmt.Sprintf("Folder: %s", folder)
 }
 
 // renderInboxPane renders inbox with border for split pane mode

@@ -142,7 +142,7 @@ func (m Marketplace) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.offset = m.cursor
 				}
 			}
-		case "down", kb.Global.NavDown:
+		case keyDown, kb.Global.NavDown:
 			if m.cursor < len(m.entries)-1 {
 				m.cursor++
 				visible := m.visibleRows()
@@ -150,7 +150,7 @@ func (m Marketplace) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.offset = m.cursor - visible + 1
 				}
 			}
-		case "enter":
+		case keyEnter:
 			if m.cursor < len(m.entries) {
 				entry := m.entries[m.cursor]
 				if m.installed[entry.Name] {
@@ -187,7 +187,7 @@ func installPlugin(entry plugins.PluginEntry) tea.Cmd {
 		}
 
 		dir := filepath.Join(home, ".config", "matcha", "plugins")
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0750); err != nil {
 			return PluginInstalledMsg{Name: entry.Name, Err: err}
 		}
 
@@ -257,12 +257,12 @@ func (m Marketplace) View() tea.View {
 				name += " " + mpInstalledStyle.Render("[installed]")
 			}
 
-			b.WriteString(fmt.Sprintf("%s%s\n", cursor, name))
-			b.WriteString(fmt.Sprintf("    %s\n", mpItemDescStyle.Render(entry.Description)))
+			fmt.Fprintf(&b, "%s%s\n", cursor, name)
+			fmt.Fprintf(&b, "    %s\n", mpItemDescStyle.Render(entry.Description))
 		}
 
 		if len(m.entries) > visible {
-			b.WriteString(fmt.Sprintf("\n  %d/%d plugins", m.cursor+1, len(m.entries)))
+			fmt.Fprintf(&b, "\n  %d/%d plugins", m.cursor+1, len(m.entries))
 		}
 	}
 

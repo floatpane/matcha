@@ -23,7 +23,7 @@ func HTMLToElements(html string) ([]HTMLElement, bool) {
 	if result.ok == 0 {
 		return nil, false
 	}
-	defer C.free_html_result(&result)
+	defer C.free_html_result(&result) //nolint:gocritic
 
 	count := int(result.count)
 	if count == 0 {

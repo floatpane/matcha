@@ -32,7 +32,7 @@ func (m *Settings) updateMailingLists(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 	case "up", "k":
 		itemCount := len(m.cfg.MailingLists) + 1
 		m.listsCursor = (m.listsCursor - 1 + itemCount) % itemCount
-	case "down", "j":
+	case keyDown, "j":
 		itemCount := len(m.cfg.MailingLists) + 1
 		m.listsCursor = (m.listsCursor + 1) % itemCount
 	case "d":
@@ -51,7 +51,7 @@ func (m *Settings) updateMailingLists(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 				}
 			}
 		}
-	case "enter":
+	case keyEnter:
 		if m.listsCursor == len(m.cfg.MailingLists) {
 			return m, func() tea.Msg { return GoToAddMailingListMsg{} }
 		}
@@ -70,7 +70,7 @@ func (m *Settings) viewMailingLists() string {
 
 	for i, list := range m.cfg.MailingLists {
 		addrCount := tn("settings_mailing_lists.address_count", len(list.Addresses), map[string]interface{}{
-			"count": len(list.Addresses),
+			keyCount: len(list.Addresses),
 		})
 		line := fmt.Sprintf("%s - %s", list.Name, accountEmailStyle.Render(addrCount))
 
