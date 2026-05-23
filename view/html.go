@@ -42,7 +42,7 @@ func getTerminalCellSize() int {
 
 	// Try /dev/tty directly - this works even when stdio is redirected (e.g., in Bubble Tea)
 	if tty, err := os.Open("/dev/tty"); err == nil {
-		defer tty.Close() //nolint:errcheck,gosec
+		defer tty.Close() //nolint:errcheck
 		if cellHeight := getCellHeightFromFd(int(tty.Fd())); cellHeight > 0 {
 			return cellHeight
 		}
@@ -315,7 +315,7 @@ func fetchRemoteBase64(url string) string {
 		debugImageProtocol("remote fetch failed url=%s err=%v", url, err)
 		return ""
 	}
-	defer resp.Body.Close() //nolint:errcheck,gosec
+	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		debugImageProtocol("remote fetch non-200 url=%s status=%d", url, resp.StatusCode)
 		return ""
@@ -416,9 +416,9 @@ func kittyUploadImage(payload string, id uint32) {
 		if offset == 0 {
 			// a=t: transmit (upload) only, don't display yet
 			// i=ID: assign this image ID
-			fmt.Fprintf(os.Stdout, "\x1b_Gf=100,a=t,i=%d,q=2,m=%s;%s\x1b\\", id, more, chunk) //nolint:errcheck,gosec
+			fmt.Fprintf(os.Stdout, "\x1b_Gf=100,a=t,i=%d,q=2,m=%s;%s\x1b\\", id, more, chunk) //nolint:errcheck
 		} else {
-			fmt.Fprintf(os.Stdout, "\x1b_Gm=%s;%s\x1b\\", more, chunk) //nolint:errcheck,gosec
+			fmt.Fprintf(os.Stdout, "\x1b_Gm=%s;%s\x1b\\", more, chunk) //nolint:errcheck
 		}
 	}
 	os.Stdout.Sync() //nolint:errcheck,gosec
@@ -472,7 +472,7 @@ func RenderImageToStdout(placement *ImagePlacement, screenRow int, screenCol ...
 
 		debugImageProtocol("Sixel: rendering %d bytes at row=%d col=%d", len(placement.SixelEncoded), screenRow+1, col)
 		// Position cursor + render Sixel
-		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", //nolint:errcheck,gosec
+		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", //nolint:errcheck
 			screenRow+1, col, placement.SixelEncoded)
 		os.Stdout.Sync() //nolint:errcheck,gosec
 		return
@@ -489,11 +489,11 @@ func RenderImageToStdout(placement *ImagePlacement, screenRow int, screenCol ...
 			placement.Uploaded = true
 		}
 		seq := kittyDisplayImage(placement.ID)
-		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", screenRow+1, col, seq) //nolint:errcheck,gosec
+		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", screenRow+1, col, seq) //nolint:errcheck
 		os.Stdout.Sync()                                                           //nolint:errcheck,gosec
 	} else if useIterm2 {
 		seq := iterm2ImageEscapeOnly(placement.Base64)
-		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", screenRow+1, col, seq) //nolint:errcheck,gosec
+		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", screenRow+1, col, seq) //nolint:errcheck
 		os.Stdout.Sync()                                                           //nolint:errcheck,gosec
 	}
 }

@@ -175,7 +175,7 @@ func (a *accountIdle) idleOnce() error {
 	if err != nil {
 		return err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	// Select the mailbox in read-only mode
 	selectData, err := c.Select(a.folder, nil).Wait()

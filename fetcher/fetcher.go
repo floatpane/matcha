@@ -453,7 +453,7 @@ func getSentMailbox(account *config.Account) string {
 // getMailboxByAttr finds a mailbox with the given IMAP attribute (e.g., \All, \Sent, \Trash).
 func getMailboxByAttr(c *imapclient.Client, attr imap.MailboxAttr) (string, error) {
 	listCmd := c.List("", "*", nil)
-	defer listCmd.Close() //nolint:errcheck,gosec
+	defer listCmd.Close() //nolint:errcheck
 
 	var foundMailbox string
 	for {
@@ -485,7 +485,7 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	selectData, err := c.Select(mailbox, nil).Wait()
 	if err != nil {
@@ -643,7 +643,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 	if err != nil {
 		return "", "", nil, err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return "", "", nil, err
@@ -1175,7 +1175,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 				if err != nil {
 					return
 				}
-				defer f.Close() //nolint:errcheck,gosec
+				defer f.Close() //nolint:errcheck
 				_, _ = f.WriteString(msg)
 			}()
 		}
@@ -1215,7 +1215,7 @@ func FetchAttachmentFromMailbox(account *config.Account, mailbox string, uid uin
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return nil, err
@@ -1257,7 +1257,7 @@ func moveEmail(account *config.Account, uid uint32, sourceMailbox, destMailbox s
 	if err != nil {
 		return err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(sourceMailbox, nil).Wait(); err != nil {
 		return err
@@ -1273,7 +1273,7 @@ func MarkEmailAsReadInMailbox(account *config.Account, mailbox string, uid uint3
 	if err != nil {
 		return err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return err
@@ -1292,7 +1292,7 @@ func MarkEmailAsUnreadInMailbox(account *config.Account, mailbox string, uid uin
 	if err != nil {
 		return err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return err
@@ -1311,7 +1311,7 @@ func DeleteEmailFromMailbox(account *config.Account, mailbox string, uid uint32)
 	if err != nil {
 		return err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return err
@@ -1334,7 +1334,7 @@ func ArchiveEmailFromMailbox(account *config.Account, mailbox string, uid uint32
 	if err != nil {
 		return err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	var archiveMailbox string
 	switch account.ServiceProvider {
@@ -1370,7 +1370,7 @@ func DeleteEmailsFromMailbox(account *config.Account, mailbox string, uids []uin
 	if err != nil {
 		return err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
 		return err
@@ -1398,7 +1398,7 @@ func ArchiveEmailsFromMailbox(account *config.Account, mailbox string, uids []ui
 	if err != nil {
 		return err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	var archiveMailbox string
 	switch account.ServiceProvider {
@@ -1430,7 +1430,7 @@ func MoveEmailsToFolder(account *config.Account, uids []uint32, sourceFolder, de
 	if err != nil {
 		return err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(sourceFolder, nil).Wait(); err != nil {
 		return err
@@ -1489,7 +1489,7 @@ func AppendToSentMailbox(account *config.Account, rawMsg []byte) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	sentMailbox := getSentMailbox(account)
 	appendCmd := c.Append(sentMailbox, int64(len(rawMsg)), &imap.AppendOptions{
@@ -1538,7 +1538,7 @@ func FetchTrashEmails(account *config.Account, limit, offset uint32) ([]Email, e
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	// Try to find trash by attribute first
 	trashMailbox, err := getMailboxByAttr(c, imap.MailboxAttrTrash)
@@ -1557,7 +1557,7 @@ func FetchArchiveEmails(account *config.Account, limit, offset uint32) ([]Email,
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	// Try to find archive by attribute first (Gmail uses \All)
 	archiveMailbox, err := getMailboxByAttr(c, imap.MailboxAttrAll)
@@ -1689,7 +1689,7 @@ func FetchTrashEmailBody(account *config.Account, uid uint32) (string, string, [
 	if err != nil {
 		return "", "", nil, err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	trashMailbox, err := getMailboxByAttr(c, imap.MailboxAttrTrash)
 	if err != nil {
@@ -1705,7 +1705,7 @@ func FetchArchiveEmailBody(account *config.Account, uid uint32) (string, string,
 	if err != nil {
 		return "", "", nil, err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	archiveMailbox, err := getMailboxByAttr(c, imap.MailboxAttrAll)
 	if err != nil {
@@ -1721,7 +1721,7 @@ func FetchTrashAttachment(account *config.Account, uid uint32, partID string, en
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	trashMailbox, err := getMailboxByAttr(c, imap.MailboxAttrTrash)
 	if err != nil {
@@ -1737,7 +1737,7 @@ func FetchArchiveAttachment(account *config.Account, uid uint32, partID string, 
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	archiveMailbox, err := getMailboxByAttr(c, imap.MailboxAttrAll)
 	if err != nil {
@@ -1753,7 +1753,7 @@ func DeleteTrashEmail(account *config.Account, uid uint32) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	trashMailbox, err := getMailboxByAttr(c, imap.MailboxAttrTrash)
 	if err != nil {
@@ -1769,7 +1769,7 @@ func DeleteArchiveEmail(account *config.Account, uid uint32) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	archiveMailbox, err := getMailboxByAttr(c, imap.MailboxAttrAll)
 	if err != nil {
@@ -1785,10 +1785,10 @@ func FetchFolders(account *config.Account) ([]Folder, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	listCmd := c.List("", "*", nil)
-	defer listCmd.Close() //nolint:errcheck,gosec
+	defer listCmd.Close() //nolint:errcheck
 
 	var folders []Folder
 	for {

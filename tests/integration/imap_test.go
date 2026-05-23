@@ -72,7 +72,7 @@ func waitForGreenmail(t *testing.T, env testEnv) {
 	deadline := time.Now().Add(60 * time.Second)
 	url := fmt.Sprintf("http://%s:%d/api/configuration", env.host, env.apiPort)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(url) //nolint:noctx,gosec
+		resp, err := http.Get(url) //nolint:gosec
 		if err == nil && resp.StatusCode == http.StatusOK {
 			resp.Body.Close()
 			return

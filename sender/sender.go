@@ -700,7 +700,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 			return nil, err
 		}
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	if err = c.Hello(smtpHelloHostname()); err != nil {
 		return nil, err
@@ -919,7 +919,7 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 			return nil, err
 		}
 	}
-	defer c.Close() //nolint:errcheck,gosec
+	defer c.Close() //nolint:errcheck
 
 	if err = c.Hello(smtpHelloHostname()); err != nil {
 		return nil, err

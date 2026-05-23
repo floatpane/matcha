@@ -85,7 +85,7 @@ func (d *Daemon) Run() error {
 	if err := WritePID(pidPath); err != nil {
 		return fmt.Errorf("write PID file: %w", err)
 	}
-	defer RemovePID(pidPath) //nolint:errcheck,gosec
+	defer RemovePID(pidPath) //nolint:errcheck
 
 	// Remove stale socket file.
 	sockPath := daemonrpc.SocketPath()
@@ -97,7 +97,7 @@ func (d *Daemon) Run() error {
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
-	defer d.listener.Close() //nolint:errcheck,gosec
+	defer d.listener.Close() //nolint:errcheck
 
 	// Set socket permissions (owner only).
 	os.Chmod(sockPath, 0700) //nolint:errcheck,gosec
@@ -217,7 +217,7 @@ func (d *Daemon) acceptLoop() {
 
 func (d *Daemon) handleClient(conn *daemonrpc.Conn) {
 	defer d.removeClient(conn)
-	defer conn.Close() //nolint:errcheck,gosec
+	defer conn.Close() //nolint:errcheck
 
 	for {
 		msg, err := conn.ReceiveMessage()
@@ -410,7 +410,7 @@ func (d *Daemon) syncAllAccounts(ctx context.Context) {
 
 		if noClients && newCount > 0 {
 			if !d.config.DisableNotifications {
-				go notify.Send("Matcha", fmt.Sprintf("New mail for %s", acct.FetchEmail)) //nolint:errcheck,gosec
+				go notify.Send("Matcha", fmt.Sprintf("New mail for %s", acct.FetchEmail)) //nolint:errcheck
 			}
 		}
 	}
@@ -458,7 +458,7 @@ func (d *Daemon) idleEventLoop() {
 				if acct := d.config.GetAccountByID(update.AccountID); acct != nil {
 					accountName = acct.Email
 				}
-				go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", update.FolderName, accountName)) //nolint:errcheck,gosec
+				go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", update.FolderName, accountName)) //nolint:errcheck
 			}
 
 			// Broadcast to subscribed clients.

@@ -79,7 +79,7 @@ func (s *pluginStore) flush() error {
 		return err
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath) //nolint:errcheck,gosec
+	defer os.Remove(tmpPath) //nolint:errcheck
 
 	if _, err := tmp.Write(raw); err != nil {
 		tmp.Close() //nolint:errcheck,gosec

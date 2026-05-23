@@ -177,7 +177,7 @@ func (m *Manager) lookupValue(plugin, key string, def SettingDef) interface{} {
 	return def.Default
 }
 
-func toLuaValue(L *lua.LState, v interface{}) lua.LValue { //nolint:gocritic
+func toLuaValue(_ *lua.LState, v interface{}) lua.LValue {
 	switch x := v.(type) {
 	case bool:
 		return lua.LBool(x)

@@ -69,7 +69,7 @@ func BuildPGPSignedMessage(payload []byte, pin string, publicKeyPath string) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer card.Close() //nolint:errcheck,gosec
+	defer card.Close() //nolint:errcheck
 
 	// Verify PIN (PW1 for signing operations)
 	if err := card.VerifyPassword(openpgp.PW1, pin); err != nil {
@@ -422,7 +422,7 @@ func writeNewFormatLength(w *bytes.Buffer, length int) {
 		w.WriteByte(255)
 		buf := make([]byte, 4)
 		binary.BigEndian.PutUint32(buf, uint32(length))
-		w.Write(buf) //nolint:errcheck
+		_, _ = w.Write(buf)
 	}
 }
 
@@ -489,7 +489,7 @@ func GetYubiKeyInfo() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer card.Close() //nolint:errcheck,gosec
+	defer card.Close() //nolint:errcheck
 
 	var info strings.Builder
 

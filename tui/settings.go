@@ -243,13 +243,14 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Update text inputs if active
-	if m.activePane == PaneContent { //nolint:gocritic
-		if m.activeCategory == CategoryEncryption {
+	if m.activePane == PaneContent {
+		switch {
+		case m.activeCategory == CategoryEncryption:
 			m.encPasswordInput, cmd = m.encPasswordInput.Update(msg)
 			cmds = append(cmds, cmd)
 			m.encConfirmInput, cmd = m.encConfirmInput.Update(msg)
 			cmds = append(cmds, cmd)
-		} else if m.activeCategory == CategoryAccounts && m.isCryptoConfig {
+		case m.activeCategory == CategoryAccounts && m.isCryptoConfig:
 			m.smimeCertInput, cmd = m.smimeCertInput.Update(msg)
 			cmds = append(cmds, cmd)
 			m.smimeKeyInput, cmd = m.smimeKeyInput.Update(msg)
@@ -260,7 +261,7 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 			m.pgpPINInput, cmd = m.pgpPINInput.Update(msg)
 			cmds = append(cmds, cmd)
-		} else if m.activeCategory == CategoryPlugins && m.pluginEditing {
+		case m.activeCategory == CategoryPlugins && m.pluginEditing:
 			m.pluginInput, cmd = m.pluginInput.Update(msg)
 			cmds = append(cmds, cmd)
 		}

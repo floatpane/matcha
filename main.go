@@ -589,7 +589,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			for _, f := range folders {
 				names = append(names, f.Name)
 			}
-			go config.SaveAccountFolders(accID, names) //nolint:errcheck,gosec
+			go config.SaveAccountFolders(accID, names) //nolint:errcheck
 		}
 		// Per-account fetch errors (e.g. broken IMAP login, unreachable
 		// server) are non-fatal: other accounts' folders are still shown.
@@ -918,7 +918,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 					accountName = acc.Email
 				}
 			}
-			go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", msg.FolderName, accountName)) //nolint:errcheck,gosec
+			go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", msg.FolderName, accountName)) //nolint:errcheck
 		}
 
 		// IDLE detected new mail — refetch the folder if we're viewing it
@@ -951,7 +951,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 							accountName = acc.Email
 						}
 					}
-					go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", ev.Folder, accountName)) //nolint:errcheck,gosec
+					go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", ev.Folder, accountName)) //nolint:errcheck
 				}
 
 				if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
@@ -2667,7 +2667,7 @@ func openExternalEditor(body string) tea.Cmd {
 	args := append(parts[1:], tmpPath)   //nolint:gocritic
 	c := exec.Command(parts[0], args...) //nolint:gosec,noctx
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		defer os.Remove(tmpPath) //nolint:errcheck,gosec
+		defer os.Remove(tmpPath) //nolint:errcheck
 		if err != nil {
 			return tui.EditorFinishedMsg{Err: err}
 		}
@@ -3250,7 +3250,7 @@ func checkForUpdatesCmd() tea.Cmd {
 		if err != nil {
 			return nil
 		}
-		defer resp.Body.Close() //nolint:errcheck,gosec
+		defer resp.Body.Close() //nolint:errcheck
 
 		var rel githubRelease
 		if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
@@ -3495,7 +3495,7 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 	if err != nil {
 		return fmt.Errorf("could not query releases: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck,gosec
+	defer resp.Body.Close() //nolint:errcheck
 
 	var rel githubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
@@ -3627,14 +3627,14 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
-	defer respAsset.Body.Close() //nolint:errcheck,gosec
+	defer respAsset.Body.Close() //nolint:errcheck
 
 	// Create a temp file for the download
 	tmpDir, err := os.MkdirTemp("", "matcha-update-*")
 	if err != nil {
 		return fmt.Errorf("could not create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir) //nolint:errcheck,gosec
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
 
 	assetPath := filepath.Join(tmpDir, assetName)
 	outFile, err := os.Create(assetPath)
@@ -3660,7 +3660,7 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 		if err != nil {
 			return fmt.Errorf("could not open archive: %w", err)
 		}
-		defer f.Close() //nolint:errcheck,gosec
+		defer f.Close() //nolint:errcheck
 		gzr, err := gzip.NewReader(f)
 		if err != nil {
 			return fmt.Errorf("could not create gzip reader: %w", err)
@@ -3697,7 +3697,7 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 		if err != nil {
 			return fmt.Errorf("could not open zip archive: %w", err)
 		}
-		defer zr.Close() //nolint:errcheck,gosec
+		defer zr.Close() //nolint:errcheck
 		for _, zf := range zr.File {
 			name := filepath.Base(zf.Name)
 			if name == binaryName || strings.Contains(strings.ToLower(name), "matcha") && !zf.FileInfo().IsDir() {
@@ -3750,7 +3750,7 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 	if err != nil {
 		return fmt.Errorf("could not open new binary: %w", err)
 	}
-	defer in.Close()                                                          //nolint:errcheck,gosec
+	defer in.Close()                                                          //nolint:errcheck
 	out, err := os.OpenFile(tmpNew, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("could not create temp binary in target dir: %w", err)

@@ -162,7 +162,7 @@ func setupMailtoDarwin(exe string) error {
 	if err := os.WriteFile(tmpSwiftFile, []byte(swiftCode), 0644); err != nil {
 		return err
 	}
-	defer os.Remove(tmpSwiftFile) //nolint:errcheck,gosec
+	defer os.Remove(tmpSwiftFile) //nolint:errcheck
 
 	exeDest := filepath.Join(macosDir, "MatchaMail")
 
