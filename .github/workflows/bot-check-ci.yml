@@ -2,7 +2,11 @@ name: Bot - CI Failure Notifier
 
 on:
   workflow_run:
-    workflows: ["CI"]
+    workflows:
+      - "CI"
+      - "Security"
+      - "Benchmarks"
+      - "Integration"
     types: [completed]
 
 permissions:
@@ -29,25 +33,31 @@ jobs:
             const run = context.payload.workflow_run;
             const owner = context.repo.owner;
             const repo = context.repo.repo;
+            const workflowName = run.name || "workflow";
             const isMasterPush = run.event === 'push' && run.head_branch === 'master';
 
-            // Resolve PR (PR event, or push that has an open PR)
+            // Resolve PR
             let pr_number = null;
             if (run.pull_requests && run.pull_requests.length > 0) {
               pr_number = run.pull_requests[0].number;
-            } else if (!isMasterPush) {
-              const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-                owner, repo, commit_sha: run.head_sha
-              });
-              if (prs.length > 0) pr_number = prs[0].number;
+            } else {
+              try {
+                const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                  owner, repo, commit_sha: run.head_sha
+                });
+                const open = prs.find(p => p.state === 'open');
+                if (open) pr_number = open.number;
+                else if (prs.length > 0) pr_number = prs[0].number;
+              } catch (e) {
+                console.log(`PR lookup failed: ${e.message}`);
+              }
             }
 
             if (!pr_number && !isMasterPush) {
-              console.log("No PR and not master push. Exiting.");
+              console.log(`No PR and not master push (event=${run.event} branch=${run.head_branch}). Exiting.`);
               return;
             }
 
-            // Helpers ---------------------------------------------------------
             const fixHints = {
               lint: "Run `make lint` locally.",
               'mod-tidy': "Run `go mod tidy` and commit `go.mod`/`go.sum`.",
@@ -59,8 +69,9 @@ jobs:
               goreleaser: "Run `goreleaser check -f .goreleaser.yml`.",
               build: "Run `go build ./...` and `go test ./...` locally.",
               govulncheck: "Run `govulncheck ./...` and update vulnerable deps.",
-              gosec: "Inspect gosec SARIF; fix or annotate with `//nolint:gosec` (justified).",
+              gosec: "Inspect gosec SARIF in the Security tab; fix or annotate with `//nolint:gosec` (justified).",
               trivy: "Run `trivy fs .` and address CRITICAL/HIGH findings.",
+              codeql: "Inspect CodeQL findings in the Security tab.",
               benchmark: "Inspect benchstat report on the PR; look for >3% regressions.",
               'imap + smtp e2e': "Run `docker compose -f tests/integration/docker-compose.yml up -d` then `go test -tags=integration ./tests/integration/...`.",
               'cross-platform': "Reproduce with `go test -race ./...` on the failing OS.",
@@ -75,13 +86,11 @@ jobs:
               return null;
             }
 
-            // Download zipped logs once, return text per job step.
             async function downloadLogs() {
               try {
                 const res = await github.rest.actions.downloadWorkflowRunLogs({
                   owner, repo, run_id: run.id
                 });
-                // res.data is an ArrayBuffer when using github-script
                 return Buffer.from(res.data);
               } catch (e) {
                 console.log(`could not download logs: ${e.message}`);
@@ -89,9 +98,6 @@ jobs:
               }
             }
 
-            // Decode ZIP without extra deps using Node's built-in zlib + manual parse
-            // via the `adm-zip` shim; github-script ships AdmZip-compatible 'unzipper' via require.
-            // Fall back gracefully if not present.
             async function extractFailures(zipBuf) {
               if (!zipBuf) return [];
               let AdmZip;
@@ -164,39 +170,80 @@ jobs:
               return lines.join("\n");
             }
 
-            // ----- Handle failure -------------------------------------------
-            if (run.conclusion === 'failure') {
+            const marker = `<!-- bot-check-ci:${workflowName} -->`;
+
+            async function upsertPRComment(body) {
+              const { data: comments } = await github.rest.issues.listComments({
+                owner, repo, issue_number: pr_number, per_page: 100
+              });
+              const existing = comments.find(c => c.body && c.body.includes(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner, repo, comment_id: existing.id, body
+                });
+                console.log(`updated comment ${existing.id} on PR #${pr_number}`);
+              } else {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: pr_number, body
+                });
+                console.log(`created comment on PR #${pr_number}`);
+              }
+            }
+
+            async function deletePRCommentIfExists() {
+              if (!pr_number) return;
+              const { data: comments } = await github.rest.issues.listComments({
+                owner, repo, issue_number: pr_number, per_page: 100
+              });
+              const existing = comments.find(c => c.body && c.body.includes(marker));
+              if (existing) {
+                try {
+                  await github.rest.issues.deleteComment({
+                    owner, repo, comment_id: existing.id
+                  });
+                  console.log(`deleted stale comment ${existing.id}`);
+                } catch (e) {
+                  // Fallback: edit instead of deleting if delete denied.
+                  await github.rest.issues.updateComment({
+                    owner, repo, comment_id: existing.id,
+                    body: `${marker}\n${workflowName} now passing on \`${run.head_sha.substring(0, 7)}\` ([run](${run.html_url})).`
+                  });
+                }
+              }
+            }
+
+            // ----- failure -----
+            if (run.conclusion === 'failure' || run.conclusion === 'timed_out' || run.conclusion === 'startup_failure') {
               const { data: jobsData } = await github.rest.actions.listJobsForWorkflowRun({
                 owner, repo, run_id: run.id
               });
               const failedJobs = jobsData.jobs
-                .filter(j => j.conclusion === 'failure')
+                .filter(j => j.conclusion === 'failure' || j.conclusion === 'timed_out')
                 .map(j => ({ name: j.name, url: j.html_url }));
 
               const zipBuf = await downloadLogs();
               const failures = await extractFailures(zipBuf);
 
               let lines = [];
-              lines.push(`CI failed on \`${run.head_sha.substring(0, 7)}\` ([run](${run.html_url})).`);
+              lines.push(`### ❌ ${workflowName} failed`);
               lines.push("");
-              lines.push("**Failed jobs:**");
-              for (const j of failedJobs) {
-                const hint = hintFor(j.name);
-                lines.push(`- [${j.name}](${j.url})${hint ? ` — ${hint}` : ""}`);
+              lines.push(`Commit: \`${run.head_sha.substring(0, 7)}\` · [run logs](${run.html_url})`);
+              lines.push("");
+              if (failedJobs.length) {
+                lines.push("**Failed jobs:**");
+                for (const j of failedJobs) {
+                  const hint = hintFor(j.name);
+                  lines.push(`- [${j.name}](${j.url})${hint ? ` — ${hint}` : ""}`);
+                }
               }
               lines.push(renderFailuresSection(failures));
 
-              const marker = "<!-- bot-check-ci -->";
               const body = `${marker}\n` + lines.join("\n");
 
               if (pr_number) {
-                await github.rest.pulls.createReview({
-                  owner, repo, pull_number: pr_number,
-                  body, event: 'REQUEST_CHANGES'
-                });
+                await upsertPRComment(body);
               } else if (isMasterPush) {
-                // Find existing open issue for this commit, or open a new one.
-                const title = `CI failed on master @ ${run.head_sha.substring(0, 7)}`;
+                const title = `${workflowName} failed on master @ ${run.head_sha.substring(0, 7)}`;
                 const { data: existing } = await github.rest.issues.listForRepo({
                   owner, repo, state: 'open', labels: 'ci-failure', per_page: 50
                 });
@@ -208,51 +255,40 @@ jobs:
                   });
                 } else {
                   await github.rest.issues.create({
-                    owner, repo, title,
-                    body,
-                    labels: ['ci-failure']
+                    owner, repo, title, body, labels: ['ci-failure']
                   });
                 }
-                // Also drop a commit comment so it shows up on the merge commit.
-                await github.rest.repos.createCommitComment({
-                  owner, repo, commit_sha: run.head_sha,
-                  body
-                });
+                try {
+                  await github.rest.repos.createCommitComment({
+                    owner, repo, commit_sha: run.head_sha, body
+                  });
+                } catch (e) {
+                  console.log(`commit comment failed: ${e.message}`);
+                }
               }
               return;
             }
 
-            // ----- Handle success -------------------------------------------
+            // ----- success -----
             if (run.conclusion === 'success') {
-              const { data: botUser } = await github.rest.users.getAuthenticated();
-
               if (pr_number) {
-                const { data: reviews } = await github.rest.pulls.listReviews({
-                  owner, repo, pull_number: pr_number
-                });
-                const botReviews = reviews.filter(r =>
-                  r.user && r.user.login === botUser.login && r.state === 'CHANGES_REQUESTED'
-                );
-                for (const review of botReviews) {
-                  await github.rest.pulls.dismissReview({
-                    owner, repo, pull_number: pr_number,
-                    review_id: review.id,
-                    message: 'CI passed — dismissing previous changes request.'
-                  });
-                }
+                await deletePRCommentIfExists();
               }
-
               if (isMasterPush) {
-                // Close any open ci-failure issues for previous commits — flaky/transient.
+                let botLogin = null;
+                try {
+                  const { data: botUser } = await github.rest.users.getAuthenticated();
+                  botLogin = botUser.login;
+                } catch (_) {}
                 const { data: openIssues } = await github.rest.issues.listForRepo({
                   owner, repo, state: 'open', labels: 'ci-failure', per_page: 50
                 });
                 for (const issue of openIssues) {
-                  // Only close issues authored by this bot.
-                  if (!issue.user || issue.user.login !== botUser.login) continue;
+                  if (botLogin && issue.user && issue.user.login !== botLogin) continue;
+                  if (!issue.title.includes(workflowName)) continue;
                   await github.rest.issues.createComment({
                     owner, repo, issue_number: issue.number,
-                    body: `Subsequent master CI run passed: ${run.html_url}. Closing.`
+                    body: `Subsequent master ${workflowName} run passed: ${run.html_url}. Closing.`
                   });
                   await github.rest.issues.update({
                     owner, repo, issue_number: issue.number, state: 'closed'
