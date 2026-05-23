@@ -23,7 +23,7 @@ jobs:
         env:
           BOT_NODE_MODULES: /tmp/botci/node_modules
         with:
-          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
             module.paths.unshift(process.env.BOT_NODE_MODULES);
             const run = context.payload.workflow_run;
