@@ -3,12 +3,11 @@
 package integration
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
+	"net/smtp"
+	"net/textproto"
 	"os"
 	"strconv"
 	"strings"
@@ -23,24 +22,27 @@ import (
 // testEnv resolves the integration test environment. Greenmail exposes the
 // following ports by default — we read them from env to allow remapping:
 //
-//	MATCHA_TEST_IMAP_HOST   default: 127.0.0.1
-//	MATCHA_TEST_IMAP_PORT   default: 3993 (implicit TLS)
-//	MATCHA_TEST_SMTP_PORT   default: 3465 (implicit TLS)
-//	MATCHA_TEST_API_PORT    default: 8080 (Greenmail REST API)
+//	MATCHA_TEST_IMAP_HOST       default: 127.0.0.1
+//	MATCHA_TEST_IMAP_PORT       default: 3993 (implicit TLS)
+//	MATCHA_TEST_SMTP_PORT       default: 3465 (implicit TLS, used by matcha sender)
+//	MATCHA_TEST_SMTP_PLAIN_PORT default: 3025 (plain SMTP, used by deliverViaSMTP)
+//	MATCHA_TEST_API_PORT        default: 8080 (Greenmail REST API)
 type testEnv struct {
-	host     string
-	imapPort int
-	smtpPort int
-	apiPort  int
+	host          string
+	imapPort      int
+	smtpPort      int
+	smtpPlainPort int
+	apiPort       int
 }
 
 func loadEnv(t *testing.T) testEnv {
 	t.Helper()
 	env := testEnv{
-		host:     getenv("MATCHA_TEST_IMAP_HOST", "127.0.0.1"),
-		imapPort: getenvInt(t, "MATCHA_TEST_IMAP_PORT", 3993),
-		smtpPort: getenvInt(t, "MATCHA_TEST_SMTP_PORT", 3465),
-		apiPort:  getenvInt(t, "MATCHA_TEST_API_PORT", 8080),
+		host:          getenv("MATCHA_TEST_IMAP_HOST", "127.0.0.1"),
+		imapPort:      getenvInt(t, "MATCHA_TEST_IMAP_PORT", 3993),
+		smtpPort:      getenvInt(t, "MATCHA_TEST_SMTP_PORT", 3465),
+		smtpPlainPort: getenvInt(t, "MATCHA_TEST_SMTP_PLAIN_PORT", 3025),
+		apiPort:       getenvInt(t, "MATCHA_TEST_API_PORT", 8080),
 	}
 	return env
 }
@@ -97,28 +99,36 @@ func resetGreenmail(t *testing.T, env testEnv) {
 	}
 }
 
-func deliverViaAPI(t *testing.T, env testEnv, from, to, subject, body string) {
+// deliverViaSMTP injects a message into the IMAP store by speaking SMTP to
+// Greenmail directly. Greenmail's REST API only supports reading and purging;
+// SMTP is the only documented way to inject mail.
+func deliverViaSMTP(t *testing.T, env testEnv, from, to, subject, body string) {
 	t.Helper()
-	payload := map[string]string{
-		"from":    from,
-		"to":      to,
-		"subject": subject,
-		"body":    body,
+	addr := fmt.Sprintf("%s:%d", env.host, env.smtpPlainPort)
+
+	hdr := textproto.MIMEHeader{}
+	hdr.Set("From", from)
+	hdr.Set("To", to)
+	hdr.Set("Subject", subject)
+	hdr.Set("Date", time.Now().UTC().Format(time.RFC1123Z))
+	hdr.Set("MIME-Version", "1.0")
+	hdr.Set("Content-Type", "text/plain; charset=UTF-8")
+
+	var msg strings.Builder
+	for k, vs := range hdr {
+		for _, v := range vs {
+			fmt.Fprintf(&msg, "%s: %s\r\n", k, v)
+		}
 	}
-	buf, _ := json.Marshal(payload)
-	url := fmt.Sprintf("http://%s:%d/api/mail", env.host, env.apiPort)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(buf))
-	if err != nil {
-		t.Fatalf("deliver via api: %v", err)
+	msg.WriteString("\r\n")
+	msg.WriteString(body)
+
+	if err := smtp.SendMail(addr, nil, from, []string{to}, []byte(msg.String())); err != nil {
+		t.Fatalf("deliver via smtp: %v", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("deliver via api: status %d body=%s", resp.StatusCode, string(body))
-	}
-	// Greenmail delivers asynchronously via local SMTP relay; wait briefly so
-	// the next IMAP read sees the message.
-	time.Sleep(200 * time.Millisecond)
+	// Greenmail delivers asynchronously; wait briefly so the next IMAP read
+	// sees the message.
+	time.Sleep(300 * time.Millisecond)
 }
 
 func newTestAccount(env testEnv, user, pass string) *config.Account {
@@ -145,8 +155,8 @@ func TestIntegration_FetchInbox(t *testing.T) {
 	const user = "alice@example.com"
 	const pass = "secret"
 
-	deliverViaAPI(t, env, "bob@example.com", user, "Hello Alice", "first message")
-	deliverViaAPI(t, env, "carol@example.com", user, "Invoice Q4", "please pay")
+	deliverViaSMTP(t, env, "bob@example.com", user, "Hello Alice", "first message")
+	deliverViaSMTP(t, env, "carol@example.com", user, "Invoice Q4", "please pay")
 
 	acct := newTestAccount(env, user, pass)
 	provider, err := backend.New(acct)
@@ -185,9 +195,9 @@ func TestIntegration_SearchSubject(t *testing.T) {
 	const user = "alice@example.com"
 	const pass = "secret"
 
-	deliverViaAPI(t, env, "bob@example.com", user, "Invoice Q4", "")
-	deliverViaAPI(t, env, "bob@example.com", user, "Random update", "")
-	deliverViaAPI(t, env, "bob@example.com", user, "Invoice Q1", "")
+	deliverViaSMTP(t, env, "bob@example.com", user, "Invoice Q4", "")
+	deliverViaSMTP(t, env, "bob@example.com", user, "Random update", "")
+	deliverViaSMTP(t, env, "bob@example.com", user, "Invoice Q1", "")
 
 	acct := newTestAccount(env, user, pass)
 	provider, err := backend.New(acct)
@@ -221,7 +231,7 @@ func TestIntegration_MarkAsRead(t *testing.T) {
 	const user = "alice@example.com"
 	const pass = "secret"
 
-	deliverViaAPI(t, env, "bob@example.com", user, "Toggle me", "")
+	deliverViaSMTP(t, env, "bob@example.com", user, "Toggle me", "")
 
 	acct := newTestAccount(env, user, pass)
 	provider, err := backend.New(acct)
