@@ -74,7 +74,7 @@ var (
 )
 
 const (
-	goosDarwin = "darwin"
+	goosDarwin  = "darwin"
 	folderInbox = "INBOX"
 )
 
@@ -2655,7 +2655,7 @@ func openExternalEditor(body string) tea.Cmd {
 	tmpPath := tmpFile.Name()
 
 	if _, err := tmpFile.WriteString(body); err != nil {
-		tmpFile.Close() //nolint:errcheck
+		tmpFile.Close()    //nolint:errcheck
 		os.Remove(tmpPath) //nolint:errcheck
 		return func() tea.Msg {
 			return tui.EditorFinishedMsg{Err: fmt.Errorf("writing temp file: %w", err)}
@@ -3685,7 +3685,7 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 					out.Close() //nolint:errcheck
 					return fmt.Errorf("could not extract binary: %w", err)
 				}
-				out.Close() //nolint:errcheck
+				out.Close()                                     //nolint:errcheck
 				if err := os.Chmod(binPath, 0755); err != nil { //nolint:gosec
 					return fmt.Errorf("could not make binary executable: %w", err)
 				}
@@ -3713,11 +3713,11 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 				}
 				if _, err := io.Copy(out, rc); err != nil { //nolint:gosec
 					out.Close() //nolint:errcheck
-					rc.Close() //nolint:errcheck
+					rc.Close()  //nolint:errcheck
 					return fmt.Errorf("could not extract binary: %w", err)
 				}
-				out.Close() //nolint:errcheck
-				rc.Close() //nolint:errcheck
+				out.Close()                                     //nolint:errcheck
+				rc.Close()                                      //nolint:errcheck
 				if err := os.Chmod(binPath, 0755); err != nil { //nolint:gosec
 					return fmt.Errorf("could not make binary executable: %w", err)
 				}
@@ -3750,7 +3750,7 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 	if err != nil {
 		return fmt.Errorf("could not open new binary: %w", err)
 	}
-	defer in.Close() //nolint:errcheck
+	defer in.Close()                                                          //nolint:errcheck
 	out, err := os.OpenFile(tmpNew, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("could not create temp binary in target dir: %w", err)

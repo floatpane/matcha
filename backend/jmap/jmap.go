@@ -25,7 +25,6 @@ import (
 
 const jmapMailboxIds = "mailboxIds"
 
-
 func init() {
 	backend.RegisterBackend("jmap", func(account *config.Account) (backend.Provider, error) {
 		return New(account)
@@ -599,7 +598,7 @@ func (p *Provider) SendEmail(_ context.Context, msg *backend.OutgoingEmail) erro
 	if sentID != "" {
 		subReq.OnSuccessUpdateEmail = map[jmapclient.ID]jmapclient.Patch{
 			"#sub": {
-				jmapMailboxIds:      map[jmapclient.ID]bool{sentID: true},
+				jmapMailboxIds:    map[jmapclient.ID]bool{sentID: true},
 				"keywords/$draft": nil,
 			},
 		}

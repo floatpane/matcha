@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 )
+
 const keyDelete = "delete"
 
 //go:embed default_keybinds.json
@@ -145,7 +146,7 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 	check("inbox", map[string]string{
 		"visual_mode":     kb.Inbox.VisualMode,
 		"toggle_threaded": kb.Inbox.ToggleThreaded,
-		keyDelete:          kb.Inbox.Delete,
+		keyDelete:         kb.Inbox.Delete,
 		"archive":         kb.Inbox.Archive,
 		"refresh":         kb.Inbox.Refresh,
 		"search":          kb.Inbox.Search,
@@ -157,7 +158,7 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 	check("email", map[string]string{
 		"reply":             kb.Email.Reply,
 		"forward":           kb.Email.Forward,
-		keyDelete:            kb.Email.Delete,
+		keyDelete:           kb.Email.Delete,
 		"archive":           kb.Email.Archive,
 		"toggle_images":     kb.Email.ToggleImages,
 		"rsvp_accept":       kb.Email.RsvpAccept,
@@ -169,7 +170,7 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 		"external_editor": kb.Composer.ExternalEditor,
 		"next_field":      kb.Composer.NextField,
 		"prev_field":      kb.Composer.PrevField,
-		keyDelete:          kb.Composer.Delete,
+		keyDelete:         kb.Composer.Delete,
 	})
 	check("folder", map[string]string{
 		"next_folder":   kb.Folder.NextFolder,
@@ -179,7 +180,7 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 		"focus_inbox":   kb.Folder.FocusInbox,
 	})
 	check("drafts", map[string]string{
-		"open":   kb.Drafts.Open,
+		"open":    kb.Drafts.Open,
 		keyDelete: kb.Drafts.Delete,
 	})
 

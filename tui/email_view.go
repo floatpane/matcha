@@ -21,7 +21,7 @@ import (
 func ClearKittyGraphics() {
 	// Delete all images: a=d (action=delete), d=A (delete all)
 	os.Stdout.WriteString("\x1b_Ga=d,d=A\x1b\\") //nolint:errcheck
-	os.Stdout.Sync() //nolint:errcheck
+	os.Stdout.Sync()                             //nolint:errcheck
 }
 
 var (
@@ -341,7 +341,7 @@ func (m *EmailView) View() tea.View {
 	// placements) instead of d=A (delete all including data) so that images
 	// can be re-displayed by ID without re-uploading.
 	os.Stdout.WriteString("\x1b_Ga=d,d=a\x1b\\") //nolint:errcheck
-	os.Stdout.Sync() //nolint:errcheck
+	os.Stdout.Sync()                             //nolint:errcheck
 
 	var cryptoStatus strings.Builder
 

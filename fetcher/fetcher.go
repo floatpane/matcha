@@ -911,10 +911,10 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 							IsSMIMEEncrypted: isEncrypted,
 						})
 						return // Stop checking IMAP structure, we hijacked it
-				}
-				extractedBody = fmt.Sprintf("**S/MIME Decryption Failed:** %s\n", decryptionErr)
-				extractedBodyMIMEType = mimeTextPlain
-				htmlPartID = partExtracted
+					}
+					extractedBody = fmt.Sprintf("**S/MIME Decryption Failed:** %s\n", decryptionErr)
+					extractedBodyMIMEType = mimeTextPlain
+					htmlPartID = partExtracted
 				}
 			}
 		}

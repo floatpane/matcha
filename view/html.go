@@ -488,11 +488,11 @@ func RenderImageToStdout(placement *ImagePlacement, screenRow int, screenCol ...
 		}
 		seq := kittyDisplayImage(placement.ID)
 		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", screenRow+1, col, seq) //nolint:errcheck
-		os.Stdout.Sync() //nolint:errcheck
+		os.Stdout.Sync()                                                           //nolint:errcheck
 	} else if useIterm2 {
 		seq := iterm2ImageEscapeOnly(placement.Base64)
 		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", screenRow+1, col, seq) //nolint:errcheck
-		os.Stdout.Sync() //nolint:errcheck
+		os.Stdout.Sync()                                                           //nolint:errcheck
 	}
 }
 

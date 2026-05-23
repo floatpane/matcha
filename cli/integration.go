@@ -112,7 +112,7 @@ func setupMailtoDarwin(exe string) error {
 	if err := os.WriteFile(tmpLogo, assets.Logo, 0644); err == nil {
 		icnsPath := filepath.Join(resourcesDir, "MatchaMail.icns")
 		_ = exec.Command("sips", "-s", "format", "icns", tmpLogo, "--out", icnsPath).Run() //nolint:noctx
-		os.Remove(tmpLogo) //nolint:errcheck
+		os.Remove(tmpLogo)                                                                 //nolint:errcheck
 	}
 
 	infoPlist := `<?xml version="1.0" encoding="UTF-8"?>

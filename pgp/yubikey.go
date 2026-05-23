@@ -53,7 +53,7 @@ func openCard() (*openpgp.Card, error) {
 	card, err := openpgp.NewCard(isoCard)
 	if err != nil {
 		pcscCard.Close() //nolint:errcheck
-		ctx.Release() //nolint:errcheck
+		ctx.Release()    //nolint:errcheck
 		return nil, fmt.Errorf("failed to initialize OpenPGP card: %w", err)
 	}
 

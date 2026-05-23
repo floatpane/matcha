@@ -194,7 +194,7 @@ func (a *accountIdle) idleOnce() error {
 		select {
 		case <-a.stop:
 			idleCmd.Close() //nolint:errcheck
-			idleCmd.Wait() //nolint:errcheck
+			idleCmd.Wait()  //nolint:errcheck
 			return nil
 
 		case newExists := <-mailboxUpdates:
@@ -206,7 +206,7 @@ func (a *accountIdle) idleOnce() error {
 				}:
 				case <-a.stop:
 					idleCmd.Close() //nolint:errcheck
-					idleCmd.Wait() //nolint:errcheck
+					idleCmd.Wait()  //nolint:errcheck
 					return nil
 				}
 			}

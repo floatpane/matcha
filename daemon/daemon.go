@@ -20,7 +20,6 @@ import (
 
 const inboxFolder = "INBOX"
 
-
 // Daemon is the long-running background process that manages email
 // connections, caching, sync, and notifications.
 type Daemon struct {
