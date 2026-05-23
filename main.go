@@ -604,7 +604,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 					unread[f.Name] = int(f.Unread)
 				}
 			}
-			go config.SaveAccountFolders(accID, names, unread)
+			go config.SaveAccountFolders(accID, names, unread) //nolint:errcheck,gosec
 		}
 		// Per-account fetch errors (e.g. broken IMAP login, unreachable
 		// server) are non-fatal: other accounts' folders are still shown.
@@ -2103,7 +2103,7 @@ func (m *mainModel) markEmailAsReadInStores(uid uint32, accountID string) {
 			for _, e := range folderEmails {
 				if e.UID == uid && e.AccountID == accountID {
 					m.folderInbox.DecrementUnreadCount(folderName)
-					config.SaveAccountFolders(accountID, m.folderInbox.GetFolders(), m.folderInbox.GetUnreadCountsCopy())
+					config.SaveAccountFolders(accountID, m.folderInbox.GetFolders(), m.folderInbox.GetUnreadCountsCopy()) //nolint:errcheck,gosec
 					return
 				}
 			}

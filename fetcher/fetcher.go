@@ -1793,7 +1793,7 @@ func FetchFolders(account *config.Account) ([]Folder, error) {
 			NumUnseen: true,
 		},
 	})
-	defer listCmd.Close()
+	defer listCmd.Close() //nolint:errcheck
 
 	var folders []Folder
 	for {
