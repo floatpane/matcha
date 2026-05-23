@@ -569,7 +569,8 @@ func parseMessageBody(r io.Reader) (string, string, []backend.Attachment, error)
 			continue
 		}
 
-		if disposition == "attachment" || (disposition == "inline" && !strings.HasPrefix(contentType, "text/")) {
+		switch {
+		case disposition == "attachment" || (disposition == "inline" && !strings.HasPrefix(contentType, "text/")):
 			filename := dParams["filename"]
 			if filename == "" {
 				_, cp, _ := mime.ParseMediaType(part.Header.Get("Content-Type"))
@@ -586,9 +587,9 @@ func parseMessageBody(r io.Reader) (string, string, []backend.Attachment, error)
 				att.ContentID = strings.Trim(cid, "<>")
 			}
 			attachments = append(attachments, att)
-		} else if contentType == "text/html" {
+		case contentType == "text/html":
 			htmlBody = string(data)
-		} else if contentType == "text/plain" && bodyText == "" {
+		case contentType == "text/plain" && bodyText == "":
 			bodyText = string(data)
 		}
 	}

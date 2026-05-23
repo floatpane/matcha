@@ -68,7 +68,6 @@ func RebuildStyles() {
 	tabStyle = lipgloss.NewStyle().Padding(0, 2)
 	activeTabStyle = lipgloss.NewStyle().Padding(0, 2).Foreground(t.Accent).Bold(true).Underline(true)
 	tabBarStyle = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).PaddingBottom(1).MarginBottom(1)
-	dateStyle = lipgloss.NewStyle().Foreground(t.MutedText)
 	unreadEmailStyle = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	readEmailStyle = lipgloss.NewStyle().Foreground(t.Secondary)
 	visualSelectedStyle = lipgloss.NewStyle().Background(t.AccentDark).Foreground(t.AccentText).PaddingLeft(2)

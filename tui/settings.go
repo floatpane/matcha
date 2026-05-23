@@ -243,7 +243,7 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Update text inputs if active
-	if m.activePane == PaneContent {
+	if m.activePane == PaneContent { //nolint:gocritic
 		if m.activeCategory == CategoryEncryption {
 			m.encPasswordInput, cmd = m.encPasswordInput.Update(msg)
 			cmds = append(cmds, cmd)

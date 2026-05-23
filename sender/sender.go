@@ -128,7 +128,7 @@ func containsMarkup(body string) bool {
 	doc := md.Parser().Parse(reader)
 
 	var hasMarkup bool
-	ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) { //nolint:errcheck
+	ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) { //nolint:errcheck,gosec
 		if !entering {
 			return ast.WalkContinue, nil
 		}
@@ -370,7 +370,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 			return nil, err
 		}
 		relatedWriter := multipart.NewWriter(relatedPartWriter)
-		relatedWriter.SetBoundary(relatedBoundary) //nolint:errcheck
+		relatedWriter.SetBoundary(relatedBoundary) //nolint:errcheck,gosec
 
 		// --- Alternative Part (text and html) ---
 		altHeader := textproto.MIMEHeader{}
@@ -381,7 +381,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 			return nil, err
 		}
 		altWriter := multipart.NewWriter(altPartWriter)
-		altWriter.SetBoundary(altBoundary) //nolint:errcheck
+		altWriter.SetBoundary(altBoundary) //nolint:errcheck,gosec
 
 		// Plain text part
 		textHeader := textproto.MIMEHeader{
@@ -409,7 +409,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 			return nil, err
 		}
 
-		altWriter.Close() // Finish the alternative part //nolint:errcheck
+		altWriter.Close() //nolint:errcheck,gosec
 
 		// --- Inline Images ---
 		for cid, data := range images {
@@ -431,10 +431,10 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 			}
 			// Encode raw image bytes to base64, then wrap at 76 chars per MIME rules
 			encodedImg := base64.StdEncoding.EncodeToString(data)
-			imgPart.Write([]byte(clib.WrapBase64(encodedImg))) //nolint:errcheck
+			imgPart.Write([]byte(clib.WrapBase64(encodedImg))) //nolint:errcheck,gosec
 		}
 
-		relatedWriter.Close() // Finish the related part //nolint:errcheck
+		relatedWriter.Close() //nolint:errcheck,gosec
 
 		// --- Attachments ---
 		for filename, data := range attachments {
@@ -454,10 +454,10 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 			}
 			encodedData := base64.StdEncoding.EncodeToString(data)
 			// MIME requires base64 to be line-wrapped at 76 characters
-			attachmentPart.Write([]byte(clib.WrapBase64(encodedData))) //nolint:errcheck
+			attachmentPart.Write([]byte(clib.WrapBase64(encodedData))) //nolint:errcheck,gosec
 		}
 
-		innerWriter.Close() // Finish the inner message //nolint:errcheck
+		innerWriter.Close() //nolint:errcheck,gosec
 
 		innerBodyBytes = append([]byte(innerHeaders), innerMsg.Bytes()...)
 
@@ -640,13 +640,14 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		allRecipients = append(allRecipients, bcc...)
 
 		var toEncrypt []byte
-		if len(pgpPayload) > 0 {
+		switch {
+		case len(pgpPayload) > 0:
 			// Encrypt the signed message
 			toEncrypt = pgpPayload
-		} else if len(payloadToEncrypt) > 0 {
+		case len(payloadToEncrypt) > 0:
 			// Encrypt pre-prepared payload
 			toEncrypt = payloadToEncrypt
-		} else {
+		default:
 			// Encrypt what we've built so far
 			toEncrypt = msg.Bytes()
 		}
@@ -689,7 +690,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		}
 		c, err = smtp.NewClient(conn, smtpServer)
 		if err != nil {
-			conn.Close() //nolint:errcheck
+			conn.Close() //nolint:errcheck,gosec
 			return nil, err
 		}
 	} else {
@@ -699,7 +700,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 			return nil, err
 		}
 	}
-	defer c.Close() //nolint:errcheck
+	defer c.Close() //nolint:errcheck,gosec
 
 	if err = c.Hello(smtpHelloHostname()); err != nil {
 		return nil, err
@@ -719,18 +720,19 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	if ok, mechs := c.Extension("AUTH"); ok {
 		mechList := strings.ToUpper(mechs)
 
-		if account.IsOAuth2() {
+		switch {
+		case account.IsOAuth2():
 			// Use XOAUTH2 for OAuth2-enabled accounts
 			token, tokenErr := config.GetOAuth2Token(account.Email)
 			if tokenErr != nil {
 				return nil, fmt.Errorf("oauth2: %w", tokenErr)
 			}
 			err = c.Auth(&xoauth2Auth{username: account.Email, token: token})
-		} else if strings.Contains(mechList, "PLAIN") {
+		case strings.Contains(mechList, "PLAIN"):
 			err = c.Auth(plainAuth)
-		} else if strings.Contains(mechList, "LOGIN") {
+		case strings.Contains(mechList, "LOGIN"):
 			err = c.Auth(loginAuthFallback)
-		} else {
+		default:
 			// Fall back to PLAIN and let the server decide
 			err = c.Auth(plainAuth)
 		}
@@ -907,7 +909,7 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 		}
 		c, err = smtp.NewClient(conn, smtpServer)
 		if err != nil {
-			conn.Close() //nolint:errcheck
+			conn.Close() //nolint:errcheck,gosec
 			return nil, err
 		}
 	} else {
@@ -917,7 +919,7 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 			return nil, err
 		}
 	}
-	defer c.Close() //nolint:errcheck
+	defer c.Close() //nolint:errcheck,gosec
 
 	if err = c.Hello(smtpHelloHostname()); err != nil {
 		return nil, err
@@ -933,17 +935,18 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 
 	if ok, mechs := c.Extension("AUTH"); ok {
 		mechList := strings.ToUpper(mechs)
-		if account.IsOAuth2() {
+		switch {
+		case account.IsOAuth2():
 			token, tokenErr := config.GetOAuth2Token(account.Email)
 			if tokenErr != nil {
 				return nil, fmt.Errorf("oauth2: %w", tokenErr)
 			}
 			err = c.Auth(&xoauth2Auth{username: account.Email, token: token})
-		} else if strings.Contains(mechList, "PLAIN") {
+		case strings.Contains(mechList, "PLAIN"):
 			err = c.Auth(plainAuth)
-		} else if strings.Contains(mechList, "LOGIN") {
+		case strings.Contains(mechList, "LOGIN"):
 			err = c.Auth(loginAuthFallback)
-		} else {
+		default:
 			err = c.Auth(plainAuth)
 		}
 		if err != nil {

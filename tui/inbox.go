@@ -26,7 +26,6 @@ var (
 	tabBarStyle     = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).PaddingBottom(1).MarginBottom(1)
 )
 
-var dateStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
 var unreadEmailStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 var readEmailStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 var visualSelectedStyle lipgloss.Style
@@ -718,11 +717,12 @@ func (m *Inbox) itemForEmail(email fetcher.Email, index int, showAccountLabel bo
 
 func (m *Inbox) getTitle() string {
 	var title string
-	if m.searchActive {
+	switch {
+	case m.searchActive:
 		title = fmt.Sprintf("Search Results - %s", m.searchQuery)
-	} else if m.currentAccountID == "" {
+	case m.currentAccountID == "":
 		title = m.getBaseTitle() + " - " + t("inbox.all_accounts")
-	} else {
+	default:
 		title = m.getBaseTitle()
 		for _, acc := range m.accounts {
 			if acc.ID == m.currentAccountID {

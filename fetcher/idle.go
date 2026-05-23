@@ -175,7 +175,7 @@ func (a *accountIdle) idleOnce() error {
 	if err != nil {
 		return err
 	}
-	defer c.Close() //nolint:errcheck
+	defer c.Close() //nolint:errcheck,gosec
 
 	// Select the mailbox in read-only mode
 	selectData, err := c.Select(a.folder, nil).Wait()
@@ -193,8 +193,8 @@ func (a *accountIdle) idleOnce() error {
 	for {
 		select {
 		case <-a.stop:
-			idleCmd.Close() //nolint:errcheck
-			idleCmd.Wait()  //nolint:errcheck
+			idleCmd.Close() //nolint:errcheck,gosec
+			idleCmd.Wait()  //nolint:errcheck,gosec
 			return nil
 
 		case newExists := <-mailboxUpdates:
@@ -205,8 +205,8 @@ func (a *accountIdle) idleOnce() error {
 					FolderName: a.folder,
 				}:
 				case <-a.stop:
-					idleCmd.Close() //nolint:errcheck
-					idleCmd.Wait()  //nolint:errcheck
+					idleCmd.Close() //nolint:errcheck,gosec
+					idleCmd.Wait()  //nolint:errcheck,gosec
 					return nil
 				}
 			}

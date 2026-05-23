@@ -83,7 +83,7 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keyEnter:
 			// Use cursor index instead of string comparison
 			idx := m.cursor
-			if idx == 0 {
+			if idx == 0 { //nolint:gocritic
 				// Inbox
 				return m, func() tea.Msg { return GoToInboxMsg{} }
 			} else if idx == 1 {

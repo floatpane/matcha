@@ -187,7 +187,7 @@ func installPlugin(entry plugins.PluginEntry) tea.Cmd {
 		}
 
 		dir := filepath.Join(home, ".config", "matcha", "plugins")
-		if err := os.MkdirAll(dir, 0750); err != nil { //nolint:gosec
+		if err := os.MkdirAll(dir, 0750); err != nil {
 			return PluginInstalledMsg{Name: entry.Name, Err: err}
 		}
 

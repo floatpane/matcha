@@ -119,7 +119,7 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.cfg.Language = langs[nextIdx]
 				_ = config.SaveConfig(m.cfg)
 				// Apply language change immediately
-				i18n.GetManager().SetLanguage(m.cfg.Language) //nolint:errcheck
+				i18n.GetManager().SetLanguage(m.cfg.Language) //nolint:errcheck,gosec
 				// Trigger full UI rebuild
 				return m, tea.Batch(
 					func() tea.Msg { return ConfigSavedMsg{} },

@@ -85,11 +85,11 @@ func (d *Daemon) Run() error {
 	if err := WritePID(pidPath); err != nil {
 		return fmt.Errorf("write PID file: %w", err)
 	}
-	defer RemovePID(pidPath) //nolint:errcheck
+	defer RemovePID(pidPath) //nolint:errcheck,gosec
 
 	// Remove stale socket file.
 	sockPath := daemonrpc.SocketPath()
-	os.Remove(sockPath) //nolint:errcheck
+	os.Remove(sockPath) //nolint:errcheck,gosec
 
 	// Listen on Unix domain socket.
 	var err error
@@ -97,10 +97,10 @@ func (d *Daemon) Run() error {
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
-	defer d.listener.Close() //nolint:errcheck
+	defer d.listener.Close() //nolint:errcheck,gosec
 
 	// Set socket permissions (owner only).
-	os.Chmod(sockPath, 0700) //nolint:errcheck
+	os.Chmod(sockPath, 0700) //nolint:errcheck,gosec
 
 	log.Printf("daemon: listening on %s (PID %d)", sockPath, os.Getpid())
 
@@ -127,7 +127,7 @@ func (d *Daemon) Run() error {
 
 	// Cleanup.
 	log.Println("daemon: shutting down")
-	d.listener.Close() //nolint:errcheck
+	d.listener.Close() //nolint:errcheck,gosec
 	d.idleWatcher.StopAll()
 	cancel()
 	d.closeAllClients()
@@ -217,7 +217,7 @@ func (d *Daemon) acceptLoop() {
 
 func (d *Daemon) handleClient(conn *daemonrpc.Conn) {
 	defer d.removeClient(conn)
-	defer conn.Close() //nolint:errcheck
+	defer conn.Close() //nolint:errcheck,gosec
 
 	for {
 		msg, err := conn.ReceiveMessage()
@@ -254,7 +254,7 @@ func (d *Daemon) closeAllClients() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for conn := range d.clients {
-		conn.Close() //nolint:errcheck
+		conn.Close() //nolint:errcheck,gosec
 	}
 	d.clients = make(map[*daemonrpc.Conn]struct{})
 }
@@ -410,7 +410,7 @@ func (d *Daemon) syncAllAccounts(ctx context.Context) {
 
 		if noClients && newCount > 0 {
 			if !d.config.DisableNotifications {
-				go notify.Send("Matcha", fmt.Sprintf("New mail for %s", acct.FetchEmail)) //nolint:errcheck
+				go notify.Send("Matcha", fmt.Sprintf("New mail for %s", acct.FetchEmail)) //nolint:errcheck,gosec
 			}
 		}
 	}
@@ -458,7 +458,7 @@ func (d *Daemon) idleEventLoop() {
 				if acct := d.config.GetAccountByID(update.AccountID); acct != nil {
 					accountName = acct.Email
 				}
-				go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", update.FolderName, accountName)) //nolint:errcheck
+				go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", update.FolderName, accountName)) //nolint:errcheck,gosec
 			}
 
 			// Broadcast to subscribed clients.

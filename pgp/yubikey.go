@@ -41,7 +41,7 @@ func openCard() (*openpgp.Card, error) {
 
 	pcscCard, err := pcsc.OpenFirstCard(ctx, filter.HasApplet(iso.AidOpenPGP), true)
 	if err != nil {
-		ctx.Release() //nolint:errcheck
+		ctx.Release() //nolint:errcheck,gosec
 		return nil, fmt.Errorf(
 			"no OpenPGP smartcard found: %w\n"+
 				"Make sure your YubiKey is plugged in and has an OpenPGP key configured",
@@ -52,8 +52,8 @@ func openCard() (*openpgp.Card, error) {
 	isoCard := iso.NewCard(pcscCard)
 	card, err := openpgp.NewCard(isoCard)
 	if err != nil {
-		pcscCard.Close() //nolint:errcheck
-		ctx.Release()    //nolint:errcheck
+		pcscCard.Close() //nolint:errcheck,gosec
+		ctx.Release()    //nolint:errcheck,gosec
 		return nil, fmt.Errorf("failed to initialize OpenPGP card: %w", err)
 	}
 
@@ -69,7 +69,7 @@ func BuildPGPSignedMessage(payload []byte, pin string, publicKeyPath string) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer card.Close() //nolint:errcheck
+	defer card.Close() //nolint:errcheck,gosec
 
 	// Verify PIN (PW1 for signing operations)
 	if err := card.VerifyPassword(openpgp.PW1, pin); err != nil {
@@ -411,17 +411,18 @@ func bitLength(b byte) int {
 
 // writeNewFormatLength writes an OpenPGP new-format packet body length.
 func writeNewFormatLength(w *bytes.Buffer, length int) {
-	if length < 192 {
+	switch {
+	case length < 192:
 		w.WriteByte(byte(length))
-	} else if length < 8384 {
+	case length < 8384:
 		length -= 192
 		w.WriteByte(byte(length>>8) + 192)
 		w.WriteByte(byte(length))
-	} else {
+	default:
 		w.WriteByte(255)
 		buf := make([]byte, 4)
 		binary.BigEndian.PutUint32(buf, uint32(length))
-		w.Write(buf)
+		w.Write(buf) //nolint:errcheck
 	}
 }
 
@@ -478,7 +479,7 @@ func VerifyYubiKeyAvailable() error {
 	if err != nil {
 		return err
 	}
-	card.Close() //nolint:errcheck
+	card.Close() //nolint:errcheck,gosec
 	return nil
 }
 
@@ -488,7 +489,7 @@ func GetYubiKeyInfo() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer card.Close() //nolint:errcheck
+	defer card.Close() //nolint:errcheck,gosec
 
 	var info strings.Builder
 
@@ -510,6 +511,8 @@ func GetYubiKeyInfo() (string, error) {
 				info.WriteString(" (generated)")
 			case openpgp.KeyImported:
 				info.WriteString(" (imported)")
+			case openpgp.KeyNotPresent:
+				// no key on card
 			}
 			info.WriteString("\n")
 		}

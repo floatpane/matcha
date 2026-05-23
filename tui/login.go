@@ -209,7 +209,7 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			fallthrough
 
-		case "tab", "shift+tab", "up", keyDown:
+		case "tab", keyShiftTab, "up", keyDown:
 			s := msg.String()
 			m.updateFlags()
 			visible := m.visibleFields()
@@ -223,7 +223,7 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			if s == "up" || s == "shift+tab" {
+			if s == "up" || s == keyShiftTab {
 				curPos--
 			} else {
 				curPos++

@@ -486,12 +486,13 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				selected := m.suggestions[m.selectedSuggestion]
 
 				var newEmail string
-				if len(selected.Addresses) > 0 {
+				switch {
+				case len(selected.Addresses) > 0:
 					// Mailing list: emit just the addresses to maintain valid email formatting
 					newEmail = strings.Join(selected.Addresses, ", ")
-				} else if selected.Name != "" && selected.Name != selected.Email {
+				case selected.Name != "" && selected.Name != selected.Email:
 					newEmail = fmt.Sprintf("%s <%s>", selected.Name, selected.Email)
-				} else {
+				default:
 					newEmail = selected.Email
 				}
 
@@ -810,7 +811,7 @@ func (m *Composer) View() tea.View { //nolint:gocyclo
 	// From field with account selector
 	fromAddr := m.getFromAddress()
 	var fromField string
-	if m.isCatchAllAccount() {
+	if m.isCatchAllAccount() { //nolint:gocritic
 		fromAddrView := m.fromInput.View()
 		if len(m.accounts) > 1 {
 			if m.focusIndex == focusFrom {

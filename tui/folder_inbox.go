@@ -415,8 +415,7 @@ func (m *FolderInbox) wrapInboxCmd(cmd tea.Cmd) tea.Cmd {
 
 func (m *FolderInbox) updateMoveOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
 	kb := config.Keybinds
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
+	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		switch msg.String() {
 		case kb.Global.Cancel:
 			m.movingEmail = false
@@ -508,17 +507,18 @@ func (m *FolderInbox) View() tea.View {
 
 	var content string
 
-	if m.previewPane != nil {
+	switch {
+	case m.previewPane != nil:
 		// Three-pane layout: folders | inbox | email preview
 		inboxPane := m.renderInboxPane()
 		previewPane := m.renderPreviewPane()
 		content = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, inboxPane, previewPane)
-	} else if m.previewedUID != 0 {
+	case m.previewedUID != 0:
 		// Split pane loading state (body being fetched)
 		inboxPane := m.renderInboxPane()
 		emptyPreview := m.renderEmptyPreview()
 		content = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, inboxPane, emptyPreview)
-	} else {
+	default:
 		// Two-pane layout (original): folders | inbox
 		inboxView := m.inbox.View().Content
 		content = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, inboxView)

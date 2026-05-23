@@ -44,8 +44,8 @@ func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 	case "esc":
 		m.isCryptoConfig = false
 		return m, nil
-	case "tab", "shift+tab", "up", keyDown:
-		if msg.String() == "shift+tab" || msg.String() == "up" {
+	case "tab", keyShiftTab, "up", keyDown:
+		if msg.String() == keyShiftTab || msg.String() == "up" {
 			m.cryptoFocusIndex--
 			if m.cryptoFocusIndex < 0 {
 				m.cryptoFocusIndex = cryptoConfigMaxFocus
@@ -57,7 +57,7 @@ func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 			}
 		}
 		if m.cryptoFocusIndex == 6 && m.pgpKeySource != keyYubikey {
-			if msg.String() == "shift+tab" || msg.String() == "up" {
+			if msg.String() == keyShiftTab || msg.String() == "up" {
 				m.cryptoFocusIndex = 5
 			} else {
 				m.cryptoFocusIndex = 7

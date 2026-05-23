@@ -45,8 +45,8 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.encError = ""
 		m.activePane = PaneMenu
 		return m, nil
-	case "tab", "shift+tab", keyDown, "up":
-		if msg.String() == "shift+tab" || msg.String() == "up" {
+	case "tab", keyShiftTab, keyDown, "up":
+		if msg.String() == keyShiftTab || msg.String() == "up" {
 			m.encFocusIndex--
 			if m.encFocusIndex < 0 {
 				m.encFocusIndex = 2

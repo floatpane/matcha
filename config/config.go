@@ -664,18 +664,19 @@ func LoadConfig() (*Config, error) {
 			return nil, fmt.Errorf("account %q: invalid pgp_key_source %q (must be \"file\" or \"yubikey\")", acc.Name, acc.PGPKeySource)
 		}
 
-		if secureMode {
+		switch {
+		case secureMode:
 			// In secure mode, passwords and PINs are stored in the encrypted config JSON
 			acc.Password = rawAcc.Password
 			acc.PGPPIN = rawAcc.PGPPIN
-		} else if rawAcc.Password != "" {
+		case rawAcc.Password != "":
 			// Found a plain-text password! Move it to the OS Keyring.
 			if err := keyring.Set(keyringServiceName, rawAcc.Email, rawAcc.Password); err != nil {
 				log.Printf("matcha: failed to migrate password for %s into keyring: %v", rawAcc.Email, err)
 			}
 			acc.Password = rawAcc.Password
 			needsMigration = true
-		} else {
+		default:
 			// No plaintext password in JSON, fetch from Keyring as normal.
 			if pwd, err := keyring.Get(keyringServiceName, acc.Email); err == nil {
 				acc.Password = pwd

@@ -311,7 +311,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if msg.String() == "ctrl+c" {
 			m.idleWatcher.StopAll()
 			if m.service != nil {
-				m.service.Close() //nolint:errcheck
+				m.service.Close() //nolint:errcheck,gosec
 			}
 			return m, tea.Quit
 		}
@@ -554,7 +554,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if m.service.IsDaemon() {
 			// Subscribe to INBOX updates if using daemon.
 			for _, acct := range m.config.Accounts {
-				m.service.Subscribe(acct.ID, folderInbox) //nolint:errcheck
+				m.service.Subscribe(acct.ID, folderInbox) //nolint:errcheck,gosec
 			}
 		} else {
 			// Start IDLE watchers for all accounts on INBOX
@@ -589,7 +589,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			for _, f := range folders {
 				names = append(names, f.Name)
 			}
-			go config.SaveAccountFolders(accID, names) //nolint:errcheck
+			go config.SaveAccountFolders(accID, names) //nolint:errcheck,gosec
 		}
 		// Per-account fetch errors (e.g. broken IMAP login, unreachable
 		// server) are non-fatal: other accounts' folders are still shown.
@@ -641,7 +641,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			folders := config.GetCachedFolders(m.config.Accounts[i].ID)
 			if !slices.Contains(folders, msg.FolderName) {
 				if m.service != nil && m.service.IsDaemon() {
-					m.service.Unsubscribe(m.config.Accounts[i].ID, msg.PreviousFolder) //nolint:errcheck
+					m.service.Unsubscribe(m.config.Accounts[i].ID, msg.PreviousFolder) //nolint:errcheck,gosec
 				} else {
 					m.idleWatcher.Stop(m.config.Accounts[i].ID)
 				}
@@ -650,9 +650,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			if m.service != nil && m.service.IsDaemon() {
 				// Unsubscribe from old, subscribe to new.
 				if msg.PreviousFolder != "" {
-					m.service.Unsubscribe(m.config.Accounts[i].ID, msg.PreviousFolder) //nolint:errcheck
+					m.service.Unsubscribe(m.config.Accounts[i].ID, msg.PreviousFolder) //nolint:errcheck,gosec
 				}
-				m.service.Subscribe(m.config.Accounts[i].ID, msg.FolderName) //nolint:errcheck
+				m.service.Subscribe(m.config.Accounts[i].ID, msg.FolderName) //nolint:errcheck,gosec
 			} else {
 				m.idleWatcher.Watch(&m.config.Accounts[i], msg.FolderName)
 			}
@@ -918,7 +918,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 					accountName = acc.Email
 				}
 			}
-			go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", msg.FolderName, accountName)) //nolint:errcheck
+			go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", msg.FolderName, accountName)) //nolint:errcheck,gosec
 		}
 
 		// IDLE detected new mail — refetch the folder if we're viewing it
@@ -951,7 +951,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 							accountName = acc.Email
 						}
 					}
-					go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", ev.Folder, accountName)) //nolint:errcheck
+					go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", ev.Folder, accountName)) //nolint:errcheck,gosec
 				}
 
 				if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
@@ -1532,7 +1532,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 		// Set reply headers
 		inReplyTo := msg.Email.MessageID
-		references := append(msg.Email.References, msg.Email.MessageID)
+		references := append(msg.Email.References, msg.Email.MessageID) //nolint:gocritic
 		composer.SetReplyContext(inReplyTo, references)
 
 		m.current = composer
@@ -2535,7 +2535,7 @@ func sendEmail(account *config.Account, msg tui.SendEmailMsg) tea.Cmd {
 		}
 		// Append quoted text if present (for replies)
 		if msg.QuotedText != "" {
-			body = body + msg.QuotedText
+			body += msg.QuotedText
 		}
 		images := make(map[string][]byte)
 		attachments := make(map[string][]byte)
@@ -2608,7 +2608,7 @@ func sendRSVP(account *config.Account, msg tui.SendRSVPMsg) tea.Cmd {
 
 		// Send as multipart/alternative with text/calendar; method=REPLY
 		// This iMIP format is required for Google Calendar to recognize the RSVP
-		references := append(msg.References, msg.InReplyTo)
+		references := append(msg.References, msg.InReplyTo) //nolint:gocritic
 		rawMsg, err := sender.SendCalendarReply(
 			account,
 			[]string{msg.Event.Organizer},
@@ -2655,19 +2655,19 @@ func openExternalEditor(body string) tea.Cmd {
 	tmpPath := tmpFile.Name()
 
 	if _, err := tmpFile.WriteString(body); err != nil {
-		tmpFile.Close()    //nolint:errcheck
-		os.Remove(tmpPath) //nolint:errcheck
+		tmpFile.Close()    //nolint:errcheck,gosec
+		os.Remove(tmpPath) //nolint:errcheck,gosec
 		return func() tea.Msg {
 			return tui.EditorFinishedMsg{Err: fmt.Errorf("writing temp file: %w", err)}
 		}
 	}
-	tmpFile.Close() //nolint:errcheck
+	tmpFile.Close() //nolint:errcheck,gosec
 
 	parts := strings.Fields(editor)
-	args := append(parts[1:], tmpPath)
-	c := exec.Command(parts[0], args...) //nolint:gosec
+	args := append(parts[1:], tmpPath) //nolint:gocritic
+	c := exec.Command(parts[0], args...) //nolint:gosec,noctx
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		defer os.Remove(tmpPath) //nolint:errcheck
+		defer os.Remove(tmpPath) //nolint:errcheck,gosec
 		if err != nil {
 			return tui.EditorFinishedMsg{Err: err}
 		}
@@ -3250,7 +3250,7 @@ func checkForUpdatesCmd() tea.Cmd {
 		if err != nil {
 			return nil
 		}
-		defer resp.Body.Close() //nolint:errcheck
+		defer resp.Body.Close() //nolint:errcheck,gosec
 
 		var rel githubRelease
 		if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
@@ -3303,7 +3303,7 @@ func runOAuthCLI(args []string) {
 	}
 
 	cmdArgs := append([]string{script}, args...)
-	cmd := exec.Command("python3", cmdArgs...) //nolint:gosec
+	cmd := exec.Command("python3", cmdArgs...) //nolint:gosec,noctx
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -3495,7 +3495,7 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 	if err != nil {
 		return fmt.Errorf("could not query releases: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck,gosec
 
 	var rel githubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
@@ -3627,14 +3627,14 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
-	defer respAsset.Body.Close() //nolint:errcheck
+	defer respAsset.Body.Close() //nolint:errcheck,gosec
 
 	// Create a temp file for the download
 	tmpDir, err := os.MkdirTemp("", "matcha-update-*")
 	if err != nil {
 		return fmt.Errorf("could not create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir) //nolint:errcheck
+	defer os.RemoveAll(tmpDir) //nolint:errcheck,gosec
 
 	assetPath := filepath.Join(tmpDir, assetName)
 	outFile, err := os.Create(assetPath)
@@ -3642,7 +3642,7 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 		return fmt.Errorf("could not create temp file: %w", err)
 	}
 	_, err = io.Copy(outFile, respAsset.Body)
-	outFile.Close() //nolint:errcheck
+	outFile.Close() //nolint:errcheck,gosec
 	if err != nil {
 		return fmt.Errorf("could not write asset to disk: %w", err)
 	}
@@ -3655,12 +3655,12 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 
 	// Extract the binary from the archive.
 	var binPath string
-	if strings.HasSuffix(assetName, ".tar.gz") || strings.HasSuffix(assetName, ".tgz") {
+	if strings.HasSuffix(assetName, ".tar.gz") || strings.HasSuffix(assetName, ".tgz") { //nolint:gocritic
 		f, err := os.Open(assetPath)
 		if err != nil {
 			return fmt.Errorf("could not open archive: %w", err)
 		}
-		defer f.Close() //nolint:errcheck
+		defer f.Close() //nolint:errcheck,gosec
 		gzr, err := gzip.NewReader(f)
 		if err != nil {
 			return fmt.Errorf("could not create gzip reader: %w", err)
@@ -3682,10 +3682,10 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 					return fmt.Errorf("could not create binary file: %w", err)
 				}
 				if _, err := io.Copy(out, tr); err != nil { //nolint:gosec
-					out.Close() //nolint:errcheck
+					out.Close() //nolint:errcheck,gosec
 					return fmt.Errorf("could not extract binary: %w", err)
 				}
-				out.Close()                                     //nolint:errcheck
+				out.Close()                                     //nolint:errcheck,gosec
 				if err := os.Chmod(binPath, 0755); err != nil { //nolint:gosec
 					return fmt.Errorf("could not make binary executable: %w", err)
 				}
@@ -3697,7 +3697,7 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 		if err != nil {
 			return fmt.Errorf("could not open zip archive: %w", err)
 		}
-		defer zr.Close() //nolint:errcheck
+		defer zr.Close() //nolint:errcheck,gosec
 		for _, zf := range zr.File {
 			name := filepath.Base(zf.Name)
 			if name == binaryName || strings.Contains(strings.ToLower(name), "matcha") && !zf.FileInfo().IsDir() {
@@ -3708,16 +3708,16 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 				binPath = filepath.Join(tmpDir, binaryName)
 				out, err := os.Create(binPath)
 				if err != nil {
-					rc.Close() //nolint:errcheck
+					rc.Close() //nolint:errcheck,gosec
 					return fmt.Errorf("could not create binary file: %w", err)
 				}
 				if _, err := io.Copy(out, rc); err != nil { //nolint:gosec
-					out.Close() //nolint:errcheck
-					rc.Close()  //nolint:errcheck
+					out.Close() //nolint:errcheck,gosec
+					rc.Close()  //nolint:errcheck,gosec
 					return fmt.Errorf("could not extract binary: %w", err)
 				}
-				out.Close()                                     //nolint:errcheck
-				rc.Close()                                      //nolint:errcheck
+				out.Close()                                     //nolint:errcheck,gosec
+				rc.Close()                                      //nolint:errcheck,gosec
 				if err := os.Chmod(binPath, 0755); err != nil { //nolint:gosec
 					return fmt.Errorf("could not make binary executable: %w", err)
 				}
@@ -3750,7 +3750,7 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 	if err != nil {
 		return fmt.Errorf("could not open new binary: %w", err)
 	}
-	defer in.Close()                                                          //nolint:errcheck
+	defer in.Close()                                                          //nolint:errcheck,gosec
 	out, err := os.OpenFile(tmpNew, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("could not create temp binary in target dir: %w", err)
@@ -4129,9 +4129,8 @@ func runDaemonStatus() {
 		}
 		return
 	}
-	defer client.Close() //nolint:errcheck
-
 	status, err := client.Status()
+	client.Close() //nolint:errcheck,gosec
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to get status: %v\n", err)
 		os.Exit(1)

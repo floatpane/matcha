@@ -94,7 +94,7 @@ func setupMailtoDarwin(exe string) error {
 
 	appDir := filepath.Join(home, "Applications", "MatchaMail.app")
 	// Cleanup old version to avoid conflicts
-	os.RemoveAll(appDir) //nolint:errcheck
+	os.RemoveAll(appDir) //nolint:errcheck,gosec
 
 	contentsDir := filepath.Join(appDir, "Contents")
 	macosDir := filepath.Join(contentsDir, "MacOS")
@@ -112,7 +112,7 @@ func setupMailtoDarwin(exe string) error {
 	if err := os.WriteFile(tmpLogo, assets.Logo, 0644); err == nil {
 		icnsPath := filepath.Join(resourcesDir, "MatchaMail.icns")
 		_ = exec.Command("sips", "-s", "format", "icns", tmpLogo, "--out", icnsPath).Run() //nolint:noctx
-		os.Remove(tmpLogo)                                                                 //nolint:errcheck
+		os.Remove(tmpLogo)                                                                 //nolint:errcheck,gosec
 	}
 
 	infoPlist := `<?xml version="1.0" encoding="UTF-8"?>
@@ -162,7 +162,7 @@ func setupMailtoDarwin(exe string) error {
 	if err := os.WriteFile(tmpSwiftFile, []byte(swiftCode), 0644); err != nil {
 		return err
 	}
-	defer os.Remove(tmpSwiftFile) //nolint:errcheck
+	defer os.Remove(tmpSwiftFile) //nolint:errcheck,gosec
 
 	exeDest := filepath.Join(macosDir, "MatchaMail")
 

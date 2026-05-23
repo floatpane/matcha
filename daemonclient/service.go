@@ -68,7 +68,7 @@ func tryConnect() *daemonService {
 		return nil
 	}
 	if err := client.Ping(); err != nil {
-		client.Close() //nolint:errcheck
+		client.Close() //nolint:errcheck,gosec
 		return nil
 	}
 	return &daemonService{client: client}
@@ -361,7 +361,7 @@ func (s *directService) IsDaemon() bool { return false }
 
 func (s *directService) Close() error {
 	for _, p := range s.providers {
-		p.Close() //nolint:errcheck
+		p.Close() //nolint:errcheck,gosec
 	}
 	close(s.events)
 	return nil

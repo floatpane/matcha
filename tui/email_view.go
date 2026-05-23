@@ -20,8 +20,8 @@ import (
 // ClearKittyGraphics sends the Kitty graphics protocol delete command directly to stdout.
 func ClearKittyGraphics() {
 	// Delete all images: a=d (action=delete), d=A (delete all)
-	os.Stdout.WriteString("\x1b_Ga=d,d=A\x1b\\") //nolint:errcheck
-	os.Stdout.Sync()                             //nolint:errcheck
+	os.Stdout.WriteString("\x1b_Ga=d,d=A\x1b\\") //nolint:errcheck,gosec
+	os.Stdout.Sync()                             //nolint:errcheck,gosec
 }
 
 var (
@@ -80,7 +80,7 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 	var originalICSData []byte
 
 	for _, att := range email.Attachments {
-		if att.Filename == "smime-status.internal" {
+		if att.Filename == "smime-status.internal" { //nolint:gocritic
 			isSMIME = att.IsSMIMESignature || att.IsSMIMEEncrypted
 			smimeTrusted = att.SMIMEVerified
 			isEncrypted = att.IsSMIMEEncrypted
@@ -340,8 +340,8 @@ func (m *EmailView) View() tea.View {
 	// before re-rendering to prevent stacking on scroll. Uses d=a (delete all
 	// placements) instead of d=A (delete all including data) so that images
 	// can be re-displayed by ID without re-uploading.
-	os.Stdout.WriteString("\x1b_Ga=d,d=a\x1b\\") //nolint:errcheck
-	os.Stdout.Sync()                             //nolint:errcheck
+	os.Stdout.WriteString("\x1b_Ga=d,d=a\x1b\\") //nolint:errcheck,gosec
+	os.Stdout.Sync()                             //nolint:errcheck,gosec
 
 	var cryptoStatus strings.Builder
 
