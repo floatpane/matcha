@@ -604,7 +604,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 					unread[f.Name] = int(f.Unread)
 				}
 			}
-			go config.SaveAccountFolders(accID, names, unread) //nolint:errcheck,gosec
+			go config.SaveAccountFolders(accID, names, unread) //nolint:errcheck
 		}
 		// Per-account fetch errors (e.g. broken IMAP login, unreachable
 		// server) are non-fatal: other accounts' folders are still shown.
