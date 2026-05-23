@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -66,8 +67,8 @@ func getenvInt(t *testing.T, key string, fallback int) int {
 
 func waitForGreenmail(t *testing.T, env testEnv) {
 	t.Helper()
-	deadline := time.Now().Add(45 * time.Second)
-	url := fmt.Sprintf("http://%s:%d/api/service/readiness", env.host, env.apiPort)
+	deadline := time.Now().Add(60 * time.Second)
+	url := fmt.Sprintf("http://%s:%d/api/configuration", env.host, env.apiPort)
 	for time.Now().Before(deadline) {
 		resp, err := http.Get(url) //nolint:gosec
 		if err == nil && resp.StatusCode == http.StatusOK {
@@ -79,18 +80,21 @@ func waitForGreenmail(t *testing.T, env testEnv) {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	t.Fatalf("greenmail not ready after 45s at %s", url)
+	t.Fatalf("greenmail not ready after 60s at %s", url)
 }
 
 func resetGreenmail(t *testing.T, env testEnv) {
 	t.Helper()
-	url := fmt.Sprintf("http://%s:%d/api/service/reset", env.host, env.apiPort)
+	url := fmt.Sprintf("http://%s:%d/api/mail/purge", env.host, env.apiPort)
 	req, _ := http.NewRequest(http.MethodPost, url, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("reset greenmail: %v", err)
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		t.Fatalf("reset greenmail: status %d", resp.StatusCode)
+	}
 }
 
 func deliverViaAPI(t *testing.T, env testEnv, from, to, subject, body string) {
@@ -102,15 +106,19 @@ func deliverViaAPI(t *testing.T, env testEnv, from, to, subject, body string) {
 		"body":    body,
 	}
 	buf, _ := json.Marshal(payload)
-	url := fmt.Sprintf("http://%s:%d/api/service/mail", env.host, env.apiPort)
+	url := fmt.Sprintf("http://%s:%d/api/mail", env.host, env.apiPort)
 	resp, err := http.Post(url, "application/json", bytes.NewReader(buf))
 	if err != nil {
 		t.Fatalf("deliver via api: %v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		t.Fatalf("deliver via api: status %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("deliver via api: status %d body=%s", resp.StatusCode, string(body))
 	}
+	// Greenmail delivers asynchronously via local SMTP relay; wait briefly so
+	// the next IMAP read sees the message.
+	time.Sleep(200 * time.Millisecond)
 }
 
 func newTestAccount(env testEnv, user, pass string) *config.Account {

@@ -42,13 +42,14 @@ jobs:
       - name: Wait for greenmail
         run: |
           for i in $(seq 1 60); do
-            if curl -sf http://127.0.0.1:8080/api/service/readiness >/dev/null; then
+            if curl -sf http://127.0.0.1:8080/api/configuration >/dev/null; then
               echo "greenmail ready"
               exit 0
             fi
             sleep 2
           done
           echo "greenmail not ready"
+          curl -v http://127.0.0.1:8080/api/configuration || true
           exit 1
 
       - name: Run integration tests
