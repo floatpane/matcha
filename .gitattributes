@@ -5,3 +5,6 @@ clib/stb_image.h linguist-vendored
 *.json linguist-detectable=false
 *.html linguist-detectable=false
 public/** linguist-documentation
+
+# Golden snapshot files must be LF on all platforms.
+tui/testdata/golden/*.txt text eol=lf

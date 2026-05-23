@@ -43,9 +43,7 @@ func (l *snapshotLogger) Subscribe() <-chan logging.Entry { return nil }
 func assertGolden(t *testing.T, name, got string) {
 	t.Helper()
 
-	got = ansi.Strip(got)
-	got = strings.TrimRight(got, " \n\t")
-	got = stripTrailingSpace(got)
+	got = normalizeForGolden(got)
 
 	path := filepath.Join("testdata", "golden", name+".txt")
 
@@ -63,10 +61,19 @@ func assertGolden(t *testing.T, name, got string) {
 	if err != nil {
 		t.Fatalf("read golden %q (run with -update to create): %v", path, err)
 	}
-	wantStr := strings.TrimRight(string(want), " \n\t")
+	wantStr := normalizeForGolden(string(want))
 	if got != wantStr {
-		t.Fatalf("snapshot mismatch for %s\n--- got ---\n%s\n--- want ---\n%s", name, got, wantStr)
+		t.Fatalf("snapshot mismatch for %s\n--- got ---\n%s\n--- want ---\n%s\n--- diff ---\ngot bytes:  %q\nwant bytes: %q",
+			name, got, wantStr, got, wantStr)
 	}
+}
+
+func normalizeForGolden(s string) string {
+	s = ansi.Strip(s)
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	s = stripTrailingSpace(s)
+	return strings.TrimRight(s, " \n\t")
 }
 
 func stripTrailingSpace(s string) string {
