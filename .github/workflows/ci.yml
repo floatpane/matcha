@@ -61,7 +61,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.62.2
+          version: v2.12.2
           args: --timeout=10m --build-tags=integration
           only-new-issues: false
 
