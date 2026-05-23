@@ -5,100 +5,258 @@ on:
     workflows: ["CI"]
     types: [completed]
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: read
+
 jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
+      - name: Install log-parser dep
+        run: npm install --no-save --prefix /tmp/botci adm-zip
+
       - name: Process CI Result
         uses: actions/github-script@v9
+        env:
+          BOT_NODE_MODULES: /tmp/botci/node_modules
         with:
           github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
           script: |
+            module.paths.unshift(process.env.BOT_NODE_MODULES);
             const run = context.payload.workflow_run;
             const owner = context.repo.owner;
             const repo = context.repo.repo;
+            const isMasterPush = run.event === 'push' && run.head_branch === 'master';
 
-            // 1. Robustly find the PR number (works for forks too)
-            let pr_number;
+            // Resolve PR (PR event, or push that has an open PR)
+            let pr_number = null;
             if (run.pull_requests && run.pull_requests.length > 0) {
               pr_number = run.pull_requests[0].number;
-            } else {
-              // Fallback: Find PR associated with the commit SHA
+            } else if (!isMasterPush) {
               const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-                owner,
-                repo,
-                commit_sha: run.head_sha
+                owner, repo, commit_sha: run.head_sha
               });
-              if (prs.length > 0) {
-                pr_number = prs[0].number;
-              }
+              if (prs.length > 0) pr_number = prs[0].number;
             }
 
-            if (!pr_number) {
-              console.log("No open PR found for this workflow run. Exiting.");
+            if (!pr_number && !isMasterPush) {
+              console.log("No PR and not master push. Exiting.");
               return;
             }
 
-            // 2. Handle CI Failure -> Request Changes
+            // Helpers ---------------------------------------------------------
+            const fixHints = {
+              lint: "Run `make lint` locally.",
+              'mod-tidy': "Run `go mod tidy` and commit `go.mod`/`go.sum`.",
+              nix: "Run `nix flake check --no-build` locally.",
+              snap: "Validate `snapcraft.yaml` with `snapcraft list-plugins`.",
+              flatpak: "Validate the Flatpak manifest YAML structure.",
+              website: "Run `cd docs && npm ci && npx docusaurus build`.",
+              'lua-plugins': "Run `luac -p plugins/*.lua` to check Lua syntax.",
+              goreleaser: "Run `goreleaser check -f .goreleaser.yml`.",
+              build: "Run `go build ./...` and `go test ./...` locally.",
+              govulncheck: "Run `govulncheck ./...` and update vulnerable deps.",
+              gosec: "Inspect gosec SARIF; fix or annotate with `//nolint:gosec` (justified).",
+              trivy: "Run `trivy fs .` and address CRITICAL/HIGH findings.",
+              benchmark: "Inspect benchstat report on the PR; look for >3% regressions.",
+              'imap + smtp e2e': "Run `docker compose -f tests/integration/docker-compose.yml up -d` then `go test -tags=integration ./tests/integration/...`.",
+              'cross-platform': "Reproduce with `go test -race ./...` on the failing OS.",
+              fuzz: "Reproduce with `go test -fuzz=<Name> -fuzztime=30s ./<pkg>`.",
+            };
+
+            function hintFor(jobName) {
+              const lower = jobName.toLowerCase();
+              for (const key of Object.keys(fixHints)) {
+                if (lower.includes(key)) return fixHints[key];
+              }
+              return null;
+            }
+
+            // Download zipped logs once, return text per job step.
+            async function downloadLogs() {
+              try {
+                const res = await github.rest.actions.downloadWorkflowRunLogs({
+                  owner, repo, run_id: run.id
+                });
+                // res.data is an ArrayBuffer when using github-script
+                return Buffer.from(res.data);
+              } catch (e) {
+                console.log(`could not download logs: ${e.message}`);
+                return null;
+              }
+            }
+
+            // Decode ZIP without extra deps using Node's built-in zlib + manual parse
+            // via the `adm-zip` shim; github-script ships AdmZip-compatible 'unzipper' via require.
+            // Fall back gracefully if not present.
+            async function extractFailures(zipBuf) {
+              if (!zipBuf) return [];
+              let AdmZip;
+              try {
+                AdmZip = require('adm-zip');
+              } catch (_) {
+                console.log("adm-zip not available; skipping log parse");
+                return [];
+              }
+              const zip = new AdmZip(zipBuf);
+              const failures = [];
+              const goFailRe = /^FAIL\s+(\S+)/;
+              const testFailRe = /^\s*---\s+FAIL:\s+(\S+)/;
+              const buildFailRe = /^(.+\.go):(\d+):(\d+):\s+(.+)$/;
+
+              for (const entry of zip.getEntries()) {
+                if (entry.isDirectory) continue;
+                if (!entry.entryName.endsWith('.txt')) continue;
+                const text = entry.getData().toString('utf8');
+                const pkgs = new Set();
+                const tests = new Set();
+                const buildErrs = [];
+                for (const line of text.split('\n')) {
+                  let m;
+                  if ((m = line.match(testFailRe))) tests.add(m[1]);
+                  else if ((m = line.match(goFailRe))) {
+                    if (m[1] !== '[build') pkgs.add(m[1]);
+                  } else if ((m = line.match(buildFailRe))) {
+                    if (buildErrs.length < 5) buildErrs.push(`${m[1]}:${m[2]}: ${m[4]}`);
+                  }
+                }
+                if (pkgs.size || tests.size || buildErrs.length) {
+                  failures.push({
+                    file: entry.entryName,
+                    packages: [...pkgs],
+                    tests: [...tests],
+                    buildErrors: buildErrs,
+                  });
+                }
+              }
+              return failures;
+            }
+
+            function renderFailuresSection(failures) {
+              if (!failures.length) return "";
+              const seenPkgs = new Set();
+              const seenTests = new Set();
+              const seenBuild = new Set();
+              for (const f of failures) {
+                f.packages.forEach(p => seenPkgs.add(p));
+                f.tests.forEach(t => seenTests.add(t));
+                f.buildErrors.forEach(b => seenBuild.add(b));
+              }
+              const lines = ["\n#### Failure details\n"];
+              if (seenBuild.size) {
+                lines.push("**Build errors:**");
+                for (const b of [...seenBuild].slice(0, 8)) lines.push(`- \`${b}\``);
+                lines.push("");
+              }
+              if (seenPkgs.size) {
+                lines.push("**Failing packages:**");
+                for (const p of [...seenPkgs].slice(0, 20)) lines.push(`- \`${p}\``);
+                lines.push("");
+              }
+              if (seenTests.size) {
+                lines.push("**Failing tests:**");
+                for (const t of [...seenTests].slice(0, 30)) lines.push(`- \`${t}\``);
+                lines.push("");
+              }
+              return lines.join("\n");
+            }
+
+            // ----- Handle failure -------------------------------------------
             if (run.conclusion === 'failure') {
-              const jobs = await github.rest.actions.listJobsForWorkflowRun({
+              const { data: jobsData } = await github.rest.actions.listJobsForWorkflowRun({
                 owner, repo, run_id: run.id
               });
+              const failedJobs = jobsData.jobs
+                .filter(j => j.conclusion === 'failure')
+                .map(j => ({ name: j.name, url: j.html_url }));
 
-              const failedJobs = jobs.data.jobs.filter(j => j.conclusion === 'failure').map(j => j.name);
+              const zipBuf = await downloadLogs();
+              const failures = await extractFailures(zipBuf);
 
-              let message = "The CI workflow failed. Please fix the following issues locally and push again:\n\n";
-              let foundSpecificInstruction = false;
-
-              if (failedJobs.some(name => name.includes('lint'))) {
-                message += "- **Lint Failed**: Run `gofmt -w .` to format files and `go vet ./...` to check for vet errors.\n";
-                foundSpecificInstruction = true;
+              let lines = [];
+              lines.push(`CI failed on \`${run.head_sha.substring(0, 7)}\` ([run](${run.html_url})).`);
+              lines.push("");
+              lines.push("**Failed jobs:**");
+              for (const j of failedJobs) {
+                const hint = hintFor(j.name);
+                lines.push(`- [${j.name}](${j.url})${hint ? ` — ${hint}` : ""}`);
               }
-              if (failedJobs.some(name => name.includes('mod-tidy'))) {
-                message += "- **Mod-tidy Failed**: Run `go mod tidy` locally and commit the resulting `go.mod` and `go.sum` changes.\n";
-                foundSpecificInstruction = true;
-              }
-              if (failedJobs.some(name => name.includes('nix'))) {
-                message += "- **Nix Failed**: Run `nix flake check --no-build` locally to find the issue with the flake.\n";
-                foundSpecificInstruction = true;
-              }
+              lines.push(renderFailuresSection(failures));
 
-              if (!foundSpecificInstruction) {
-                message += "Please check the [CI logs](" + run.html_url + ") for more details on the failure.";
+              const marker = "<!-- bot-check-ci -->";
+              const body = `${marker}\n` + lines.join("\n");
+
+              if (pr_number) {
+                await github.rest.pulls.createReview({
+                  owner, repo, pull_number: pr_number,
+                  body, event: 'REQUEST_CHANGES'
+                });
+              } else if (isMasterPush) {
+                // Find existing open issue for this commit, or open a new one.
+                const title = `CI failed on master @ ${run.head_sha.substring(0, 7)}`;
+                const { data: existing } = await github.rest.issues.listForRepo({
+                  owner, repo, state: 'open', labels: 'ci-failure', per_page: 50
+                });
+                const dup = existing.find(i => i.title === title);
+                if (dup) {
+                  await github.rest.issues.createComment({
+                    owner, repo, issue_number: dup.number,
+                    body: `Re-run also failed: ${run.html_url}\n\n${lines.join("\n")}`
+                  });
+                } else {
+                  await github.rest.issues.create({
+                    owner, repo, title,
+                    body,
+                    labels: ['ci-failure']
+                  });
+                }
+                // Also drop a commit comment so it shows up on the merge commit.
+                await github.rest.repos.createCommitComment({
+                  owner, repo, commit_sha: run.head_sha,
+                  body
+                });
               }
-
-              // Submit an official "Request Changes" review
-              await github.rest.pulls.createReview({
-                owner,
-                repo,
-                pull_number: pr_number,
-                body: message,
-                event: 'REQUEST_CHANGES'
-              });
-
+              return;
             }
-            // 3. Handle CI Success -> Dismiss Reviews
-            else if (run.conclusion === 'success') {
+
+            // ----- Handle success -------------------------------------------
+            if (run.conclusion === 'success') {
               const { data: botUser } = await github.rest.users.getAuthenticated();
 
-              const { data: reviews } = await github.rest.pulls.listReviews({
-                owner, repo, pull_number: pr_number
-              });
-
-              // Find active blocking reviews left by the bot account
-              const botReviews = reviews.filter(r =>
-                r.user.login === botUser.login &&
-                r.state === 'CHANGES_REQUESTED'
-              );
-
-              // Dismiss them
-              for (const review of botReviews) {
-                await github.rest.pulls.dismissReview({
-                  owner,
-                  repo,
-                  pull_number: pr_number,
-                  review_id: review.id,
-                  message: 'The CI workflow has passed! Dismissing previous review.'
+              if (pr_number) {
+                const { data: reviews } = await github.rest.pulls.listReviews({
+                  owner, repo, pull_number: pr_number
                 });
+                const botReviews = reviews.filter(r =>
+                  r.user && r.user.login === botUser.login && r.state === 'CHANGES_REQUESTED'
+                );
+                for (const review of botReviews) {
+                  await github.rest.pulls.dismissReview({
+                    owner, repo, pull_number: pr_number,
+                    review_id: review.id,
+                    message: 'CI passed — dismissing previous changes request.'
+                  });
+                }
+              }
+
+              if (isMasterPush) {
+                // Close any open ci-failure issues for previous commits — flaky/transient.
+                const { data: openIssues } = await github.rest.issues.listForRepo({
+                  owner, repo, state: 'open', labels: 'ci-failure', per_page: 50
+                });
+                for (const issue of openIssues) {
+                  // Only close issues authored by this bot.
+                  if (!issue.user || issue.user.login !== botUser.login) continue;
+                  await github.rest.issues.createComment({
+                    owner, repo, issue_number: issue.number,
+                    body: `Subsequent master CI run passed: ${run.html_url}. Closing.`
+                  });
+                  await github.rest.issues.update({
+                    owner, repo, issue_number: issue.number, state: 'closed'
+                  });
+                }
               }
             }
