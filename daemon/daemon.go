@@ -102,7 +102,7 @@ func (d *Daemon) Run() error {
 	defer d.listener.Close() //nolint:errcheck
 
 	// Set socket permissions (owner only).
-	if err := os.Chmod(sockPath, 0700); err != nil {
+	if err := os.Chmod(sockPath, 0700); err != nil { //nolint:gosec
 		return fmt.Errorf("set socket permissions: %w", err)
 	}
 
