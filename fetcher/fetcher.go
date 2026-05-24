@@ -62,7 +62,10 @@ func getDebugIMAPWriter() io.Writer {
 // CloseDebugFiles cleans up debug file handles opened during the session.
 func CloseDebugFiles() {
 	if debugIMAPFile != nil {
-		debugIMAPFile.Close()
+		if err := debugIMAPFile.Close(); err != nil {
+			loglevel.Debugf("debug IMAP close error: %v", err)
+		}
+		debugIMAPFile = nil
 	}
 }
 
