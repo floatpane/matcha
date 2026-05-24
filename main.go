@@ -2682,18 +2682,18 @@ func openExternalEditor(body string) tea.Cmd {
 	if _, err := tmpFile.WriteString(body); err != nil {
 		writeErr := err
 		if err := tmpFile.Close(); err != nil {
-			os.Remove(tmpPath) //nolint:errcheck,gosec
+			_ = os.Remove(tmpPath) //nolint:gosec
 			return func() tea.Msg {
 				return tui.EditorFinishedMsg{Err: fmt.Errorf("closing temp file after write failure: %w", err)}
 			}
 		}
-		os.Remove(tmpPath) //nolint:errcheck,gosec
+		_ = os.Remove(tmpPath) //nolint:gosec
 		return func() tea.Msg {
 			return tui.EditorFinishedMsg{Err: fmt.Errorf("writing temp file: %w", writeErr)}
 		}
 	}
 	if err := tmpFile.Close(); err != nil {
-		os.Remove(tmpPath) //nolint:errcheck,gosec
+		_ = os.Remove(tmpPath) //nolint:gosec
 		return func() tea.Msg {
 			return tui.EditorFinishedMsg{Err: fmt.Errorf("closing temp file: %w", err)}
 		}
@@ -2703,7 +2703,9 @@ func openExternalEditor(body string) tea.Cmd {
 	args := append(parts[1:], tmpPath)   //nolint:gocritic
 	c := exec.Command(parts[0], args...) //nolint:gosec,noctx
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		defer os.Remove(tmpPath) //nolint:errcheck
+		defer func() {
+			_ = os.Remove(tmpPath)
+		}()
 		if err != nil {
 			return tui.EditorFinishedMsg{Err: err}
 		}
