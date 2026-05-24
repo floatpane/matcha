@@ -1,0 +1,20 @@
+services:
+  greenmail:
+    image: greenmail/standalone:2.1.3
+    environment:
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.all
+        -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.auth.disabled
+        -Dgreenmail.verbose
+    ports:
+      - "3025:3025"   # SMTP
+      - "3110:3110"   # POP3
+      - "3143:3143"   # IMAP
+      - "3465:3465"   # SMTPS (implicit TLS)
+      - "3993:3993"   # IMAPS (implicit TLS)
+      - "3995:3995"   # POP3S
+      - "8080:8080"   # REST API
+    # greenmail/standalone image lacks wget/curl, so we can't run an
+    # in-container healthcheck. Wait externally:
+    #   until curl -sf http://127.0.0.1:8080/api/service/readiness; do sleep 1; done

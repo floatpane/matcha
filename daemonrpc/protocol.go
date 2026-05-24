@@ -50,19 +50,20 @@ func DecodeMessage(raw json.RawMessage) (Message, error) {
 	}
 
 	var m Message
-	if probe.Type != "" {
+	switch {
+	case probe.Type != "":
 		var ev Event
 		if err := json.Unmarshal(raw, &ev); err != nil {
 			return m, err
 		}
 		m.Event = &ev
-	} else if probe.Method != "" {
+	case probe.Method != "":
 		var req Request
 		if err := json.Unmarshal(raw, &req); err != nil {
 			return m, err
 		}
 		m.Request = &req
-	} else {
+	default:
 		var resp Response
 		if err := json.Unmarshal(raw, &resp); err != nil {
 			return m, err

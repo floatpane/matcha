@@ -1,0 +1,124 @@
+name: Integration
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  imap-smtp:
+    name: imap + smtp e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      greenmail:
+        image: greenmail/standalone:2.1.8
+        ports:
+          - 3025:3025
+          - 3110:3110
+          - 3143:3143
+          - 3465:3465
+          - 3993:3993
+          - 3995:3995
+          - 8080:8080
+        env:
+          GREENMAIL_OPTS: "-Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.auth.disabled -Dgreenmail.verbose"
+        # No --health-cmd: greenmail/standalone image has no wget/curl.
+        # The runner step below polls /api/service/readiness externally instead.
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.3"
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
+
+      - name: Wait for greenmail
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8080/api/configuration >/dev/null; then
+              echo "greenmail ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "greenmail not ready"
+          curl -v http://127.0.0.1:8080/api/configuration || true
+          exit 1
+
+      - name: Run integration tests
+        env:
+          MATCHA_TEST_IMAP_HOST: 127.0.0.1
+          MATCHA_TEST_IMAP_PORT: "3993"
+          MATCHA_TEST_SMTP_PORT: "3465"
+          MATCHA_TEST_API_PORT: "8080"
+        run: |
+          go test -v -tags=integration -timeout=10m -count=1 ./tests/integration/...
+
+  matrix:
+    name: cross-platform build matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: ["1.26.3"]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Install system deps (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
+
+      - name: Race-enabled unit tests
+        run: go test -race -timeout=10m ./...
+
+  fuzz:
+    name: short fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.3"
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
+
+      - name: Discover fuzz targets
+        id: discover
+        run: |
+          set -e
+          targets=$(grep -RIl --include='*_test.go' -E '^func Fuzz' . || true)
+          echo "found targets:"
+          echo "$targets"
+          {
+            echo "targets<<EOF"
+            echo "$targets"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run fuzz targets (30s each)
+        if: steps.discover.outputs.targets != ''
+        run: |
+          for file in ${{ steps.discover.outputs.targets }}; do
+            dir=$(dirname "$file")
+            for fn in $(grep -hoE '^func (Fuzz[A-Za-z0-9_]+)' "$file" | awk '{print $2}'); do
+              echo "=== $dir :: $fn ==="
+              go test -run=^$ -fuzz="^${fn}$" -fuzztime=30s "./$dir"
+            done
+          done

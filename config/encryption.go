@@ -282,7 +282,7 @@ func DisableSecureMode(cfg *Config) error {
 		if err != nil {
 			continue // File may not be encrypted
 		}
-		if err := os.WriteFile(f, plain, 0600); err != nil {
+		if err := os.WriteFile(f, plain, 0600); err != nil { //nolint:gosec
 			return err
 		}
 	}
@@ -324,13 +324,13 @@ func SecureReadFile(path string) ([]byte, error) {
 func SecureWriteFile(path string, data []byte, perm os.FileMode) error {
 	key := GetSessionKey()
 	if key == nil {
-		return os.WriteFile(path, data, perm)
+		return os.WriteFile(path, data, perm) //nolint:gosec
 	}
 	encrypted, err := Encrypt(data, key)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, encrypted, perm)
+	return os.WriteFile(path, encrypted, perm) //nolint:gosec
 }
 
 // reEncryptCacheFiles reads all plain cache/data files (excluding config.json) and writes them encrypted.

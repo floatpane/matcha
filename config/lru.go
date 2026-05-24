@@ -41,7 +41,6 @@ func GetLRUInstance(threshold int) *LRU {
 			if err := lru.LoadFromDisk(); err != nil {
 				log.Printf("Failed to load LRU from disk: %v\n", err)
 			}
-
 		})
 
 	lru.mu.Lock()
@@ -65,12 +64,12 @@ func removeBodyFromDisk(folder string, uid uint32, accountID string) error {
 	cache, err := LoadEmailBodyCache(folder)
 
 	if err != nil {
-		return nil
+		return err
 	}
 
 	kept := cache.Bodies[:0]
 	for _, b := range cache.Bodies {
-		if !(b.UID == uid && b.AccountID == accountID) {
+		if b.UID != uid || b.AccountID != accountID {
 			kept = append(kept, b)
 		}
 	}

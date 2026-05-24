@@ -43,7 +43,7 @@ type PluginSettings struct {
 //	matcha.on("email_received", function(email)
 //	    if cfg.enabled and #email.subject > cfg.threshold then ... end
 //	end)
-func (m *Manager) declareSettings(L *lua.LState, spec *lua.LTable) int {
+func (m *Manager) declareSettings(L *lua.LState, spec *lua.LTable) int { //nolint:gocritic
 	if m.currentPlugin == "" {
 		L.RaiseError("matcha.settings() must be called from a plugin file")
 		return 0
@@ -137,7 +137,7 @@ func (m *Manager) declareSettings(L *lua.LState, spec *lua.LTable) int {
 // load (e.g. inside a hook callback), it falls back to the plugin that owns
 // the running closure — for now we use currentPlugin and only allow lookups
 // to the plugin that declared the schema by name.
-func (m *Manager) getSetting(L *lua.LState) int {
+func (m *Manager) getSetting(L *lua.LState) int { //nolint:gocritic
 	plugin := m.currentPlugin
 	key := L.CheckString(1)
 
@@ -177,7 +177,7 @@ func (m *Manager) lookupValue(plugin, key string, def SettingDef) interface{} {
 	return def.Default
 }
 
-func toLuaValue(L *lua.LState, v interface{}) lua.LValue {
+func toLuaValue(_ *lua.LState, v interface{}) lua.LValue {
 	switch x := v.(type) {
 	case bool:
 		return lua.LBool(x)

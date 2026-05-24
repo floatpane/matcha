@@ -1,0 +1,5 @@
+────────────────────────────────────────────────────────────
+[Logs]
+started fetcher
+connected to imap.example.com
+fetched 12 new messages

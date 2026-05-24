@@ -8,7 +8,7 @@ import (
 // Interpolate replaces placeholders in a template string with values from data.
 // Supports {key} syntax for variable interpolation.
 func Interpolate(template string, data map[string]interface{}) string {
-	if data == nil || len(data) == 0 {
+	if len(data) == 0 {
 		return template
 	}
 

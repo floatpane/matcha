@@ -11,7 +11,7 @@ func TestBuildThreeMessageChain(t *testing.T) {
 	threads := Build([]EmailHeader{
 		{ID: "<a@example>", Subject: "Foo", Date: base, EmailID: "1", Sender: "a"},
 		{ID: "<b@example>", References: []string{"<a@example>"}, Subject: "Re: Foo", Date: base.Add(time.Minute), EmailID: "2", Sender: "b"},
-		{ID: "<c@example>", References: []string{"<a@example>", "<b@example>"}, Subject: "Re: Re: Foo", Date: base.Add(2 * time.Minute), EmailID: "3", Sender: "c"},
+		{ID: "<c@example>", References: []string{"<a@example>", "<b@example>"}, Subject: "Re: Re: Foo", Date: base.Add(2 * time.Minute), EmailID: "3", Sender: "c"}, //nolint:dupword
 	})
 
 	if len(threads) != 1 {
@@ -136,7 +136,7 @@ func TestBuildStableOrderingAcrossCalls(t *testing.T) {
 
 func TestCanonicalSubjectNormalizesReplyAndForwardPrefixes(t *testing.T) {
 	tests := map[string]string{
-		"Re: Re: Foo":     "foo",
+		"Re: Re: Foo":     "foo", //nolint:dupword
 		"Fwd: FW: Foo":    "foo",
 		"AW: WG: Tr: Foo": "foo",
 		"Reé: Resp: Foo":  "foo",

@@ -17,11 +17,11 @@ func newTestManager() *Manager {
 
 func TestHTTPGet(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" {
+		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
 		w.Header().Set("X-Test", "hello")
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	}))
 	defer srv.Close()
@@ -48,14 +48,22 @@ func TestHTTPGet(t *testing.T) {
 		t.Fatalf("expected table, got %T", res)
 	}
 
-	if status := tbl.RawGetString("status"); status.(lua.LNumber) != 200 {
+	status, ok := tbl.RawGetString("status").(lua.LNumber)
+	if !ok {
+		t.Fatalf("expected status to be LNumber, got %T", tbl.RawGetString("status"))
+	}
+	if status != 200 {
 		t.Errorf("expected status 200, got %v", status)
 	}
 	if body := tbl.RawGetString("body"); body.String() != "ok" {
 		t.Errorf("expected body 'ok', got %q", body.String())
 	}
 
-	headers := tbl.RawGetString("headers").(*lua.LTable)
+	headersVal := tbl.RawGetString("headers")
+	headers, ok := headersVal.(*lua.LTable)
+	if !ok {
+		t.Fatalf("expected headers to be LTable, got %T", headersVal)
+	}
 	if v := headers.RawGetString("x-test"); v.String() != "hello" {
 		t.Errorf("expected header x-test='hello', got %q", v.String())
 	}
@@ -63,7 +71,7 @@ func TestHTTPGet(t *testing.T) {
 
 func TestHTTPPostWithBodyAndHeaders(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
+		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
 		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
@@ -96,7 +104,10 @@ func TestHTTPPostWithBodyAndHeaders(t *testing.T) {
 	}
 
 	res := m.state.GetGlobal("res")
-	tbl := res.(*lua.LTable)
+	tbl, ok := res.(*lua.LTable)
+	if !ok {
+		t.Fatalf("expected table, got %T", res)
+	}
 	if body := tbl.RawGetString("body"); body.String() != `{"key":"value"}` {
 		t.Errorf("expected echoed body, got %q", body.String())
 	}
