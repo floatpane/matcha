@@ -2682,18 +2682,18 @@ func openExternalEditor(body string) tea.Cmd {
 	if _, err := tmpFile.WriteString(body); err != nil {
 		writeErr := err
 		if err := tmpFile.Close(); err != nil {
-			_ = os.Remove(tmpPath) //nolint:gosec
+			_ = os.Remove(tmpPath)
 			return func() tea.Msg {
 				return tui.EditorFinishedMsg{Err: fmt.Errorf("closing temp file after write failure: %w", err)}
 			}
 		}
-		_ = os.Remove(tmpPath) //nolint:gosec
+		_ = os.Remove(tmpPath)
 		return func() tea.Msg {
 			return tui.EditorFinishedMsg{Err: fmt.Errorf("writing temp file: %w", writeErr)}
 		}
 	}
 	if err := tmpFile.Close(); err != nil {
-		_ = os.Remove(tmpPath) //nolint:gosec
+		_ = os.Remove(tmpPath)
 		return func() tea.Msg {
 			return tui.EditorFinishedMsg{Err: fmt.Errorf("closing temp file: %w", err)}
 		}
