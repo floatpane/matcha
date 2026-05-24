@@ -1,0 +1,106 @@
+name: Benchmarks
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.3"
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
+
+      - name: Install benchstat
+        run: go install golang.org/x/perf/cmd/benchstat@latest
+
+      - name: Resolve base ref
+        id: base
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "ref=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.event.before }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Benchmark PR
+        run: |
+          go test -run=^$ -bench=. -benchmem -benchtime=3x -count=6 ./backend/ ./tui/ \
+            | tee new.txt
+
+      - name: Checkout base
+        run: git checkout ${{ steps.base.outputs.ref }}
+
+      - name: Benchmark base
+        run: |
+          go test -run=^$ -bench=. -benchmem -benchtime=3x -count=6 ./backend/ ./tui/ \
+            | tee old.txt || echo "base benchmarks failed" > old.txt
+
+      - name: Restore PR checkout
+        run: git checkout ${{ github.sha }}
+
+      - name: Compare with benchstat
+        run: |
+          set +e
+          benchstat old.txt new.txt | tee benchstat.txt
+
+      - name: Classify result
+        run: |
+          python3 - <<'PY' > verdict.txt
+          import re
+          worse, better = 0, 0
+          with open("benchstat.txt") as f:
+              for line in f:
+                  m = re.search(r"([-+]?\d+\.\d+)%", line)
+                  if not m:
+                      continue
+                  delta = float(m.group(1))
+                  if "ns/op" in line or "B/op" in line or "allocs/op" in line:
+                      if delta > 3:
+                          worse += 1
+                      elif delta < -3:
+                          better += 1
+          status = "neutral"
+          if worse > 0 and worse >= better:
+              status = "regression"
+          elif better > 0:
+              status = "improvement"
+          print(f"status={status}")
+          print(f"worse={worse}")
+          print(f"better={better}")
+          PY
+          cat verdict.txt
+
+      - name: Record PR metadata
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "${{ github.event.pull_request.number }}" > pr-number.txt
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmarks
+          path: |
+            old.txt
+            new.txt
+            benchstat.txt
+            verdict.txt
+            pr-number.txt
+          if-no-files-found: ignore

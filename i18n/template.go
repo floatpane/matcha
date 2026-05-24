@@ -56,7 +56,7 @@ func parseTemplate(s string) []templatePart {
 	for i := 0; i < len(s); i++ {
 		ch := s[i]
 
-		if ch == '{' && !inVar {
+		if ch == '{' && !inVar { //nolint:gocritic
 			// Start of variable
 			if current.Len() > 0 {
 				parts = append(parts, templatePart{isVar: false, value: current.String()})

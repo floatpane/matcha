@@ -56,6 +56,10 @@ func (m *Message) GetText(form PluralForm) string {
 		if m.Many != "" {
 			return m.Many
 		}
+	case Other:
+		if m.Other != "" {
+			return m.Other
+		}
 	}
 	// Fallback to Other or One
 	if m.Other != "" {

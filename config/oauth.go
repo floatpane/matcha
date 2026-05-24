@@ -49,7 +49,7 @@ func GetOAuth2Token(email string) (string, error) {
 		return "", err
 	}
 
-	cmd := exec.Command("python3", script, "token", email)
+	cmd := exec.Command("python3", script, "token", email) //nolint:noctx
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {
@@ -82,7 +82,7 @@ func RunOAuth2Flow(email, provider, clientID, clientSecret string) error {
 		args = append(args, "--client-id", clientID, "--client-secret", clientSecret)
 	}
 
-	cmd := exec.Command("python3", args...)
+	cmd := exec.Command("python3", args...) //nolint:noctx
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

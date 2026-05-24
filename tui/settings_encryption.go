@@ -28,7 +28,7 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if msg.String() == "enter" {
+		if msg.String() == keyEnter {
 			m.confirmingDisable = true
 		}
 		return m, nil
@@ -45,8 +45,8 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.encError = ""
 		m.activePane = PaneMenu
 		return m, nil
-	case "tab", "shift+tab", "down", "up":
-		if msg.String() == "shift+tab" || msg.String() == "up" {
+	case "tab", keyShiftTab, keyDown, "up":
+		if msg.String() == keyShiftTab || msg.String() == "up" {
 			m.encFocusIndex--
 			if m.encFocusIndex < 0 {
 				m.encFocusIndex = 2
@@ -67,7 +67,7 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.encConfirmInput.Focus())
 		}
 		return m, tea.Batch(cmds...)
-	case "enter":
+	case keyEnter:
 		switch m.encFocusIndex {
 		case 0:
 			m.encFocusIndex = 1
@@ -99,13 +99,14 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	default:
 		// Forward input to focused textinput
 		var cmd tea.Cmd
-		if m.encFocusIndex == 0 {
+		switch m.encFocusIndex {
+		case 0:
 			before := m.encPasswordInput.Value()
 			m.encPasswordInput, cmd = m.encPasswordInput.Update(msg)
 			if m.encPasswordInput.Value() != before {
 				m.handlePasswordChanged()
 			}
-		} else if m.encFocusIndex == 1 {
+		case 1:
 			m.encConfirmInput, cmd = m.encConfirmInput.Update(msg)
 		}
 		return m, cmd
@@ -206,7 +207,8 @@ func (m *Settings) renderPasswordStrength() string {
 		return successStyle.Render(t("settings_encryption.strength_label") + " " + t("settings_encryption.strength_strong"))
 	case passwordstrength.Medium:
 		return settingsFocusedStyle.Render(t("settings_encryption.strength_label") + " " + t("settings_encryption.strength_medium"))
-	default:
+	case passwordstrength.Weak:
 		return dangerStyle.Render(t("settings_encryption.strength_label") + " " + t("settings_encryption.strength_weak"))
 	}
+	return dangerStyle.Render(t("settings_encryption.strength_label") + " " + t("settings_encryption.strength_weak"))
 }

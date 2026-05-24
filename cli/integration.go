@@ -54,14 +54,14 @@ MimeType=x-scheme-handler/mailto;
 	}
 
 	iconsDir := filepath.Join(home, ".local", "share", "icons", "hicolor", "512x512", "apps")
-	if err := os.MkdirAll(iconsDir, 0755); err == nil {
+	if err := os.MkdirAll(iconsDir, 0750); err == nil {
 		iconFile := filepath.Join(iconsDir, "matcha.png")
 		_ = os.WriteFile(iconFile, assets.Logo, 0644)
-		_ = exec.Command("gtk-update-icon-cache", filepath.Join(home, ".local", "share", "icons", "hicolor")).Run()
+		_ = exec.Command("gtk-update-icon-cache", filepath.Join(home, ".local", "share", "icons", "hicolor")).Run() //nolint:noctx
 	}
 
 	appsDir := filepath.Join(home, ".local", "share", "applications")
-	if err := os.MkdirAll(appsDir, 0755); err != nil {
+	if err := os.MkdirAll(appsDir, 0750); err != nil {
 		return err
 	}
 
@@ -70,13 +70,11 @@ MimeType=x-scheme-handler/mailto;
 		return err
 	}
 
-	// Update desktop database
-	if err := exec.Command("update-desktop-database", appsDir).Run(); err != nil {
-		// Ignore error if command doesn't exist
-	}
+	// Update desktop database (ignore error if command doesn't exist)
+	_ = exec.Command("update-desktop-database", appsDir).Run() //nolint:noctx
 
 	// Try to set xdg-mime default
-	cmd := exec.Command("xdg-mime", "default", "matcha.desktop", "x-scheme-handler/mailto")
+	cmd := exec.Command("xdg-mime", "default", "matcha.desktop", "x-scheme-handler/mailto") //nolint:noctx
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to run xdg-mime: %w", err)
 	}
@@ -96,16 +94,16 @@ func setupMailtoDarwin(exe string) error {
 
 	appDir := filepath.Join(home, "Applications", "MatchaMail.app")
 	// Cleanup old version to avoid conflicts
-	os.RemoveAll(appDir)
+	os.RemoveAll(appDir) //nolint:errcheck,gosec
 
 	contentsDir := filepath.Join(appDir, "Contents")
 	macosDir := filepath.Join(contentsDir, "MacOS")
 	resourcesDir := filepath.Join(contentsDir, "Resources")
 
-	if err := os.MkdirAll(macosDir, 0755); err != nil {
+	if err := os.MkdirAll(macosDir, 0750); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(resourcesDir, 0755); err != nil {
+	if err := os.MkdirAll(resourcesDir, 0750); err != nil {
 		return err
 	}
 
@@ -113,8 +111,8 @@ func setupMailtoDarwin(exe string) error {
 	tmpLogo := filepath.Join(os.TempDir(), "matcha_logo.png")
 	if err := os.WriteFile(tmpLogo, assets.Logo, 0644); err == nil {
 		icnsPath := filepath.Join(resourcesDir, "MatchaMail.icns")
-		_ = exec.Command("sips", "-s", "format", "icns", tmpLogo, "--out", icnsPath).Run()
-		os.Remove(tmpLogo)
+		_ = exec.Command("sips", "-s", "format", "icns", tmpLogo, "--out", icnsPath).Run() //nolint:noctx
+		os.Remove(tmpLogo)                                                                 //nolint:errcheck,gosec
 	}
 
 	infoPlist := `<?xml version="1.0" encoding="UTF-8"?>
@@ -164,19 +162,19 @@ func setupMailtoDarwin(exe string) error {
 	if err := os.WriteFile(tmpSwiftFile, []byte(swiftCode), 0644); err != nil {
 		return err
 	}
-	defer os.Remove(tmpSwiftFile)
+	defer os.Remove(tmpSwiftFile) //nolint:errcheck
 
 	exeDest := filepath.Join(macosDir, "MatchaMail")
 
 	// Compile the Swift file
-	cmd := exec.Command("swiftc", "-O", tmpSwiftFile, "-o", exeDest)
+	cmd := exec.Command("swiftc", "-O", tmpSwiftFile, "-o", exeDest) //nolint:noctx
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to compile Swift handler app: %w", err)
 	}
 
 	// Register the application
 	lsregister := "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
-	_ = exec.Command(lsregister, "-f", appDir).Run()
+	_ = exec.Command(lsregister, "-f", appDir).Run() //nolint:noctx
 
 	fmt.Printf("Successfully created %s.\n", appDir)
 

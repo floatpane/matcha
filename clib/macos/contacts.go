@@ -28,7 +28,7 @@ func FetchContacts() ([]MacOSContact, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
 
 	swiftFile := filepath.Join(tmpDir, "contacts.swift")
 	if err := os.WriteFile(swiftFile, []byte(contactsSwift), 0644); err != nil {
@@ -38,13 +38,13 @@ func FetchContacts() ([]MacOSContact, error) {
 	binFile := filepath.Join(tmpDir, "contacts")
 
 	// Compile the Swift helper
-	cmd := exec.Command("swiftc", swiftFile, "-o", binFile)
+	cmd := exec.Command("swiftc", swiftFile, "-o", binFile) //nolint:noctx
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("failed to compile contacts helper: %w\n%s", err, string(out))
 	}
 
 	// Run the helper
-	out, err := exec.Command(binFile).Output()
+	out, err := exec.Command(binFile).Output() //nolint:noctx
 	if err != nil {
 		return nil, fmt.Errorf("failed to run contacts helper: %w", err)
 	}

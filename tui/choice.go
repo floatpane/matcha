@@ -78,12 +78,12 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "up", kb.Global.NavUp:
 			m.cursor = (m.cursor - 1 + len(m.choices)) % len(m.choices)
-		case "down", kb.Global.NavDown:
+		case keyDown, kb.Global.NavDown:
 			m.cursor = (m.cursor + 1) % len(m.choices)
-		case "enter":
+		case keyEnter:
 			// Use cursor index instead of string comparison
 			idx := m.cursor
-			if idx == 0 {
+			if idx == 0 { //nolint:gocritic
 				// Inbox
 				return m, func() tea.Msg { return GoToInboxMsg{} }
 			} else if idx == 1 {
@@ -99,7 +99,6 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Settings
 				return m, func() tea.Msg { return GoToSettingsMsg{} }
 			}
-
 		}
 	}
 

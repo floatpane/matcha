@@ -90,7 +90,7 @@ func (m *FilePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Path input mode
 		if m.editingPath {
 			switch msg.String() {
-			case "enter":
+			case keyEnter:
 				path := m.pathInput.Value()
 				if path == "" {
 					m.editingPath = false
@@ -135,7 +135,7 @@ func (m *FilePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.items) > 0 {
 				m.cursor = (m.cursor - 1 + len(m.items)) % len(m.items)
 			}
-		case "down", "j":
+		case keyDown, "j":
 			if len(m.items) > 0 {
 				m.cursor = (m.cursor + 1) % len(m.items)
 			}
@@ -151,7 +151,7 @@ func (m *FilePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "h":
 			m.showHidden = !m.showHidden
 			m.readDir()
-		case "enter":
+		case keyEnter:
 			if len(m.items) == 0 {
 				return m, nil
 			}
@@ -183,7 +183,7 @@ func (m *FilePicker) View() tea.View {
 	var b strings.Builder
 
 	b.WriteString(titleStyle.Render("Select a File") + "\n")
-	b.WriteString(fmt.Sprintf("  %s\n", m.currentPath))
+	fmt.Fprintf(&b, "  %s\n", m.currentPath)
 
 	if m.editingPath {
 		b.WriteString(m.pathInput.View() + "\n")

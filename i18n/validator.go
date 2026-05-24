@@ -125,9 +125,9 @@ func (v *ValidationResult) String() string {
 		report.WriteString("Errors:\n")
 		for _, err := range v.Errors {
 			if err.Key != "" {
-				report.WriteString(fmt.Sprintf("  [%s] %s: %s\n", err.Language, err.Key, err.Message))
+				fmt.Fprintf(&report, "  [%s] %s: %s\n", err.Language, err.Key, err.Message)
 			} else {
-				report.WriteString(fmt.Sprintf("  [%s] %s\n", err.Language, err.Message))
+				fmt.Fprintf(&report, "  [%s] %s\n", err.Language, err.Message)
 			}
 		}
 		report.WriteString("\n")
@@ -137,9 +137,9 @@ func (v *ValidationResult) String() string {
 	if len(v.Missing) > 0 {
 		report.WriteString("Missing translations:\n")
 		for lang, keys := range v.Missing {
-			report.WriteString(fmt.Sprintf("  [%s] %d missing keys:\n", lang, len(keys)))
+			fmt.Fprintf(&report, "  [%s] %d missing keys:\n", lang, len(keys))
 			for _, key := range keys {
-				report.WriteString(fmt.Sprintf("    - %s\n", key))
+				fmt.Fprintf(&report, "    - %s\n", key)
 			}
 		}
 		report.WriteString("\n")
@@ -149,9 +149,9 @@ func (v *ValidationResult) String() string {
 	if len(v.Extra) > 0 {
 		report.WriteString("Extra translations (not in base):\n")
 		for lang, keys := range v.Extra {
-			report.WriteString(fmt.Sprintf("  [%s] %d extra keys:\n", lang, len(keys)))
+			fmt.Fprintf(&report, "  [%s] %d extra keys:\n", lang, len(keys))
 			for _, key := range keys {
-				report.WriteString(fmt.Sprintf("    - %s\n", key))
+				fmt.Fprintf(&report, "    - %s\n", key)
 			}
 		}
 	}

@@ -28,7 +28,7 @@ func GetAppearance() (*MacOSAppearance, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
 
 	swiftFile := filepath.Join(tmpDir, "appearance.swift")
 	if err := os.WriteFile(swiftFile, []byte(appearanceSwift), 0644); err != nil {
@@ -38,13 +38,13 @@ func GetAppearance() (*MacOSAppearance, error) {
 	binFile := filepath.Join(tmpDir, "appearance")
 
 	// Compile
-	cmd := exec.Command("swiftc", swiftFile, "-o", binFile)
+	cmd := exec.Command("swiftc", swiftFile, "-o", binFile) //nolint:noctx
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("failed to compile appearance helper: %w\n%s", err, string(out))
 	}
 
 	// Run
-	out, err := exec.Command(binFile).Output()
+	out, err := exec.Command(binFile).Output() //nolint:noctx
 	if err != nil {
 		return nil, fmt.Errorf("failed to run appearance helper: %w", err)
 	}

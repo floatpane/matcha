@@ -18,6 +18,8 @@ import (
 	"github.com/floatpane/matcha/notify"
 )
 
+const inboxFolder = "INBOX"
+
 // Daemon is the long-running background process that manages email
 // connections, caching, sync, and notifications.
 type Daemon struct {
@@ -83,22 +85,22 @@ func (d *Daemon) Run() error {
 	if err := WritePID(pidPath); err != nil {
 		return fmt.Errorf("write PID file: %w", err)
 	}
-	defer RemovePID(pidPath)
+	defer RemovePID(pidPath) //nolint:errcheck
 
 	// Remove stale socket file.
 	sockPath := daemonrpc.SocketPath()
-	os.Remove(sockPath)
+	os.Remove(sockPath) //nolint:errcheck,gosec
 
 	// Listen on Unix domain socket.
 	var err error
-	d.listener, err = net.Listen("unix", sockPath)
+	d.listener, err = net.Listen("unix", sockPath) //nolint:noctx
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
-	defer d.listener.Close()
+	defer d.listener.Close() //nolint:errcheck
 
 	// Set socket permissions (owner only).
-	os.Chmod(sockPath, 0700)
+	os.Chmod(sockPath, 0700) //nolint:errcheck,gosec
 
 	log.Printf("daemon: listening on %s (PID %d)", sockPath, os.Getpid())
 
@@ -125,7 +127,7 @@ func (d *Daemon) Run() error {
 
 	// Cleanup.
 	log.Println("daemon: shutting down")
-	d.listener.Close()
+	d.listener.Close() //nolint:errcheck,gosec
 	d.idleWatcher.StopAll()
 	cancel()
 	d.closeAllClients()
@@ -215,7 +217,7 @@ func (d *Daemon) acceptLoop() {
 
 func (d *Daemon) handleClient(conn *daemonrpc.Conn) {
 	defer d.removeClient(conn)
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	for {
 		msg, err := conn.ReceiveMessage()
@@ -252,7 +254,7 @@ func (d *Daemon) closeAllClients() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for conn := range d.clients {
-		conn.Close()
+		conn.Close() //nolint:errcheck,gosec
 	}
 	d.clients = make(map[*daemonrpc.Conn]struct{})
 }
@@ -339,9 +341,9 @@ func (d *Daemon) syncAllAccounts(ctx context.Context) {
 		default:
 		}
 
-		d.broadcastToSubscribers(acct.ID, "INBOX", daemonrpc.EventSyncStarted, daemonrpc.SyncStartedEvent{
+		d.broadcastToSubscribers(acct.ID, inboxFolder, daemonrpc.EventSyncStarted, daemonrpc.SyncStartedEvent{
 			AccountID: acct.ID,
-			Folder:    "INBOX",
+			Folder:    inboxFolder,
 		})
 
 		p, err := d.getProvider(acct.ID)
@@ -349,18 +351,18 @@ func (d *Daemon) syncAllAccounts(ctx context.Context) {
 			continue
 		}
 
-		emails, err := p.FetchEmails(ctx, "INBOX", 50, 0)
+		emails, err := p.FetchEmails(ctx, inboxFolder, 50, 0)
 		if err != nil {
 			log.Printf("daemon: sync %s failed: %v", acct.Email, err)
-			d.broadcastToSubscribers(acct.ID, "INBOX", daemonrpc.EventSyncError, daemonrpc.SyncErrorEvent{
+			d.broadcastToSubscribers(acct.ID, inboxFolder, daemonrpc.EventSyncError, daemonrpc.SyncErrorEvent{
 				AccountID: acct.ID,
-				Folder:    "INBOX",
+				Folder:    inboxFolder,
 				Error:     err.Error(),
 			})
 			continue
 		}
 
-		oldCached, _ := config.LoadFolderEmailCache("INBOX")
+		oldCached, _ := config.LoadFolderEmailCache(inboxFolder)
 		oldUIDs := make(map[uint32]struct{}, len(oldCached))
 		for _, e := range oldCached {
 			if e.AccountID == acct.ID {
@@ -384,13 +386,13 @@ func (d *Daemon) syncAllAccounts(ctx context.Context) {
 				IsRead:     e.IsRead,
 			})
 		}
-		if err := d.updateFolderCache("INBOX", acct.ID, cached); err != nil {
+		if err := d.updateFolderCache(inboxFolder, acct.ID, cached); err != nil {
 			log.Printf("daemon: cache update for INBOX failed: %v", err)
 		}
 
-		d.broadcastToSubscribers(acct.ID, "INBOX", daemonrpc.EventSyncComplete, daemonrpc.SyncCompleteEvent{
+		d.broadcastToSubscribers(acct.ID, inboxFolder, daemonrpc.EventSyncComplete, daemonrpc.SyncCompleteEvent{
 			AccountID:  acct.ID,
-			Folder:     "INBOX",
+			Folder:     inboxFolder,
 			EmailCount: len(emails),
 		})
 
@@ -408,7 +410,7 @@ func (d *Daemon) syncAllAccounts(ctx context.Context) {
 
 		if noClients && newCount > 0 {
 			if !d.config.DisableNotifications {
-				go notify.Send("Matcha", fmt.Sprintf("New mail for %s", acct.FetchEmail))
+				go notify.Send("Matcha", fmt.Sprintf("New mail for %s", acct.FetchEmail)) //nolint:errcheck
 			}
 		}
 	}
@@ -429,7 +431,7 @@ func (d *Daemon) startIdleWatchers() {
 		if protocol != "imap" {
 			continue
 		}
-		d.idleWatcher.Watch(acct, "INBOX")
+		d.idleWatcher.Watch(acct, inboxFolder)
 		log.Printf("daemon: IDLE watcher started for %s", acct.Email)
 	}
 }
@@ -456,7 +458,7 @@ func (d *Daemon) idleEventLoop() {
 				if acct := d.config.GetAccountByID(update.AccountID); acct != nil {
 					accountName = acct.Email
 				}
-				go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", update.FolderName, accountName))
+				go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", update.FolderName, accountName)) //nolint:errcheck
 			}
 
 			// Broadcast to subscribed clients.

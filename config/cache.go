@@ -378,7 +378,7 @@ func SearchContactsForAccount(query, accountID string) []Contact {
 func MigrateContactsCacheUsage(accountIDs []string) error {
 	cache, err := LoadContactsCache()
 	if err != nil {
-		return nil
+		return err
 	}
 
 	changed := false
@@ -539,7 +539,7 @@ func SaveDraft(draft Draft) error {
 func DeleteDraft(id string) error {
 	cache, err := LoadDraftsCache()
 	if err != nil {
-		return nil // No cache, nothing to delete
+		return err
 	}
 
 	var filtered []Draft
@@ -728,14 +728,6 @@ func calculateEmailBodySize(body *CachedEmailBody) int {
 	return size
 }
 
-func calculateTotalCacheSize(cache *EmailBodyCache) int {
-	total := 0
-	for _, b := range cache.Bodies {
-		total += b.SizeBytes
-	}
-	return total
-}
-
 // SaveEmailBody saves or updates a cached email body for a folder.
 func SaveEmailBody(folderName string, body CachedEmailBody, threshold int) error {
 	body.CachedAt = time.Now()
@@ -753,7 +745,7 @@ func PruneEmailBodyCache(folderName string, validUIDs map[uint32]string, thresho
 	cache, err := LoadEmailBodyCache(folderName)
 
 	if err != nil {
-		return nil
+		return err
 	}
 
 	lru := GetLRUInstance(threshold)

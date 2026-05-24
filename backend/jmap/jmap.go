@@ -23,6 +23,8 @@ import (
 	"github.com/floatpane/matcha/config"
 )
 
+const jmapMailboxIds = "mailboxIds"
+
 func init() {
 	backend.RegisterBackend("jmap", func(account *config.Account) (backend.Provider, error) {
 		return New(account)
@@ -167,7 +169,7 @@ func (p *Provider) FetchEmails(_ context.Context, folder string, limit, offset u
 		},
 		Properties: []string{
 			"id", "subject", "from", "to", "replyTo", "receivedAt",
-			"preview", "keywords", "mailboxIds", "hasAttachment",
+			"preview", "keywords", jmapMailboxIds, "hasAttachment",
 			"messageId", "inReplyTo", "references",
 		},
 	})
@@ -220,7 +222,7 @@ func (p *Provider) Search(_ context.Context, folder string, query backend.Search
 		},
 		Properties: []string{
 			"id", "subject", "from", "to", "replyTo", "receivedAt",
-			"preview", "keywords", "mailboxIds", "hasAttachment",
+			"preview", "keywords", jmapMailboxIds, "hasAttachment",
 			"messageId",
 		},
 	})
@@ -356,7 +358,7 @@ func (p *Provider) FetchAttachment(_ context.Context, _ string, _ uint32, partID
 	if err != nil {
 		return nil, fmt.Errorf("jmap download: %w", err)
 	}
-	defer reader.Close()
+	defer reader.Close() //nolint:errcheck
 	return io.ReadAll(reader)
 }
 
@@ -419,7 +421,7 @@ func (p *Provider) DeleteEmail(_ context.Context, _ string, uid uint32) error {
 	req.Invoke(&email.Set{
 		Account: p.accountID,
 		Update: map[jmapclient.ID]jmapclient.Patch{
-			jmapID: {"mailboxIds": map[jmapclient.ID]bool{trashID: true}},
+			jmapID: {jmapMailboxIds: map[jmapclient.ID]bool{trashID: true}},
 		},
 	})
 	_, err = p.client.Do(req)
@@ -441,7 +443,7 @@ func (p *Provider) ArchiveEmail(_ context.Context, _ string, uid uint32) error {
 	req.Invoke(&email.Set{
 		Account: p.accountID,
 		Update: map[jmapclient.ID]jmapclient.Patch{
-			jmapID: {"mailboxIds": map[jmapclient.ID]bool{archiveID: true}},
+			jmapID: {jmapMailboxIds: map[jmapclient.ID]bool{archiveID: true}},
 		},
 	})
 	_, err = p.client.Do(req)
@@ -463,7 +465,7 @@ func (p *Provider) MoveEmail(_ context.Context, uid uint32, _, dstFolder string)
 	req.Invoke(&email.Set{
 		Account: p.accountID,
 		Update: map[jmapclient.ID]jmapclient.Patch{
-			jmapID: {"mailboxIds": map[jmapclient.ID]bool{dstID: true}},
+			jmapID: {jmapMailboxIds: map[jmapclient.ID]bool{dstID: true}},
 		},
 	})
 	_, err = p.client.Do(req)
@@ -596,7 +598,7 @@ func (p *Provider) SendEmail(_ context.Context, msg *backend.OutgoingEmail) erro
 	if sentID != "" {
 		subReq.OnSuccessUpdateEmail = map[jmapclient.ID]jmapclient.Patch{
 			"#sub": {
-				"mailboxIds":      map[jmapclient.ID]bool{sentID: true},
+				jmapMailboxIds:    map[jmapclient.ID]bool{sentID: true},
 				"keywords/$draft": nil,
 			},
 		}
@@ -690,7 +692,7 @@ func (p *Provider) lookupJMAPID(uid uint32) (jmapclient.ID, error) {
 // jmapIDToUID converts a JMAP string ID to a uint32 hash for use as a UID.
 func jmapIDToUID(id jmapclient.ID) uint32 {
 	h := fnv.New32a()
-	h.Write([]byte(id))
+	h.Write([]byte(id)) //nolint:gosec
 	v := h.Sum32()
 	if v == 0 {
 		v = 1

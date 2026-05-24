@@ -73,8 +73,3 @@ func normalizeLanguageCode(code string) string {
 
 	return code
 }
-
-// isValidLanguage checks if a language code is registered.
-func isValidLanguage(code string) bool {
-	return HasLanguage(code)
-}

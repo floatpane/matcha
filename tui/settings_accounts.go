@@ -39,7 +39,7 @@ func (m *Settings) updateAccounts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		itemCount := len(m.cfg.Accounts) + 1
 		m.accountsCursor = (m.accountsCursor - 1 + itemCount) % itemCount
-	case "down", "j":
+	case keyDown, "j":
 		itemCount := len(m.cfg.Accounts) + 1
 		m.accountsCursor = (m.accountsCursor + 1) % itemCount
 	case "d":
@@ -80,7 +80,7 @@ func (m *Settings) updateAccounts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.enterCryptoConfig()
 			return m, textinput.Blink
 		}
-	case "enter":
+	case keyEnter:
 		if m.accountsCursor == len(m.cfg.Accounts) {
 			return m, func() tea.Msg { return GoToAddAccountMsg{} }
 		} else if m.accountsCursor < len(m.cfg.Accounts) {
