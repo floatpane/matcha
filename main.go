@@ -2768,10 +2768,16 @@ func openExternalEditor(body string) tea.Cmd {
 	tmpPath := tmpFile.Name()
 
 	if _, err := tmpFile.WriteString(body); err != nil {
-		tmpFile.Close()
+		writeErr := err
+		if err := tmpFile.Close(); err != nil {
+			os.Remove(tmpPath)
+			return func() tea.Msg {
+				return tui.EditorFinishedMsg{Err: fmt.Errorf("closing temp file after write failure: %w", err)}
+			}
+		}
 		os.Remove(tmpPath)
 		return func() tea.Msg {
-			return tui.EditorFinishedMsg{Err: fmt.Errorf("writing temp file: %w", err)}
+			return tui.EditorFinishedMsg{Err: fmt.Errorf("writing temp file: %w", writeErr)}
 		}
 	}
 	if err := tmpFile.Close(); err != nil {
