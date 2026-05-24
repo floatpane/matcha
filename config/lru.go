@@ -101,6 +101,9 @@ func (lru *LRU) evict() {
 }
 
 func (lru *LRU) LoadFromDisk() error {
+	lru.mu.Lock()
+	defer lru.mu.Unlock()
+
 	dir, err := bodyCacheDir()
 
 	if err != nil {
