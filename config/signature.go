@@ -98,7 +98,7 @@ func SaveSignatureForAccount(accountID, signature string) error {
 	}
 	if signature == "" {
 		// Remove the file to fall back to global
-		os.Remove(path)
+		os.Remove(path) //nolint:errcheck,gosec
 		return nil
 	}
 	return SecureWriteFile(path, []byte(signature), 0600)

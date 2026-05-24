@@ -34,17 +34,17 @@ func openCard() (*openpgp.Card, error) {
 			"failed to connect to PC/SC daemon: %w\n"+
 				"Make sure pcscd is running:\n"+
 				"  sudo systemctl enable --now pcscd.socket\n"+
-				"You may also need the ccid package for USB smartcard support.",
+				"You may also need the ccid package for USB smartcard support",
 			err,
 		)
 	}
 
 	pcscCard, err := pcsc.OpenFirstCard(ctx, filter.HasApplet(iso.AidOpenPGP), true)
 	if err != nil {
-		ctx.Release()
+		ctx.Release() //nolint:errcheck,gosec
 		return nil, fmt.Errorf(
 			"no OpenPGP smartcard found: %w\n"+
-				"Make sure your YubiKey is plugged in and has an OpenPGP key configured.",
+				"Make sure your YubiKey is plugged in and has an OpenPGP key configured",
 			err,
 		)
 	}
@@ -52,8 +52,8 @@ func openCard() (*openpgp.Card, error) {
 	isoCard := iso.NewCard(pcscCard)
 	card, err := openpgp.NewCard(isoCard)
 	if err != nil {
-		pcscCard.Close()
-		ctx.Release()
+		pcscCard.Close() //nolint:errcheck,gosec
+		ctx.Release()    //nolint:errcheck,gosec
 		return nil, fmt.Errorf("failed to initialize OpenPGP card: %w", err)
 	}
 
@@ -69,7 +69,7 @@ func BuildPGPSignedMessage(payload []byte, pin string, publicKeyPath string) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer card.Close()
+	defer card.Close() //nolint:errcheck
 
 	// Verify PIN (PW1 for signing operations)
 	if err := card.VerifyPassword(openpgp.PW1, pin); err != nil {
@@ -231,7 +231,7 @@ func buildSignaturePacket(signedContent []byte, signer crypto.Signer, pubKey *pa
 	body.WriteByte(digest[1])
 
 	// Encode the signature MPIs based on algorithm
-	switch pubKey.PubKeyAlgo {
+	switch pubKey.PubKeyAlgo { //nolint:exhaustive
 	case packet.PubKeyAlgoEdDSA:
 		// EdDSA: raw signature is r || s, 32 bytes each
 		if len(rawSig) != 64 {
@@ -293,7 +293,7 @@ func splitPayload(payload []byte) (headers, body []byte) {
 
 // buildSignedPart constructs the first MIME part content that gets hashed.
 // This must exactly match what appears between the boundary markers.
-func buildSignedPart(headers, body []byte, boundary string) []byte {
+func buildSignedPart(headers, body []byte, _ string) []byte {
 	var originalContentType []byte
 	if len(headers) > 0 {
 		for _, line := range bytes.Split(headers, []byte("\r\n")) {
@@ -395,8 +395,8 @@ func writeMPI(w io.Writer, data []byte) {
 	bitLen := uint16((len(data)-1)*8 + bitLength(data[0]))
 	buf := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf, bitLen)
-	w.Write(buf)  //nolint:errcheck
-	w.Write(data) //nolint:errcheck
+	w.Write(buf)  //nolint:errcheck,gosec
+	w.Write(data) //nolint:errcheck,gosec
 }
 
 // bitLength returns the number of significant bits in a byte.
@@ -411,17 +411,18 @@ func bitLength(b byte) int {
 
 // writeNewFormatLength writes an OpenPGP new-format packet body length.
 func writeNewFormatLength(w *bytes.Buffer, length int) {
-	if length < 192 {
+	switch {
+	case length < 192:
 		w.WriteByte(byte(length))
-	} else if length < 8384 {
+	case length < 8384:
 		length -= 192
 		w.WriteByte(byte(length>>8) + 192)
 		w.WriteByte(byte(length))
-	} else {
+	default:
 		w.WriteByte(255)
 		buf := make([]byte, 4)
 		binary.BigEndian.PutUint32(buf, uint32(length))
-		w.Write(buf)
+		_, _ = w.Write(buf)
 	}
 }
 
@@ -478,7 +479,7 @@ func VerifyYubiKeyAvailable() error {
 	if err != nil {
 		return err
 	}
-	card.Close()
+	card.Close() //nolint:errcheck,gosec
 	return nil
 }
 
@@ -488,27 +489,30 @@ func GetYubiKeyInfo() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer card.Close()
+	defer card.Close() //nolint:errcheck
 
 	var info strings.Builder
 
-	aid := card.ApplicationRelated.AID
-	info.WriteString(fmt.Sprintf("Manufacturer: %s\n", aid.Manufacturer))
-	info.WriteString(fmt.Sprintf("Serial:       %X\n", aid.Serial))
-	info.WriteString(fmt.Sprintf("Version:      %s\n", aid.Version))
+	aid := card.AID
+	fmt.Fprintf(&info, "Manufacturer: %s\n", aid.Manufacturer)
+	fmt.Fprintf(&info, "Serial:       %X\n", aid.Serial)
+	fmt.Fprintf(&info, "Version:      %s\n", aid.Version)
 
 	ch, err := card.GetCardholder()
 	if err == nil && ch.Name != "" {
-		info.WriteString(fmt.Sprintf("Cardholder:   %s\n", ch.Name))
+		fmt.Fprintf(&info, "Cardholder:   %s\n", ch.Name)
 	}
 
-	if keys := card.ApplicationRelated.Keys; keys != nil {
+	if keys := card.Keys; keys != nil {
 		if ki, ok := keys[openpgp.KeySign]; ok {
-			info.WriteString(fmt.Sprintf("Sign Key:     %s", ki.AlgAttrs))
-			if ki.Status == openpgp.KeyGenerated {
+			fmt.Fprintf(&info, "Sign Key:     %s", ki.AlgAttrs)
+			switch ki.Status {
+			case openpgp.KeyGenerated:
 				info.WriteString(" (generated)")
-			} else if ki.Status == openpgp.KeyImported {
+			case openpgp.KeyImported:
 				info.WriteString(" (imported)")
+			case openpgp.KeyNotPresent:
+				// no key on card
 			}
 			info.WriteString("\n")
 		}

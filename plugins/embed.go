@@ -24,11 +24,11 @@ type PluginEntry struct {
 // FetchRegistry fetches the plugin registry from GitHub.
 func FetchRegistry() ([]PluginEntry, error) {
 	client := httpclient.New(httpclient.RegistryFetchTimeout)
-	resp, err := client.Get(RegistryURL)
+	resp, err := client.Get(RegistryURL) //nolint:noctx
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch registry: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("registry returned status %d", resp.StatusCode)
@@ -55,11 +55,11 @@ func FetchPlugin(entry PluginEntry) ([]byte, error) {
 	}
 
 	client := httpclient.New(httpclient.RegistryFetchTimeout)
-	resp, err := client.Get(url)
+	resp, err := client.Get(url) //nolint:noctx
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch plugin: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("plugin download returned status %d", resp.StatusCode)

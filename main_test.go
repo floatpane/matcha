@@ -38,3 +38,23 @@ func TestSanitizeFilenameTruncatesEmojiOnUTF8Boundary(t *testing.T) {
 		t.Fatalf("sanitizeFilename lost extension: got %q", got)
 	}
 }
+
+func TestParseGlobalFlagsEnablesLogPanel(t *testing.T) {
+	args, _, show := parseGlobalFlags([]string{"matcha", "--debug", "--logs", "--version"})
+	if !show {
+		t.Fatal("expected log panel flag to be enabled")
+	}
+	if got := strings.Join(args, " "); got != "matcha --version" {
+		t.Fatalf("args = %q, want %q", got, "matcha --version")
+	}
+}
+
+func TestParseGlobalFlagsDoesNotConsumeSubcommandFlags(t *testing.T) {
+	args, _, show := parseGlobalFlags([]string{"matcha", "send", "--logs"})
+	if show {
+		t.Fatal("did not expect log panel flag after subcommand to be consumed")
+	}
+	if got := strings.Join(args, " "); got != "matcha send --logs" {
+		t.Fatalf("args = %q, want %q", got, "matcha send --logs")
+	}
+}

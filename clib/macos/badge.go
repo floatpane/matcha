@@ -23,7 +23,7 @@ func SetBadge(count int) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
 
 	swiftFile := filepath.Join(tmpDir, "badge.swift")
 	if err := os.WriteFile(swiftFile, []byte(badgeSwift), 0644); err != nil {
@@ -33,7 +33,7 @@ func SetBadge(count int) error {
 	binFile := filepath.Join(tmpDir, "badge")
 
 	// Compile
-	cmd := exec.Command("swiftc", swiftFile, "-o", binFile)
+	cmd := exec.Command("swiftc", swiftFile, "-o", binFile) //nolint:noctx
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to compile badge helper: %w\n%s", err, string(out))
 	}
@@ -44,7 +44,7 @@ func SetBadge(count int) error {
 	// To set it for the 'MatchaMail.app', we'd need that app to be running and
 	// listen for a notification, OR we run this compiled tool *inside* the app bundle context.
 
-	err = exec.Command(binFile, strconv.Itoa(count)).Run()
+	err = exec.Command(binFile, strconv.Itoa(count)).Run() //nolint:noctx
 	if err != nil {
 		return fmt.Errorf("failed to set badge: %w", err)
 	}

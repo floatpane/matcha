@@ -26,7 +26,7 @@ func DecodeToPNG(data []byte) (ImageConvertResult, bool) {
 	if result.ok == 0 {
 		return ImageConvertResult{}, false
 	}
-	defer C.free_image_result(&result)
+	defer C.free_image_result(&result) //nolint:gocritic
 
 	pngData := C.GoBytes(unsafe.Pointer(result.png_data), C.int(result.png_len))
 

@@ -24,11 +24,11 @@ func RunInstall(args []string) error {
 	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
 		// Download from URL
 		client := httpclient.New(httpclient.InstallTimeout)
-		resp, err := client.Get(source)
+		resp, err := client.Get(source) //nolint:noctx
 		if err != nil {
 			return fmt.Errorf("failed to download: %w", err)
 		}
-		defer resp.Body.Close()
+		defer resp.Body.Close() //nolint:errcheck
 
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("download returned status %d", resp.StatusCode)
@@ -62,7 +62,7 @@ func RunInstall(args []string) error {
 	}
 
 	dest := filepath.Join(pluginsDir, filename)
-	if err := os.WriteFile(dest, data, 0644); err != nil {
+	if err := os.WriteFile(dest, data, 0644); err != nil { //nolint:gosec
 		return fmt.Errorf("failed to write plugin: %w", err)
 	}
 
@@ -76,7 +76,7 @@ func pluginsDir() (string, error) {
 		return "", fmt.Errorf("cannot find home directory: %w", err)
 	}
 	dir := filepath.Join(home, ".config", "matcha", "plugins")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return "", fmt.Errorf("cannot create plugins directory: %w", err)
 	}
 	return dir, nil

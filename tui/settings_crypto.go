@@ -44,8 +44,8 @@ func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 	case "esc":
 		m.isCryptoConfig = false
 		return m, nil
-	case "tab", "shift+tab", "up", "down":
-		if msg.String() == "shift+tab" || msg.String() == "up" {
+	case "tab", keyShiftTab, "up", keyDown:
+		if msg.String() == keyShiftTab || msg.String() == "up" {
 			m.cryptoFocusIndex--
 			if m.cryptoFocusIndex < 0 {
 				m.cryptoFocusIndex = cryptoConfigMaxFocus
@@ -56,8 +56,8 @@ func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 				m.cryptoFocusIndex = 0
 			}
 		}
-		if m.cryptoFocusIndex == 6 && m.pgpKeySource != "yubikey" {
-			if msg.String() == "shift+tab" || msg.String() == "up" {
+		if m.cryptoFocusIndex == 6 && m.pgpKeySource != keyYubikey {
+			if msg.String() == keyShiftTab || msg.String() == "up" {
 				m.cryptoFocusIndex = 5
 			} else {
 				m.cryptoFocusIndex = 7
@@ -85,7 +85,7 @@ func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 		default:
 			// advance to next
 			next := m.cryptoFocusIndex + 1
-			if next == 6 && m.pgpKeySource != "yubikey" {
+			if next == 6 && m.pgpKeySource != keyYubikey {
 				next = 7
 			}
 			cmds = append(cmds, setFocus(next))
@@ -100,7 +100,7 @@ func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 			return m, nil
 		case 5:
 			if m.pgpKeySource == "file" {
-				m.pgpKeySource = "yubikey"
+				m.pgpKeySource = keyYubikey
 			} else {
 				m.pgpKeySource = "file"
 			}
@@ -144,12 +144,12 @@ func (m *Settings) viewSMIMEConfig() string {
 	renderField(4, "Private Key Path:", m.pgpPrivateKeyInput.View())
 
 	keySource := "File"
-	if m.pgpKeySource == "yubikey" {
+	if m.pgpKeySource == keyYubikey {
 		keySource = "YubiKey"
 	}
 	renderField(5, "Key Source:", keySource)
 
-	if m.pgpKeySource == "yubikey" {
+	if m.pgpKeySource == keyYubikey {
 		renderField(6, "YubiKey PIN:", m.pgpPINInput.View())
 	}
 

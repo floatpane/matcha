@@ -26,7 +26,6 @@ var (
 	tabBarStyle     = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).PaddingBottom(1).MarginBottom(1)
 )
 
-var dateStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
 var unreadEmailStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 var readEmailStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 var visualSelectedStyle lipgloss.Style
@@ -73,7 +72,7 @@ type itemDelegate struct {
 func (d itemDelegate) Height() int                               { return 1 }
 func (d itemDelegate) Spacing() int                              { return 0 }
 func (d itemDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
-func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) { //nolint:gocyclo
 	i, ok := listItem.(item)
 	if !ok {
 		return
@@ -114,7 +113,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	listWidth := m.Width() - 2 // account for PaddingLeft(2) in itemStyle
 	isSelected := index == m.Index()
 
-	styledDate := dateStyle.Render(dateStr)
+	var styledDate string
 	if isSelected {
 		styledDate = selectedDateStyle.Render(dateStr)
 	} else {
@@ -214,7 +213,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		}
 	}
 
-	fmt.Fprint(w, fn(str+strings.Repeat(" ", padding)+styledDate))
+	fmt.Fprint(w, fn(str+strings.Repeat(" ", padding)+styledDate)) //nolint:errcheck
 }
 
 // formatInboxDate formats a time as relative unless detailed dates are enabled
@@ -236,13 +235,13 @@ func formatInboxDate(timestamp time.Time, layout string, detailedDates bool) str
 		return t("time.just_now")
 	case d < time.Hour:
 		mins := int(d.Minutes())
-		return tn("time.minute_ago", mins, map[string]interface{}{"count": mins})
+		return tn("time.minute_ago", mins, map[string]interface{}{keyCount: mins})
 	case d < 24*time.Hour:
 		hours := int(d.Hours())
-		return tn("time.hour_ago", hours, map[string]interface{}{"count": hours})
+		return tn("time.hour_ago", hours, map[string]interface{}{keyCount: hours})
 	case d < 7*24*time.Hour:
 		days := int(d.Hours() / 24)
-		return tn("time.day_ago", days, map[string]interface{}{"count": days})
+		return tn("time.day_ago", days, map[string]interface{}{keyCount: days})
 	default:
 		return formatAbsoluteDate(timestamp, layout, now)
 	}
@@ -378,11 +377,11 @@ func NewArchiveInbox(emails []fetcher.Email, accounts []config.Account) *Inbox {
 
 func NewInboxWithMailbox(emails []fetcher.Email, accounts []config.Account, mailbox MailboxKind) *Inbox {
 	// Build tabs: empty for single account, "ALL" + accounts for multiple
-	var tabs []AccountTab
+	tabs := make([]AccountTab, 0, 1+len(accounts))
 	if len(accounts) <= 1 {
 		tabs = []AccountTab{{ID: "", Label: "", Email: ""}}
 	} else {
-		tabs = []AccountTab{{ID: "", Label: "ALL", Email: ""}}
+		tabs = append(tabs, AccountTab{ID: "", Label: "ALL", Email: ""})
 		for _, acc := range accounts {
 			// Use FetchEmail for display, fall back to Email if not set
 			displayEmail := accountDisplayEmail(acc)
@@ -718,11 +717,12 @@ func (m *Inbox) itemForEmail(email fetcher.Email, index int, showAccountLabel bo
 
 func (m *Inbox) getTitle() string {
 	var title string
-	if m.searchActive {
+	switch {
+	case m.searchActive:
 		title = fmt.Sprintf("Search Results - %s", m.searchQuery)
-	} else if m.currentAccountID == "" {
+	case m.currentAccountID == "":
 		title = m.getBaseTitle() + " - " + t("inbox.all_accounts")
-	} else {
+	default:
 		title = m.getBaseTitle()
 		for _, acc := range m.accounts {
 			if acc.ID == m.currentAccountID {
@@ -761,9 +761,10 @@ func (m *Inbox) getBaseTitle() string {
 		return "Trash"
 	case MailboxArchive:
 		return "Archive"
-	default:
+	case MailboxInbox:
 		return "Inbox"
 	}
+	return "Inbox"
 }
 
 func (m *Inbox) folderKey() string {
@@ -821,7 +822,7 @@ func (m *Inbox) Init() tea.Cmd {
 	return nil
 }
 
-func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -891,7 +892,7 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateListTitle()
 				return m, nil
 			}
-		case kb.Global.NavDown, "down", kb.Global.NavUp, "up":
+		case kb.Global.NavDown, keyDown, kb.Global.NavUp, "up":
 			if m.visualMode {
 				// Let the list handle navigation first
 				var cmd tea.Cmd
@@ -914,7 +915,7 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateList()
 				return m, nil
 			}
-		case "right", kb.Inbox.NextTab:
+		case keyRight, kb.Inbox.NextTab:
 			if len(m.tabs) > 1 {
 				m.activeTabIndex++
 				if m.activeTabIndex >= len(m.tabs) {
@@ -948,13 +949,12 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg {
 					return BatchDeleteEmailsMsg{UIDs: uids, AccountID: accountID, Mailbox: m.mailbox}
 				}
-			} else {
-				// Single delete
-				selectedItem, ok := m.list.SelectedItem().(item)
-				if ok && selectedItem.uid != 0 {
-					return m, func() tea.Msg {
-						return DeleteEmailMsg{UID: selectedItem.uid, AccountID: selectedItem.accountID, Mailbox: m.mailbox}
-					}
+			}
+			// Single delete
+			selectedItem, ok := m.list.SelectedItem().(item)
+			if ok && selectedItem.uid != 0 {
+				return m, func() tea.Msg {
+					return DeleteEmailMsg{UID: selectedItem.uid, AccountID: selectedItem.accountID, Mailbox: m.mailbox}
 				}
 			}
 		case kb.Inbox.Archive:
@@ -977,13 +977,12 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg {
 					return BatchArchiveEmailsMsg{UIDs: uids, AccountID: accountID, Mailbox: m.mailbox}
 				}
-			} else {
-				// Single archive
-				selectedItem, ok := m.list.SelectedItem().(item)
-				if ok && selectedItem.uid != 0 {
-					return m, func() tea.Msg {
-						return ArchiveEmailMsg{UID: selectedItem.uid, AccountID: selectedItem.accountID, Mailbox: m.mailbox}
-					}
+			}
+			// Single archive
+			selectedItem, ok := m.list.SelectedItem().(item)
+			if ok && selectedItem.uid != 0 {
+				return m, func() tea.Msg {
+					return ArchiveEmailMsg{UID: selectedItem.uid, AccountID: selectedItem.accountID, Mailbox: m.mailbox}
 				}
 			}
 		case kb.Inbox.Refresh:
@@ -1388,7 +1387,7 @@ func (m *Inbox) RemoveEmails(uids []uint32, accountID string) {
 	// Remove from all emails list
 	var filteredAll []fetcher.Email
 	for _, e := range m.allEmails {
-		if !(uidSet[e.UID] && e.AccountID == accountID) {
+		if !uidSet[e.UID] || e.AccountID != accountID {
 			filteredAll = append(filteredAll, e)
 		}
 	}
@@ -1413,7 +1412,7 @@ func (m *Inbox) RemoveEmail(uid uint32, accountID string) {
 	// Remove from all emails list
 	var filteredAll []fetcher.Email
 	for _, e := range m.allEmails {
-		if !(e.UID == uid && e.AccountID == accountID) {
+		if e.UID != uid || e.AccountID != accountID {
 			filteredAll = append(filteredAll, e)
 		}
 	}
@@ -1454,11 +1453,11 @@ func (m *Inbox) SetEmails(emails []fetcher.Email, accounts []config.Account) {
 	m.noMoreByAccount = make(map[string]bool)
 
 	// Rebuild tabs: empty for single account, "ALL" + accounts for multiple
-	var tabs []AccountTab
+	tabs := make([]AccountTab, 0, 1+len(accounts))
 	if len(accounts) <= 1 {
 		tabs = []AccountTab{{ID: "", Label: "", Email: ""}}
 	} else {
-		tabs = []AccountTab{{ID: "", Label: "ALL", Email: ""}}
+		tabs = append(tabs, AccountTab{ID: "", Label: "ALL", Email: ""})
 		for _, acc := range accounts {
 			displayEmail := accountDisplayEmail(acc)
 			tabs = append(tabs, AccountTab{ID: acc.ID, Label: displayEmail, Email: displayEmail})
