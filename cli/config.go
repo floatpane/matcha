@@ -26,7 +26,7 @@ func RunConfig(args []string) error {
 		name := args[0]
 		// Add .lua extension if not present
 		if filepath.Ext(name) != ".lua" {
-			name = name + ".lua"
+			name += ".lua"
 		}
 		target = filepath.Join(home, ".config", "matcha", "plugins", name)
 	}
@@ -35,7 +35,7 @@ func RunConfig(args []string) error {
 		return fmt.Errorf("file not found: %s", target)
 	}
 
-	cmd := exec.Command(editor, target)
+	cmd := exec.Command(editor, target) //nolint:gosec,noctx
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

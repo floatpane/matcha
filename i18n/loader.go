@@ -59,7 +59,7 @@ func loadFromEmbedded(bundle *Bundle) error {
 func LoadFromDirectory(bundle *Bundle, dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrLoadFailed, err)
+		return fmt.Errorf("%w: %w", ErrLoadFailed, err)
 	}
 
 	for _, entry := range entries {
@@ -95,7 +95,7 @@ func LoadFromDirectory(bundle *Bundle, dir string) error {
 func loadLanguageFile(bundle *Bundle, lang string, data []byte) error {
 	messages, err := ParseJSON(data)
 	if err != nil {
-		return fmt.Errorf("%w: language %s: %v", ErrParseFailed, lang, err)
+		return fmt.Errorf("%w: language %s: %w", ErrParseFailed, lang, err)
 	}
 
 	return bundle.AddMessages(lang, messages)

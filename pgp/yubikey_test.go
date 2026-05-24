@@ -37,7 +37,6 @@ func TestParseASN1Signature_TruncatedDoesNotPanic(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			// The test must not panic: the fix replaces panics with errors.
 			defer func() {

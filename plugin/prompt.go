@@ -15,7 +15,7 @@ type PendingPrompt struct {
 // luaPrompt implements matcha.prompt(placeholder, callback).
 // It requests a text input overlay in the TUI. When the user submits,
 // the callback is called with their input string.
-func (m *Manager) luaPrompt(L *lua.LState) int {
+func (m *Manager) luaPrompt(L *lua.LState) int { //nolint:gocritic
 	placeholder := L.CheckString(1)
 	fn := L.CheckFunction(2)
 

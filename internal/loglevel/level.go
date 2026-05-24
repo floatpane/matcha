@@ -36,12 +36,12 @@ func Debugf(format string, args ...any) {
 
 func Verbosef(format string, args ...any) {
 	if Get() >= LevelVerbose {
-		log.Printf(format, args...)
+		log.Printf("verbose: "+format, args...)
 	}
 }
 
 func Infof(format string, args ...any) {
 	if Get() >= LevelInfo {
-		log.Printf(format, args...)
+		log.Printf("info: "+format, args...)
 	}
 }

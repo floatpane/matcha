@@ -17,11 +17,11 @@ func newTestManager() *Manager {
 
 func TestHTTPGet(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" {
+		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
 		w.Header().Set("X-Test", "hello")
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	}))
 	defer srv.Close()
@@ -63,7 +63,7 @@ func TestHTTPGet(t *testing.T) {
 
 func TestHTTPPostWithBodyAndHeaders(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
+		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
 		if ct := r.Header.Get("Content-Type"); ct != "application/json" {

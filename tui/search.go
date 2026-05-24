@@ -52,8 +52,7 @@ func (o *SearchOverlay) Update(msg tea.Msg, mailbox MailboxKind, accountID strin
 		o.results = msg.Emails
 		return nil
 	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "enter":
+		if msg.String() == keyEnter {
 			if o.loading {
 				return nil
 			}

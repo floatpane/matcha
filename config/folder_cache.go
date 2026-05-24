@@ -14,9 +14,10 @@ import (
 
 // CachedFolders stores folder names for a single account.
 type CachedFolders struct {
-	AccountID string    `json:"account_id"`
-	Folders   []string  `json:"folders"`
-	UpdatedAt time.Time `json:"updated_at"`
+	AccountID string         `json:"account_id"`
+	Folders   []string       `json:"folders"`
+	Unread    map[string]int `json:"unread_counts,omitempty"`
+	UpdatedAt time.Time      `json:"updated_at"`
 }
 
 // FolderCache stores cached folders for all accounts.
@@ -70,21 +71,21 @@ func LoadFolderCache() (*FolderCache, error) {
 }
 
 // GetCachedFolders returns cached folder names for a specific account.
-func GetCachedFolders(accountID string) []string {
+func GetCachedFolders(accountID string) ([]string, map[string]int) {
 	cache, err := LoadFolderCache()
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	for _, acc := range cache.Accounts {
 		if acc.AccountID == accountID {
-			return acc.Folders
+			return acc.Folders, acc.Unread
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // SaveAccountFolders saves folder names for a specific account, merging into the existing cache.
-func SaveAccountFolders(accountID string, folders []string) error {
+func SaveAccountFolders(accountID string, folders []string, unread map[string]int) error {
 	cache, err := LoadFolderCache()
 	if err != nil {
 		cache = &FolderCache{}
@@ -94,6 +95,7 @@ func SaveAccountFolders(accountID string, folders []string) error {
 	for i, acc := range cache.Accounts {
 		if acc.AccountID == accountID {
 			cache.Accounts[i].Folders = folders
+			cache.Accounts[i].Unread = unread
 			cache.Accounts[i].UpdatedAt = time.Now()
 			found = true
 			break
@@ -104,6 +106,7 @@ func SaveAccountFolders(accountID string, folders []string) error {
 		cache.Accounts = append(cache.Accounts, CachedFolders{
 			AccountID: accountID,
 			Folders:   folders,
+			Unread:    unread,
 			UpdatedAt: time.Now(),
 		})
 	}

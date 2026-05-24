@@ -101,7 +101,7 @@ func runExportContacts(format, outputPath string, noHeader bool) error {
 	if outputPath != "" {
 		dir := filepath.Dir(outputPath)
 		if dir != "." {
-			if err := os.MkdirAll(dir, 0755); err != nil {
+			if err := os.MkdirAll(dir, 0750); err != nil {
 				return fmt.Errorf("failed to create output directory: %w", err)
 			}
 		}
