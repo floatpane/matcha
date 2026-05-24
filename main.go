@@ -3761,7 +3761,7 @@ func runUpdateCLI() (err error) {
 	}
 	_, err = io.Copy(outFile, respAsset.Body)
 	if err != nil {
-		outFile.Close()
+		_ = outFile.Close()
 		return fmt.Errorf("could not write asset to disk: %w", err)
 	}
 	if err := outFile.Close(); err != nil {
@@ -3803,10 +3803,12 @@ func runUpdateCLI() (err error) {
 					return fmt.Errorf("could not create binary file: %w", err)
 				}
 				if _, err := io.Copy(out, tr); err != nil {
-					out.Close()
+					_ = out.Close()
 					return fmt.Errorf("could not extract binary: %w", err)
 				}
-				out.Close()
+				if err := out.Close(); err != nil {
+					return fmt.Errorf("could not finalize extracted binary: %w", err)
+				}
 				if err := os.Chmod(binPath, 0755); err != nil {
 					return fmt.Errorf("could not make binary executable: %w", err)
 				}
@@ -3833,12 +3835,17 @@ func runUpdateCLI() (err error) {
 					return fmt.Errorf("could not create binary file: %w", err)
 				}
 				if _, err := io.Copy(out, rc); err != nil {
-					out.Close()
-					rc.Close()
+					_ = out.Close()
+					_ = rc.Close()
 					return fmt.Errorf("could not extract binary: %w", err)
 				}
-				out.Close()
-				rc.Close()
+				if err := out.Close(); err != nil {
+					_ = rc.Close()
+					return fmt.Errorf("could not finalize extracted binary: %w", err)
+				}
+				if err := rc.Close(); err != nil {
+					return fmt.Errorf("could not close zip entry: %w", err)
+				}
 				if err := os.Chmod(binPath, 0755); err != nil {
 					return fmt.Errorf("could not make binary executable: %w", err)
 				}
