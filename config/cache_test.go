@@ -457,7 +457,6 @@ func TestLRU_ConcurrentReadWrite(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(20)
 	for i := 0; i < 20; i++ {
-		i := i
 		go func() {
 			defer wg.Done()
 			uid := uint32(i % 5)
