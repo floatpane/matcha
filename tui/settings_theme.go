@@ -17,11 +17,11 @@ func (m *Settings) updateTheme(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(themes) > 0 {
 			m.themeCursor = (m.themeCursor - 1 + len(themes)) % len(themes)
 		}
-	case "down", "j":
+	case keyDown, "j":
 		if len(themes) > 0 {
 			m.themeCursor = (m.themeCursor + 1) % len(themes)
 		}
-	case "enter", "space", "right", "l":
+	case keyEnter, "space", keyRight, "l":
 		if m.themeCursor < len(themes) {
 			selected := themes[m.themeCursor]
 			theme.SetTheme(selected.Name)

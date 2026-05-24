@@ -89,7 +89,7 @@ func (w *IdleWatcher) StopAll() {
 // StopAllAndWait stops all IDLE watchers and waits for them to finish.
 func (w *IdleWatcher) StopAllAndWait() {
 	w.mu.Lock()
-	var pending []chan struct{}
+	pending := make([]chan struct{}, 0, len(w.watchers))
 	for id, a := range w.watchers {
 		close(a.stop)
 		pending = append(pending, a.done)
@@ -175,7 +175,7 @@ func (a *accountIdle) idleOnce() error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	// Select the mailbox in read-only mode
 	selectData, err := c.Select(a.folder, nil).Wait()
@@ -193,8 +193,8 @@ func (a *accountIdle) idleOnce() error {
 	for {
 		select {
 		case <-a.stop:
-			idleCmd.Close()
-			idleCmd.Wait()
+			idleCmd.Close() //nolint:errcheck,gosec
+			idleCmd.Wait()  //nolint:errcheck,gosec
 			return nil
 
 		case newExists := <-mailboxUpdates:
@@ -205,8 +205,8 @@ func (a *accountIdle) idleOnce() error {
 					FolderName: a.folder,
 				}:
 				case <-a.stop:
-					idleCmd.Close()
-					idleCmd.Wait()
+					idleCmd.Close() //nolint:errcheck,gosec
+					idleCmd.Wait()  //nolint:errcheck,gosec
 					return nil
 				}
 			}

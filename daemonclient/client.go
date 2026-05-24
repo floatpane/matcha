@@ -23,7 +23,7 @@ type Client struct {
 // Dial connects to the daemon socket.
 func Dial() (*Client, error) {
 	sockPath := daemonrpc.SocketPath()
-	conn, err := net.Dial("unix", sockPath)
+	conn, err := net.Dial("unix", sockPath) //nolint:noctx
 	if err != nil {
 		return nil, fmt.Errorf("connect to daemon: %w", err)
 	}

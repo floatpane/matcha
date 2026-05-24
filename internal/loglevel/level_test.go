@@ -60,7 +60,7 @@ func TestVerbosefRequiresVerboseLevel(t *testing.T) {
 		output := captureLog(t, func() {
 			Verbosef("more details")
 		})
-		if !strings.Contains(output, "more details") {
+		if !strings.Contains(output, "verbose: more details") {
 			t.Fatalf("Verbosef did not write at level %v: %q", level, output)
 		}
 	}
@@ -79,7 +79,7 @@ func TestInfofRequiresInfoLevel(t *testing.T) {
 	output = captureLog(t, func() {
 		Infof("hello")
 	})
-	if !strings.Contains(output, "hello") {
+	if !strings.Contains(output, "info: hello") {
 		t.Fatalf("Infof did not write at info level: %q", output)
 	}
 }

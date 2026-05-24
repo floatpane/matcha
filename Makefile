@@ -1,4 +1,4 @@
-.PHONY: build test run clean lint fmt vet build-full generate_screenshots
+.PHONY: build test run run-log clean lint fmt vet build-full generate_screenshots
 
 BINARY_NAME=matcha
 BUILD_DIR=bin
@@ -35,6 +35,9 @@ build-full:
 
 run:
 	go run .
+
+run-log:
+	go run . --debug --logs
 
 test:
 	go test ./...

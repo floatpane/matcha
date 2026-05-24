@@ -15,7 +15,7 @@ func SearchMailbox(account *config.Account, folder string, query backend.SearchQ
 	if err != nil {
 		return nil, err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck
 
 	if _, err := c.Select(folder, nil).Wait(); err != nil {
 		return nil, err

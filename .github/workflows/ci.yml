@@ -58,6 +58,13 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          args: --timeout=10m --build-tags=integration
+          only-new-issues: false
+
   mod-tidy:
     runs-on: ubuntu-latest
     steps:

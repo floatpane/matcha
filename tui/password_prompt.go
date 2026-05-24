@@ -47,7 +47,7 @@ func (m *PasswordPrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "enter":
+		case keyEnter:
 			password := m.input.Value()
 			if password == "" {
 				m.err = t("password_prompt.error_empty")
@@ -72,7 +72,6 @@ func (m *PasswordPrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Password correct — key is in msg.Key
 		return m, nil
-
 	}
 
 	var cmd tea.Cmd
