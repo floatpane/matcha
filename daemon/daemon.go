@@ -89,7 +89,9 @@ func (d *Daemon) Run() error {
 
 	// Remove stale socket file.
 	sockPath := daemonrpc.SocketPath()
-	os.Remove(sockPath) //nolint:errcheck,gosec
+	if err := os.Remove(sockPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove stale socket: %w", err)
+	}
 
 	// Listen on Unix domain socket.
 	var err error
@@ -100,7 +102,9 @@ func (d *Daemon) Run() error {
 	defer d.listener.Close() //nolint:errcheck
 
 	// Set socket permissions (owner only).
-	os.Chmod(sockPath, 0700) //nolint:errcheck,gosec
+	if err := os.Chmod(sockPath, 0700); err != nil { // #nosec G302
+		return fmt.Errorf("set socket permissions: %w", err)
+	}
 
 	log.Printf("daemon: listening on %s (PID %d)", sockPath, os.Getpid())
 

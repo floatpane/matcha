@@ -266,13 +266,21 @@ func debugImageProtocol(format string, args ...interface{}) {
 	loglevel.Infof("%s", strings.TrimSuffix(msg, "\n"))
 	if path := os.Getenv("DEBUG_IMAGE_PROTOCOL_LOG"); path != "" {
 		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil { //nolint:gosec
-			_, _ = f.WriteString(msg)
-			_ = f.Close()
+			if _, err := f.WriteString(msg); err != nil {
+				loglevel.Debugf("image protocol write error: %v", err)
+			}
+			if err := f.Close(); err != nil {
+				loglevel.Debugf("image protocol close error: %v", err)
+			}
 		}
 	} else if path := os.Getenv("DEBUG_KITTY_LOG"); path != "" {
 		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil { //nolint:gosec
-			_, _ = f.WriteString(msg)
-			_ = f.Close()
+			if _, err := f.WriteString(msg); err != nil {
+				loglevel.Debugf("image protocol write error: %v", err)
+			}
+			if err := f.Close(); err != nil {
+				loglevel.Debugf("image protocol close error: %v", err)
+			}
 		}
 	}
 }

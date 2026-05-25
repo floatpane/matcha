@@ -2680,19 +2680,32 @@ func openExternalEditor(body string) tea.Cmd {
 	tmpPath := tmpFile.Name()
 
 	if _, err := tmpFile.WriteString(body); err != nil {
-		tmpFile.Close()    //nolint:errcheck,gosec
-		os.Remove(tmpPath) //nolint:errcheck,gosec
+		writeErr := err
+		if err := tmpFile.Close(); err != nil {
+			_ = os.Remove(tmpPath)
+			return func() tea.Msg {
+				return tui.EditorFinishedMsg{Err: fmt.Errorf("closing temp file after write failure: %w", err)}
+			}
+		}
+		_ = os.Remove(tmpPath)
 		return func() tea.Msg {
-			return tui.EditorFinishedMsg{Err: fmt.Errorf("writing temp file: %w", err)}
+			return tui.EditorFinishedMsg{Err: fmt.Errorf("writing temp file: %w", writeErr)}
 		}
 	}
-	tmpFile.Close() //nolint:errcheck,gosec
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return func() tea.Msg {
+			return tui.EditorFinishedMsg{Err: fmt.Errorf("closing temp file: %w", err)}
+		}
+	}
 
 	parts := strings.Fields(editor)
 	args := append(parts[1:], tmpPath)   //nolint:gocritic
 	c := exec.Command(parts[0], args...) //nolint:gosec,noctx
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		defer os.Remove(tmpPath) //nolint:errcheck
+		defer func() {
+			_ = os.Remove(tmpPath)
+		}()
 		if err != nil {
 			return tui.EditorFinishedMsg{Err: err}
 		}
@@ -3667,9 +3680,12 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 		return fmt.Errorf("could not create temp file: %w", err)
 	}
 	_, err = io.Copy(outFile, respAsset.Body)
-	outFile.Close() //nolint:errcheck,gosec
 	if err != nil {
+		_ = outFile.Close()
 		return fmt.Errorf("could not write asset to disk: %w", err)
+	}
+	if err := outFile.Close(); err != nil {
+		return fmt.Errorf("could not finalize asset file: %w", err)
 	}
 
 	// Determine the expected binary name based on the OS.
@@ -3707,10 +3723,12 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 					return fmt.Errorf("could not create binary file: %w", err)
 				}
 				if _, err := io.Copy(out, tr); err != nil { //nolint:gosec
-					out.Close() //nolint:errcheck,gosec
+					_ = out.Close()
 					return fmt.Errorf("could not extract binary: %w", err)
 				}
-				out.Close()                                     //nolint:errcheck,gosec
+				if err := out.Close(); err != nil {
+					return fmt.Errorf("could not finalize extracted binary: %w", err)
+				}
 				if err := os.Chmod(binPath, 0755); err != nil { //nolint:gosec
 					return fmt.Errorf("could not make binary executable: %w", err)
 				}
@@ -3737,12 +3755,17 @@ func runUpdateCLI() (err error) { //nolint:gocyclo
 					return fmt.Errorf("could not create binary file: %w", err)
 				}
 				if _, err := io.Copy(out, rc); err != nil { //nolint:gosec
-					out.Close() //nolint:errcheck,gosec
-					rc.Close()  //nolint:errcheck,gosec
+					_ = out.Close()
+					_ = rc.Close()
 					return fmt.Errorf("could not extract binary: %w", err)
 				}
-				out.Close()                                     //nolint:errcheck,gosec
-				rc.Close()                                      //nolint:errcheck,gosec
+				if err := out.Close(); err != nil {
+					_ = rc.Close()
+					return fmt.Errorf("could not finalize extracted binary: %w", err)
+				}
+				if err := rc.Close(); err != nil {
+					return fmt.Errorf("could not close zip entry: %w", err)
+				}
 				if err := os.Chmod(binPath, 0755); err != nil { //nolint:gosec
 					return fmt.Errorf("could not make binary executable: %w", err)
 				}

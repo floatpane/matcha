@@ -46,14 +46,7 @@ You can download pre-compiled binaries from the [Releases page](https://github.c
 
 ## 🐧 Linux
 
-### 🍺 Homebrew
-
-You can also install Matcha on Linux via Homebrew.
-
-```bash
-brew tap floatpane/matcha
-brew install floatpane/matcha/matcha
-```
+> Note: Homebrew support for Linux was [dropped](https://github.com/floatpane/matcha/pull/1360) (since matcha v0.40.0). You can still use Homebrew on Linux for nightly releases, but for stable releases, please use one of the other installation methods below.
 
 ### Snap
 
