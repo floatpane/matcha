@@ -2,6 +2,7 @@ package maildir
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -238,7 +239,7 @@ func TestArchiveEmailRequiresArchiveFolder(t *testing.T) {
 	p := newProvider(t, root)
 	emails, _ := p.FetchEmails(context.Background(), "INBOX", 10, 0)
 	err := p.ArchiveEmail(context.Background(), "INBOX", emails[0].UID)
-	if err != backend.ErrNotSupported {
+	if !errors.Is(err, backend.ErrNotSupported) {
 		t.Errorf("want ErrNotSupported, got %v", err)
 	}
 }
@@ -246,7 +247,7 @@ func TestArchiveEmailRequiresArchiveFolder(t *testing.T) {
 func TestSendEmailNotSupported(t *testing.T) {
 	root := makeMaildir(t)
 	p := newProvider(t, root)
-	if err := p.SendEmail(context.Background(), &backend.OutgoingEmail{}); err != backend.ErrNotSupported {
+	if err := p.SendEmail(context.Background(), &backend.OutgoingEmail{}); !errors.Is(err, backend.ErrNotSupported) {
 		t.Errorf("want ErrNotSupported, got %v", err)
 	}
 }

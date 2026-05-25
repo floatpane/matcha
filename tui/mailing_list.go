@@ -73,7 +73,7 @@ func (m *MailingListEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case kb.Global.Cancel:
 			return m, func() tea.Msg { return GoToSettingsMsg{} }
-		case "tab", "shift+tab", "up", "down":
+		case "tab", keyShiftTab, "up", keyDown:
 			if m.focus == 0 {
 				m.focus = 1
 				m.nameInput.Blur()
@@ -84,24 +84,23 @@ func (m *MailingListEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.nameInput.Focus()
 			}
 			return m, nil
-		case "enter":
+		case keyEnter:
 			if m.focus == 0 {
 				m.focus = 1
 				m.nameInput.Blur()
 				m.addrInput.Focus()
 				return m, nil
-			} else {
-				// Submit on second field
-				name := strings.TrimSpace(m.nameInput.Value())
-				addrs := strings.TrimSpace(m.addrInput.Value())
-				if name != "" && addrs != "" {
-					editIdx := m.editIndex
-					return m, func() tea.Msg {
-						return SaveMailingListMsg{
-							Name:      name,
-							Addresses: addrs,
-							EditIndex: editIdx,
-						}
+			}
+			// Submit on second field
+			name := strings.TrimSpace(m.nameInput.Value())
+			addrs := strings.TrimSpace(m.addrInput.Value())
+			if name != "" && addrs != "" {
+				editIdx := m.editIndex
+				return m, func() tea.Msg {
+					return SaveMailingListMsg{
+						Name:      name,
+						Addresses: addrs,
+						EditIndex: editIdx,
 					}
 				}
 			}

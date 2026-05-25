@@ -51,7 +51,7 @@ func (d *Daemon) handleRequest(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	case daemonrpc.MethodUnsubscribe:
 		d.handleUnsubscribe(conn, req)
 	default:
-		conn.SendError(req.ID, daemonrpc.ErrCodeNotFound, fmt.Sprintf("unknown method: %s", req.Method))
+		conn.SendError(req.ID, daemonrpc.ErrCodeNotFound, fmt.Sprintf("unknown method: %s", req.Method)) //nolint:errcheck,gosec
 	}
 }
 
@@ -66,18 +66,18 @@ func decodeParams[T any](req *daemonrpc.Request) (T, error) {
 }
 
 func (d *Daemon) handlePing(conn *daemonrpc.Conn, req *daemonrpc.Request) {
-	conn.SendResponse(req.ID, daemonrpc.PingResult{Pong: true})
+	conn.SendResponse(req.ID, daemonrpc.PingResult{Pong: true}) //nolint:errcheck,gosec
 }
 
 func (d *Daemon) handleGetStatus(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	d.mu.RLock()
-	var accounts []string
+	accounts := make([]string, 0, len(d.config.Accounts))
 	for _, acct := range d.config.Accounts {
 		accounts = append(accounts, acct.Email)
 	}
 	d.mu.RUnlock()
 
-	conn.SendResponse(req.ID, daemonrpc.StatusResult{
+	conn.SendResponse(req.ID, daemonrpc.StatusResult{ //nolint:errcheck,gosec
 		Running:  true,
 		Uptime:   int64(time.Since(d.startTime).Seconds()),
 		Accounts: accounts,
@@ -89,7 +89,7 @@ func (d *Daemon) handleGetAccounts(conn *daemonrpc.Conn, req *daemonrpc.Request)
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	var infos []daemonrpc.AccountInfo
+	infos := make([]daemonrpc.AccountInfo, 0, len(d.config.Accounts))
 	for _, acct := range d.config.Accounts {
 		protocol := acct.Protocol
 		if protocol == "" {
@@ -102,27 +102,27 @@ func (d *Daemon) handleGetAccounts(conn *daemonrpc.Conn, req *daemonrpc.Request)
 			Protocol: protocol,
 		})
 	}
-	conn.SendResponse(req.ID, infos)
+	conn.SendResponse(req.ID, infos) //nolint:errcheck,gosec
 }
 
 func (d *Daemon) handleReloadConfig(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	if err := d.ReloadConfig(); err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
 		return
 	}
-	conn.SendResponse(req.ID, true)
+	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
 }
 
 func (d *Daemon) handleFetchEmails(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	params, err := decodeParams[daemonrpc.FetchEmailsParams](req)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
 	p, err := d.getProvider(params.AccountID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
@@ -131,23 +131,23 @@ func (d *Daemon) handleFetchEmails(conn *daemonrpc.Conn, req *daemonrpc.Request)
 
 	emails, err := p.FetchEmails(ctx, params.Folder, params.Limit, params.Offset)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
-	conn.SendResponse(req.ID, emails)
+	conn.SendResponse(req.ID, emails) //nolint:errcheck,gosec
 }
 
 func (d *Daemon) handleFetchEmailBody(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	params, err := decodeParams[daemonrpc.FetchEmailBodyParams](req)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
 	p, err := d.getProvider(params.AccountID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
@@ -156,7 +156,7 @@ func (d *Daemon) handleFetchEmailBody(conn *daemonrpc.Conn, req *daemonrpc.Reque
 
 	body, mimeType, attachments, err := p.FetchEmailBody(ctx, params.Folder, params.UID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
@@ -171,7 +171,7 @@ func (d *Daemon) handleFetchEmailBody(conn *daemonrpc.Conn, req *daemonrpc.Reque
 		})
 	}
 
-	conn.SendResponse(req.ID, daemonrpc.FetchEmailBodyResult{
+	conn.SendResponse(req.ID, daemonrpc.FetchEmailBodyResult{ //nolint:errcheck,gosec
 		Body:         body,
 		BodyMIMEType: mimeType,
 		Attachments:  attInfos,
@@ -181,13 +181,13 @@ func (d *Daemon) handleFetchEmailBody(conn *daemonrpc.Conn, req *daemonrpc.Reque
 func (d *Daemon) handleDeleteEmails(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	params, err := decodeParams[daemonrpc.DeleteEmailsParams](req)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
 	p, err := d.getProvider(params.AccountID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
@@ -195,22 +195,22 @@ func (d *Daemon) handleDeleteEmails(conn *daemonrpc.Conn, req *daemonrpc.Request
 	defer cancel()
 
 	if err := p.DeleteEmails(ctx, params.Folder, params.UIDs); err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
 		return
 	}
-	conn.SendResponse(req.ID, true)
+	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
 }
 
 func (d *Daemon) handleArchiveEmails(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	params, err := decodeParams[daemonrpc.ArchiveEmailsParams](req)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
 	p, err := d.getProvider(params.AccountID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
@@ -218,22 +218,22 @@ func (d *Daemon) handleArchiveEmails(conn *daemonrpc.Conn, req *daemonrpc.Reques
 	defer cancel()
 
 	if err := p.ArchiveEmails(ctx, params.Folder, params.UIDs); err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
 		return
 	}
-	conn.SendResponse(req.ID, true)
+	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
 }
 
 func (d *Daemon) handleMoveEmails(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	params, err := decodeParams[daemonrpc.MoveEmailsParams](req)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
 	p, err := d.getProvider(params.AccountID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
@@ -241,22 +241,22 @@ func (d *Daemon) handleMoveEmails(conn *daemonrpc.Conn, req *daemonrpc.Request) 
 	defer cancel()
 
 	if err := p.MoveEmails(ctx, params.UIDs, params.SourceFolder, params.DestFolder); err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
 		return
 	}
-	conn.SendResponse(req.ID, true)
+	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
 }
 
 func (d *Daemon) handleMarkRead(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	params, err := decodeParams[daemonrpc.MarkReadParams](req)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
 	p, err := d.getProvider(params.AccountID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
@@ -274,19 +274,19 @@ func (d *Daemon) handleMarkRead(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 			log.Printf("daemon: mark read=%v %d failed: %v", params.Read, uid, err)
 		}
 	}
-	conn.SendResponse(req.ID, true)
+	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
 }
 
 func (d *Daemon) handleFetchFolders(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	params, err := decodeParams[daemonrpc.FetchFoldersParams](req)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
 	p, err := d.getProvider(params.AccountID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
@@ -295,16 +295,16 @@ func (d *Daemon) handleFetchFolders(conn *daemonrpc.Conn, req *daemonrpc.Request
 
 	folders, err := p.FetchFolders(ctx)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
 		return
 	}
-	conn.SendResponse(req.ID, folders)
+	conn.SendResponse(req.ID, folders) //nolint:errcheck,gosec
 }
 
 func (d *Daemon) handleRefreshFolder(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	params, err := decodeParams[daemonrpc.RefreshFolderParams](req)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
@@ -327,10 +327,7 @@ func (d *Daemon) handleRefreshFolder(conn *daemonrpc.Conn, req *daemonrpc.Reques
 			return
 		}
 
-		d.broadcastToSubscribers(params.AccountID, params.Folder, daemonrpc.EventSyncStarted, daemonrpc.SyncStartedEvent{
-			AccountID: params.AccountID,
-			Folder:    params.Folder,
-		})
+		d.broadcastToSubscribers(params.AccountID, params.Folder, daemonrpc.EventSyncStarted, daemonrpc.SyncStartedEvent(params))
 
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
@@ -352,13 +349,13 @@ func (d *Daemon) handleRefreshFolder(conn *daemonrpc.Conn, req *daemonrpc.Reques
 		})
 	}()
 
-	conn.SendResponse(req.ID, true)
+	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
 }
 
 func (d *Daemon) handleSubscribe(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	params, err := decodeParams[daemonrpc.SubscribeParams](req)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
@@ -372,13 +369,13 @@ func (d *Daemon) handleSubscribe(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	d.subMu.Unlock()
 
 	log.Printf("daemon: client subscribed to %s", key)
-	conn.SendResponse(req.ID, true)
+	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
 }
 
 func (d *Daemon) handleUnsubscribe(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	params, err := decodeParams[daemonrpc.UnsubscribeParams](req)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error())
+		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
 		return
 	}
 
@@ -390,5 +387,5 @@ func (d *Daemon) handleUnsubscribe(conn *daemonrpc.Conn, req *daemonrpc.Request)
 	}
 	d.subMu.Unlock()
 
-	conn.SendResponse(req.ID, true)
+	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
 }

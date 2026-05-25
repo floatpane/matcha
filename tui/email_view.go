@@ -20,8 +20,8 @@ import (
 // ClearKittyGraphics sends the Kitty graphics protocol delete command directly to stdout.
 func ClearKittyGraphics() {
 	// Delete all images: a=d (action=delete), d=A (delete all)
-	os.Stdout.WriteString("\x1b_Ga=d,d=A\x1b\\")
-	os.Stdout.Sync()
+	os.Stdout.WriteString("\x1b_Ga=d,d=A\x1b\\") //nolint:errcheck,gosec
+	os.Stdout.Sync()                             //nolint:errcheck,gosec
 }
 
 var (
@@ -80,7 +80,7 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 	var originalICSData []byte
 
 	for _, att := range email.Attachments {
-		if att.Filename == "smime-status.internal" {
+		if att.Filename == "smime-status.internal" { //nolint:gocritic
 			isSMIME = att.IsSMIMESignature || att.IsSMIMEEncrypted
 			smimeTrusted = att.SMIMEVerified
 			isEncrypted = att.IsSMIMEEncrypted
@@ -187,7 +187,7 @@ func (m *EmailView) Init() tea.Cmd {
 
 func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	var cmds []tea.Cmd
+	cmds := make([]tea.Cmd, 0, 1)
 
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
@@ -210,12 +210,12 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.attachmentCursor = (m.attachmentCursor - 1 + len(m.email.Attachments)) % len(m.email.Attachments)
 				}
 				return m, nil
-			case "down", kb.Global.NavDown:
+			case keyDown, kb.Global.NavDown:
 				if len(m.email.Attachments) > 0 {
 					m.attachmentCursor = (m.attachmentCursor + 1) % len(m.email.Attachments)
 				}
 				return m, nil
-			case "enter":
+			case keyEnter:
 				if len(m.email.Attachments) > 0 {
 					selected := m.email.Attachments[m.attachmentCursor]
 					idx := m.emailIndex
@@ -340,8 +340,8 @@ func (m *EmailView) View() tea.View {
 	// before re-rendering to prevent stacking on scroll. Uses d=a (delete all
 	// placements) instead of d=A (delete all including data) so that images
 	// can be re-displayed by ID without re-uploading.
-	os.Stdout.WriteString("\x1b_Ga=d,d=a\x1b\\")
-	os.Stdout.Sync()
+	os.Stdout.WriteString("\x1b_Ga=d,d=a\x1b\\") //nolint:errcheck,gosec
+	os.Stdout.Sync()                             //nolint:errcheck,gosec
 
 	var cryptoStatus strings.Builder
 
@@ -501,18 +501,18 @@ func renderCalendarInvite(event *calendar.Event) string {
 
 	var b strings.Builder
 	b.WriteString("📅 Meeting Invite\n\n")
-	b.WriteString(fmt.Sprintf("Title:    %s\n", event.Summary))
-	b.WriteString(fmt.Sprintf("When:     %s\n", formatEventTime(event.Start, event.End)))
+	fmt.Fprintf(&b, "Title:    %s\n", event.Summary)
+	fmt.Fprintf(&b, "When:     %s\n", formatEventTime(event.Start, event.End))
 
 	if event.Location != "" {
-		b.WriteString(fmt.Sprintf("Where:    %s\n", event.Location))
+		fmt.Fprintf(&b, "Where:    %s\n", event.Location)
 	}
 
-	b.WriteString(fmt.Sprintf("Organizer: %s\n", event.Organizer))
+	fmt.Fprintf(&b, "Organizer: %s\n", event.Organizer)
 
 	if event.Description != "" {
 		desc := truncateString(event.Description, 100)
-		b.WriteString(fmt.Sprintf("\n%s\n", desc))
+		fmt.Fprintf(&b, "\n%s\n", desc)
 	}
 
 	b.WriteString("\n")

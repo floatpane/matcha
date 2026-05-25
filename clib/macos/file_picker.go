@@ -24,7 +24,7 @@ func OpenFilePicker(initialPath string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
 
 	swiftFile := filepath.Join(tmpDir, "file_picker.swift")
 	if err := os.WriteFile(swiftFile, []byte(filePickerSwift), 0644); err != nil {
@@ -34,7 +34,7 @@ func OpenFilePicker(initialPath string) ([]string, error) {
 	binFile := filepath.Join(tmpDir, "file_picker")
 
 	// Compile
-	cmd := exec.Command("swiftc", swiftFile, "-o", binFile)
+	cmd := exec.Command("swiftc", swiftFile, "-o", binFile) //nolint:noctx
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("failed to compile file picker helper: %w\n%s", err, string(out))
 	}
@@ -44,7 +44,7 @@ func OpenFilePicker(initialPath string) ([]string, error) {
 	if initialPath != "" {
 		args = append(args, initialPath)
 	}
-	out, err := exec.Command(binFile, args...).Output()
+	out, err := exec.Command(binFile, args...).Output() //nolint:noctx
 	if err != nil {
 		// Exit code 1 usually means user cancelled
 		return nil, nil
