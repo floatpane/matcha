@@ -717,7 +717,7 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 				}
 				debugImageProtocol("no payload for src=%s", src)
 			}
-			if hyperlinkSupported() {
+			if isRemoteImageURL(src) && hyperlinkSupported() {
 				fmt.Fprintf(&text, "\n %s \n", hyperlink(src, fmt.Sprintf("[Click here to view image: %s]", alt)))
 			} else {
 				fmt.Fprintf(&text, "\n %s \n", linkStyle().Render(fmt.Sprintf("[Image: %s, %s]", alt, src)))
@@ -785,6 +785,10 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 	}
 
 	return result, placements, nil
+}
+
+func isRemoteImageURL(src string) bool {
+	return strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://")
 }
 
 func tableHeaderStyle() lipgloss.Style {

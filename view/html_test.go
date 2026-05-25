@@ -770,6 +770,45 @@ func TestProcessBodySanitizesUnsafeHTMLLinks(t *testing.T) {
 	}
 }
 
+func TestProcessBodyDoesNotHyperlinkNonRemoteImageFallbacks(t *testing.T) {
+	t.Setenv("TERM", "xterm")
+	t.Setenv("TERM_PROGRAM", "")
+	t.Setenv("WEZTERM_EXECUTABLE", "/usr/bin/wezterm")
+
+	h1Style := lipgloss.NewStyle()
+	h2Style := lipgloss.NewStyle()
+	bodyStyle := lipgloss.NewStyle()
+
+	input := `
+		<img src="data:image/png;base64,iVBORw0KGgo=" alt="data image">
+		<img src="cid:test-image@example.com" alt="cid image">
+	`
+
+	processed, _, err := ProcessBody(input, BodyMIMETypeHTML, h1Style, h2Style, bodyStyle, true)
+	if err != nil {
+		t.Fatalf("ProcessBody() failed: %v", err)
+	}
+
+	for _, want := range []string{
+		"[Image: data image, data:image/png;base64,iVBORw0KGgo=]",
+		"[Image: cid image, cid:test-image@example.com]",
+	} {
+		if !strings.Contains(processed, want) {
+			t.Fatalf("processed body does not contain %q:\n%q", want, processed)
+		}
+	}
+
+	for _, forbidden := range []string{
+		"Click here to view image",
+		"\x1b]8;;data:",
+		"\x1b]8;;cid:",
+	} {
+		if strings.Contains(processed, forbidden) {
+			t.Fatalf("processed body contains forbidden %q:\n%q", forbidden, processed)
+		}
+	}
+}
+
 func TestProcessBodyWithImageProtocol(t *testing.T) {
 	// Save original environment variables
 	origTerm := os.Getenv("TERM")
