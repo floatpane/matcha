@@ -153,6 +153,8 @@
       "enable_split_pane": "Vista dividida",
       "enable_threaded": "Vista de conversação",
       "enable_detailed_dates": "Datas detalhadas",
+      "spellcheck": "Verificação ortográfica",
+      "spell_suggestions": "Sugestões ortográficas",
       "date_format": "Formato de Data",
       "language": "Idioma",
       "signature": "Editar Assinatura",

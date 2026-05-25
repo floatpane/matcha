@@ -155,6 +155,8 @@
       "enable_split_pane": "Split Pane View",
       "enable_threaded": "Threaded Conversation View",
       "enable_detailed_dates": "Detailed Dates",
+      "spellcheck": "Spellcheck",
+      "spell_suggestions": "Spell Suggestions",
       "date_format": "Date Format",
       "language": "Language",
       "signature": "Edit Signature",

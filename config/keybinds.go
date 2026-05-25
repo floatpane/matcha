@@ -64,6 +64,10 @@ type ComposerKeys struct {
 	NextField      string `json:"next_field"`
 	PrevField      string `json:"prev_field"`
 	Delete         string `json:"delete"`
+	SpellNext      string `json:"spell_next"`
+	SpellPrev      string `json:"spell_prev"`
+	SpellAccept    string `json:"spell_accept"`
+	SpellDismiss   string `json:"spell_dismiss"`
 }
 
 type FolderKeys struct {
@@ -171,6 +175,10 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 		"next_field":      kb.Composer.NextField,
 		"prev_field":      kb.Composer.PrevField,
 		keyDelete:         kb.Composer.Delete,
+		// spell_* bindings intentionally excluded from this conflict
+		// check — spell_accept reusing "tab" with next_field, and
+		// spell_dismiss reusing "esc" with cancel, are deliberate: the
+		// spellcheck popup intercepts before those handlers fire.
 	})
 	check("folder", map[string]string{
 		"next_folder":   kb.Folder.NextFolder,

@@ -103,13 +103,15 @@ type MailingList struct {
 
 // Config stores the user's email configuration with multiple accounts.
 type Config struct {
-	Accounts             []Account     `json:"accounts"`
-	DisableImages        bool          `json:"disable_images,omitempty"`
-	HideTips             bool          `json:"hide_tips,omitempty"`
-	DisableNotifications bool          `json:"disable_notifications,omitempty"`
-	EnableSplitPane      bool          `json:"enable_split_pane,omitempty"`
-	EnableThreaded       bool          `json:"enable_threaded,omitempty"`
-	EnableDetailedDates  bool          `json:"enable_detailed_dates,omitempty"`
+	Accounts                []Account `json:"accounts"`
+	DisableImages           bool      `json:"disable_images,omitempty"`
+	HideTips                bool      `json:"hide_tips,omitempty"`
+	DisableNotifications    bool      `json:"disable_notifications,omitempty"`
+	EnableSplitPane         bool      `json:"enable_split_pane,omitempty"`
+	EnableThreaded          bool      `json:"enable_threaded,omitempty"`
+	EnableDetailedDates     bool      `json:"enable_detailed_dates,omitempty"`
+	DisableSpellcheck       bool      `json:"disable_spellcheck,omitempty"`
+	DisableSpellSuggestions bool      `json:"disable_spell_suggestions,omitempty"`
 	Theme                string        `json:"theme,omitempty"`
 	MailingLists         []MailingList `json:"mailing_lists,omitempty"`
 	DateFormat           string        `json:"date_format,omitempty"`
@@ -424,13 +426,15 @@ type secureDiskAccount struct {
 }
 
 type secureDiskConfig struct {
-	Accounts             []secureDiskAccount               `json:"accounts"`
-	DisableImages        bool                              `json:"disable_images,omitempty"`
-	HideTips             bool                              `json:"hide_tips,omitempty"`
-	DisableNotifications bool                              `json:"disable_notifications,omitempty"`
-	EnableSplitPane      bool                              `json:"enable_split_pane,omitempty"`
-	EnableThreaded       bool                              `json:"enable_threaded,omitempty"`
-	EnableDetailedDates  bool                              `json:"enable_detailed_dates,omitempty"`
+	Accounts                []secureDiskAccount               `json:"accounts"`
+	DisableImages           bool                              `json:"disable_images,omitempty"`
+	HideTips                bool                              `json:"hide_tips,omitempty"`
+	DisableNotifications    bool                              `json:"disable_notifications,omitempty"`
+	EnableSplitPane         bool                              `json:"enable_split_pane,omitempty"`
+	EnableThreaded          bool                              `json:"enable_threaded,omitempty"`
+	EnableDetailedDates     bool                              `json:"enable_detailed_dates,omitempty"`
+	DisableSpellcheck       bool                              `json:"disable_spellcheck,omitempty"`
+	DisableSpellSuggestions bool                              `json:"disable_spell_suggestions,omitempty"`
 	Theme                string                            `json:"theme,omitempty"`
 	MailingLists         []MailingList                     `json:"mailing_lists,omitempty"`
 	DateFormat           string                            `json:"date_format,omitempty"`
@@ -473,16 +477,18 @@ func SaveConfig(config *Config) error {
 	if secureMode {
 		// In secure mode, include passwords in the JSON (they'll be encrypted on disk)
 		sdc := secureDiskConfig{
-			DisableImages:        config.DisableImages,
-			HideTips:             config.HideTips,
-			DisableNotifications: config.DisableNotifications,
-			EnableSplitPane:      config.EnableSplitPane,
-			EnableThreaded:       config.EnableThreaded,
-			EnableDetailedDates:  config.EnableDetailedDates,
-			Theme:                config.Theme,
-			MailingLists:         config.MailingLists,
-			DateFormat:           config.DateFormat,
-			PluginSettings:       config.PluginSettings,
+			DisableImages:           config.DisableImages,
+			HideTips:                config.HideTips,
+			DisableNotifications:    config.DisableNotifications,
+			EnableSplitPane:         config.EnableSplitPane,
+			EnableThreaded:          config.EnableThreaded,
+			EnableDetailedDates:     config.EnableDetailedDates,
+			DisableSpellcheck:       config.DisableSpellcheck,
+			DisableSpellSuggestions: config.DisableSpellSuggestions,
+			Theme:                   config.Theme,
+			MailingLists:            config.MailingLists,
+			DateFormat:              config.DateFormat,
+			PluginSettings:          config.PluginSettings,
 		}
 		for _, acc := range config.Accounts {
 			sdc.Accounts = append(sdc.Accounts, secureDiskAccount{
@@ -576,13 +582,15 @@ func LoadConfig() (*Config, error) {
 		CatchAll           bool   `json:"catch_all,omitempty"`
 	}
 	type diskConfig struct {
-		Accounts             []rawAccount                      `json:"accounts"`
-		DisableImages        bool                              `json:"disable_images,omitempty"`
-		HideTips             bool                              `json:"hide_tips,omitempty"`
-		DisableNotifications bool                              `json:"disable_notifications,omitempty"`
-		EnableSplitPane      bool                              `json:"enable_split_pane,omitempty"`
-		EnableThreaded       bool                              `json:"enable_threaded,omitempty"`
-		EnableDetailedDates  bool                              `json:"enable_detailed_dates,omitempty"`
+		Accounts                []rawAccount                      `json:"accounts"`
+		DisableImages           bool                              `json:"disable_images,omitempty"`
+		HideTips                bool                              `json:"hide_tips,omitempty"`
+		DisableNotifications    bool                              `json:"disable_notifications,omitempty"`
+		EnableSplitPane         bool                              `json:"enable_split_pane,omitempty"`
+		EnableThreaded          bool                              `json:"enable_threaded,omitempty"`
+		EnableDetailedDates     bool                              `json:"enable_detailed_dates,omitempty"`
+		DisableSpellcheck       bool                              `json:"disable_spellcheck,omitempty"`
+		DisableSpellSuggestions bool                              `json:"disable_spell_suggestions,omitempty"`
 		Theme                string                            `json:"theme,omitempty"`
 		MailingLists         []MailingList                     `json:"mailing_lists,omitempty"`
 		DateFormat           string                            `json:"date_format,omitempty"`
@@ -623,6 +631,8 @@ func LoadConfig() (*Config, error) {
 	config.EnableSplitPane = raw.EnableSplitPane
 	config.EnableThreaded = raw.EnableThreaded
 	config.EnableDetailedDates = raw.EnableDetailedDates
+	config.DisableSpellcheck = raw.DisableSpellcheck
+	config.DisableSpellSuggestions = raw.DisableSpellSuggestions
 	config.Theme = raw.Theme
 	config.MailingLists = raw.MailingLists
 	config.DateFormat = raw.DateFormat

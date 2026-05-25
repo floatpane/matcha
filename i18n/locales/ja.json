@@ -151,6 +151,8 @@
       "enable_split_pane": "分割ビュー",
       "enable_threaded": "スレッド表示",
       "enable_detailed_dates": "詳細な日付",
+      "spellcheck": "スペルチェック",
+      "spell_suggestions": "スペル候補",
       "date_format": "日付形式",
       "language": "言語",
       "signature": "署名を編集",

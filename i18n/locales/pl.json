@@ -157,6 +157,8 @@
       "enable_split_pane": "Widok podzielony",
       "enable_threaded": "Widok wątków",
       "enable_detailed_dates": "Szczegółowe daty",
+      "spellcheck": "Sprawdzanie pisowni",
+      "spell_suggestions": "Sugestie pisowni",
       "date_format": "Format Daty",
       "language": "Język",
       "signature": "Edytuj Podpis",

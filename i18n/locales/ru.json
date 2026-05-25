@@ -157,6 +157,8 @@
       "enable_split_pane": "Разделённый вид",
       "enable_threaded": "Просмотр беседами",
       "enable_detailed_dates": "Подробные даты",
+      "spellcheck": "Проверка орфографии",
+      "spell_suggestions": "Подсказки орфографии",
       "date_format": "Формат Даты",
       "language": "Язык",
       "signature": "Редактировать Подпись",

@@ -182,6 +182,38 @@ If encryption is enabled, you will be prompted for your password before the cont
 
 **CSV** exports a header row (`name,email,last_used,use_count`) followed by one row per contact. Use `--no-header` to omit the header row.
 
+## matcha dict
+
+Manage spellcheck dictionaries. Dictionaries are downloaded from the
+[wooorm/dictionaries](https://github.com/wooorm/dictionaries) Hunspell
+repository and stored in `~/.config/matcha/dicts/<lang>.dic`.
+
+```bash
+matcha dict add <language-code>      # download and install a dictionary
+matcha dict remove <language-code>   # delete an installed dictionary
+matcha dict list                     # show installed dictionaries
+```
+
+The English dictionary (`en`) is downloaded automatically the first time
+you open the composer — `matcha dict add` is only needed for additional
+languages.
+
+### Examples
+
+```bash
+matcha dict add en-GB     # British English
+matcha dict add de        # German
+matcha dict add fr        # French
+matcha dict add es        # Spanish
+matcha dict add ru        # Russian
+matcha dict list
+matcha dict remove fr
+```
+
+Language codes match the directory names under
+[`dictionaries/`](https://github.com/wooorm/dictionaries/tree/main/dictionaries)
+in the upstream repository.
+
 ## matcha config
 
 Open a configuration file in your `$EDITOR` (falls back to `vi`).

@@ -157,7 +157,9 @@ func newInitialModel(cfg *config.Config, mailtoURL *url.URL) *mainModel {
 			}
 			subject := mailtoURL.Query().Get("subject")
 			body := mailtoURL.Query().Get("body")
-			initialModel.current = tui.NewComposerWithAccounts(cfg.Accounts, cfg.Accounts[0].ID, to, subject, body, cfg.HideTips)
+			composer := tui.NewComposerWithAccounts(cfg.Accounts, cfg.Accounts[0].ID, to, subject, body, cfg.HideTips)
+			composer.SetSpellcheckOptions(cfg.DisableSpellcheck, cfg.DisableSpellSuggestions)
+			initialModel.current = composer
 		} else {
 			initialModel.current = tui.NewChoice()
 		}
@@ -175,6 +177,15 @@ func (m *mainModel) newSettings() *tui.Settings {
 		s.SetPlugins(m.plugins)
 	}
 	return s
+}
+
+// applySpellcheckOptions propagates the current Config's spellcheck
+// preferences onto a freshly-constructed Composer.
+func (m *mainModel) applySpellcheckOptions(c *tui.Composer) {
+	if c == nil || m.config == nil {
+		return
+	}
+	c.SetSpellcheckOptions(m.config.DisableSpellcheck, m.config.DisableSpellSuggestions)
 }
 
 func (m *mainModel) ensureProviders() {
@@ -1090,13 +1101,15 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if m.config != nil {
 			hideTips = m.config.HideTips
 		}
+		var composer *tui.Composer
 		if m.config != nil && len(m.config.Accounts) > 0 {
 			firstAccount := m.config.GetFirstAccount()
-			composer := tui.NewComposerWithAccounts(m.config.Accounts, firstAccount.ID, msg.To, msg.Subject, msg.Body, hideTips)
-			m.current = composer
+			composer = tui.NewComposerWithAccounts(m.config.Accounts, firstAccount.ID, msg.To, msg.Subject, msg.Body, hideTips)
 		} else {
-			m.current = tui.NewComposer("", msg.To, msg.Subject, msg.Body, hideTips)
+			composer = tui.NewComposer("", msg.To, msg.Subject, msg.Body, hideTips)
 		}
+		m.applySpellcheckOptions(composer)
+		m.current = composer
 		m.current, _ = m.current.Update(m.currentWindowSize())
 		m.syncPluginKeyBindings()
 		return m, m.current.Init()
@@ -1115,6 +1128,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			hideTips = m.config.HideTips
 		}
 		composer := tui.NewComposerFromDraft(msg.Draft, accounts, hideTips)
+		m.applySpellcheckOptions(composer)
 		m.current = composer
 		m.current, _ = m.current.Update(m.currentWindowSize())
 		m.syncPluginKeyBindings()
@@ -1287,7 +1301,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				}
 				subject := m.mailtoURL.Query().Get("subject")
 				body := m.mailtoURL.Query().Get("body")
-				m.current = tui.NewComposerWithAccounts(cfg.Accounts, cfg.Accounts[0].ID, to, subject, body, cfg.HideTips)
+				composer := tui.NewComposerWithAccounts(cfg.Accounts, cfg.Accounts[0].ID, to, subject, body, cfg.HideTips)
+				m.applySpellcheckOptions(composer)
+				m.current = composer
 			} else {
 				m.current = tui.NewChoice()
 			}
@@ -1550,6 +1566,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		references := append(msg.Email.References, msg.Email.MessageID) //nolint:gocritic
 		composer.SetReplyContext(inReplyTo, references)
 
+		m.applySpellcheckOptions(composer)
 		m.current = composer
 		m.current, _ = m.current.Update(m.currentWindowSize())
 		m.syncPluginKeyBindings()
@@ -1586,6 +1603,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			composer = tui.NewComposer("", "", subject, body, hideTips)
 		}
 
+		m.applySpellcheckOptions(composer)
 		m.current = composer
 		m.current, _ = m.current.Update(m.currentWindowSize())
 		m.syncPluginKeyBindings()
@@ -3956,6 +3974,15 @@ func main() { //nolint:gocyclo
 			}
 			os.Exit(0)
 		}
+	}
+
+	// Dict CLI subcommand: matcha dict <add|remove|list> [lang]
+	if len(os.Args) > 1 && os.Args[1] == "dict" {
+		if err := matchaCli.RunDict(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "dict: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
 	}
 
 	// setup-mailto CLI subcommand: matcha setup-mailto

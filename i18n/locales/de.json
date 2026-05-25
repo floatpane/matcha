@@ -153,6 +153,8 @@
       "enable_split_pane": "Geteilte Ansicht",
       "enable_threaded": "Konversations-Threads",
       "enable_detailed_dates": "Detaillierte Datumsangaben",
+      "spellcheck": "Rechtschreibprüfung",
+      "spell_suggestions": "Rechtschreibvorschläge",
       "date_format": "Datumsformat",
       "language": "Sprache",
       "signature": "Signatur Bearbeiten",

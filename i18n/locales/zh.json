@@ -151,6 +151,8 @@
       "enable_split_pane": "分屏视图",
       "enable_threaded": "会话视图",
       "enable_detailed_dates": "详细日期",
+      "spellcheck": "拼写检查",
+      "spell_suggestions": "拼写建议",
       "date_format": "日期格式",
       "language": "语言",
       "signature": "编辑签名",

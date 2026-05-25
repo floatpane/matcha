@@ -157,6 +157,8 @@
       "enable_split_pane": "عرض مقسم",
       "enable_threaded": "عرض المحادثات",
       "enable_detailed_dates": "تواريخ مفصلة",
+      "spellcheck": "التدقيق الإملائي",
+      "spell_suggestions": "اقتراحات الإملاء",
       "date_format": "تنسيق التاريخ",
       "language": "اللغة",
       "signature": "تعديل التوقيع",

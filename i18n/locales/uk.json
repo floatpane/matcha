@@ -155,6 +155,8 @@
       "enable_split_pane": "Розділений вигляд",
       "enable_threaded": "Перегляд розмов",
       "enable_detailed_dates": "Детальні дати",
+      "spellcheck": "Перевірка орфографії",
+      "spell_suggestions": "Підказки орфографії",
       "date_format": "Формат дати",
       "language": "Мова",
       "signature": "Редагувати підпис",

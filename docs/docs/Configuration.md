@@ -48,6 +48,8 @@ Configuration is stored in `~/.config/matcha/config.json`.
   "date_format": "DD/MM/YYYY HH:MM",
   "disable_images": true,
   "hide_tips": true,
+  "disable_spellcheck": false,
+  "disable_spell_suggestions": false,
   "body_cache_threshold_mb": 100
 }
 ```
@@ -57,6 +59,10 @@ Configuration is stored in `~/.config/matcha/config.json`.
 `enable_split_pane` enables a side-by-side view where the email list and the selected email are shown on the same screen.
 
 `enable_detailed_dates` shows absolute inbox dates using your configured `date_format` instead of relative labels like "2 hours ago".
+
+`disable_spellcheck` (default `false`) turns off the composer spellcheck entirely — no underline highlights, no dictionary download, no popup. Toggle via Settings → General → Spellcheck.
+
+`disable_spell_suggestions` (default `false`) keeps the misspelled-word underline but suppresses the inline suggestion popup. Useful if you want a quiet check without an autocomplete-style overlay. Toggle via Settings → General → Spell Suggestions.
 
 `body_cache_threshold_mb` sets the maximum size (in megabytes) for the local email body cache. When this limit is reached, least recently accessed cached emails are evicted across all folders to make room for new ones. Defaults to `100` MB if not specified.
 
@@ -72,6 +78,7 @@ Configuration and persistent data are stored in `~/.config/matcha/`:
 | `pgp/` | PGP keys |
 | `plugins/` | Installed Lua plugins |
 | `themes/` | Custom theme JSON files |
+| `dicts/` | Hunspell spellcheck dictionaries (see [Spellcheck](/docs/Features/Spellcheck)) |
 | `secure.meta` | Encryption metadata (only when encryption is enabled) |
 
 Cache data is stored in `~/.cache/matcha/`:

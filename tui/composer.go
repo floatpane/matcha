@@ -7,14 +7,23 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
+	"github.com/floatpane/matcha/spellcheck"
 	"github.com/google/uuid"
 )
+
+// spellcheckReadyMsg is delivered when the background spellcheck loader
+// finishes (either downloading the default dictionary or loading an
+// already-installed one).
+type spellcheckReadyMsg struct {
+	checker *spellcheck.Checker
+}
 
 var (
 	suggestionStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
@@ -102,6 +111,23 @@ type Composer struct {
 	showPluginPrompt        bool
 	pluginPromptInput       textinput.Model
 	pluginPromptPlaceholder string
+
+	// Spellcheck (loaded asynchronously; nil until ready).
+	spellChecker            *spellcheck.Checker
+	spellSuggestions        []string
+	spellSelected           int
+	spellShow               bool
+	spellWordStart          int // byte offset of misspelled word in body
+	spellWordEnd            int
+	spellWordOnLine         int    // index of the logical line containing the word
+	spellWordLineStart      int    // byte offset of the word within its logical line
+	spellWordLineEnd        int
+	spellWord               string // the misspelled word (as currently in body)
+	spellLastBody           string // last body value we computed suggestions for
+	spellLastCursorRow      int
+	spellLastCursorCol      int
+	disableSpellcheck       bool
+	disableSpellSuggestions bool
 }
 
 // NewComposer initializes a new composer model.
@@ -312,8 +338,180 @@ func (m *Composer) SetFromOverride(addr string) {
 	m.fromInput.SetValue(addr)
 }
 
+// SetSpellcheckOptions toggles spellcheck features for this composer. Pass
+// disableCheck=true to skip dictionary download/highlighting entirely;
+// disableSuggestions=true keeps inline underlines but suppresses the popup.
+func (m *Composer) SetSpellcheckOptions(disableCheck, disableSuggestions bool) {
+	m.disableSpellcheck = disableCheck
+	m.disableSpellSuggestions = disableSuggestions
+	if disableCheck {
+		m.spellChecker = nil
+		m.spellShow = false
+		m.spellSuggestions = nil
+	}
+}
+
 func (m *Composer) Init() tea.Cmd {
-	return textinput.Blink
+	cmds := []tea.Cmd{textinput.Blink}
+	if !m.disableSpellcheck {
+		cmds = append(cmds, loadSpellcheckCmd())
+	}
+	return tea.Batch(cmds...)
+}
+
+// loadSpellcheckCmd ensures the default dictionary is downloaded and
+// loaded into a new Checker. Network errors are swallowed: spellcheck is a
+// non-essential overlay, so the composer continues to work normally.
+func loadSpellcheckCmd() tea.Cmd {
+	return func() tea.Msg {
+		lang, err := spellcheck.EnsureDefault()
+		if err != nil {
+			return spellcheckReadyMsg{checker: nil}
+		}
+		c := spellcheck.NewChecker()
+		if err := c.LoadLang(lang); err != nil {
+			return spellcheckReadyMsg{checker: nil}
+		}
+		return spellcheckReadyMsg{checker: c}
+	}
+}
+
+// updateSpellSuggestions inspects the body cursor position and refreshes
+// the suggestion popup. It only fires when the cursor sits at the end of
+// a misspelled word.
+func (m *Composer) updateSpellSuggestions() {
+	m.spellShow = false
+	m.spellSuggestions = nil
+	m.spellWord = ""
+
+	if m.disableSpellcheck || m.disableSpellSuggestions {
+		return
+	}
+	if m.spellChecker == nil || !m.spellChecker.Loaded() {
+		return
+	}
+	if m.focusIndex != focusBody {
+		return
+	}
+
+	value := m.bodyInput.Value()
+	row := m.bodyInput.Line()
+	col := m.bodyInput.Column()
+	lines := strings.Split(value, "\n")
+	if row < 0 || row >= len(lines) {
+		return
+	}
+	line := lines[row]
+	lineRunes := []rune(line)
+	if col > len(lineRunes) {
+		col = len(lineRunes)
+	}
+
+	// Walk back from cursor while we have letters or internal connectors.
+	end := col
+	start := col
+	for start > 0 {
+		r := lineRunes[start-1]
+		if isWordContinuation(r) {
+			start--
+			continue
+		}
+		break
+	}
+	// Trim leading connectors so the word starts on a letter.
+	for start < end && !isLetter(lineRunes[start]) {
+		start++
+	}
+	// Trim trailing connectors so we don't suggest replacements while the
+	// user is still mid-apostrophe.
+	for end > start && !isLetter(lineRunes[end-1]) {
+		end--
+	}
+	if end-start < 2 {
+		return
+	}
+
+	word := string(lineRunes[start:end])
+	if !spellcheck.IsCheckable(word) {
+		return
+	}
+	if m.spellChecker.Check(word) {
+		return
+	}
+
+	suggestions := m.spellChecker.Suggest(word, 5)
+	if len(suggestions) == 0 {
+		return
+	}
+
+	m.spellSuggestions = suggestions
+	m.spellSelected = 0
+	m.spellShow = true
+	m.spellWord = word
+
+	// Byte offsets within the current line, needed by the accept handler.
+	m.spellWordLineStart = len(string(lineRunes[:start]))
+	m.spellWordLineEnd = len(string(lineRunes[:end]))
+	m.spellWordOnLine = row
+
+	// Cache cursor position so a no-op key (e.g. arrow without movement)
+	// doesn't redundantly recompute suggestions.
+	m.spellLastBody = value
+	m.spellLastCursorRow = row
+	m.spellLastCursorCol = col
+}
+
+// acceptSpellSuggestion replaces the misspelled word currently under the
+// cursor with the selected suggestion. It works by sending backspace key
+// events to the textarea (so the textarea's own bookkeeping stays in
+// sync) and then inserting the replacement text.
+func (m *Composer) acceptSpellSuggestion() tea.Cmd {
+	if !m.spellShow || len(m.spellSuggestions) == 0 {
+		return nil
+	}
+	if m.spellSelected < 0 || m.spellSelected >= len(m.spellSuggestions) {
+		return nil
+	}
+	suggestion := m.spellSuggestions[m.spellSelected]
+
+	// Only replace when the cursor is still at the end of the word we
+	// recorded — otherwise the user moved and the popup is stale.
+	row := m.bodyInput.Line()
+	col := m.bodyInput.Column()
+	lines := strings.Split(m.bodyInput.Value(), "\n")
+	if row != m.spellWordOnLine || row >= len(lines) {
+		m.spellShow = false
+		m.spellSuggestions = nil
+		return nil
+	}
+	endRunes := len([]rune(lines[row][:m.spellWordLineEnd]))
+	if col != endRunes {
+		m.spellShow = false
+		m.spellSuggestions = nil
+		return nil
+	}
+
+	wordRuneLen := len([]rune(m.spellWord))
+	for i := 0; i < wordRuneLen; i++ {
+		m.bodyInput, _ = m.bodyInput.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	}
+	m.bodyInput.InsertString(suggestion)
+
+	m.spellShow = false
+	m.spellSuggestions = nil
+	m.spellWord = ""
+	return nil
+}
+
+func isWordContinuation(r rune) bool {
+	return isLetter(r) || r == '\'' || r == '’' || r == '-'
+}
+
+func isLetter(r rune) bool {
+	if r < 0x80 {
+		return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+	}
+	return unicode.IsLetter(r)
 }
 
 func (m *Composer) getFromAddress() string {
@@ -447,6 +645,13 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	case hideComposerNoticeMsg:
 		m.hideComposerNotice()
+		return m, nil
+
+	case spellcheckReadyMsg:
+		if msg.checker != nil {
+			m.spellChecker = msg.checker
+			m.updateSpellSuggestions()
+		}
 		return m, nil
 
 	case FileSelectedMsg:
@@ -588,6 +793,29 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			return m, nil
 		}
 
+		// Spellcheck suggestion popup (only while body is focused).
+		if m.focusIndex == focusBody && m.spellShow && len(m.spellSuggestions) > 0 {
+			sk := config.Keybinds.Composer
+			switch msg.String() {
+			case sk.SpellPrev:
+				if m.spellSelected > 0 {
+					m.spellSelected--
+				}
+				return m, nil
+			case sk.SpellNext:
+				if m.spellSelected < len(m.spellSuggestions)-1 {
+					m.spellSelected++
+				}
+				return m, nil
+			case sk.SpellAccept:
+				return m, m.acceptSpellSuggestion()
+			case sk.SpellDismiss:
+				m.spellShow = false
+				m.spellSuggestions = nil
+				return m, nil
+			}
+		}
+
 		kb := config.Keybinds
 		attachmentPathSize := len(m.attachmentPaths)
 		if m.focusIndex == focusAttachment && attachmentPathSize > 0 {
@@ -644,6 +872,8 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.subjectInput.Blur()
 			m.bodyInput.Blur()
 			m.signatureInput.Blur()
+			m.spellShow = false
+			m.spellSuggestions = nil
 
 			switch m.focusIndex {
 			case focusFrom:
@@ -787,8 +1017,18 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		m.subjectInput, cmd = m.subjectInput.Update(msg)
 		cmds = append(cmds, cmd)
 	case focusBody:
+		prevBody := m.bodyInput.Value()
+		prevRow := m.bodyInput.Line()
+		prevCol := m.bodyInput.Column()
 		m.bodyInput, cmd = m.bodyInput.Update(msg)
 		cmds = append(cmds, cmd)
+		// Only recompute suggestions when the body state actually changes.
+		// Cursor-blink ticks otherwise reset spellSelected to 0 every blink.
+		if m.bodyInput.Value() != prevBody ||
+			m.bodyInput.Line() != prevRow ||
+			m.bodyInput.Column() != prevCol {
+			m.updateSpellSuggestions()
+		}
 	case focusSignature:
 		m.signatureInput, cmd = m.signatureInput.Update(msg)
 		cmds = append(cmds, cmd)
@@ -926,7 +1166,13 @@ func (m *Composer) View() tea.View { //nolint:gocyclo
 	case focusSubject:
 		tip = "The subject line of your email."
 	case focusBody:
-		tip = "The main content of your email. Markdown and HTML are supported."
+		if m.spellShow && len(m.spellSuggestions) > 0 {
+			sk := config.Keybinds.Composer
+			tip = fmt.Sprintf("Spelling: %s accept • %s/%s navigate • %s dismiss",
+				sk.SpellAccept, sk.SpellNext, sk.SpellPrev, sk.SpellDismiss)
+		} else {
+			tip = "The main content of your email. Markdown and HTML are supported."
+		}
 	case focusSignature:
 		tip = "Your email signature. This will be appended to the end of the email."
 	case focusAttachment:
@@ -937,6 +1183,11 @@ func (m *Composer) View() tea.View { //nolint:gocyclo
 		tip = "Press Enter to send the email."
 	}
 
+	bodyView := m.bodyInput.View()
+	if !m.disableSpellcheck && m.spellChecker != nil && m.spellChecker.Loaded() {
+		bodyView = spellcheck.Highlight(bodyView, m.spellChecker, -1)
+	}
+
 	composerViewElements := []string{
 		t("composer.title"),
 		fromField,
@@ -944,7 +1195,7 @@ func (m *Composer) View() tea.View { //nolint:gocyclo
 		ccFieldView,
 		bccFieldView,
 		m.subjectInput.View(),
-		m.bodyInput.View(),
+		bodyView,
 		signatureLabel,
 		m.signatureInput.View(),
 		attachmentStyle.Render(attachmentField),
@@ -1044,7 +1295,88 @@ func (m *Composer) View() tea.View { //nolint:gocyclo
 		return tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
 	}
 
-	return tea.NewView(composerView.String())
+	out := composerView.String()
+	if m.spellShow && len(m.spellSuggestions) > 0 && m.focusIndex == focusBody {
+		out = m.overlaySpellPopup(out, composerViewElements)
+	}
+	return tea.NewView(out)
+}
+
+// overlaySpellPopup floats the suggestion box at the body cursor position
+// in the rendered composer view. It returns the view unchanged when the
+// cursor can't be located.
+func (m *Composer) overlaySpellPopup(view string, elementsBeforeBody []string) string {
+	// Body is the 7th element (index 6) of composerViewElements: title,
+	// from, to, cc, bcc, subject, body, ...
+	const bodyIdx = 6
+	if bodyIdx > len(elementsBeforeBody) {
+		return view
+	}
+	bodyStartRow := 0
+	for i := 0; i < bodyIdx; i++ {
+		bodyStartRow += lipgloss.Height(elementsBeforeBody[i])
+	}
+
+	li := m.bodyInput.LineInfo()
+	const promptWidth = 2 // "> "
+	cursorRow := bodyStartRow + li.RowOffset
+	cursorCol := li.CharOffset + promptWidth
+
+	popup := m.renderSpellPopupLines()
+	if len(popup) == 0 {
+		return view
+	}
+
+	// Anchor below cursor. If popup would clip the bottom, raise it above
+	// the cursor row instead.
+	anchorRow := cursorRow + 1
+	if m.height > 0 && anchorRow+len(popup) > m.height-1 && cursorRow-len(popup) >= 0 {
+		anchorRow = cursorRow - len(popup)
+	}
+	anchorCol := cursorCol
+	popupWidth := lipgloss.Width(popup[0])
+	if m.width > 0 && anchorCol+popupWidth > m.width {
+		anchorCol = max(0, m.width-popupWidth)
+	}
+
+	return overlayBlock(view, popup, anchorRow, anchorCol)
+}
+
+// renderSpellPopupLines builds the styled, bordered suggestion box and
+// returns its rendered lines. Each row carries an "abc" badge to mirror
+// the language-server look familiar from VSCode.
+func (m *Composer) renderSpellPopupLines() []string {
+	if !m.spellShow || len(m.spellSuggestions) == 0 {
+		return nil
+	}
+	maxWidth := 0
+	for _, s := range m.spellSuggestions {
+		if w := len(s); w > maxWidth {
+			maxWidth = w
+		}
+	}
+	rowWidth := maxWidth + 6 // " abc " badge + word + trailing space
+
+	iconStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	rowStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	selStyle := lipgloss.NewStyle().Background(lipgloss.Color("24")).Foreground(lipgloss.Color("231"))
+
+	var rows []string
+	for i, s := range m.spellSuggestions {
+		text := " " + iconStyle.Render("abc") + " " + s
+		pad := rowWidth - lipgloss.Width(text)
+		if pad < 0 {
+			pad = 0
+		}
+		text += strings.Repeat(" ", pad)
+		if i == m.spellSelected {
+			rows = append(rows, selStyle.Render(text))
+		} else {
+			rows = append(rows, rowStyle.Render(text))
+		}
+	}
+	box := suggestionBoxStyle.Render(strings.Join(rows, "\n"))
+	return strings.Split(box, "\n")
 }
 
 // SetAccounts sets the available accounts for sending.
