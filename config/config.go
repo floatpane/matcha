@@ -103,20 +103,20 @@ type MailingList struct {
 
 // Config stores the user's email configuration with multiple accounts.
 type Config struct {
-	Accounts                []Account `json:"accounts"`
-	DisableImages           bool      `json:"disable_images,omitempty"`
-	HideTips                bool      `json:"hide_tips,omitempty"`
-	DisableNotifications    bool      `json:"disable_notifications,omitempty"`
-	EnableSplitPane         bool      `json:"enable_split_pane,omitempty"`
-	EnableThreaded          bool      `json:"enable_threaded,omitempty"`
-	EnableDetailedDates     bool      `json:"enable_detailed_dates,omitempty"`
-	DisableSpellcheck       bool      `json:"disable_spellcheck,omitempty"`
-	DisableSpellSuggestions bool      `json:"disable_spell_suggestions,omitempty"`
-	Theme                string        `json:"theme,omitempty"`
-	MailingLists         []MailingList `json:"mailing_lists,omitempty"`
-	DateFormat           string        `json:"date_format,omitempty"`
-	Language             string        `json:"language,omitempty"` // Language code (e.g., "en", "es", "de")
-	BodyCacheThresholdMB int           `json:"body_cache_threshold_mb,omitempty"`
+	Accounts                []Account     `json:"accounts"`
+	DisableImages           bool          `json:"disable_images,omitempty"`
+	HideTips                bool          `json:"hide_tips,omitempty"`
+	DisableNotifications    bool          `json:"disable_notifications,omitempty"`
+	EnableSplitPane         bool          `json:"enable_split_pane,omitempty"`
+	EnableThreaded          bool          `json:"enable_threaded,omitempty"`
+	EnableDetailedDates     bool          `json:"enable_detailed_dates,omitempty"`
+	DisableSpellcheck       bool          `json:"disable_spellcheck,omitempty"`
+	DisableSpellSuggestions bool          `json:"disable_spell_suggestions,omitempty"`
+	Theme                   string        `json:"theme,omitempty"`
+	MailingLists            []MailingList `json:"mailing_lists,omitempty"`
+	DateFormat              string        `json:"date_format,omitempty"`
+	Language                string        `json:"language,omitempty"` // Language code (e.g., "en", "es", "de")
+	BodyCacheThresholdMB    int           `json:"body_cache_threshold_mb,omitempty"`
 	// PluginSettings stores user-configurable values for installed plugins,
 	// keyed by plugin name then setting key. Values are JSON-native types
 	// (bool, float64, string) matching the plugin's declared schema.
@@ -435,11 +435,11 @@ type secureDiskConfig struct {
 	EnableDetailedDates     bool                              `json:"enable_detailed_dates,omitempty"`
 	DisableSpellcheck       bool                              `json:"disable_spellcheck,omitempty"`
 	DisableSpellSuggestions bool                              `json:"disable_spell_suggestions,omitempty"`
-	Theme                string                            `json:"theme,omitempty"`
-	MailingLists         []MailingList                     `json:"mailing_lists,omitempty"`
-	DateFormat           string                            `json:"date_format,omitempty"`
-	Language             string                            `json:"language,omitempty"`
-	PluginSettings       map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
+	Theme                   string                            `json:"theme,omitempty"`
+	MailingLists            []MailingList                     `json:"mailing_lists,omitempty"`
+	DateFormat              string                            `json:"date_format,omitempty"`
+	Language                string                            `json:"language,omitempty"`
+	PluginSettings          map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
 }
 
 // SaveConfig saves the given configuration to the config file and passwords to the keyring.
@@ -591,12 +591,12 @@ func LoadConfig() (*Config, error) {
 		EnableDetailedDates     bool                              `json:"enable_detailed_dates,omitempty"`
 		DisableSpellcheck       bool                              `json:"disable_spellcheck,omitempty"`
 		DisableSpellSuggestions bool                              `json:"disable_spell_suggestions,omitempty"`
-		Theme                string                            `json:"theme,omitempty"`
-		MailingLists         []MailingList                     `json:"mailing_lists,omitempty"`
-		DateFormat           string                            `json:"date_format,omitempty"`
-		Language             string                            `json:"language,omitempty"`
-		BodyCacheThresholdMB int                               `json:"body_cache_threshold_mb,omitempty"`
-		PluginSettings       map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
+		Theme                   string                            `json:"theme,omitempty"`
+		MailingLists            []MailingList                     `json:"mailing_lists,omitempty"`
+		DateFormat              string                            `json:"date_format,omitempty"`
+		Language                string                            `json:"language,omitempty"`
+		BodyCacheThresholdMB    int                               `json:"body_cache_threshold_mb,omitempty"`
+		PluginSettings          map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
 	}
 
 	var raw diskConfig

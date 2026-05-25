@@ -119,8 +119,8 @@ type Composer struct {
 	spellShow               bool
 	spellWordStart          int // byte offset of misspelled word in body
 	spellWordEnd            int
-	spellWordOnLine         int    // index of the logical line containing the word
-	spellWordLineStart      int    // byte offset of the word within its logical line
+	spellWordOnLine         int // index of the logical line containing the word
+	spellWordLineStart      int // byte offset of the word within its logical line
 	spellWordLineEnd        int
 	spellWord               string // the misspelled word (as currently in body)
 	spellLastBody           string // last body value we computed suggestions for
