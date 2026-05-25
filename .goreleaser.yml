@@ -126,42 +126,28 @@ nix:
       mkdir -p $out/bin
       cp -vr ./matcha $out/bin/matcha
 
-# 'brews' configures the Homebrew tap integration.
-brews:
-  - # The configuration for your Homebrew tap.
-    # The name of your formula file will be 'matcha.rb'.
-    name: matcha
-    # The GitHub repository for your Homebrew tap.
+# 'homebrew_casks' configures the Homebrew tap integration.
+# Migrated from deprecated 'brews' (goreleaser v2.12+).
+# macOS-only; Linux users should use the Nix flake or snap.
+homebrew_casks:
+  - name: matcha
+    binaries: [matcha]
     repository:
       owner: floatpane
       name: homebrew-matcha
-      # The token to use for pushing to the tap repository.
-      # It uses the secret you'll create in your repository settings.
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-
-    # The commit author for the tap update.
     commit_author:
       name: Floatpane Bot
       email: us@floatpane.com
-
-    # A description for your formula.
     description: "A beautiful and functional email client for your terminal."
-    # The homepage URL for your formula.
     homepage: "https://matcha.email"
-
-    # The dependencies for your formula.
-    # Since it's a pre-compiled binary, there are no runtime dependencies.
-    dependencies: []
-
-    # The test block for your formula.
-    # This command will be run by `brew test matcha`.
-    test: |
-      system "#{bin}/matcha --version"
-
-    # The installation instructions for your formula.
-    # This tells Homebrew to just install the binary.
-    install: |
-      bin.install "matcha"
+    # Strip Apple quarantine xattr so unsigned binary runs without Gatekeeper prompt.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/matcha"]
+          end
 # 'winget' configures the WinGet manifest generation and publication.
 winget:
   - # Name of the package in WinGet.
