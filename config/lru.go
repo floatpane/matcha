@@ -101,9 +101,6 @@ func (lru *LRU) evict() {
 }
 
 func (lru *LRU) LoadFromDisk() error {
-	lru.mu.Lock()
-	defer lru.mu.Unlock()
-
 	dir, err := bodyCacheDir()
 
 	if err != nil {
@@ -216,7 +213,7 @@ func saveEmailBodyToDisk(folder string, body *CachedEmailBody) error {
 	return saveEmailBodyCache(cache)
 }
 
-func (lru *LRU) Get(folder string, uid uint32, accountID string) *Node {
+func (lru *LRU) Get(folder string, uid uint32, accountID string) *CachedEmailBody {
 	lru.mu.Lock()
 	defer lru.mu.Unlock()
 
@@ -235,7 +232,9 @@ func (lru *LRU) Get(folder string, uid uint32, accountID string) *Node {
 
 	_ = saveEmailBodyToDisk(folder, node.Body)
 
-	return node
+	bodyCopy := *node.Body
+
+	return &bodyCopy
 }
 
 func (lru *LRU) removeKey(key string) {

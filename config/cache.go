@@ -707,12 +707,7 @@ func saveEmailBodyCache(cache *EmailBodyCache) error {
 // mutate cache state.
 func GetCachedEmailBody(folderName string, uid uint32, accountID string, threshold int) *CachedEmailBody {
 	lru := GetLRUInstance(threshold)
-
-	if node := lru.Get(folderName, uid, accountID); node != nil {
-		return node.Body
-	}
-
-	return nil
+	return lru.Get(folderName, uid, accountID)
 }
 
 func calculateEmailBodySize(body *CachedEmailBody) int {
