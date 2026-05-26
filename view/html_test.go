@@ -809,6 +809,24 @@ func TestProcessBodyDoesNotHyperlinkNonRemoteImageFallbacks(t *testing.T) {
 	}
 }
 
+func TestIsRemoteImageURLAllowsUppercaseHTTPSScheme(t *testing.T) {
+	tests := []struct {
+		src  string
+		want bool
+	}{
+		{src: "http://example.com/image.png", want: true},
+		{src: "HTTPS://example.com/image.png", want: true},
+		{src: "cid:test-image@example.com", want: false},
+		{src: "data:image/png;base64,iVBORw0KGgo=", want: false},
+	}
+
+	for _, tt := range tests {
+		if got := isRemoteImageURL(tt.src); got != tt.want {
+			t.Fatalf("isRemoteImageURL(%q) = %v, want %v", tt.src, got, tt.want)
+		}
+	}
+}
+
 func TestProcessBodyWithImageProtocol(t *testing.T) {
 	// Save original environment variables
 	origTerm := os.Getenv("TERM")

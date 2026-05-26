@@ -47,7 +47,11 @@ func newPolicy() *bluemonday.Policy {
 		if prefix == "" {
 			return false
 		}
-		_, err := base64.StdEncoding.DecodeString(u.Opaque[len(prefix):])
+		payload := u.Opaque[len(prefix):]
+		if _, err := base64.StdEncoding.DecodeString(payload); err == nil {
+			return true
+		}
+		_, err := base64.RawStdEncoding.DecodeString(payload)
 		return err == nil
 	})
 	return p

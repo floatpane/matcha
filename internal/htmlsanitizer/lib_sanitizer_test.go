@@ -254,6 +254,7 @@ func TestLibSanitizerRejectsInvalidDataImages(t *testing.T) {
 		<img src="data:image/png;base64,not base64!" alt="invalid base64">
 		<img src="data:image/svg+xml;base64,PHN2Zy8+" alt="svg data">
 		<img src="data:image/png;base64,iVBORw0KGgo=" alt="png data">
+		<img src="data:image/png;base64,iVBORw0KGgo" alt="raw png data">
 	`)
 
 	got := string(sanitizer.SanitizeBytes(input))
@@ -269,5 +270,8 @@ func TestLibSanitizerRejectsInvalidDataImages(t *testing.T) {
 
 	if !strings.Contains(got, `src="data:image/png;base64,iVBORw0KGgo="`) {
 		t.Fatalf("sanitized HTML should keep valid png data URI:\n%s", got)
+	}
+	if !strings.Contains(got, `src="data:image/png;base64,iVBORw0KGgo"`) {
+		t.Fatalf("sanitized HTML should keep valid unpadded png data URI:\n%s", got)
 	}
 }

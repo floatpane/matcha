@@ -788,6 +788,7 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 }
 
 func isRemoteImageURL(src string) bool {
+	src = strings.ToLower(src)
 	return strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://")
 }
 
