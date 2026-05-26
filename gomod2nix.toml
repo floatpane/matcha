@@ -45,6 +45,10 @@ schema = 3
     version = 'v0.1.4'
     hash = 'sha256-ZZ7U5X0gWOu8zcjZcWbcpzGOGdycwq0TjTFh/eZHjXk='
 
+  [mod.'github.com/aymerick/douceur']
+    version = 'v0.2.0'
+    hash = 'sha256-NiBX8EfOvLXNiK3pJaZX4N73YgfzdrzRXdiBFe3X3sE='
+
   [mod.'github.com/charmbracelet/colorprofile']
     version = 'v0.4.3'
     hash = 'sha256-y+QDUxGOKhugEMQLRUTZYT2C+wKqYHnMLJ44jbh7+JA='
@@ -117,6 +121,10 @@ schema = 3
     version = 'v1.6.0'
     hash = 'sha256-VWl9sqUzdOuhW0KzQlv0gwwUQClYkmZwSydHG2sALYw='
 
+  [mod.'github.com/gorilla/css']
+    version = 'v1.0.1'
+    hash = 'sha256-6JwNHqlY2NpZ0pSQTyYPSpiNqjXOdFHqrUT10sv3y8A='
+
   [mod.'github.com/hashicorp/golang-lru/v2']
     version = 'v2.0.7'
     hash = 'sha256-t1bcXLgrQNOYUVyYEZ0knxcXpsTk4IuJZDjKvyJX75g='
@@ -136,6 +144,10 @@ schema = 3
   [mod.'github.com/mattn/go-sixel']
     version = 'v0.0.9'
     hash = 'sha256-RcvP/PeRkktTGtEowRAvJt9xIVakVNmA2+y0W9YB4/Y='
+
+  [mod.'github.com/microcosm-cc/bluemonday']
+    version = 'v1.0.27'
+    hash = 'sha256-EZSya9FLPQ83CL7N2cZy21fdS35hViTkiMK5f3op8Es='
 
   [mod.'github.com/muesli/cancelreader']
     version = 'v0.2.2'
