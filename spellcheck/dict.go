@@ -53,7 +53,7 @@ func DictInstalled(lang string) bool {
 // may carry "/FLAGS" affix metadata which we strip — we don't expand
 // affix rules, so the checker recognises base forms only.
 func parseHunspellDic(path string) (map[string]struct{}, map[rune]struct{}, error) {
-	f, err := os.Open(path) //nolint:gosec
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open dict: %w", err)
 	}

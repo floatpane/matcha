@@ -1,6 +1,7 @@
 package spellcheck
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,7 +33,7 @@ func Download(lang string) (string, error) {
 
 	url := fmt.Sprintf(DictURLTemplate, urlPathLang(lang))
 	client := httpclient.New(httpclient.InstallTimeout)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
 	}

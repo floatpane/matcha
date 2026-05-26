@@ -117,11 +117,9 @@ type Composer struct {
 	spellSuggestions        []string
 	spellSelected           int
 	spellShow               bool
-	spellWordStart          int // byte offset of misspelled word in body
-	spellWordEnd            int
-	spellWordOnLine         int // index of the logical line containing the word
-	spellWordLineStart      int // byte offset of the word within its logical line
-	spellWordLineEnd        int
+	spellWordOnLine         int    // index of the logical line containing the word
+	spellWordLineStart      int    // byte offset of the word within its logical line
+	spellWordLineEnd        int    // byte offset of the word's end within its logical line
 	spellWord               string // the misspelled word (as currently in body)
 	spellLastBody           string // last body value we computed suggestions for
 	spellLastCursorRow      int
@@ -465,12 +463,12 @@ func (m *Composer) updateSpellSuggestions() {
 // cursor with the selected suggestion. It works by sending backspace key
 // events to the textarea (so the textarea's own bookkeeping stays in
 // sync) and then inserting the replacement text.
-func (m *Composer) acceptSpellSuggestion() tea.Cmd {
+func (m *Composer) acceptSpellSuggestion() {
 	if !m.spellShow || len(m.spellSuggestions) == 0 {
-		return nil
+		return
 	}
 	if m.spellSelected < 0 || m.spellSelected >= len(m.spellSuggestions) {
-		return nil
+		return
 	}
 	suggestion := m.spellSuggestions[m.spellSelected]
 
@@ -482,13 +480,13 @@ func (m *Composer) acceptSpellSuggestion() tea.Cmd {
 	if row != m.spellWordOnLine || row >= len(lines) {
 		m.spellShow = false
 		m.spellSuggestions = nil
-		return nil
+		return
 	}
 	endRunes := len([]rune(lines[row][:m.spellWordLineEnd]))
 	if col != endRunes {
 		m.spellShow = false
 		m.spellSuggestions = nil
-		return nil
+		return
 	}
 
 	wordRuneLen := len([]rune(m.spellWord))
@@ -500,7 +498,6 @@ func (m *Composer) acceptSpellSuggestion() tea.Cmd {
 	m.spellShow = false
 	m.spellSuggestions = nil
 	m.spellWord = ""
-	return nil
 }
 
 func isWordContinuation(r rune) bool {
@@ -808,7 +805,8 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				}
 				return m, nil
 			case sk.SpellAccept:
-				return m, m.acceptSpellSuggestion()
+				m.acceptSpellSuggestion()
+				return m, nil
 			case sk.SpellDismiss:
 				m.spellShow = false
 				m.spellSuggestions = nil

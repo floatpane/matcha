@@ -75,7 +75,7 @@ func scanWords(line string) []wordSpan {
 	var b strings.Builder
 	start := -1
 
-	flush := func(end int) {
+	flush := func() {
 		if b.Len() == 0 {
 			return
 		}
@@ -90,7 +90,7 @@ func scanWords(line string) []wordSpan {
 	i := 0
 	for i < len(line) {
 		if line[i] == 0x1b {
-			flush(i)
+			flush()
 			i += ansiSkip(line, i)
 			continue
 		}
@@ -108,10 +108,10 @@ func scanWords(line string) []wordSpan {
 			i += size
 			continue
 		}
-		flush(i)
+		flush()
 		i += size
 	}
-	flush(len(line))
+	flush()
 	return spans
 }
 

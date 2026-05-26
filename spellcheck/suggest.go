@@ -6,10 +6,10 @@ import (
 	"unicode"
 )
 
-// Suggest returns up to max candidate corrections for word, ranked by
+// Suggest returns up to limit candidate corrections for word, ranked by
 // edit distance ascending then alphabetically. Returns nil when the
 // checker has no dictionary loaded or when word is too short.
-func (c *Checker) Suggest(word string, max int) []string {
+func (c *Checker) Suggest(word string, limit int) []string {
 	if c == nil {
 		return nil
 	}
@@ -18,8 +18,8 @@ func (c *Checker) Suggest(word string, max int) []string {
 	if !c.loaded || len(c.words) == 0 {
 		return nil
 	}
-	if max <= 0 {
-		max = 5
+	if limit <= 0 {
+		limit = 5
 	}
 
 	lower := strings.ToLower(word)
@@ -67,8 +67,8 @@ func (c *Checker) Suggest(word string, max int) []string {
 		return cands[i].word < cands[j].word
 	})
 
-	if len(cands) > max {
-		cands = cands[:max]
+	if len(cands) > limit {
+		cands = cands[:limit]
 	}
 	out := make([]string, len(cands))
 	upper := unicode.IsUpper([]rune(word)[0])

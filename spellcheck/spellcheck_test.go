@@ -173,16 +173,16 @@ func TestCheckRecognisesAccentsWhenDictHasThem(t *testing.T) {
 
 func TestIsCheckable(t *testing.T) {
 	cases := map[string]bool{
-		"hello":       true,
-		"a":           false,
-		"42":          false,
-		"hello42":     false,
-		"NASA":        false,
-		"hi@there":    false,
-		"path/to":     false,
-		"don't":       true,
-		"HelloWorld":  true, // mixed case, not an acronym
-		"INTERNATION": true, // > 5 upper letters, treated as a word
+		"hello":         true,
+		"a":             false,
+		"42":            false,
+		"hello42":       false,
+		"NASA":          false,
+		"hi@there":      false,
+		"path/to":       false,
+		"don't":         true,
+		"HelloWorld":    true, // mixed case, not an acronym
+		"INTERNATIONAL": true, // > 5 upper letters, treated as a word
 	}
 	for in, want := range cases {
 		if got := IsCheckable(in); got != want {
