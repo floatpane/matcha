@@ -4,6 +4,8 @@
 
 Matcha supports modern terminal image protocols for displaying images directly in your terminal. This allows for rich email viewing with inline images, including those embedded in HTML emails (CID references), remote images, and base64-encoded data URIs.
 
+Image rendering is powered by [termimage](https://github.com/floatpane/termimage), which handles protocol detection, decoding (in a sandboxed subprocess on Linux via Landlock + seccomp), and rendering for Kitty graphics, Sixel, and Unicode half-block fallback.
+
 ## Supported Protocols
 
 ### 🖼️ Kitty Graphics Protocol
