@@ -283,6 +283,8 @@ func (m *Settings) canFocusSettingsMenuWithLeft() bool {
 		return config.IsSecureModeEnabled() && !m.confirmingDisable
 	case CategoryPlugins:
 		return !m.pluginEditing && m.pluginSelected == ""
+	case CategoryGeneral, CategoryTheme, CategoryMailingLists:
+		return true
 	default:
 		return true
 	}
