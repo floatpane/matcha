@@ -205,6 +205,11 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		if m.activePane == PaneContent && msg.String() == keyLeft && m.canFocusSettingsMenuWithLeft() {
+			m.activePane = PaneMenu
+			return m, nil
+		}
+
 		if m.activePane == PaneMenu {
 			return m.updateMenu(msg)
 		}
@@ -270,6 +275,40 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+func (m *Settings) canFocusSettingsMenuWithLeft() bool {
+	switch m.activeCategory {
+	case CategoryAccounts:
+		return !m.isCryptoConfig && !m.confirmingDelete
+	case CategoryEncryption:
+		return config.IsSecureModeEnabled() && !m.confirmingDisable
+	case CategoryPlugins:
+		return !m.pluginEditing && m.pluginSelected == ""
+	default:
+		return true
+	}
+}
+
+func (m *Settings) contentItemStyle(selected bool) lipgloss.Style {
+	if selected && m.activePane == PaneContent {
+		return selectedAccountItemStyle
+	}
+	return accountItemStyle
+}
+
+func (m *Settings) contentCursor(selected bool) string {
+	if selected && m.activePane == PaneContent {
+		return "> "
+	}
+	return "  "
+}
+
+func (m *Settings) contentFocusStyle(selected bool) lipgloss.Style {
+	if selected && m.activePane == PaneContent {
+		return settingsFocusedStyle
+	}
+	return settingsBlurredStyle
+}
+
 func (m *Settings) updateMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	categoryCount := int(CategoryPlugins) + 1
 
@@ -308,7 +347,7 @@ func (m *Settings) updateMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 
 		return m, textinput.Blink
-	case "esc":
+	case "esc", keyLeft:
 		return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
 	}
 	m.activeCategory = SettingsCategory(m.menuCursor)
@@ -340,7 +379,11 @@ func (m *Settings) View() tea.View {
 
 		style := accountItemStyle
 		if m.menuCursor == i {
-			style = selectedAccountItemStyle
+			if m.activePane == PaneMenu {
+				style = selectedAccountItemStyle
+			} else {
+				style = selectedAccountItemStyle.UnsetBold()
+			}
 		}
 
 		left.WriteString(style.Render(cursor+c) + "\n")

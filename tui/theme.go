@@ -47,10 +47,10 @@ func RebuildStyles() {
 
 	// settings.go
 	accountItemStyle = lipgloss.NewStyle().PaddingLeft(2)
-	selectedAccountItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(t.Accent)
+	selectedAccountItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(t.Accent).Bold(true)
 	accountEmailStyle = lipgloss.NewStyle().Foreground(t.Secondary)
 	dangerStyle = lipgloss.NewStyle().Foreground(t.Danger)
-	settingsFocusedStyle = lipgloss.NewStyle().Foreground(t.Accent)
+	settingsFocusedStyle = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	settingsBlurredStyle = lipgloss.NewStyle().Foreground(t.Secondary)
 
 	// composer.go
