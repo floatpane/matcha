@@ -1,6 +1,7 @@
 package view
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -8,7 +9,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"charm.land/lipgloss/v2"
@@ -17,6 +17,7 @@ import (
 	"github.com/floatpane/matcha/internal/httpclient"
 	"github.com/floatpane/matcha/internal/loglevel"
 	"github.com/floatpane/matcha/theme"
+	"github.com/floatpane/termimage"
 	lru "github.com/hashicorp/golang-lru/v2"
 )
 
@@ -321,14 +322,6 @@ func init() {
 	remoteImageCache = c
 }
 
-// nextImageID is an auto-incrementing counter for Kitty image IDs.
-var nextImageID uint32 = 1000
-
-// allocImageID returns a unique Kitty image ID.
-func allocImageID() uint32 {
-	return atomic.AddUint32(&nextImageID, 1)
-}
-
 func fetchRemoteBase64(url string) string {
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		return ""
@@ -389,22 +382,6 @@ func dataURIBase64(uri string) string {
 const imageRowPlaceholderPrefix = "[[MATCHA_IMG_ROWS:"
 const imageRowPlaceholderSuffix = "]]"
 
-// sixelImageEscapeOnly returns raw Sixel for out-of-band rendering
-func sixelImageEscapeOnly(base64PNG string) string {
-	data, err := base64.StdEncoding.DecodeString(base64PNG)
-	if err != nil {
-		return ""
-	}
-
-	cellHeight := getTerminalCellSize()
-	sixel, _, err := clib.EncodePNGToSixel(data, cellHeight)
-	if err != nil {
-		return ""
-	}
-
-	return sixel
-}
-
 // imageRows calculates the number of terminal rows an image occupies.
 func imageRows(payload string) int {
 	rows := 1
@@ -424,60 +401,15 @@ func imageRows(payload string) int {
 	return rows
 }
 
-// kittyUploadImage uploads image data to the terminal with a unique ID using
-// the Kitty graphics protocol transmit action (a=t). The image is stored in
-// the terminal's memory and can be displayed later by ID without re-sending data.
-func kittyUploadImage(payload string, id uint32) {
-	if payload == "" {
-		return
-	}
-
-	const chunkSize = 4096
-	for offset := 0; offset < len(payload); offset += chunkSize {
-		end := offset + chunkSize
-		if end > len(payload) {
-			end = len(payload)
-		}
-		more := "0"
-		if end < len(payload) {
-			more = "1"
-		}
-
-		chunk := payload[offset:end]
-		if offset == 0 {
-			// a=t: transmit (upload) only, don't display yet
-			// i=ID: assign this image ID
-			fmt.Fprintf(os.Stdout, "\x1b_Gf=100,a=t,i=%d,q=2,m=%s;%s\x1b\\", id, more, chunk) //nolint:errcheck
-		} else {
-			fmt.Fprintf(os.Stdout, "\x1b_Gm=%s;%s\x1b\\", more, chunk) //nolint:errcheck
-		}
-	}
-	os.Stdout.Sync() //nolint:errcheck,gosec
-}
-
-// kittyDisplayImage displays a previously uploaded image by its ID at the
-// current cursor position. This is very fast since no image data is transmitted.
-func kittyDisplayImage(id uint32) string {
-	// a=p: put (display) an already-uploaded image by ID
-	// C=1: cursor does not move
-	return fmt.Sprintf("\x1b_Ga=p,i=%d,q=2,C=1\x1b\\", id)
-}
-
-// iterm2ImageEscapeOnly returns only the iTerm2 image protocol escape sequence
-// without any row placeholders. Used for out-of-band rendering to stdout.
-func iterm2ImageEscapeOnly(payload string) string {
-	if payload == "" {
-		return ""
-	}
-	return fmt.Sprintf("\x1b]1337;File=inline=1:%s\x07", payload)
-}
-
 // RenderImageToStdout writes an image directly to stdout at the given screen
 // row using cursor positioning. This bypasses bubbletea's cell-based renderer
 // which cannot handle graphics protocol escape sequences.
 //
-// For Kitty-protocol terminals, images are uploaded once and then displayed by
-// ID on subsequent calls, making scroll rendering nearly instant.
+// Uses github.com/floatpane/termimage to decode image bytes inside a
+// Landlock + seccomp sandboxed subprocess and emit the best protocol the
+// terminal supports (Kitty, Sixel, or Unicode half-block fallback). The
+// rendered escape sequence is cached on the placement so subsequent scroll
+// re-renders don't re-decode.
 func RenderImageToStdout(placement *ImagePlacement, screenRow int, screenCol ...int) {
 	if placement.Base64 == "" {
 		return
@@ -488,45 +420,24 @@ func RenderImageToStdout(placement *ImagePlacement, screenRow int, screenCol ...
 		col = screenCol[0]
 	}
 
-	// Priority: Sixel in multiplexers
-	if sixelSupported() {
-		debugImageProtocol("Sixel: RenderImageToStdout row=%d col=%d base64len=%d", screenRow, col, len(placement.Base64))
-
-		// Encode once, reuse cached Sixel on subsequent renders (like Kitty's upload-once pattern)
-		if placement.SixelEncoded == "" {
-			placement.SixelEncoded = sixelImageEscapeOnly(placement.Base64)
-			if placement.SixelEncoded == "" {
-				debugImageProtocol("Sixel: sixelImageEscapeOnly returned empty")
-				return
-			}
+	if placement.Encoded == "" {
+		src := "data:image/png;base64," + placement.Base64
+		var buf bytes.Buffer
+		err := termimage.Display(&buf, src, termimage.Options{
+			Protocol:  termimage.Auto,
+			Sandboxed: true,
+		})
+		if err != nil {
+			debugImageProtocol("termimage.Display error: %v", err)
+			return
 		}
-
-		debugImageProtocol("Sixel: rendering %d bytes at row=%d col=%d", len(placement.SixelEncoded), screenRow+1, col)
-		// Position cursor + render Sixel
-		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", //nolint:errcheck
-			screenRow+1, col, placement.SixelEncoded)
-		os.Stdout.Sync() //nolint:errcheck,gosec
-		return
+		placement.Encoded = buf.String()
 	}
 
-	useKitty := kittySupported() || ghosttySupported() || weztermSupported() || waystSupported() || konsoleSupported()
-	useIterm2 := iterm2Supported() || warpSupported()
-
-	if useKitty {
-		// Upload once, display by ID on subsequent renders
-		if !placement.Uploaded {
-			placement.ID = allocImageID()
-			kittyUploadImage(placement.Base64, placement.ID)
-			placement.Uploaded = true
-		}
-		seq := kittyDisplayImage(placement.ID)
-		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", screenRow+1, col, seq) //nolint:errcheck
-		os.Stdout.Sync()                                                           //nolint:errcheck,gosec
-	} else if useIterm2 {
-		seq := iterm2ImageEscapeOnly(placement.Base64)
-		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", screenRow+1, col, seq) //nolint:errcheck
-		os.Stdout.Sync()                                                           //nolint:errcheck,gosec
-	}
+	debugImageProtocol("termimage: rendering %d bytes at row=%d col=%d", len(placement.Encoded), screenRow+1, col)
+	fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", //nolint:errcheck
+		screenRow+1, col, placement.Encoded)
+	os.Stdout.Sync() //nolint:errcheck,gosec
 }
 
 // expandImageRowPlaceholders replaces image row placeholders with actual newlines.
@@ -554,12 +465,10 @@ type InlineImage struct {
 // line in the email body. Images are rendered directly to stdout (bypassing
 // bubbletea's cell-based renderer which cannot handle graphics protocols).
 type ImagePlacement struct {
-	Line         int    // Line number in the processed body text where the image starts
-	Base64       string // Base64-encoded image data (PNG)
-	Rows         int    // Number of terminal rows the image occupies
-	Uploaded     bool   // Whether the image has been uploaded to the terminal via Kitty ID
-	ID           uint32 // Kitty image ID for display-by-reference
-	SixelEncoded string // Cached Sixel escape sequence (encode once, reuse on scroll)
+	Line    int    // Line number in the processed body text where the image starts
+	Base64  string // Base64-encoded image data (PNG)
+	Rows    int    // Number of terminal rows the image occupies
+	Encoded string // Cached terminal escape sequence from termimage (encode once, reuse on scroll)
 }
 
 // BodyMIMEType values understood by ProcessBody/ProcessBodyWithInline. Empty
