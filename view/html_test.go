@@ -1119,4 +1119,3 @@ func TestRemoteImageCache_EvictsOldestWhenFull(t *testing.T) {
 		}
 	}
 }
-
