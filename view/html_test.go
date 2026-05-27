@@ -943,8 +943,8 @@ func TestProcessBodyWithImageProtocol(t *testing.T) {
 				if len(placements) == 0 {
 					t.Errorf("Expected image placements but got none")
 				} else {
-					if placements[0].Base64 == "" {
-						t.Errorf("Expected non-empty Base64 in placement")
+					if placements[0].Encoded == "" {
+						t.Errorf("Expected non-empty Encoded in placement")
 					}
 					if placements[0].Rows < 1 {
 						t.Errorf("Expected Rows >= 1, got %d", placements[0].Rows)

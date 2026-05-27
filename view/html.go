@@ -382,56 +382,43 @@ func dataURIBase64(uri string) string {
 const imageRowPlaceholderPrefix = "[[MATCHA_IMG_ROWS:"
 const imageRowPlaceholderSuffix = "]]"
 
-// imageRows calculates the number of terminal rows an image occupies.
-func imageRows(payload string) int {
-	rows := 1
-	if data, err := base64.StdEncoding.DecodeString(payload); err == nil {
-		if _, h, ok := clib.ImageDimensions(data); ok {
-			cellHeight := getTerminalCellSize()
-			if cellHeight == 0 {
-				cellHeight = 16
-			}
-			rows = (h + cellHeight - 1) / cellHeight
-			if rows < 1 {
-				rows = 1
-			}
-			debugImageProtocol("image height: %d pixels, cell height: %d pixels, rows needed: %d", h, cellHeight, rows)
-		}
+// prerenderImage decodes and renders an image via termimage at layout time,
+// returning the cached escape sequence and the exact number of terminal rows
+// the rendered image will occupy. Both are stored on the ImagePlacement so
+// (a) text below the image is offset by the correct row count and (b) the
+// paint stage in RenderImageToStdout is a plain stdout write with no decode.
+func prerenderImage(payload string) (string, int) {
+	src := "data:image/png;base64," + payload
+	var buf bytes.Buffer
+	_, rows, err := termimage.DisplayWithSize(&buf, src, termimage.Options{
+		Protocol:  termimage.Auto,
+		Sandboxed: true,
+	})
+	if err != nil {
+		debugImageProtocol("termimage.DisplayWithSize error: %v", err)
+		return "", 1
 	}
-	return rows
+	if rows < 1 {
+		rows = 1
+	}
+	debugImageProtocol("termimage: prerendered rows=%d bytes=%d", rows, buf.Len())
+	return buf.String(), rows
 }
 
 // RenderImageToStdout writes an image directly to stdout at the given screen
 // row using cursor positioning. This bypasses bubbletea's cell-based renderer
 // which cannot handle graphics protocol escape sequences.
 //
-// Uses github.com/floatpane/termimage to decode image bytes inside a
-// Landlock + seccomp sandboxed subprocess and emit the best protocol the
-// terminal supports (Kitty, Sixel, or Unicode half-block fallback). The
-// rendered escape sequence is cached on the placement so subsequent scroll
-// re-renders don't re-decode.
+// The escape sequence and row count were captured at HTML processing time by
+// prerenderImage, so this call is a plain stdout write with no decode.
 func RenderImageToStdout(placement *ImagePlacement, screenRow int, screenCol ...int) {
-	if placement.Base64 == "" {
+	if placement.Encoded == "" {
 		return
 	}
 
 	col := 1
 	if len(screenCol) > 0 && screenCol[0] > 0 {
 		col = screenCol[0]
-	}
-
-	if placement.Encoded == "" {
-		src := "data:image/png;base64," + placement.Base64
-		var buf bytes.Buffer
-		err := termimage.Display(&buf, src, termimage.Options{
-			Protocol:  termimage.Auto,
-			Sandboxed: true,
-		})
-		if err != nil {
-			debugImageProtocol("termimage.Display error: %v", err)
-			return
-		}
-		placement.Encoded = buf.String()
 	}
 
 	debugImageProtocol("termimage: rendering %d bytes at row=%d col=%d", len(placement.Encoded), screenRow+1, col)
@@ -464,11 +451,15 @@ type InlineImage struct {
 // ImagePlacement holds the data needed to render an image at a specific
 // line in the email body. Images are rendered directly to stdout (bypassing
 // bubbletea's cell-based renderer which cannot handle graphics protocols).
+//
+// Encoded and Rows are populated at HTML processing time by prerenderImage
+// using termimage.DisplayWithSize, so paint-stage rendering is a plain
+// stdout write and layout-stage row reservation matches the rendered output
+// exactly.
 type ImagePlacement struct {
 	Line    int    // Line number in the processed body text where the image starts
-	Base64  string // Base64-encoded image data (PNG)
-	Rows    int    // Number of terminal rows the image occupies
-	Encoded string // Cached terminal escape sequence from termimage (encode once, reuse on scroll)
+	Rows    int    // Number of terminal rows the rendered image occupies (from termimage)
+	Encoded string // Cached terminal escape sequence from termimage (rendered once at layout time)
 }
 
 // BodyMIMEType values understood by ProcessBody/ProcessBodyWithInline. Empty
@@ -557,7 +548,7 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 	var imgIndex int
 	var pendingImages []struct {
 		index   int
-		payload string
+		encoded string
 		rows    int
 	}
 
@@ -609,20 +600,24 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 				}
 
 				if payload != "" {
-					rows := imageRows(payload)
-					debugImageProtocol("collected image placement src=%s rows=%d", src, rows)
+					encoded, rows := prerenderImage(payload)
+					if encoded == "" {
+						debugImageProtocol("prerender failed for src=%s", src)
+					} else {
+						debugImageProtocol("collected image placement src=%s rows=%d", src, rows)
 
-					idx := imgIndex
-					imgIndex++
-					pendingImages = append(pendingImages, struct {
-						index   int
-						payload string
-						rows    int
-					}{idx, payload, rows})
+						idx := imgIndex
+						imgIndex++
+						pendingImages = append(pendingImages, struct {
+							index   int
+							encoded string
+							rows    int
+						}{idx, encoded, rows})
 
-					fmt.Fprintf(&text, "\n[[MATCHA_IMG:%d]]", idx)
-					fmt.Fprintf(&text, "\n%s%d%s\n", imageRowPlaceholderPrefix, rows, imageRowPlaceholderSuffix)
-					continue
+						fmt.Fprintf(&text, "\n[[MATCHA_IMG:%d]]", idx)
+						fmt.Fprintf(&text, "\n%s%d%s\n", imageRowPlaceholderPrefix, rows, imageRowPlaceholderSuffix)
+						continue
+					}
 				}
 				debugImageProtocol("no payload for src=%s", src)
 			}
@@ -679,9 +674,9 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 				for _, pi := range pendingImages {
 					if pi.index == idx {
 						placements = append(placements, ImagePlacement{
-							Line:   lineNum,
-							Base64: pi.payload,
-							Rows:   pi.rows,
+							Line:    lineNum,
+							Encoded: pi.encoded,
+							Rows:    pi.rows,
 						})
 						break
 					}
