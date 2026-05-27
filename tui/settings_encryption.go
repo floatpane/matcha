@@ -154,7 +154,7 @@ func (m *Settings) viewEncryption() string {
 			)
 			b.WriteString(dialog + "\n")
 		} else {
-			b.WriteString(m.contentFocusStyle(true).Render("  "+t("settings_encryption.enabled")) + "\n\n")
+			b.WriteString(m.contentFocusStyle().Render("  "+t("settings_encryption.enabled")) + "\n\n")
 			b.WriteString(accountEmailStyle.Render("  "+t("settings_encryption.disable_button")) + "\n\n")
 			b.WriteString(helpStyle.Render("enter: disable"))
 		}
@@ -162,7 +162,7 @@ func (m *Settings) viewEncryption() string {
 		b.WriteString(accountEmailStyle.Render(t("settings_encryption.disabled")) + "\n\n")
 
 		if m.encFocusIndex == 0 {
-			b.WriteString(m.contentFocusStyle(true).Render(t("settings_encryption.password_label") + "\n"))
+			b.WriteString(m.contentFocusStyle().Render(t("settings_encryption.password_label") + "\n"))
 		} else {
 			b.WriteString(settingsBlurredStyle.Render(t("settings_encryption.password_label") + "\n"))
 		}
@@ -172,7 +172,7 @@ func (m *Settings) viewEncryption() string {
 		}
 
 		if m.encFocusIndex == 1 {
-			b.WriteString(m.contentFocusStyle(true).Render(t("settings_encryption.confirm_label") + "\n"))
+			b.WriteString(m.contentFocusStyle().Render(t("settings_encryption.confirm_label") + "\n"))
 		} else {
 			b.WriteString(settingsBlurredStyle.Render(t("settings_encryption.confirm_label") + "\n"))
 		}
@@ -184,7 +184,7 @@ func (m *Settings) viewEncryption() string {
 
 		saveBtn := "[ " + t("settings_encryption.enable_button") + " ]"
 		if m.encFocusIndex == 2 {
-			b.WriteString(m.contentFocusStyle(true).Render(saveBtn) + "\n")
+			b.WriteString(m.contentFocusStyle().Render(saveBtn) + "\n")
 		} else {
 			b.WriteString(settingsBlurredStyle.Render(saveBtn) + "\n")
 		}

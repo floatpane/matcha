@@ -187,7 +187,7 @@ func (m *Settings) viewPlugins() string {
 
 	if m.pluginEditing {
 		b.WriteString("\n")
-		b.WriteString(m.contentFocusStyle(true).Render("Edit "+m.pluginEditingKey) + "\n")
+		b.WriteString(m.contentFocusStyle().Render("Edit "+m.pluginEditingKey) + "\n")
 		b.WriteString(m.pluginInput.View() + "\n")
 		b.WriteString("\n")
 		b.WriteString(helpStyle.Render("enter save • esc cancel"))
