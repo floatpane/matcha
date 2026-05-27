@@ -30,7 +30,6 @@ require (
 	github.com/zalando/go-keyring v0.2.8
 	go.mozilla.org/pkcs7 v0.9.0
 	golang.org/x/crypto v0.52.0
-	golang.org/x/sys v0.45.0
 	golang.org/x/term v0.43.0
 	golang.org/x/text v0.37.0
 )
@@ -61,5 +60,6 @@ require (
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/oauth2 v0.27.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	kernel.org/pub/linux/libs/security/libcap/psx v1.2.77 // indirect
 )
