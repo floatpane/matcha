@@ -29,33 +29,6 @@ func linkStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(theme.ActiveTheme.Link)
 }
 
-// getTerminalCellSize returns the height of a terminal cell in pixels.
-// It queries the terminal using TIOCGWINSZ to get both character and pixel dimensions.
-// Falls back to a default of 18 pixels if the query fails.
-func getTerminalCellSize() int {
-	const defaultCellHeight = 18
-
-	// Try stdout, stdin, stderr, then /dev/tty as last resort
-	fds := []int{int(os.Stdout.Fd()), int(os.Stdin.Fd()), int(os.Stderr.Fd())}
-
-	for _, fd := range fds {
-		if cellHeight := getCellHeightFromFd(fd); cellHeight > 0 {
-			return cellHeight
-		}
-	}
-
-	// Try /dev/tty directly - this works even when stdio is redirected (e.g., in Bubble Tea)
-	if tty, err := os.Open("/dev/tty"); err == nil {
-		defer tty.Close() //nolint:errcheck
-		if cellHeight := getCellHeightFromFd(int(tty.Fd())); cellHeight > 0 {
-			return cellHeight
-		}
-	}
-
-	debugImageProtocol("using default cell height: %d pixels", defaultCellHeight)
-	return defaultCellHeight
-}
-
 // hyperlinkSupported checks if the terminal supports OSC 8 hyperlinks.
 func hyperlinkSupported() bool {
 	term := strings.ToLower(os.Getenv("TERM"))
@@ -582,22 +555,7 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 			}
 
 			if !disableImages && imageProtocolSupported() {
-				var payload string
-				switch {
-				case strings.HasPrefix(src, "data:image/"):
-					payload = dataURIBase64(src)
-				case strings.HasPrefix(src, "cid:"):
-					cid := strings.TrimPrefix(src, "cid:")
-					cid = strings.Trim(cid, "<>")
-					if inline != nil {
-						payload = inline[cid]
-						debugImageProtocol("cid lookup for %s found=%t len=%d", cid, payload != "", len(payload))
-					} else {
-						debugImageProtocol("cid lookup skipped inline map nil for %s", cid)
-					}
-				case strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://"):
-					payload = fetchRemoteBase64(src)
-				}
+				payload := resolveImagePayload(src, inline)
 
 				if payload != "" {
 					encoded, rows := prerenderImage(payload)
@@ -689,6 +647,26 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 	}
 
 	return result, placements, nil
+}
+
+func resolveImagePayload(src string, inline map[string]string) string {
+	switch {
+	case strings.HasPrefix(src, "data:image/"):
+		return dataURIBase64(src)
+	case strings.HasPrefix(src, "cid:"):
+		cid := strings.TrimPrefix(src, "cid:")
+		cid = strings.Trim(cid, "<>")
+		if inline != nil {
+			payload := inline[cid]
+			debugImageProtocol("cid lookup for %s found=%t len=%d", cid, payload != "", len(payload))
+			return payload
+		}
+		debugImageProtocol("cid lookup skipped inline map nil for %s", cid)
+		return ""
+	case strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://"):
+		return fetchRemoteBase64(src)
+	}
+	return ""
 }
 
 func isRemoteImageURL(src string) bool {

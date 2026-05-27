@@ -5,8 +5,8 @@ import (
 	"image"
 	"image/png"
 
-	_ "image/gif"
-	_ "image/jpeg"
+	_ "image/gif"  // register GIF decoder for image.Decode
+	_ "image/jpeg" // register JPEG decoder for image.Decode
 )
 
 // DecodeToPNG takes raw image bytes (JPEG, PNG, BMP, GIF, etc.) and returns
