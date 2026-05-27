@@ -356,10 +356,15 @@ func cacheDir() (string, error) {
 
 func migrate(src, dst string) error {
 	if _, err := os.Stat(src); err != nil {
-		return nil
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
 	}
 	if _, err := os.Stat(dst); err == nil {
 		return nil
+	} else if !os.IsNotExist(err) {
+		return err
 	}
 	return os.Rename(src, dst)
 }
