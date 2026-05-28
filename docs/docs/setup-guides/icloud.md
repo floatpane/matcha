@@ -9,7 +9,8 @@ Matcha requires an app-specific password to access your iCloud Mail account. App
 
 ## 1. Enable two-factor authentication (if not enabled)
 
->  If you already use two-factor authentication you can skip this step.
+>  [!NOTE]
+> If you already use two-factor authentication you can skip this step.
 
 ![MacOS settings](../assets/setup-guides/icloud/settings.jpg)
 
@@ -40,7 +41,8 @@ On a Mac, go to **System Settings > [your name] > Sign-In & Security** and enabl
 
 *This key is revoked, don't worry*
 
-> **Important:** Treat this app-specific password as you would your primary password. Never share it or expose it publicly. The password sits locally on your device and is never shared with us.
+> [!CAUTION] 
+> Treat this app-specific password as you would your primary password. Never share it or expose it publicly. The password sits locally on your device and is never shared with us.
 
 ![Matcha Add Account view](../assets/setup-guides/icloud/matcha.png)
 

@@ -168,7 +168,8 @@ Your configuration:
 }
 ```
 
-Note: The YubiKey PIN is stored in your OS keyring (e.g. GNOME Keyring, KDE Wallet, macOS Keychain) and is never saved to `config.json`.
+> [!NOTE]
+> The YubiKey PIN is stored in your OS keyring (e.g. GNOME Keyring, KDE Wallet, macOS Keychain) and is never saved to `config.json`.
 
 ### Moving Your GPG Key to a YubiKey
 
