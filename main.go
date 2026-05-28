@@ -52,6 +52,7 @@ import (
 	"github.com/floatpane/matcha/sender"
 	"github.com/floatpane/matcha/theme"
 	"github.com/floatpane/matcha/tui"
+	"github.com/floatpane/termimage"
 	"github.com/google/uuid"
 	lua "github.com/yuin/gopher-lua"
 )
@@ -3900,6 +3901,11 @@ func exit(code int) {
 }
 
 func main() { //nolint:gocyclo
+	// termimage sandbox worker: if this process was spawned as a decode
+	// worker (TERMIMAGE_WORKER=1), apply OS restrictions, decode, exit.
+	// Must run before any other initialization.
+	termimage.MaybeRunWorker()
+
 	args, level, showLogPanel := parseGlobalFlags(os.Args)
 	os.Args = args
 	loglevel.Set(level)

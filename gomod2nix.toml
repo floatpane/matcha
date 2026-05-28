@@ -113,6 +113,10 @@ schema = 3
     version = 'v0.0.0-20241020182733-b788ff22d5a6'
     hash = 'sha256-eil7taerUmXI7lGOrcw56I0ilBzayRhhf1Sjixyc4oA='
 
+  [mod.'github.com/floatpane/termimage']
+    version = 'v0.2.0'
+    hash = 'sha256-Ycx9E1//VpJ35WnU1FWnp1cXIgkRmRnpXF/YqjGlyDw='
+
   [mod.'github.com/godbus/dbus/v5']
     version = 'v5.2.2'
     hash = 'sha256-j+LicPlXcB1R3oVFPa8cd4yVJLpBx+ca5gXmHqOJSN8='
@@ -133,6 +137,10 @@ schema = 3
     version = 'v1.0.2'
     hash = 'sha256-GGxqzyMOYllPaIFTdZ/frUbXygzVP6BawoVKW9QNgSo='
 
+  [mod.'github.com/landlock-lsm/go-landlock']
+    version = 'v0.8.1'
+    hash = 'sha256-7H6/LBmv/d4vDIfZcJ0PeNiNU2PInkw29aQU1yHWxsU='
+
   [mod.'github.com/lucasb-eyer/go-colorful']
     version = 'v1.4.0'
     hash = 'sha256-i/3GDHKEMLCy0kc3mtyk58UWYOPmKoUVaq6QCAWXKP0='
@@ -140,10 +148,6 @@ schema = 3
   [mod.'github.com/mattn/go-runewidth']
     version = 'v0.0.23'
     hash = 'sha256-SmChZ2U1aR8pW3LPhdM7KcVF5TO6VcHgRzBtUXbBWJA='
-
-  [mod.'github.com/mattn/go-sixel']
-    version = 'v0.0.9'
-    hash = 'sha256-RcvP/PeRkktTGtEowRAvJt9xIVakVNmA2+y0W9YB4/Y='
 
   [mod.'github.com/microcosm-cc/bluemonday']
     version = 'v1.0.27'
@@ -160,10 +164,6 @@ schema = 3
   [mod.'github.com/sahilm/fuzzy']
     version = 'v0.1.1'
     hash = 'sha256-f2VsDI6G+V2w31tSDzbZPi9EI2E7jRV6Aq8yeOorSZY='
-
-  [mod.'github.com/soniakeys/quant']
-    version = 'v1.0.0'
-    hash = 'sha256-6PzSE8lSOPqO7Y7axqmL+7CioDPap+Rgb2ETmhqBoHg='
 
   [mod.'github.com/wagslane/go-password-validator']
     version = 'v0.3.0'
@@ -193,6 +193,10 @@ schema = 3
     version = 'v0.52.0'
     hash = 'sha256-/6Ajm6bIPt5xXNL5mmeNfJh4EZjgFgVlHEwp1TiC5cM='
 
+  [mod.'golang.org/x/image']
+    version = 'v0.28.0'
+    hash = 'sha256-TkfNKPRea7gWtH8mQCNHQc0ce6LIO7XDgOoH5U6P51Q='
+
   [mod.'golang.org/x/net']
     version = 'v0.55.0'
     hash = 'sha256-Phi2mSmBGOJcvqPPAit3uqF3UP8SKRI9dHj6yTM3s5s='
@@ -216,3 +220,7 @@ schema = 3
   [mod.'golang.org/x/text']
     version = 'v0.37.0'
     hash = 'sha256-8XDOnlPIybcDRy89fkjG5VqtIt5Ku+LmaqYhgKl7i1E='
+
+  [mod.'kernel.org/pub/linux/libs/security/libcap/psx']
+    version = 'v1.2.77'
+    hash = 'sha256-oqlAG5XMkQ4toFSIbqGg+2biuw+IyNrogcMralnmvfA='

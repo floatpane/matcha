@@ -15,13 +15,22 @@ import (
 	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/theme"
 	"github.com/floatpane/matcha/view"
+	"github.com/floatpane/termimage"
+	"github.com/floatpane/termimage/detect"
 )
 
-// ClearKittyGraphics sends the Kitty graphics protocol delete command directly to stdout.
+// ClearKittyGraphics clears any rendered image residue using termimage's
+// protocol-aware clear (Kitty deletes all placements, Sixel/HalfBlock erases
+// the trailing rows). The name is kept for callsite compatibility.
+//
+// termimage.Auto is not handled by termimage.Clear (it falls to the rows-based
+// branch and no-ops when rows=0), so resolve the protocol up front.
 func ClearKittyGraphics() {
-	// Delete all images: a=d (action=delete), d=A (delete all)
-	os.Stdout.WriteString("\x1b_Ga=d,d=A\x1b\\") //nolint:errcheck,gosec
-	os.Stdout.Sync()                             //nolint:errcheck,gosec
+	proto := detect.Best()
+	if err := termimage.Clear(os.Stdout, proto, 0); err != nil {
+		return
+	}
+	os.Stdout.Sync() //nolint:errcheck,gosec
 }
 
 var (

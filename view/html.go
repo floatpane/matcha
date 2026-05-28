@@ -1,6 +1,7 @@
 package view
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -8,7 +9,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"charm.land/lipgloss/v2"
@@ -17,6 +17,7 @@ import (
 	"github.com/floatpane/matcha/internal/httpclient"
 	"github.com/floatpane/matcha/internal/loglevel"
 	"github.com/floatpane/matcha/theme"
+	"github.com/floatpane/termimage"
 	lru "github.com/hashicorp/golang-lru/v2"
 )
 
@@ -26,33 +27,6 @@ const termGhostty = "ghostty"
 
 func linkStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(theme.ActiveTheme.Link)
-}
-
-// getTerminalCellSize returns the height of a terminal cell in pixels.
-// It queries the terminal using TIOCGWINSZ to get both character and pixel dimensions.
-// Falls back to a default of 18 pixels if the query fails.
-func getTerminalCellSize() int {
-	const defaultCellHeight = 18
-
-	// Try stdout, stdin, stderr, then /dev/tty as last resort
-	fds := []int{int(os.Stdout.Fd()), int(os.Stdin.Fd()), int(os.Stderr.Fd())}
-
-	for _, fd := range fds {
-		if cellHeight := getCellHeightFromFd(fd); cellHeight > 0 {
-			return cellHeight
-		}
-	}
-
-	// Try /dev/tty directly - this works even when stdio is redirected (e.g., in Bubble Tea)
-	if tty, err := os.Open("/dev/tty"); err == nil {
-		defer tty.Close() //nolint:errcheck
-		if cellHeight := getCellHeightFromFd(int(tty.Fd())); cellHeight > 0 {
-			return cellHeight
-		}
-	}
-
-	debugImageProtocol("using default cell height: %d pixels", defaultCellHeight)
-	return defaultCellHeight
 }
 
 // hyperlinkSupported checks if the terminal supports OSC 8 hyperlinks.
@@ -321,14 +295,6 @@ func init() {
 	remoteImageCache = c
 }
 
-// nextImageID is an auto-incrementing counter for Kitty image IDs.
-var nextImageID uint32 = 1000
-
-// allocImageID returns a unique Kitty image ID.
-func allocImageID() uint32 {
-	return atomic.AddUint32(&nextImageID, 1)
-}
-
 func fetchRemoteBase64(url string) string {
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		return ""
@@ -389,97 +355,37 @@ func dataURIBase64(uri string) string {
 const imageRowPlaceholderPrefix = "[[MATCHA_IMG_ROWS:"
 const imageRowPlaceholderSuffix = "]]"
 
-// sixelImageEscapeOnly returns raw Sixel for out-of-band rendering
-func sixelImageEscapeOnly(base64PNG string) string {
-	data, err := base64.StdEncoding.DecodeString(base64PNG)
+// prerenderImage decodes and renders an image via termimage at layout time,
+// returning the cached escape sequence and the exact number of terminal rows
+// the rendered image will occupy. Both are stored on the ImagePlacement so
+// (a) text below the image is offset by the correct row count and (b) the
+// paint stage in RenderImageToStdout is a plain stdout write with no decode.
+func prerenderImage(payload string) (string, int) {
+	src := "data:image/png;base64," + payload
+	var buf bytes.Buffer
+	_, rows, err := termimage.DisplayWithSize(&buf, src, termimage.Options{
+		Protocol:  termimage.Auto,
+		Sandboxed: true,
+	})
 	if err != nil {
-		return ""
+		debugImageProtocol("termimage.DisplayWithSize error: %v", err)
+		return "", 1
 	}
-
-	cellHeight := getTerminalCellSize()
-	sixel, _, err := clib.EncodePNGToSixel(data, cellHeight)
-	if err != nil {
-		return ""
+	if rows < 1 {
+		rows = 1
 	}
-
-	return sixel
-}
-
-// imageRows calculates the number of terminal rows an image occupies.
-func imageRows(payload string) int {
-	rows := 1
-	if data, err := base64.StdEncoding.DecodeString(payload); err == nil {
-		if _, h, ok := clib.ImageDimensions(data); ok {
-			cellHeight := getTerminalCellSize()
-			if cellHeight == 0 {
-				cellHeight = 16
-			}
-			rows = (h + cellHeight - 1) / cellHeight
-			if rows < 1 {
-				rows = 1
-			}
-			debugImageProtocol("image height: %d pixels, cell height: %d pixels, rows needed: %d", h, cellHeight, rows)
-		}
-	}
-	return rows
-}
-
-// kittyUploadImage uploads image data to the terminal with a unique ID using
-// the Kitty graphics protocol transmit action (a=t). The image is stored in
-// the terminal's memory and can be displayed later by ID without re-sending data.
-func kittyUploadImage(payload string, id uint32) {
-	if payload == "" {
-		return
-	}
-
-	const chunkSize = 4096
-	for offset := 0; offset < len(payload); offset += chunkSize {
-		end := offset + chunkSize
-		if end > len(payload) {
-			end = len(payload)
-		}
-		more := "0"
-		if end < len(payload) {
-			more = "1"
-		}
-
-		chunk := payload[offset:end]
-		if offset == 0 {
-			// a=t: transmit (upload) only, don't display yet
-			// i=ID: assign this image ID
-			fmt.Fprintf(os.Stdout, "\x1b_Gf=100,a=t,i=%d,q=2,m=%s;%s\x1b\\", id, more, chunk) //nolint:errcheck
-		} else {
-			fmt.Fprintf(os.Stdout, "\x1b_Gm=%s;%s\x1b\\", more, chunk) //nolint:errcheck
-		}
-	}
-	os.Stdout.Sync() //nolint:errcheck,gosec
-}
-
-// kittyDisplayImage displays a previously uploaded image by its ID at the
-// current cursor position. This is very fast since no image data is transmitted.
-func kittyDisplayImage(id uint32) string {
-	// a=p: put (display) an already-uploaded image by ID
-	// C=1: cursor does not move
-	return fmt.Sprintf("\x1b_Ga=p,i=%d,q=2,C=1\x1b\\", id)
-}
-
-// iterm2ImageEscapeOnly returns only the iTerm2 image protocol escape sequence
-// without any row placeholders. Used for out-of-band rendering to stdout.
-func iterm2ImageEscapeOnly(payload string) string {
-	if payload == "" {
-		return ""
-	}
-	return fmt.Sprintf("\x1b]1337;File=inline=1:%s\x07", payload)
+	debugImageProtocol("termimage: prerendered rows=%d bytes=%d", rows, buf.Len())
+	return buf.String(), rows
 }
 
 // RenderImageToStdout writes an image directly to stdout at the given screen
 // row using cursor positioning. This bypasses bubbletea's cell-based renderer
 // which cannot handle graphics protocol escape sequences.
 //
-// For Kitty-protocol terminals, images are uploaded once and then displayed by
-// ID on subsequent calls, making scroll rendering nearly instant.
+// The escape sequence and row count were captured at HTML processing time by
+// prerenderImage, so this call is a plain stdout write with no decode.
 func RenderImageToStdout(placement *ImagePlacement, screenRow int, screenCol ...int) {
-	if placement.Base64 == "" {
+	if placement.Encoded == "" {
 		return
 	}
 
@@ -488,45 +394,10 @@ func RenderImageToStdout(placement *ImagePlacement, screenRow int, screenCol ...
 		col = screenCol[0]
 	}
 
-	// Priority: Sixel in multiplexers
-	if sixelSupported() {
-		debugImageProtocol("Sixel: RenderImageToStdout row=%d col=%d base64len=%d", screenRow, col, len(placement.Base64))
-
-		// Encode once, reuse cached Sixel on subsequent renders (like Kitty's upload-once pattern)
-		if placement.SixelEncoded == "" {
-			placement.SixelEncoded = sixelImageEscapeOnly(placement.Base64)
-			if placement.SixelEncoded == "" {
-				debugImageProtocol("Sixel: sixelImageEscapeOnly returned empty")
-				return
-			}
-		}
-
-		debugImageProtocol("Sixel: rendering %d bytes at row=%d col=%d", len(placement.SixelEncoded), screenRow+1, col)
-		// Position cursor + render Sixel
-		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", //nolint:errcheck
-			screenRow+1, col, placement.SixelEncoded)
-		os.Stdout.Sync() //nolint:errcheck,gosec
-		return
-	}
-
-	useKitty := kittySupported() || ghosttySupported() || weztermSupported() || waystSupported() || konsoleSupported()
-	useIterm2 := iterm2Supported() || warpSupported()
-
-	if useKitty {
-		// Upload once, display by ID on subsequent renders
-		if !placement.Uploaded {
-			placement.ID = allocImageID()
-			kittyUploadImage(placement.Base64, placement.ID)
-			placement.Uploaded = true
-		}
-		seq := kittyDisplayImage(placement.ID)
-		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", screenRow+1, col, seq) //nolint:errcheck
-		os.Stdout.Sync()                                                           //nolint:errcheck,gosec
-	} else if useIterm2 {
-		seq := iterm2ImageEscapeOnly(placement.Base64)
-		fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", screenRow+1, col, seq) //nolint:errcheck
-		os.Stdout.Sync()                                                           //nolint:errcheck,gosec
-	}
+	debugImageProtocol("termimage: rendering %d bytes at row=%d col=%d", len(placement.Encoded), screenRow+1, col)
+	fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", //nolint:errcheck
+		screenRow+1, col, placement.Encoded)
+	os.Stdout.Sync() //nolint:errcheck,gosec
 }
 
 // expandImageRowPlaceholders replaces image row placeholders with actual newlines.
@@ -553,13 +424,15 @@ type InlineImage struct {
 // ImagePlacement holds the data needed to render an image at a specific
 // line in the email body. Images are rendered directly to stdout (bypassing
 // bubbletea's cell-based renderer which cannot handle graphics protocols).
+//
+// Encoded and Rows are populated at HTML processing time by prerenderImage
+// using termimage.DisplayWithSize, so paint-stage rendering is a plain
+// stdout write and layout-stage row reservation matches the rendered output
+// exactly.
 type ImagePlacement struct {
-	Line         int    // Line number in the processed body text where the image starts
-	Base64       string // Base64-encoded image data (PNG)
-	Rows         int    // Number of terminal rows the image occupies
-	Uploaded     bool   // Whether the image has been uploaded to the terminal via Kitty ID
-	ID           uint32 // Kitty image ID for display-by-reference
-	SixelEncoded string // Cached Sixel escape sequence (encode once, reuse on scroll)
+	Line    int    // Line number in the processed body text where the image starts
+	Rows    int    // Number of terminal rows the rendered image occupies (from termimage)
+	Encoded string // Cached terminal escape sequence from termimage (rendered once at layout time)
 }
 
 // BodyMIMEType values understood by ProcessBody/ProcessBodyWithInline. Empty
@@ -648,7 +521,7 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 	var imgIndex int
 	var pendingImages []struct {
 		index   int
-		payload string
+		encoded string
 		rows    int
 	}
 
@@ -682,38 +555,27 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 			}
 
 			if !disableImages && imageProtocolSupported() {
-				var payload string
-				switch {
-				case strings.HasPrefix(src, "data:image/"):
-					payload = dataURIBase64(src)
-				case strings.HasPrefix(src, "cid:"):
-					cid := strings.TrimPrefix(src, "cid:")
-					cid = strings.Trim(cid, "<>")
-					if inline != nil {
-						payload = inline[cid]
-						debugImageProtocol("cid lookup for %s found=%t len=%d", cid, payload != "", len(payload))
-					} else {
-						debugImageProtocol("cid lookup skipped inline map nil for %s", cid)
-					}
-				case strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://"):
-					payload = fetchRemoteBase64(src)
-				}
+				payload := resolveImagePayload(src, inline)
 
 				if payload != "" {
-					rows := imageRows(payload)
-					debugImageProtocol("collected image placement src=%s rows=%d", src, rows)
+					encoded, rows := prerenderImage(payload)
+					if encoded == "" {
+						debugImageProtocol("prerender failed for src=%s", src)
+					} else {
+						debugImageProtocol("collected image placement src=%s rows=%d", src, rows)
 
-					idx := imgIndex
-					imgIndex++
-					pendingImages = append(pendingImages, struct {
-						index   int
-						payload string
-						rows    int
-					}{idx, payload, rows})
+						idx := imgIndex
+						imgIndex++
+						pendingImages = append(pendingImages, struct {
+							index   int
+							encoded string
+							rows    int
+						}{idx, encoded, rows})
 
-					fmt.Fprintf(&text, "\n[[MATCHA_IMG:%d]]", idx)
-					fmt.Fprintf(&text, "\n%s%d%s\n", imageRowPlaceholderPrefix, rows, imageRowPlaceholderSuffix)
-					continue
+						fmt.Fprintf(&text, "\n[[MATCHA_IMG:%d]]", idx)
+						fmt.Fprintf(&text, "\n%s%d%s\n", imageRowPlaceholderPrefix, rows, imageRowPlaceholderSuffix)
+						continue
+					}
 				}
 				debugImageProtocol("no payload for src=%s", src)
 			}
@@ -770,9 +632,9 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 				for _, pi := range pendingImages {
 					if pi.index == idx {
 						placements = append(placements, ImagePlacement{
-							Line:   lineNum,
-							Base64: pi.payload,
-							Rows:   pi.rows,
+							Line:    lineNum,
+							Encoded: pi.encoded,
+							Rows:    pi.rows,
 						})
 						break
 					}
@@ -785,6 +647,26 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 	}
 
 	return result, placements, nil
+}
+
+func resolveImagePayload(src string, inline map[string]string) string {
+	switch {
+	case strings.HasPrefix(src, "data:image/"):
+		return dataURIBase64(src)
+	case strings.HasPrefix(src, "cid:"):
+		cid := strings.TrimPrefix(src, "cid:")
+		cid = strings.Trim(cid, "<>")
+		if inline != nil {
+			payload := inline[cid]
+			debugImageProtocol("cid lookup for %s found=%t len=%d", cid, payload != "", len(payload))
+			return payload
+		}
+		debugImageProtocol("cid lookup skipped inline map nil for %s", cid)
+		return ""
+	case strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://"):
+		return fetchRemoteBase64(src)
+	}
+	return ""
 }
 
 func isRemoteImageURL(src string) bool {
