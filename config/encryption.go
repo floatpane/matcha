@@ -375,7 +375,7 @@ func collectDataFiles() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	cacheFiles := []string{"email_cache.json", "contacts.json", "drafts.json", "folder_cache.json"}
+
 	for _, f := range cacheFiles {
 		files = append(files, filepath.Join(cDir, f))
 	}
