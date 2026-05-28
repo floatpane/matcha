@@ -123,6 +123,20 @@ func TestSettingsHorizontalPaneFocus(t *testing.T) {
 		}
 	})
 
+	t.Run("esc moves focus from content to menu", func(t *testing.T) {
+		settings := NewSettings(&config.Config{})
+		settings.activePane = PaneContent
+		settings.activeCategory = CategoryGeneral
+		settings.menuCursor = int(CategoryGeneral)
+
+		model, _ := settings.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+		settings = model.(*Settings)
+
+		if settings.activePane != PaneMenu {
+			t.Fatalf("esc from content pane should focus menu, got %d", settings.activePane)
+		}
+	})
+
 	t.Run("left moves focus from content to menu", func(t *testing.T) {
 		settings := NewSettings(&config.Config{})
 		settings.activePane = PaneContent
@@ -137,16 +151,18 @@ func TestSettingsHorizontalPaneFocus(t *testing.T) {
 		}
 	})
 
-	t.Run("left exits settings from menu", func(t *testing.T) {
+	t.Run("left does not exit settings from menu", func(t *testing.T) {
 		settings := NewSettings(&config.Config{})
 		settings.activePane = PaneMenu
 
-		_, cmd := settings.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
-		if cmd == nil {
-			t.Fatal("left from menu pane should return to choice menu")
+		model, cmd := settings.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+		settings = model.(*Settings)
+
+		if cmd != nil {
+			t.Fatal("left from menu pane should not return to choice menu")
 		}
-		if _, ok := cmd().(GoToChoiceMenuMsg); !ok {
-			t.Fatalf("left from menu pane should emit GoToChoiceMenuMsg")
+		if settings.activePane != PaneMenu {
+			t.Fatalf("left from menu pane should keep menu focused, got %d", settings.activePane)
 		}
 	})
 }

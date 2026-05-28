@@ -122,7 +122,7 @@
       "category_mailing_lists": "Mailing Lists",
       "category_encryption": "App Encryption",
       "category_plugins": "Plugins",
-      "help_menu": "↑/↓: navigate • right/enter: select • left/esc: go back",
+      "help_menu": "↑/↓: navigate • right/enter: select • esc: go back",
       "help_content": "left/esc: back to menu"
     },
     "settings_accounts": {

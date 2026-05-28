@@ -355,7 +355,7 @@ func (m *Settings) updateMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 
 		return m, textinput.Blink
-	case "esc", keyLeft:
+	case "esc":
 		return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
 	}
 	m.activeCategory = SettingsCategory(m.menuCursor)
