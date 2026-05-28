@@ -48,6 +48,10 @@ const (
 	mimeTextPlain = "text/plain"
 	mimeTextHTML  = "text/html"
 	partExtracted = "extracted"
+	// defaultArchiveMailbox is the IMAP folder name used as the archive
+	// destination for any provider that does not have a custom mapping
+	// (e.g. Gmail's "[Gmail]/All Mail").
+	defaultArchiveMailbox = "Archive"
 )
 
 func getDebugIMAPWriter() io.Writer {
@@ -493,9 +497,11 @@ func getMailboxByAttr(c *imapclient.Client, attr imap.MailboxAttr) (string, erro
 }
 
 func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset uint32) ([]Email, error) {
-	if p, err := backendProvider(account); err != nil {
-		return nil, err
-	} else if p != nil {
+	if hasBackendProvider(account) {
+		p, err := newBackendProvider(account)
+		if err != nil {
+			return nil, err
+		}
 		defer p.Close() //nolint:errcheck
 		emails, err := p.FetchEmails(context.Background(), mailbox, limit, offset)
 		if err != nil {
@@ -658,9 +664,11 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 // parsed attachments, and any error. The MIME type lets the renderer
 // skip the markdown→HTML pre-pass for already-HTML bodies.
 func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint32) (string, string, []Attachment, error) { //nolint:gocyclo
-	if p, err := backendProvider(account); err != nil {
-		return "", "", nil, err
-	} else if p != nil {
+	if hasBackendProvider(account) {
+		p, err := newBackendProvider(account)
+		if err != nil {
+			return "", "", nil, err
+		}
 		defer p.Close() //nolint:errcheck
 		body, mimeType, atts, err := p.FetchEmailBody(context.Background(), mailbox, uid)
 		if err != nil {
@@ -1241,9 +1249,11 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 }
 
 func FetchAttachmentFromMailbox(account *config.Account, mailbox string, uid uint32, partID string, encoding string) ([]byte, error) {
-	if p, err := backendProvider(account); err != nil {
-		return nil, err
-	} else if p != nil {
+	if hasBackendProvider(account) {
+		p, err := newBackendProvider(account)
+		if err != nil {
+			return nil, err
+		}
 		defer p.Close() //nolint:errcheck
 		return p.FetchAttachment(context.Background(), mailbox, uid, partID, encoding)
 	}
@@ -1290,9 +1300,11 @@ func FetchAttachmentFromMailbox(account *config.Account, mailbox string, uid uin
 }
 
 func moveEmail(account *config.Account, uid uint32, sourceMailbox, destMailbox string) error {
-	if p, err := backendProvider(account); err != nil {
-		return err
-	} else if p != nil {
+	if hasBackendProvider(account) {
+		p, err := newBackendProvider(account)
+		if err != nil {
+			return err
+		}
 		defer p.Close() //nolint:errcheck
 		return p.MoveEmail(context.Background(), uid, sourceMailbox, destMailbox)
 	}
@@ -1313,9 +1325,11 @@ func moveEmail(account *config.Account, uid uint32, sourceMailbox, destMailbox s
 }
 
 func MarkEmailAsReadInMailbox(account *config.Account, mailbox string, uid uint32) error {
-	if p, err := backendProvider(account); err != nil {
-		return err
-	} else if p != nil {
+	if hasBackendProvider(account) {
+		p, err := newBackendProvider(account)
+		if err != nil {
+			return err
+		}
 		defer p.Close() //nolint:errcheck
 		return p.MarkAsRead(context.Background(), mailbox, uid)
 	}
@@ -1339,9 +1353,11 @@ func MarkEmailAsReadInMailbox(account *config.Account, mailbox string, uid uint3
 }
 
 func MarkEmailAsUnreadInMailbox(account *config.Account, mailbox string, uid uint32) error {
-	if p, err := backendProvider(account); err != nil {
-		return err
-	} else if p != nil {
+	if hasBackendProvider(account) {
+		p, err := newBackendProvider(account)
+		if err != nil {
+			return err
+		}
 		defer p.Close() //nolint:errcheck
 		return p.MarkAsUnread(context.Background(), mailbox, uid)
 	}
@@ -1365,9 +1381,11 @@ func MarkEmailAsUnreadInMailbox(account *config.Account, mailbox string, uid uin
 }
 
 func DeleteEmailFromMailbox(account *config.Account, mailbox string, uid uint32) error {
-	if p, err := backendProvider(account); err != nil {
-		return err
-	} else if p != nil {
+	if hasBackendProvider(account) {
+		p, err := newBackendProvider(account)
+		if err != nil {
+			return err
+		}
 		defer p.Close() //nolint:errcheck
 		return p.DeleteEmail(context.Background(), mailbox, uid)
 	}
@@ -1395,9 +1413,11 @@ func DeleteEmailFromMailbox(account *config.Account, mailbox string, uid uint32)
 }
 
 func ArchiveEmailFromMailbox(account *config.Account, mailbox string, uid uint32) error {
-	if p, err := backendProvider(account); err != nil {
-		return err
-	} else if p != nil {
+	if hasBackendProvider(account) {
+		p, err := newBackendProvider(account)
+		if err != nil {
+			return err
+		}
 		defer p.Close() //nolint:errcheck
 		return p.ArchiveEmail(context.Background(), mailbox, uid)
 	}
@@ -1418,7 +1438,7 @@ func ArchiveEmailFromMailbox(account *config.Account, mailbox string, uid uint32
 			archiveMailbox = "[Gmail]/All Mail"
 		}
 	default:
-		archiveMailbox = "Archive"
+		archiveMailbox = defaultArchiveMailbox
 	}
 
 	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
@@ -1438,9 +1458,11 @@ func DeleteEmailsFromMailbox(account *config.Account, mailbox string, uids []uin
 		return nil
 	}
 
-	if p, err := backendProvider(account); err != nil {
-		return err
-	} else if p != nil {
+	if hasBackendProvider(account) {
+		p, err := newBackendProvider(account)
+		if err != nil {
+			return err
+		}
 		defer p.Close() //nolint:errcheck
 		return p.DeleteEmails(context.Background(), mailbox, uids)
 	}
@@ -1473,9 +1495,11 @@ func ArchiveEmailsFromMailbox(account *config.Account, mailbox string, uids []ui
 		return nil
 	}
 
-	if p, err := backendProvider(account); err != nil {
-		return err
-	} else if p != nil {
+	if hasBackendProvider(account) {
+		p, err := newBackendProvider(account)
+		if err != nil {
+			return err
+		}
 		defer p.Close() //nolint:errcheck
 		return p.ArchiveEmails(context.Background(), mailbox, uids)
 	}
@@ -1494,7 +1518,7 @@ func ArchiveEmailsFromMailbox(account *config.Account, mailbox string, uids []ui
 			archiveMailbox = "[Gmail]/All Mail"
 		}
 	default:
-		archiveMailbox = "Archive"
+		archiveMailbox = defaultArchiveMailbox
 	}
 
 	if _, err := c.Select(mailbox, nil).Wait(); err != nil {
@@ -1512,9 +1536,11 @@ func MoveEmailsToFolder(account *config.Account, uids []uint32, sourceFolder, de
 		return nil
 	}
 
-	if p, err := backendProvider(account); err != nil {
-		return err
-	} else if p != nil {
+	if hasBackendProvider(account) {
+		p, err := newBackendProvider(account)
+		if err != nil {
+			return err
+		}
 		defer p.Close() //nolint:errcheck
 		return p.MoveEmails(context.Background(), uids, sourceFolder, destFolder)
 	}
@@ -1619,9 +1645,9 @@ func getArchiveMailbox(account *config.Account) string {
 	case config.ProviderGmail:
 		return "[Gmail]/All Mail"
 	case "outlook", "icloud":
-		return "Archive"
+		return defaultArchiveMailbox
 	default:
-		return "Archive"
+		return defaultArchiveMailbox
 	}
 }
 
@@ -1874,9 +1900,11 @@ func DeleteArchiveEmail(account *config.Account, uid uint32) error {
 
 // FetchFolders lists all IMAP folders/mailboxes for an account.
 func FetchFolders(account *config.Account) ([]Folder, error) {
-	if p, err := backendProvider(account); err != nil {
-		return nil, err
-	} else if p != nil {
+	if hasBackendProvider(account) {
+		p, err := newBackendProvider(account)
+		if err != nil {
+			return nil, err
+		}
 		defer p.Close() //nolint:errcheck
 		folders, err := p.FetchFolders(context.Background())
 		if err != nil {

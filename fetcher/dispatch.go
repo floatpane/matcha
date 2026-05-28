@@ -6,19 +6,17 @@ import (
 	"github.com/floatpane/matcha/config"
 )
 
-// backendProvider returns a backend.Provider for accounts whose Protocol
-// is handled by a non-IMAP backend (currently only "maildir"). It returns
-// (nil, nil) for the default IMAP path so callers fall through to the
-// existing imapclient code.
-func backendProvider(account *config.Account) (backend.Provider, error) {
-	if account == nil {
-		return nil, nil
-	}
-	switch account.Protocol {
-	case "maildir":
-		return backend.New(account)
-	}
-	return nil, nil
+// hasBackendProvider reports whether the account is served by a non-IMAP
+// backend (currently only "maildir") and should be routed through the
+// backend.Provider abstraction instead of the legacy IMAP code path.
+func hasBackendProvider(account *config.Account) bool {
+	return account != nil && account.Protocol == "maildir"
+}
+
+// newBackendProvider builds the backend.Provider for the account. Callers
+// must guard with hasBackendProvider before invoking it.
+func newBackendProvider(account *config.Account) (backend.Provider, error) {
+	return backend.New(account)
 }
 
 func backendFoldersToFetcher(in []backend.Folder) []Folder {

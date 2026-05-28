@@ -12,9 +12,11 @@ import (
 
 // SearchMailbox searches a mailbox server-side and fetches matching envelopes.
 func SearchMailbox(account *config.Account, folder string, query backend.SearchQuery) ([]Email, error) {
-	if p, err := backendProvider(account); err != nil {
-		return nil, err
-	} else if p != nil {
+	if hasBackendProvider(account) {
+		p, err := newBackendProvider(account)
+		if err != nil {
+			return nil, err
+		}
 		defer p.Close() //nolint:errcheck
 		emails, err := p.Search(context.Background(), folder, query)
 		if err != nil {
