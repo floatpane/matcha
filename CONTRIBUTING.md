@@ -60,6 +60,8 @@ type(scope): short description
 
 Common types: `feat`, `fix`, `docs`, `test`, `ci`, `chore`.
 
+Keep commit messages to 40 characters or fewer.
+
 Examples:
 ```
 feat(compose): add CC/BCC field support
