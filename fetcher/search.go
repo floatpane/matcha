@@ -1,6 +1,7 @@
 package fetcher
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -11,6 +12,17 @@ import (
 
 // SearchMailbox searches a mailbox server-side and fetches matching envelopes.
 func SearchMailbox(account *config.Account, folder string, query backend.SearchQuery) ([]Email, error) {
+	if p, err := backendProvider(account); err != nil {
+		return nil, err
+	} else if p != nil {
+		defer p.Close() //nolint:errcheck
+		emails, err := p.Search(context.Background(), folder, query)
+		if err != nil {
+			return nil, err
+		}
+		return backendEmailsToFetcher(emails), nil
+	}
+
 	c, err := connect(account)
 	if err != nil {
 		return nil, err
