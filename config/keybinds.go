@@ -60,14 +60,15 @@ type EmailKeys struct {
 }
 
 type ComposerKeys struct {
-	ExternalEditor string `json:"external_editor"`
-	NextField      string `json:"next_field"`
-	PrevField      string `json:"prev_field"`
-	Delete         string `json:"delete"`
-	SpellNext      string `json:"spell_next"`
-	SpellPrev      string `json:"spell_prev"`
-	SpellAccept    string `json:"spell_accept"`
-	SpellDismiss   string `json:"spell_dismiss"`
+	ExternalEditor      string `json:"external_editor"`
+	NextField           string `json:"next_field"`
+	PrevField           string `json:"prev_field"`
+	Delete              string `json:"delete"`
+	AccountPickerFilter string `json:"account_picker_filter"`
+	SpellNext           string `json:"spell_next"`
+	SpellPrev           string `json:"spell_prev"`
+	SpellAccept         string `json:"spell_accept"`
+	SpellDismiss        string `json:"spell_dismiss"`
 }
 
 type FolderKeys struct {
@@ -171,10 +172,11 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 		"focus_attachments": kb.Email.FocusAttachments,
 	})
 	check("composer", map[string]string{
-		"external_editor": kb.Composer.ExternalEditor,
-		"next_field":      kb.Composer.NextField,
-		"prev_field":      kb.Composer.PrevField,
-		keyDelete:         kb.Composer.Delete,
+		"external_editor":       kb.Composer.ExternalEditor,
+		"next_field":            kb.Composer.NextField,
+		"prev_field":            kb.Composer.PrevField,
+		keyDelete:               kb.Composer.Delete,
+		"account_picker_filter": kb.Composer.AccountPickerFilter,
 		// spell_* bindings intentionally excluded from this conflict
 		// check — spell_accept reusing "tab" with next_field, and
 		// spell_dismiss reusing "esc" with cancel, are deliberate: the

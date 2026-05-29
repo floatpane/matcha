@@ -33,6 +33,7 @@
     "next_field": "tab",
     "prev_field": "shift+tab",
     "delete": "d",
+    "account_picker_filter": "f",
     "spell_next": "ctrl+n",
     "spell_prev": "ctrl+p",
     "spell_accept": "tab",

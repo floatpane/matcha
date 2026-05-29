@@ -82,10 +82,13 @@ type Composer struct {
 	hideTips         bool
 
 	// Multi-account support
-	accounts           []config.Account
-	selectedAccountIdx int
-	showAccountPicker  bool
-	fromInput          textinput.Model // editable From when account is catch-all
+	accounts               []config.Account
+	selectedAccountIdx     int
+	showAccountPicker      bool
+	accountPickerCursor    int
+	accountPickerFilter    string
+	accountPickerFiltering bool
+	fromInput              textinput.Model // editable From when account is catch-all
 
 	// Contact suggestions
 	suggestions        []config.Contact
@@ -532,6 +535,135 @@ func (m *Composer) getSelectedAccount() *config.Account {
 	return nil
 }
 
+func (m *Composer) openAccountPicker() {
+	m.showAccountPicker = true
+	m.accountPickerFilter = ""
+	m.accountPickerFiltering = false
+	m.accountPickerCursor = m.accountPickerCursorForSelected()
+}
+
+func (m *Composer) closeAccountPicker() {
+	m.showAccountPicker = false
+	m.accountPickerFilter = ""
+	m.accountPickerFiltering = false
+	m.accountPickerCursor = 0
+}
+
+func (m *Composer) accountPickerCursorForSelected() int {
+	for i, idx := range m.filteredAccountIndexes() {
+		if idx == m.selectedAccountIdx {
+			return i
+		}
+	}
+	return 0
+}
+
+func (m *Composer) filteredAccountIndexes() []int {
+	query := strings.ToLower(strings.TrimSpace(m.accountPickerFilter))
+	indexes := make([]int, 0, len(m.accounts))
+	for i, acc := range m.accounts {
+		if query == "" || accountMatchesFilter(acc, query) {
+			indexes = append(indexes, i)
+		}
+	}
+	return indexes
+}
+
+func accountMatchesFilter(acc config.Account, query string) bool {
+	values := []string{
+		acc.ID,
+		acc.Name,
+		acc.Email,
+		acc.FetchEmail,
+		acc.SendAsEmail,
+		acc.GetSendAsEmail(),
+		accountPickerDisplay(acc),
+	}
+	for _, value := range values {
+		if strings.Contains(strings.ToLower(value), query) {
+			return true
+		}
+	}
+	return false
+}
+
+func accountPickerDisplay(acc config.Account) string {
+	display := acc.GetSendAsEmail()
+	if acc.Name != "" {
+		display = fmt.Sprintf("%s (%s)", acc.Name, acc.GetSendAsEmail())
+	}
+	return display
+}
+
+func accountPickerStatus(visible, total int, filter string) string {
+	name := "accounts"
+	if visible == 1 {
+		name = "account"
+	}
+
+	var status string
+	if strings.TrimSpace(filter) != "" {
+		status = fmt.Sprintf("“%s” ", truncateAccountPickerFilter(filter))
+	}
+	if visible == 0 {
+		status += "Nothing matched"
+	} else {
+		status += fmt.Sprintf("%d %s", visible, name)
+	}
+	if filtered := total - visible; filtered > 0 {
+		status += fmt.Sprintf(" • %d filtered", filtered)
+	}
+	return HelpStyle.Render(status)
+}
+
+func truncateAccountPickerFilter(filter string) string {
+	const maxRunes = 10
+	runes := []rune(strings.TrimSpace(filter))
+	if len(runes) <= maxRunes {
+		return string(runes)
+	}
+	return string(runes[:maxRunes-1]) + "…"
+}
+
+func accountPickerFilterKey() string {
+	if config.Keybinds.Composer.AccountPickerFilter != "" {
+		return config.Keybinds.Composer.AccountPickerFilter
+	}
+	return "f"
+}
+
+func accountPickerHelp(filtering bool, filter string) string {
+	if filtering {
+		return t("composer.account_picker_help_filtering")
+	}
+	if filter != "" {
+		return t("composer.account_picker_help_filtered")
+	}
+	return tpl("composer.account_picker_help", map[string]interface{}{"key": accountPickerFilterKey()})
+}
+
+func (m *Composer) clampAccountPickerCursor(indexes []int) {
+	if len(indexes) == 0 {
+		m.accountPickerCursor = 0
+		return
+	}
+	if m.accountPickerCursor >= len(indexes) {
+		m.accountPickerCursor = len(indexes) - 1
+	}
+	if m.accountPickerCursor < 0 {
+		m.accountPickerCursor = 0
+	}
+}
+
+func (m *Composer) selectAccountPickerCursor(indexes []int) {
+	if len(indexes) == 0 {
+		return
+	}
+	m.clampAccountPickerCursor(indexes)
+	m.selectedAccountIdx = indexes[m.accountPickerCursor]
+	m.updateSignature()
+}
+
 func formatAttachmentName(path string) string {
 	name := filepath.Base(path)
 	info, err := os.Stat(path)
@@ -751,21 +883,71 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 		// Handle account picker mode
 		if m.showAccountPicker {
+			if m.accountPickerFiltering {
+				switch msg.String() {
+				case keyEnter:
+					indexes := m.filteredAccountIndexes()
+					if len(indexes) == 0 {
+						m.accountPickerFilter = ""
+						m.accountPickerCursor = m.accountPickerCursorForSelected()
+					} else {
+						m.accountPickerFiltering = false
+						m.clampAccountPickerCursor(indexes)
+						m.selectAccountPickerCursor(indexes)
+					}
+					return m, nil
+				case "esc":
+					m.accountPickerFilter = ""
+					m.accountPickerFiltering = false
+					m.accountPickerCursor = m.accountPickerCursorForSelected()
+					return m, nil
+				case "backspace", "ctrl+h":
+					if m.accountPickerFilter != "" {
+						runes := []rune(m.accountPickerFilter)
+						m.accountPickerFilter = string(runes[:len(runes)-1])
+						m.accountPickerCursor = 0
+					}
+					return m, nil
+				}
+
+				if msg.Text != "" {
+					for _, r := range msg.Text {
+						if unicode.IsPrint(r) {
+							m.accountPickerFilter += string(r)
+						}
+					}
+					m.accountPickerCursor = 0
+				}
+				return m, nil
+			}
+
+			indexes := m.filteredAccountIndexes()
+			m.clampAccountPickerCursor(indexes)
 			switch msg.String() {
+			case accountPickerFilterKey():
+				m.accountPickerFiltering = true
 			case "up", "k":
-				if m.selectedAccountIdx > 0 {
-					m.selectedAccountIdx--
-					m.updateSignature()
+				if m.accountPickerCursor > 0 {
+					m.accountPickerCursor--
+					m.selectAccountPickerCursor(indexes)
 				}
 			case keyDown, "j":
-				if m.selectedAccountIdx < len(m.accounts)-1 {
-					m.selectedAccountIdx++
-					m.updateSignature()
+				if m.accountPickerCursor < len(indexes)-1 {
+					m.accountPickerCursor++
+					m.selectAccountPickerCursor(indexes)
 				}
 			case keyEnter:
-				m.showAccountPicker = false
+				if len(indexes) > 0 {
+					m.selectAccountPickerCursor(indexes)
+					m.closeAccountPicker()
+				}
 			case "esc":
-				m.showAccountPicker = false
+				if m.accountPickerFilter != "" {
+					m.accountPickerFilter = ""
+					m.accountPickerCursor = m.accountPickerCursorForSelected()
+					return m, nil
+				}
+				m.closeAccountPicker()
 			}
 			return m, nil
 		}
@@ -903,7 +1085,7 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			switch m.focusIndex {
 			case focusFrom:
 				if msg.String() == keyEnter && len(m.accounts) > 1 {
-					m.showAccountPicker = true
+					m.openAccountPicker()
 					return m, nil
 				}
 				if m.isCatchAllAccount() && msg.String() == " " {
@@ -1253,13 +1435,32 @@ func (m *Composer) View() tea.View { //nolint:gocyclo
 	// Account picker overlay
 	if m.showAccountPicker {
 		var accountList strings.Builder
-		accountList.WriteString("Select Account:\n\n")
-		for i, acc := range m.accounts {
-			display := acc.GetSendAsEmail()
-			if acc.Name != "" {
-				display = fmt.Sprintf("%s (%s)", acc.Name, acc.GetSendAsEmail())
-			}
-			if i == m.selectedAccountIdx {
+		accountList.WriteString(t("composer.account_picker_title") + "\n")
+		if m.accountPickerFiltering {
+			accountList.WriteString(focusedStyle.Render("Filter: ") + m.accountPickerFilter + "\n")
+		}
+		indexes := m.filteredAccountIndexes()
+		if m.accountPickerFiltering {
+			accountList.WriteString(accountPickerStatus(len(indexes), len(m.accounts), m.accountPickerFilter))
+			accountList.WriteString("\n")
+		} else if m.accountPickerFilter != "" {
+			accountList.WriteString(accountPickerStatus(len(indexes), len(m.accounts), m.accountPickerFilter))
+			accountList.WriteString("\n")
+		}
+		accountList.WriteString("\n")
+		if len(indexes) == 0 {
+			accountList.WriteString(itemStyle.Render("  "+t("composer.account_picker_no_matches")) + "\n")
+		}
+		cursorIndex := m.accountPickerCursor
+		if cursorIndex >= len(indexes) {
+			cursorIndex = len(indexes) - 1
+		}
+		if cursorIndex < 0 {
+			cursorIndex = 0
+		}
+		for cursor, idx := range indexes {
+			display := accountPickerDisplay(m.accounts[idx])
+			if cursor == cursorIndex && !m.accountPickerFiltering {
 				accountList.WriteString(selectedItemStyle.Render(fmt.Sprintf("> %s", display)))
 			} else {
 				accountList.WriteString(itemStyle.Render(fmt.Sprintf("  %s", display)))
@@ -1267,7 +1468,7 @@ func (m *Composer) View() tea.View { //nolint:gocyclo
 			accountList.WriteString("\n")
 		}
 		accountList.WriteString("\n")
-		accountList.WriteString(HelpStyle.Render("↑/↓: navigate • enter: select • esc: cancel"))
+		accountList.WriteString(HelpStyle.Render(accountPickerHelp(m.accountPickerFiltering, m.accountPickerFilter)))
 
 		dialog := DialogBoxStyle.Render(accountList.String())
 		return tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
