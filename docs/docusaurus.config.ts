@@ -1,6 +1,7 @@
 import { themes as prismThemes } from "prism-react-renderer";
 import type { Config } from "@docusaurus/types";
 import type * as Preset from "@docusaurus/preset-classic";
+import remarkGithubAdmonitionsToDirectives from "remark-github-admonitions-to-directives";
 
 const config: Config = {
   title: "Matcha",
@@ -29,6 +30,7 @@ const config: Config = {
           sidebarPath: "./sidebars.ts",
           routeBasePath: "/",
           editUrl: "https://github.com/floatpane/matcha/tree/master/docs/",
+          beforeDefaultRemarkPlugins: [remarkGithubAdmonitionsToDirectives],
         },
         blog: false,
         theme: {

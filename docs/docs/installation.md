@@ -46,7 +46,8 @@ You can download pre-compiled binaries from the [Releases page](https://github.c
 
 ## 🐧 Linux
 
-> Note: Homebrew support for Linux was [dropped](https://github.com/floatpane/matcha/pull/1360) (since matcha v0.40.0). You can still use Homebrew on Linux for nightly releases, but for stable releases, please use one of the other installation methods below.
+> [!WARNING]
+> Homebrew support for Linux was [dropped](https://github.com/floatpane/matcha/pull/1360) (since matcha [v0.40.0](https://github.com/flaotpane)). You can still use Homebrew on Linux for nightly releases, but for stable releases, please use one of the other installation methods below.
 
 ### Snap
 
@@ -66,7 +67,8 @@ flatpak install https://matcha.email/matcha.flatpakref
 
 ### AUR (Arch Linux) (unofficial)
 
-> Note: This is an unofficial package, not maintained by the Matcha team. Use at your own risk. For any issues with the AUR package, please contact the maintainer ([Dominiquini](https://github.com/Dominiquini)).
+> [!NOTE] 
+> This is an unofficial package, not maintained by the Matcha team. Use at your own risk. For any issues with the AUR package, please contact the maintainer ([Dominiquini](https://github.com/Dominiquini)).
 
 If you're using Arch Linux, you can install Matcha from the AUR:
 
@@ -133,6 +135,9 @@ You can run Matcha on Windows using [WSL (Windows Subsystem for Linux)](https://
 Once you have WSL installed and set up, you can follow the [Linux](#-linux) installation instructions inside your WSL terminal.
 
 ## 🏗️ Building from Source
+
+> [!WARNING]
+> Building from source is not recommended for most users, as it requires additional dependencies and setup. Only proceed if you are comfortable with development tools and want to contribute to the project or need a custom build.
 
 If you have Go installed, you can build Matcha from source:
 
