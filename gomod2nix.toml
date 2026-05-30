@@ -113,6 +113,10 @@ schema = 3
     version = 'v0.0.0-20241020182733-b788ff22d5a6'
     hash = 'sha256-eil7taerUmXI7lGOrcw56I0ilBzayRhhf1Sjixyc4oA='
 
+  [mod.'github.com/floatpane/go-uds-jsonrpc']
+    version = 'v0.0.1'
+    hash = 'sha256-A7M71cI5f640oxbSsBk1WxFFoqJtsPQQ+DsTfgOAm60='
+
   [mod.'github.com/floatpane/termimage']
     version = 'v0.2.0'
     hash = 'sha256-Ycx9E1//VpJ35WnU1FWnp1cXIgkRmRnpXF/YqjGlyDw='
