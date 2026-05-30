@@ -120,7 +120,7 @@
       "category_encryption": "应用加密",
       "category_plugins": "插件",
       "help_menu": "↑/↓: 导航 • 右/enter: 选择 • esc: 返回",
-      "help_content": "esc: 返回菜单"
+      "help_content": "left/esc: 返回菜单"
     },
     "settings_accounts": {
       "title": "账户设置",

@@ -121,7 +121,7 @@
       "category_encryption": "App-Verschlüsselung",
       "category_plugins": "Plugins",
       "help_menu": "↑/↓: navigieren • rechts/enter: auswählen • esc: zurück",
-      "help_content": "esc: zurück zum Menü"
+      "help_content": "left/esc: zurück zum Menü"
     },
     "settings_accounts": {
       "title": "Kontoeinstellungen",

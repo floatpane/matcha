@@ -123,7 +123,7 @@
       "category_encryption": "تشفير التطبيق",
       "category_plugins": "الإضافات",
       "help_menu": "↑/↓: التنقل • يمين/enter: اختيار • esc: رجوع",
-      "help_content": "esc: العودة للقائمة"
+      "help_content": "left/esc: العودة للقائمة"
     },
     "settings_accounts": {
       "title": "إعدادات الحسابات",
