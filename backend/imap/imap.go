@@ -183,6 +183,7 @@ func toBackendFolders(folders []fetcher.Folder) []backend.Folder {
 			Name:       f.Name,
 			Delimiter:  f.Delimiter,
 			Attributes: f.Attributes,
+			Unread:     f.Unread,
 		}
 	}
 	return result

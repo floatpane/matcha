@@ -435,6 +435,7 @@ type secureDiskAccount struct {
 	JMAPEndpoint       string `json:"jmap_endpoint,omitempty"`
 	POP3Server         string `json:"pop3_server,omitempty"`
 	POP3Port           int    `json:"pop3_port,omitempty"`
+	MaildirPath        string `json:"maildir_path,omitempty"`
 	CatchAll           bool   `json:"catch_all,omitempty"`
 }
 
@@ -530,6 +531,7 @@ func SaveConfig(config *Config) error {
 				JMAPEndpoint:       acc.JMAPEndpoint,
 				POP3Server:         acc.POP3Server,
 				POP3Port:           acc.POP3Port,
+				MaildirPath:        acc.MaildirPath,
 				CatchAll:           acc.CatchAll,
 			})
 		}
@@ -592,6 +594,7 @@ func LoadConfig() (*Config, error) {
 		JMAPEndpoint       string `json:"jmap_endpoint,omitempty"`
 		POP3Server         string `json:"pop3_server,omitempty"`
 		POP3Port           int    `json:"pop3_port,omitempty"`
+		MaildirPath        string `json:"maildir_path,omitempty"`
 		CatchAll           bool   `json:"catch_all,omitempty"`
 	}
 	type diskConfig struct {
@@ -678,6 +681,7 @@ func LoadConfig() (*Config, error) {
 			JMAPEndpoint:       rawAcc.JMAPEndpoint,
 			POP3Server:         rawAcc.POP3Server,
 			POP3Port:           rawAcc.POP3Port,
+			MaildirPath:        rawAcc.MaildirPath,
 			CatchAll:           rawAcc.CatchAll,
 			SC:                 &SessionCache{},
 		}
