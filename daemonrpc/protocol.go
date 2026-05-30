@@ -1,84 +1,30 @@
 package daemonrpc
 
-import "encoding/json"
+import udsrpc "github.com/floatpane/go-uds-jsonrpc"
 
-// Request from client to daemon. Has an ID for matching responses.
-type Request struct {
-	ID     uint64          `json:"id"`
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params,omitempty"`
-}
+// Wire-level message types and the discriminating decoder live in the shared
+// go-uds-jsonrpc library. They are aliased here so matcha code keeps using the
+// daemonrpc.* names while sharing a single implementation with the daemon's
+// transport layer.
+type (
+	Request  = udsrpc.Request
+	Response = udsrpc.Response
+	Event    = udsrpc.Event
+	Error    = udsrpc.Error
+	Message  = udsrpc.Message
+)
 
-// Response from daemon to client. Matched to request by ID.
-type Response struct {
-	ID     uint64          `json:"id"`
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  *Error          `json:"error,omitempty"`
-}
+// DecodeMessage discriminates a raw JSON object into a Request, Response, or
+// Event.
+var DecodeMessage = udsrpc.DecodeMessage
 
-// Event pushed from daemon to subscribed clients. No ID field.
-type Event struct {
-	Type string          `json:"type"`
-	Data json.RawMessage `json:"data,omitempty"`
-}
-
-// Error returned in a Response.
-type Error struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-func (e *Error) Error() string { return e.Message }
-
-// Message is a union type for wire decoding. Exactly one of the
-// fields will be populated based on the presence of "id" and "type".
-type Message struct {
-	Request  *Request
-	Response *Response
-	Event    *Event
-}
-
-// Discriminate: if "type" present → Event, if "method" present → Request, else → Response.
-func DecodeMessage(raw json.RawMessage) (Message, error) {
-	var probe struct {
-		Type   string  `json:"type"`
-		Method string  `json:"method"`
-		ID     *uint64 `json:"id"`
-	}
-	if err := json.Unmarshal(raw, &probe); err != nil {
-		return Message{}, err
-	}
-
-	var m Message
-	switch {
-	case probe.Type != "":
-		var ev Event
-		if err := json.Unmarshal(raw, &ev); err != nil {
-			return m, err
-		}
-		m.Event = &ev
-	case probe.Method != "":
-		var req Request
-		if err := json.Unmarshal(raw, &req); err != nil {
-			return m, err
-		}
-		m.Request = &req
-	default:
-		var resp Response
-		if err := json.Unmarshal(raw, &resp); err != nil {
-			return m, err
-		}
-		m.Response = &resp
-	}
-	return m, nil
-}
-
-// Standard error codes.
+// Standard error codes, re-exported from the shared library.
 const (
-	ErrCodeParse      = -32700
-	ErrCodeInvalidReq = -32600
-	ErrCodeNotFound   = -32601
-	ErrCodeInternal   = -32603
+	ErrCodeParse         = udsrpc.ErrCodeParse
+	ErrCodeInvalidReq    = udsrpc.ErrCodeInvalidReq
+	ErrCodeInvalidParams = udsrpc.ErrCodeInvalidParams
+	ErrCodeNotFound      = udsrpc.ErrCodeNotFound
+	ErrCodeInternal      = udsrpc.ErrCodeInternal
 )
 
 // RPC method names.
