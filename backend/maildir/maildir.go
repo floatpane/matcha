@@ -30,6 +30,8 @@ import (
 	"github.com/floatpane/matcha/config"
 )
 
+const inboxFolder = "INBOX"
+
 var messageIDRE = regexp.MustCompile(`<[^>]+>`)
 
 func init() {
@@ -92,11 +94,11 @@ func New(account *config.Account) (*Provider, error) {
 func (p *Provider) dirForFolder(folder string) emaildir.Dir {
 	if p.nested {
 		if folder == "" {
-			folder = "INBOX"
+			folder = inboxFolder
 		}
 		return emaildir.Dir(filepath.Join(p.root, filepath.FromSlash(folder)))
 	}
-	if folder == "" || strings.EqualFold(folder, "INBOX") {
+	if folder == "" || strings.EqualFold(folder, inboxFolder) {
 		return emaildir.Dir(p.root)
 	}
 	subdir := "." + strings.ReplaceAll(folder, "/", ".")
@@ -134,20 +136,20 @@ func (p *Provider) FetchFolders(_ context.Context) ([]backend.Folder, error) {
 			if _, err := os.Stat(filepath.Join(p.root, name, "cur")); err != nil {
 				continue
 			}
-			if strings.EqualFold(name, "INBOX") {
+			if strings.EqualFold(name, inboxFolder) {
 				seenInbox = true
-				folders = append([]backend.Folder{{Name: "INBOX", Delimiter: "/"}}, folders...)
+				folders = append([]backend.Folder{{Name: inboxFolder, Delimiter: "/"}}, folders...)
 				continue
 			}
 			folders = append(folders, backend.Folder{Name: name, Delimiter: "/"})
 		}
 		if !seenInbox {
-			folders = append([]backend.Folder{{Name: "INBOX", Delimiter: "/"}}, folders...)
+			folders = append([]backend.Folder{{Name: inboxFolder, Delimiter: "/"}}, folders...)
 		}
 		return folders, nil
 	}
 
-	folders := []backend.Folder{{Name: "INBOX", Delimiter: "/"}}
+	folders := []backend.Folder{{Name: inboxFolder, Delimiter: "/"}}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
