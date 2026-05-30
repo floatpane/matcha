@@ -123,7 +123,7 @@
       "category_encryption": "App Encryption",
       "category_plugins": "Plugins",
       "help_menu": "↑/↓: navigate • right/enter: select • esc: go back",
-      "help_content": "esc: back to menu"
+      "help_content": "left/esc: back to menu"
     },
     "settings_accounts": {
       "title": "Account Settings",

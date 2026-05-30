@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"os"
@@ -68,23 +69,38 @@ func TestPIDFile_DeadProcess(t *testing.T) {
 	}
 }
 
-// handlerTest sets up a client/server pipe and runs a single RPC exchange.
-// The handler runs in a goroutine so the pipe doesn't deadlock.
-func handlerTest(t *testing.T, d *Daemon, req *daemonrpc.Request) daemonrpc.Message {
+// serveDaemon starts d's RPC server on a temporary unix socket and returns a
+// connected client. The server and connection are torn down via t.Cleanup.
+func serveDaemon(t *testing.T, d *Daemon) *daemonrpc.Conn {
 	t.Helper()
-	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
+	sock := filepath.Join(t.TempDir(), "d.sock")
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { _ = d.server.Serve(ctx, l) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = l.Close()
+	})
 
-	server := daemonrpc.NewConn(serverConn)
-	client := daemonrpc.NewConn(clientConn)
+	c, err := net.Dial("unix", sock)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	conn := daemonrpc.NewConn(c)
+	t.Cleanup(func() { _ = conn.Close() })
+	return conn
+}
 
-	// Handle request in goroutine (SendResponse blocks until client reads).
-	go func() {
-		d.handleRequest(server, req)
-	}()
-
-	msg, err := client.ReceiveMessage()
+// roundTrip sends a request and returns the decoded response message.
+func roundTrip(t *testing.T, conn *daemonrpc.Conn, req *daemonrpc.Request) daemonrpc.Message {
+	t.Helper()
+	if err := conn.Send(req); err != nil {
+		t.Fatal(err)
+	}
+	msg, err := conn.ReceiveMessage()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,34 +108,25 @@ func handlerTest(t *testing.T, d *Daemon, req *daemonrpc.Request) daemonrpc.Mess
 }
 
 func TestDaemon_PingHandler(t *testing.T) {
-	d := &Daemon{shutdown: make(chan struct{})}
-	msg := handlerTest(t, d, &daemonrpc.Request{ID: 1, Method: daemonrpc.MethodPing})
-
-	if msg.Response == nil {
-		t.Fatal("expected Response")
+	d := New(&config.Config{})
+	res, err := d.handlePing(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("handlePing: %v", err)
 	}
-	var result daemonrpc.PingResult
-	if err := json.Unmarshal(msg.Response.Result, &result); err != nil {
-		t.Fatalf("failed to unmarshal ping result: %v", err)
-	}
-	if !result.Pong {
+	if !res.(daemonrpc.PingResult).Pong {
 		t.Error("expected pong=true")
 	}
 }
 
 func TestDaemon_StatusHandler(t *testing.T) {
-	d := &Daemon{
-		startTime: time.Now().Add(-2 * time.Minute),
-		shutdown:  make(chan struct{}),
-		config:    &config.Config{},
-	}
+	d := New(&config.Config{})
+	d.startTime = time.Now().Add(-2 * time.Minute)
 
-	msg := handlerTest(t, d, &daemonrpc.Request{ID: 1, Method: daemonrpc.MethodGetStatus})
-
-	var result daemonrpc.StatusResult
-	if err := json.Unmarshal(msg.Response.Result, &result); err != nil {
-		t.Fatalf("failed to unmarshal status result: %v", err)
+	res, err := d.handleGetStatus(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("handleGetStatus: %v", err)
 	}
+	result := res.(daemonrpc.StatusResult)
 
 	if !result.Running {
 		t.Error("expected running=true")
@@ -130,10 +137,11 @@ func TestDaemon_StatusHandler(t *testing.T) {
 }
 
 func TestDaemon_UnknownMethod(t *testing.T) {
-	d := &Daemon{shutdown: make(chan struct{})}
-	msg := handlerTest(t, d, &daemonrpc.Request{ID: 1, Method: "DoesNotExist"})
+	d := New(&config.Config{})
+	conn := serveDaemon(t, d)
 
-	if msg.Response.Error == nil {
+	msg := roundTrip(t, conn, &daemonrpc.Request{ID: 1, Method: "DoesNotExist"})
+	if msg.Response == nil || msg.Response.Error == nil {
 		t.Fatal("expected error for unknown method")
 	}
 	if msg.Response.Error.Code != daemonrpc.ErrCodeNotFound {
@@ -142,78 +150,52 @@ func TestDaemon_UnknownMethod(t *testing.T) {
 }
 
 func TestDaemon_Subscribe(t *testing.T) {
-	d := &Daemon{
-		subscriptions: make(map[*daemonrpc.Conn]map[string]struct{}),
-		shutdown:      make(chan struct{}),
-	}
-
-	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
-
-	server := daemonrpc.NewConn(serverConn)
-	client := daemonrpc.NewConn(clientConn)
+	d := New(&config.Config{})
+	conn := serveDaemon(t, d)
 
 	params, _ := json.Marshal(daemonrpc.SubscribeParams{
 		AccountID: "acc1",
 		Folder:    "INBOX",
 	})
 
-	go func() {
-		d.handleRequest(server, &daemonrpc.Request{
-			ID:     1,
-			Method: daemonrpc.MethodSubscribe,
-			Params: params,
-		})
-	}()
-
-	// Read response.
-	msg, err := client.ReceiveMessage()
-	if err != nil {
-		t.Fatal(err)
-	}
+	msg := roundTrip(t, conn, &daemonrpc.Request{
+		ID:     1,
+		Method: daemonrpc.MethodSubscribe,
+		Params: params,
+	})
 	if msg.Response.Error != nil {
 		t.Errorf("unexpected error: %v", msg.Response.Error)
 	}
 
-	// Verify subscription was recorded.
+	// The response is sent after the handler records the subscription, so it
+	// is visible by the time we read the reply.
 	d.subMu.RLock()
-	subs, ok := d.subscriptions[server]
-	d.subMu.RUnlock()
-
-	if !ok {
-		t.Fatal("expected subscription entry for connection")
+	defer d.subMu.RUnlock()
+	found := false
+	for _, subs := range d.subscriptions {
+		if _, ok := subs["acc1:INBOX"]; ok {
+			found = true
+		}
 	}
-	if _, ok := subs["acc1:INBOX"]; !ok {
+	if !found {
 		t.Error("expected subscription for acc1:INBOX")
 	}
 }
 
 func TestDaemon_BroadcastEvent(t *testing.T) {
-	d := &Daemon{
-		clients:  make(map[*daemonrpc.Conn]struct{}),
-		shutdown: make(chan struct{}),
-	}
+	d := New(&config.Config{})
+	conn := serveDaemon(t, d)
 
-	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
+	// Ping round-trip ensures the client is registered with the server before
+	// we broadcast.
+	roundTrip(t, conn, &daemonrpc.Request{ID: 1, Method: daemonrpc.MethodPing})
 
-	server := daemonrpc.NewConn(serverConn)
-	client := daemonrpc.NewConn(clientConn)
+	d.broadcastEvent(daemonrpc.EventNewMail, daemonrpc.NewMailEvent{
+		AccountID: "acc1",
+		Folder:    "INBOX",
+	})
 
-	d.mu.Lock()
-	d.clients[server] = struct{}{}
-	d.mu.Unlock()
-
-	go func() {
-		d.broadcastEvent(daemonrpc.EventNewMail, daemonrpc.NewMailEvent{
-			AccountID: "acc1",
-			Folder:    "INBOX",
-		})
-	}()
-
-	msg, err := client.ReceiveMessage()
+	msg, err := conn.ReceiveMessage()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -121,7 +121,7 @@ func (m *Settings) viewSMIMEConfig() string {
 
 	renderField := func(index int, label, content string) {
 		if m.cryptoFocusIndex == index {
-			b.WriteString(settingsFocusedStyle.Render(label) + "\n")
+			b.WriteString(m.contentFocusStyle().Render(label) + "\n")
 		} else {
 			b.WriteString(settingsBlurredStyle.Render(label) + "\n")
 		}
@@ -162,12 +162,12 @@ func (m *Settings) viewSMIMEConfig() string {
 	saveBtn := "[ Save ]"
 	cancelBtn := "[ Cancel ]"
 	if m.cryptoFocusIndex == 8 {
-		saveBtn = settingsFocusedStyle.Render(saveBtn)
+		saveBtn = m.contentFocusStyle().Render(saveBtn)
 	} else {
 		saveBtn = settingsBlurredStyle.Render(saveBtn)
 	}
 	if m.cryptoFocusIndex == 9 {
-		cancelBtn = settingsFocusedStyle.Render(cancelBtn)
+		cancelBtn = m.contentFocusStyle().Render(cancelBtn)
 	} else {
 		cancelBtn = settingsBlurredStyle.Render(cancelBtn)
 	}

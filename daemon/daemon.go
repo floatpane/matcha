@@ -6,11 +6,11 @@ import (
 	"log"
 	"net"
 	"os"
-	"runtime/debug"
 	"sort"
 	"sync"
 	"time"
 
+	udsrpc "github.com/floatpane/go-uds-jsonrpc"
 	"github.com/floatpane/matcha/backend"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/daemonrpc"
@@ -25,12 +25,10 @@ const inboxFolder = "INBOX"
 type Daemon struct {
 	config    *config.Config
 	providers map[string]backend.Provider
-	listener  net.Listener
+	server    *udsrpc.Server
 	startTime time.Time
 
-	// Connected TUI/CLI clients.
-	clients map[*daemonrpc.Conn]struct{}
-	mu      sync.RWMutex
+	mu sync.RWMutex
 
 	// Per-client subscriptions: conn → set of "accountID:folder".
 	subscriptions map[*daemonrpc.Conn]map[string]struct{}
@@ -53,16 +51,47 @@ type Daemon struct {
 // New creates a daemon with the given config.
 func New(cfg *config.Config) *Daemon {
 	idleUpdates := make(chan fetcher.IdleUpdate, 16)
-	return &Daemon{
+	d := &Daemon{
 		config:        cfg,
 		providers:     make(map[string]backend.Provider),
-		clients:       make(map[*daemonrpc.Conn]struct{}),
 		subscriptions: make(map[*daemonrpc.Conn]map[string]struct{}),
 		idleWatcher:   fetcher.NewIdleWatcher(idleUpdates),
 		idleUpdates:   idleUpdates,
 		shutdown:      make(chan struct{}),
 		done:          make(chan struct{}),
 	}
+
+	d.server = udsrpc.NewServer()
+	d.registerHandlers()
+	d.server.OnConnect(func(_ *daemonrpc.Conn) {
+		log.Println("daemon: client connected")
+	})
+	d.server.OnDisconnect(func(conn *daemonrpc.Conn) {
+		d.subMu.Lock()
+		delete(d.subscriptions, conn)
+		d.subMu.Unlock()
+		log.Println("daemon: client disconnected")
+	})
+
+	return d
+}
+
+// registerHandlers wires each RPC method to its handler on the server.
+func (d *Daemon) registerHandlers() {
+	d.server.Handle(daemonrpc.MethodPing, d.handlePing)
+	d.server.Handle(daemonrpc.MethodGetStatus, d.handleGetStatus)
+	d.server.Handle(daemonrpc.MethodGetAccounts, d.handleGetAccounts)
+	d.server.Handle(daemonrpc.MethodReloadConfig, d.handleReloadConfig)
+	d.server.Handle(daemonrpc.MethodFetchEmails, d.handleFetchEmails)
+	d.server.Handle(daemonrpc.MethodFetchEmailBody, d.handleFetchEmailBody)
+	d.server.Handle(daemonrpc.MethodDeleteEmails, d.handleDeleteEmails)
+	d.server.Handle(daemonrpc.MethodArchiveEmails, d.handleArchiveEmails)
+	d.server.Handle(daemonrpc.MethodMoveEmails, d.handleMoveEmails)
+	d.server.Handle(daemonrpc.MethodMarkRead, d.handleMarkRead)
+	d.server.Handle(daemonrpc.MethodFetchFolders, d.handleFetchFolders)
+	d.server.Handle(daemonrpc.MethodRefreshFolder, d.handleRefreshFolder)
+	d.server.Handle(daemonrpc.MethodSubscribe, d.handleSubscribe)
+	d.server.Handle(daemonrpc.MethodUnsubscribe, d.handleUnsubscribe)
 }
 
 // Run starts the daemon: creates providers, starts the socket listener,
@@ -94,12 +123,11 @@ func (d *Daemon) Run() error {
 	}
 
 	// Listen on Unix domain socket.
-	var err error
-	d.listener, err = net.Listen("unix", sockPath) //nolint:noctx
+	listener, err := net.Listen("unix", sockPath) //nolint:noctx
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
-	defer d.listener.Close() //nolint:errcheck
+	defer listener.Close() //nolint:errcheck
 
 	// Set socket permissions (owner only).
 	if err := os.Chmod(sockPath, 0700); err != nil { // #nosec G302
@@ -115,28 +143,42 @@ func (d *Daemon) Run() error {
 	d.startIdleWatchers()
 	go d.idleEventLoop()
 
-	// Start signal handler.
-	go d.handleSignals()
+	// Handle OS signals: SIGTERM/SIGINT → shutdown, SIGHUP → reload config.
+	stopSignals := udsrpc.HandleSignals(d.Shutdown, func() {
+		log.Println("daemon: received SIGHUP, reloading config")
+		if err := d.ReloadConfig(); err != nil {
+			log.Printf("daemon: config reload failed: %v", err)
+		}
+	})
+	defer stopSignals()
 
 	// Start background sync.
 	ctx, cancel := context.WithCancel(context.Background())
 	d.syncCancel = cancel
 	go d.backgroundSync(ctx)
 
-	// Accept client connections.
-	go d.acceptLoop()
+	// Serve client connections via the shared RPC server. Canceling serveCtx
+	// closes the listener and unblocks Serve.
+	serveCtx, serveCancel := context.WithCancel(context.Background())
+	go func() {
+		if err := d.server.Serve(serveCtx, listener); err != nil {
+			log.Printf("daemon: serve error: %v", err)
+		}
+	}()
 
 	// Block until shutdown.
 	<-d.shutdown
 
 	// Cleanup.
 	log.Println("daemon: shutting down")
-	d.listener.Close() //nolint:errcheck,gosec
+	serveCancel()
+	for _, conn := range d.server.Clients() {
+		conn.Close() //nolint:errcheck,gosec
+	}
 	if err := d.idleWatcher.StopAllAndWaitTimeout(5 * time.Second); err != nil {
 		log.Printf("daemon: %v", err)
 	}
 	cancel()
-	d.closeAllClients()
 	d.closeProviders()
 
 	close(d.done)
@@ -192,79 +234,6 @@ func (d *Daemon) initProviders() {
 	}
 }
 
-func (d *Daemon) acceptLoop() {
-	for {
-		done := func() bool {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("daemon: acceptLoop panic recovered: %v\n%s", r, debug.Stack())
-				}
-			}()
-			conn, err := d.listener.Accept()
-			if err != nil {
-				select {
-				case <-d.shutdown:
-					return true
-				default:
-					log.Printf("daemon: accept error: %v", err)
-					return false
-				}
-			}
-			rpcConn := daemonrpc.NewConn(conn)
-			d.addClient(rpcConn)
-			go d.handleClient(rpcConn)
-			return false
-		}()
-		if done {
-			return
-		}
-	}
-}
-
-func (d *Daemon) handleClient(conn *daemonrpc.Conn) {
-	defer d.removeClient(conn)
-	defer conn.Close() //nolint:errcheck
-
-	for {
-		msg, err := conn.ReceiveMessage()
-		if err != nil {
-			// Client disconnected or read error.
-			return
-		}
-		if msg.Request != nil {
-			d.handleRequest(conn, msg.Request)
-		}
-	}
-}
-
-func (d *Daemon) addClient(conn *daemonrpc.Conn) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.clients[conn] = struct{}{}
-	log.Println("daemon: client connected")
-}
-
-func (d *Daemon) removeClient(conn *daemonrpc.Conn) {
-	d.mu.Lock()
-	delete(d.clients, conn)
-	d.mu.Unlock()
-
-	d.subMu.Lock()
-	delete(d.subscriptions, conn)
-	d.subMu.Unlock()
-
-	log.Println("daemon: client disconnected")
-}
-
-func (d *Daemon) closeAllClients() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	for conn := range d.clients {
-		conn.Close() //nolint:errcheck,gosec
-	}
-	d.clients = make(map[*daemonrpc.Conn]struct{})
-}
-
 func (d *Daemon) closeProviders() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -277,28 +246,18 @@ func (d *Daemon) closeProviders() {
 
 // broadcastEvent sends an event to all connected clients.
 func (d *Daemon) broadcastEvent(eventType string, data interface{}) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	for conn := range d.clients {
-		if err := conn.SendEvent(eventType, data); err != nil {
-			log.Printf("daemon: broadcast error: %v", err)
-		}
-	}
+	d.server.Broadcast(eventType, data)
 }
 
 // broadcastToSubscribers sends an event only to clients subscribed to the given account+folder.
 func (d *Daemon) broadcastToSubscribers(accountID, folder, eventType string, data interface{}) {
 	key := accountID + ":" + folder
-	d.subMu.RLock()
-	defer d.subMu.RUnlock()
-
-	for conn, subs := range d.subscriptions {
-		if _, ok := subs[key]; ok {
-			if err := conn.SendEvent(eventType, data); err != nil {
-				log.Printf("daemon: subscriber broadcast error: %v", err)
-			}
-		}
-	}
+	d.server.BroadcastFunc(eventType, data, func(conn *daemonrpc.Conn) bool {
+		d.subMu.RLock()
+		defer d.subMu.RUnlock()
+		_, ok := d.subscriptions[conn][key]
+		return ok
+	})
 }
 
 // getProvider returns the provider for the given account ID.
@@ -410,9 +369,7 @@ func (d *Daemon) syncAllAccounts(ctx context.Context) {
 		}
 
 		// Send desktop notification if TUI not connected.
-		d.mu.RLock()
-		noClients := len(d.clients) == 0
-		d.mu.RUnlock()
+		noClients := len(d.server.Clients()) == 0
 
 		if noClients && newCount > 0 {
 			if !d.config.DisableNotifications {
@@ -455,9 +412,7 @@ func (d *Daemon) idleEventLoop() {
 			log.Printf("daemon: IDLE update for %s/%s", update.AccountID, update.FolderName)
 
 			// Desktop notification when no clients connected.
-			d.mu.RLock()
-			noClients := len(d.clients) == 0
-			d.mu.RUnlock()
+			noClients := len(d.server.Clients()) == 0
 
 			if noClients && !d.config.DisableNotifications {
 				accountName := update.AccountID

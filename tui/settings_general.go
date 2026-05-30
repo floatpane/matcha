@@ -130,12 +130,9 @@ func (m *Settings) viewGeneral() string {
 	options := m.buildGeneralOptions()
 
 	for i, opt := range options {
-		cursor := "  "
-		style := accountItemStyle
-		if m.generalCursor == i {
-			cursor = "> "
-			style = selectedAccountItemStyle
-		}
+		selected := m.generalCursor == i
+		cursor := m.contentCursor(selected)
+		style := m.contentItemStyle(selected)
 
 		label := t(opt.labelKey)
 		text := fmt.Sprintf("%s: %s", label, opt.value)
