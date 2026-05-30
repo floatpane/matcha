@@ -852,7 +852,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			go saveFolderEmailsToCache(folderName, filtered)
 		}
 
-		return m, m.moveEmailToFolderCmd(account, msg.UID, msg.AccountID, msg.SourceFolder, msg.DestFolder)
+		return m, m.moveEmailToFolderCmd(msg.UID, msg.AccountID, msg.SourceFolder, msg.DestFolder)
 
 	case tui.UpdatePreviewMsg:
 		// Trigger preview body fetch
@@ -1793,7 +1793,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			go saveFolderEmailsToCache(folderName, filtered)
 		}
 
-		return m, m.deleteFolderEmailCmd(account, msg.UID, msg.AccountID, folderName, msg.Mailbox)
+		return m, m.deleteFolderEmailCmd(msg.UID, msg.AccountID, folderName, msg.Mailbox)
 
 	case tui.ArchiveEmailMsg:
 		tui.ClearKittyGraphics()
@@ -1825,7 +1825,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			go saveFolderEmailsToCache(folderName, filtered)
 		}
 
-		return m, m.archiveFolderEmailCmd(account, msg.UID, msg.AccountID, folderName, msg.Mailbox)
+		return m, m.archiveFolderEmailCmd(msg.UID, msg.AccountID, folderName, msg.Mailbox)
 
 	case tui.EmailMarkedReadMsg:
 		if msg.Err != nil {
@@ -1883,7 +1883,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			go saveFolderEmailsToCache(folderName, filtered)
 		}
 
-		return m, m.batchDeleteEmailsCmd(account, msg.UIDs, msg.AccountID, folderName, msg.Mailbox, len(msg.UIDs))
+		return m, m.batchDeleteEmailsCmd(msg.UIDs, msg.AccountID, folderName, msg.Mailbox, len(msg.UIDs))
 
 	case tui.BatchArchiveEmailsMsg:
 		tui.ClearKittyGraphics()
@@ -1913,7 +1913,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			go saveFolderEmailsToCache(folderName, filtered)
 		}
 
-		return m, m.batchArchiveEmailsCmd(account, msg.UIDs, msg.AccountID, folderName, msg.Mailbox, len(msg.UIDs))
+		return m, m.batchArchiveEmailsCmd(msg.UIDs, msg.AccountID, folderName, msg.Mailbox, len(msg.UIDs))
 
 	case tui.BatchMoveEmailsMsg:
 		if m.config == nil {
@@ -1941,7 +1941,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			go saveFolderEmailsToCache(folderName, filtered)
 		}
 
-		return m, m.batchMoveEmailsCmd(account, msg.UIDs, msg.AccountID, msg.SourceFolder, msg.DestFolder, len(msg.UIDs))
+		return m, m.batchMoveEmailsCmd(msg.UIDs, msg.AccountID, msg.SourceFolder, msg.DestFolder, len(msg.UIDs))
 
 	case tui.BatchEmailActionDoneMsg:
 		if msg.Err != nil {
@@ -2970,21 +2970,21 @@ func markEmailAsUnreadCmd(account *config.Account, uid uint32, accountID string,
 	}
 }
 
-func (m *mainModel) deleteFolderEmailCmd(account *config.Account, uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
+func (m *mainModel) deleteFolderEmailCmd(uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
 	return func() tea.Msg {
 		err := m.service.DeleteEmails(accountID, folderName, []uint32{uid})
 		return tui.EmailActionDoneMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
 	}
 }
 
-func (m *mainModel) archiveFolderEmailCmd(account *config.Account, uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
+func (m *mainModel) archiveFolderEmailCmd(uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
 	return func() tea.Msg {
 		err := m.service.ArchiveEmails(accountID, folderName, []uint32{uid})
 		return tui.EmailActionDoneMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
 	}
 }
 
-func (m *mainModel) batchDeleteEmailsCmd(account *config.Account, uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
+func (m *mainModel) batchDeleteEmailsCmd(uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
 	return func() tea.Msg {
 		err := m.service.DeleteEmails(accountID, folderName, uids)
 
@@ -3004,7 +3004,7 @@ func (m *mainModel) batchDeleteEmailsCmd(account *config.Account, uids []uint32,
 	}
 }
 
-func (m *mainModel) batchArchiveEmailsCmd(account *config.Account, uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
+func (m *mainModel) batchArchiveEmailsCmd(uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
 	return func() tea.Msg {
 		err := m.service.ArchiveEmails(accountID, folderName, uids)
 
@@ -3024,7 +3024,7 @@ func (m *mainModel) batchArchiveEmailsCmd(account *config.Account, uids []uint32
 	}
 }
 
-func (m *mainModel) batchMoveEmailsCmd(account *config.Account, uids []uint32, accountID, sourceFolder, destFolder string, count int) tea.Cmd {
+func (m *mainModel) batchMoveEmailsCmd(uids []uint32, accountID, sourceFolder, destFolder string, count int) tea.Cmd {
 	return func() tea.Msg {
 		err := m.service.MoveEmails(accountID, uids, sourceFolder, destFolder)
 
@@ -3043,7 +3043,7 @@ func (m *mainModel) batchMoveEmailsCmd(account *config.Account, uids []uint32, a
 	}
 }
 
-func (m *mainModel) moveEmailToFolderCmd(account *config.Account, uid uint32, accountID string, sourceFolder, destFolder string) tea.Cmd {
+func (m *mainModel) moveEmailToFolderCmd(uid uint32, accountID string, sourceFolder, destFolder string) tea.Cmd {
 	return func() tea.Msg {
 		err := m.service.MoveEmails(accountID, []uint32{uid}, sourceFolder, destFolder)
 		return tui.EmailMovedMsg{
