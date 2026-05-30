@@ -30,6 +30,8 @@ import (
 	"github.com/floatpane/matcha/config"
 )
 
+const inboxFolder = "INBOX"
+
 var messageIDRE = regexp.MustCompile(`<[^>]+>`)
 
 func init() {
@@ -39,9 +41,18 @@ func init() {
 }
 
 // Provider implements backend.Provider against a local Maildir tree.
+// Two on-disk layouts are supported:
+//   - Maildir++ (dovecot style): the root itself is INBOX (has cur/new/tmp),
+//     and subfolders are sibling directories prefixed with "." (e.g. ".Sent").
+//   - Nested (mbsync/isync/fastmail style): the root contains one directory
+//     per folder, each holding its own cur/new/tmp. INBOX is the child
+//     directory named "INBOX".
+//
+// The layout is auto-detected at New() time by probing for `<root>/cur`.
 type Provider struct {
 	account *config.Account
 	root    string
+	nested  bool
 }
 
 // New creates a new Maildir provider for the given account.
@@ -68,29 +79,77 @@ func New(account *config.Account) (*Provider, error) {
 		return nil, fmt.Errorf("maildir path %q is not a directory", root)
 	}
 
-	return &Provider{account: account, root: root}, nil
+	nested := false
+	if _, err := os.Stat(filepath.Join(root, "cur")); err != nil {
+		nested = true
+	}
+
+	return &Provider{account: account, root: root, nested: nested}, nil
 }
 
 // dirForFolder resolves a logical folder name to the on-disk Maildir directory.
-// "" and "INBOX" map to the configured root; anything else is treated as a
-// Maildir++ subfolder. "/" in the folder name is converted to "." per spec.
+// Maildir++ layout: "" and "INBOX" map to the root; other names become
+// ".Sub.Folder" siblings. Nested layout: every folder is a child directory
+// named verbatim, with "/" preserved as a path separator.
 func (p *Provider) dirForFolder(folder string) emaildir.Dir {
-	if folder == "" || strings.EqualFold(folder, "INBOX") {
+	if p.nested {
+		if folder == "" {
+			folder = inboxFolder
+		}
+		return emaildir.Dir(filepath.Join(p.root, filepath.FromSlash(folder)))
+	}
+	if folder == "" || strings.EqualFold(folder, inboxFolder) {
 		return emaildir.Dir(p.root)
 	}
 	subdir := "." + strings.ReplaceAll(folder, "/", ".")
 	return emaildir.Dir(filepath.Join(p.root, subdir))
 }
 
-// FetchFolders returns INBOX plus any Maildir++ subfolders found at the root.
-func (p *Provider) FetchFolders(_ context.Context) ([]backend.Folder, error) {
-	folders := []backend.Folder{{Name: "INBOX", Delimiter: "/"}}
+// archiveDir returns the on-disk path of the Archive folder for the active
+// layout (".Archive" under Maildir++, "Archive" under nested).
+func (p *Provider) archiveDir() string {
+	if p.nested {
+		return filepath.Join(p.root, "Archive")
+	}
+	return filepath.Join(p.root, ".Archive")
+}
 
+// FetchFolders returns INBOX plus any subfolders found at the root, using
+// whichever on-disk layout the provider detected.
+func (p *Provider) FetchFolders(_ context.Context) ([]backend.Folder, error) {
 	entries, err := os.ReadDir(p.root)
 	if err != nil {
 		return nil, fmt.Errorf("maildir read root: %w", err)
 	}
 
+	if p.nested {
+		var folders []backend.Folder
+		seenInbox := false
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if name == "." || name == ".." {
+				continue
+			}
+			if _, err := os.Stat(filepath.Join(p.root, name, "cur")); err != nil {
+				continue
+			}
+			if strings.EqualFold(name, inboxFolder) {
+				seenInbox = true
+				folders = append([]backend.Folder{{Name: inboxFolder, Delimiter: "/"}}, folders...)
+				continue
+			}
+			folders = append(folders, backend.Folder{Name: name, Delimiter: "/"})
+		}
+		if !seenInbox {
+			folders = append([]backend.Folder{{Name: inboxFolder, Delimiter: "/"}}, folders...)
+		}
+		return folders, nil
+	}
+
+	folders := []backend.Folder{{Name: inboxFolder, Delimiter: "/"}}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -99,15 +158,12 @@ func (p *Provider) FetchFolders(_ context.Context) ([]backend.Folder, error) {
 		if !strings.HasPrefix(name, ".") || name == "." || name == ".." {
 			continue
 		}
-		// Sanity check: a Maildir folder has a cur/ subdir.
 		if _, err := os.Stat(filepath.Join(p.root, name, "cur")); err != nil {
 			continue
 		}
-		// Strip leading dot, map "." → "/" for nested folders.
 		logical := strings.ReplaceAll(strings.TrimPrefix(name, "."), ".", "/")
 		folders = append(folders, backend.Folder{Name: logical, Delimiter: "/"})
 	}
-
 	return folders, nil
 }
 
@@ -258,9 +314,9 @@ func (p *Provider) DeleteEmail(_ context.Context, folder string, uid uint32) err
 	return msg.Remove()
 }
 
-// ArchiveEmail moves the message to the ".Archive" subfolder if one exists.
+// ArchiveEmail moves the message to the Archive subfolder if one exists.
 func (p *Provider) ArchiveEmail(ctx context.Context, folder string, uid uint32) error {
-	if _, err := os.Stat(filepath.Join(p.root, ".Archive", "cur")); err != nil {
+	if _, err := os.Stat(filepath.Join(p.archiveDir(), "cur")); err != nil {
 		return backend.ErrNotSupported
 	}
 	return p.MoveEmail(ctx, uid, folder, "Archive")
@@ -288,7 +344,7 @@ func (p *Provider) DeleteEmails(ctx context.Context, folder string, uids []uint3
 
 // ArchiveEmails archives the listed messages.
 func (p *Provider) ArchiveEmails(ctx context.Context, folder string, uids []uint32) error {
-	if _, err := os.Stat(filepath.Join(p.root, ".Archive", "cur")); err != nil {
+	if _, err := os.Stat(filepath.Join(p.archiveDir(), "cur")); err != nil {
 		return backend.ErrNotSupported
 	}
 	for _, uid := range uids {
@@ -421,7 +477,7 @@ func (p *Provider) Close() error { return nil }
 
 // Capabilities reports what the Maildir backend can do.
 func (p *Provider) Capabilities() backend.Capabilities {
-	_, hasArchive := os.Stat(filepath.Join(p.root, ".Archive", "cur"))
+	_, hasArchive := os.Stat(filepath.Join(p.archiveDir(), "cur"))
 	return backend.Capabilities{
 		CanSend:         false,
 		CanMove:         true,

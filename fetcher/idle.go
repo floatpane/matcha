@@ -47,6 +47,13 @@ func NewIdleWatcher(notify chan<- IdleUpdate) *IdleWatcher {
 
 // Watch starts (or restarts) an IDLE connection for the given account and folder.
 func (w *IdleWatcher) Watch(account *config.Account, folder string) {
+	// IDLE is an IMAP-only concept; non-IMAP backends (maildir, etc.) have
+	// no remote socket to keep open. Skip silently rather than spinning the
+	// reconnect loop forever.
+	if account != nil && account.Protocol != "" && account.Protocol != "imap" {
+		return
+	}
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
