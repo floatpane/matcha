@@ -36,15 +36,14 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "esc":
-		// Clear inputs and return to menu
-		m.encPasswordInput.SetValue("")
-		m.encConfirmInput.SetValue("")
-		m.encPasswordStrength = ""
-		m.encPasswordInput.Blur()
-		m.encConfirmInput.Blur()
-		m.encError = ""
-		m.activePane = PaneMenu
+		m.leaveEncryptionSettings()
 		return m, nil
+	case keyLeft:
+		if m.encryptionInputCursorAtStart() {
+			m.leaveEncryptionSettings()
+			return m, nil
+		}
+		return m.updateFocusedEncryptionInput(msg)
 	case "tab", keyShiftTab, keyDown, "up":
 		if msg.String() == keyShiftTab || msg.String() == "up" {
 			m.encFocusIndex--
@@ -97,21 +96,45 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	default:
-		// Forward input to focused textinput
-		var cmd tea.Cmd
-		switch m.encFocusIndex {
-		case 0:
-			before := m.encPasswordInput.Value()
-			m.encPasswordInput, cmd = m.encPasswordInput.Update(msg)
-			if m.encPasswordInput.Value() != before {
-				m.handlePasswordChanged()
-			}
-		case 1:
-			m.encConfirmInput, cmd = m.encConfirmInput.Update(msg)
-		}
-		return m, cmd
+		return m.updateFocusedEncryptionInput(msg)
 	}
 	return m, nil
+}
+
+func (m *Settings) encryptionInputCursorAtStart() bool {
+	switch m.encFocusIndex {
+	case 0:
+		return m.encPasswordInput.Position() == 0
+	case 1:
+		return m.encConfirmInput.Position() == 0
+	default:
+		return false
+	}
+}
+
+func (m *Settings) leaveEncryptionSettings() {
+	m.encPasswordInput.SetValue("")
+	m.encConfirmInput.SetValue("")
+	m.encPasswordStrength = ""
+	m.encPasswordInput.Blur()
+	m.encConfirmInput.Blur()
+	m.encError = ""
+	m.activePane = PaneMenu
+}
+
+func (m *Settings) updateFocusedEncryptionInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch m.encFocusIndex {
+	case 0:
+		before := m.encPasswordInput.Value()
+		m.encPasswordInput, cmd = m.encPasswordInput.Update(msg)
+		if m.encPasswordInput.Value() != before {
+			m.handlePasswordChanged()
+		}
+	case 1:
+		m.encConfirmInput, cmd = m.encConfirmInput.Update(msg)
+	}
+	return m, cmd
 }
 
 func (m *Settings) viewEncryption() string {
@@ -131,7 +154,7 @@ func (m *Settings) viewEncryption() string {
 			)
 			b.WriteString(dialog + "\n")
 		} else {
-			b.WriteString(settingsFocusedStyle.Render("  "+t("settings_encryption.enabled")) + "\n\n")
+			b.WriteString(m.contentFocusStyle().Render("  "+t("settings_encryption.enabled")) + "\n\n")
 			b.WriteString(accountEmailStyle.Render("  "+t("settings_encryption.disable_button")) + "\n\n")
 			b.WriteString(helpStyle.Render("enter: disable"))
 		}
@@ -139,7 +162,7 @@ func (m *Settings) viewEncryption() string {
 		b.WriteString(accountEmailStyle.Render(t("settings_encryption.disabled")) + "\n\n")
 
 		if m.encFocusIndex == 0 {
-			b.WriteString(settingsFocusedStyle.Render(t("settings_encryption.password_label") + "\n"))
+			b.WriteString(m.contentFocusStyle().Render(t("settings_encryption.password_label") + "\n"))
 		} else {
 			b.WriteString(settingsBlurredStyle.Render(t("settings_encryption.password_label") + "\n"))
 		}
@@ -149,7 +172,7 @@ func (m *Settings) viewEncryption() string {
 		}
 
 		if m.encFocusIndex == 1 {
-			b.WriteString(settingsFocusedStyle.Render(t("settings_encryption.confirm_label") + "\n"))
+			b.WriteString(m.contentFocusStyle().Render(t("settings_encryption.confirm_label") + "\n"))
 		} else {
 			b.WriteString(settingsBlurredStyle.Render(t("settings_encryption.confirm_label") + "\n"))
 		}
@@ -161,7 +184,7 @@ func (m *Settings) viewEncryption() string {
 
 		saveBtn := "[ " + t("settings_encryption.enable_button") + " ]"
 		if m.encFocusIndex == 2 {
-			b.WriteString(settingsFocusedStyle.Render(saveBtn) + "\n")
+			b.WriteString(m.contentFocusStyle().Render(saveBtn) + "\n")
 		} else {
 			b.WriteString(settingsBlurredStyle.Render(saveBtn) + "\n")
 		}

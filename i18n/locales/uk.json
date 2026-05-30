@@ -122,7 +122,7 @@
       "category_encryption": "Шифрування додатка",
       "category_plugins": "Плагіни",
       "help_menu": "↑/↓: навігація • right/enter: вибрати • esc: назад",
-      "help_content": "esc: назад до меню"
+      "help_content": "left/esc: назад до меню"
     },
     "settings_accounts": {
       "title": "Налаштування облікових записів",

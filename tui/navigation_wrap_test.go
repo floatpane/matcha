@@ -109,6 +109,106 @@ func TestSettingsNavigationWraps(t *testing.T) {
 	})
 }
 
+func TestSettingsHorizontalPaneFocus(t *testing.T) {
+	t.Run("right moves focus from menu to content", func(t *testing.T) {
+		settings := NewSettings(&config.Config{})
+		settings.activePane = PaneMenu
+		settings.menuCursor = int(CategoryGeneral)
+
+		model, _ := settings.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+		settings = model.(*Settings)
+
+		if settings.activePane != PaneContent {
+			t.Fatalf("right from menu pane should focus content, got %d", settings.activePane)
+		}
+	})
+
+	t.Run("esc moves focus from content to menu", func(t *testing.T) {
+		settings := NewSettings(&config.Config{})
+		settings.activePane = PaneContent
+		settings.activeCategory = CategoryGeneral
+		settings.menuCursor = int(CategoryGeneral)
+
+		model, _ := settings.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+		settings = model.(*Settings)
+
+		if settings.activePane != PaneMenu {
+			t.Fatalf("esc from content pane should focus menu, got %d", settings.activePane)
+		}
+	})
+
+	t.Run("left moves focus from content to menu", func(t *testing.T) {
+		settings := NewSettings(&config.Config{})
+		settings.activePane = PaneContent
+		settings.activeCategory = CategoryGeneral
+		settings.menuCursor = int(CategoryGeneral)
+
+		model, _ := settings.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+		settings = model.(*Settings)
+
+		if settings.activePane != PaneMenu {
+			t.Fatalf("left from content pane should focus menu, got %d", settings.activePane)
+		}
+	})
+
+	t.Run("left does not exit settings from menu", func(t *testing.T) {
+		settings := NewSettings(&config.Config{})
+		settings.activePane = PaneMenu
+
+		model, cmd := settings.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+		settings = model.(*Settings)
+
+		if cmd != nil {
+			t.Fatal("left from menu pane should not return to choice menu")
+		}
+		if settings.activePane != PaneMenu {
+			t.Fatalf("left from menu pane should keep menu focused, got %d", settings.activePane)
+		}
+	})
+}
+
+func TestSettingsEncryptionLeftKeyInInput(t *testing.T) {
+	t.Run("at input start returns to menu", func(t *testing.T) {
+		settings := NewSettings(&config.Config{})
+		settings.activePane = PaneContent
+		settings.activeCategory = CategoryEncryption
+		settings.encFocusIndex = 0
+		settings.encPasswordInput.SetValue("secret")
+		settings.encPasswordInput.SetCursor(0)
+		settings.encPasswordInput.Focus()
+
+		model, _ := settings.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+		settings = model.(*Settings)
+
+		if settings.activePane != PaneMenu {
+			t.Fatalf("left at start of encryption input should focus menu, got %d", settings.activePane)
+		}
+		if settings.encPasswordInput.Value() != "" {
+			t.Fatal("left at start of encryption input should clear input like esc")
+		}
+	})
+
+	t.Run("inside input moves cursor", func(t *testing.T) {
+		settings := NewSettings(&config.Config{})
+		settings.activePane = PaneContent
+		settings.activeCategory = CategoryEncryption
+		settings.encFocusIndex = 0
+		settings.encPasswordInput.SetValue("secret")
+		settings.encPasswordInput.SetCursor(1)
+		settings.encPasswordInput.Focus()
+
+		model, _ := settings.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+		settings = model.(*Settings)
+
+		if settings.activePane != PaneContent {
+			t.Fatalf("left inside encryption input should keep content focused, got %d", settings.activePane)
+		}
+		if settings.encPasswordInput.Position() != 0 {
+			t.Fatalf("left inside encryption input should move cursor left, got position %d", settings.encPasswordInput.Position())
+		}
+	})
+}
+
 func TestFilePickerNavigationWraps(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o600); err != nil {

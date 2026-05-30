@@ -121,7 +121,7 @@
       "category_encryption": "Chiffrement de l'Application",
       "category_plugins": "Plugins",
       "help_menu": "↑/↓: naviguer • droite/entrée: sélectionner • esc: retour",
-      "help_content": "esc: retour au menu"
+      "help_content": "left/esc: retour au menu"
     },
     "settings_accounts": {
       "title": "Paramètres des Comptes",
