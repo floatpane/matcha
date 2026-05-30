@@ -13,6 +13,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	overlay "github.com/floatpane/bubble-overlay"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/spellcheck"
 	"github.com/google/uuid"
@@ -1337,7 +1338,7 @@ func (m *Composer) overlaySpellPopup(view string, elementsBeforeBody []string) s
 		anchorCol = max(0, m.width-popupWidth)
 	}
 
-	return overlayBlock(view, popup, anchorRow, anchorCol)
+	return overlay.Block(view, popup, anchorRow, anchorCol)
 }
 
 // renderSpellPopupLines builds the styled, bordered suggestion box and

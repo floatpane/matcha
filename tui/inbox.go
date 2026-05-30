@@ -13,7 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
-	"github.com/floatpane/matcha/internal/threading"
+	threading "github.com/floatpane/jwz-go"
 	"github.com/floatpane/matcha/theme"
 )
 
