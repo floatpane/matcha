@@ -1,10 +1,9 @@
 # Image Protocol Compatibility
 
-> [!TIP] This feature is optional. To disable images, go to Settings > Image Display: OFF, you can also always turn it on for 1 email by pressing `i`
-
+> [!TIP] 
+> This feature is optional. To disable images, go to Settings > General > Disable Image Display: ON, you can also always turn it on for 1 email by pressing `i`. If you worry about security, we use a sandboxed subprocess for decoding on Linux (via Landlock + seccomp), via [termimage](https://github.com/floatpane/termimage), and we never execute any code from emails.
 Matcha supports modern terminal image protocols for displaying images directly in your terminal. This allows for rich email viewing with inline images, including those embedded in HTML emails (CID references), remote images, and base64-encoded data URIs.
 
-Image rendering is powered by [termimage](https://github.com/floatpane/termimage), which handles protocol detection, decoding (in a sandboxed subprocess on Linux via Landlock + seccomp), and rendering for Kitty graphics, Sixel, and Unicode half-block fallback.
 
 ## Supported Protocols
 
