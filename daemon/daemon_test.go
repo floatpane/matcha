@@ -79,10 +79,10 @@ func serveDaemon(t *testing.T, d *Daemon) *daemonrpc.Conn {
 		t.Fatalf("listen: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	go d.server.Serve(ctx, l) //nolint:errcheck
+	go func() { _ = d.server.Serve(ctx, l) }()
 	t.Cleanup(func() {
 		cancel()
-		l.Close() //nolint:errcheck
+		_ = l.Close()
 	})
 
 	c, err := net.Dial("unix", sock)
@@ -90,7 +90,7 @@ func serveDaemon(t *testing.T, d *Daemon) *daemonrpc.Conn {
 		t.Fatalf("dial: %v", err)
 	}
 	conn := daemonrpc.NewConn(c)
-	t.Cleanup(func() { conn.Close() }) //nolint:errcheck
+	t.Cleanup(func() { _ = conn.Close() })
 	return conn
 }
 

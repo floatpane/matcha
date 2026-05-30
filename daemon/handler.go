@@ -252,13 +252,14 @@ func (d *Daemon) handleFetchFolders(ctx context.Context, _ *daemonrpc.Conn, para
 	return folders, nil
 }
 
-func (d *Daemon) handleRefreshFolder(_ context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+func (d *Daemon) handleRefreshFolder(ctx context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
 	args, err := decodeParams[daemonrpc.RefreshFolderParams](params)
 	if err != nil {
 		return nil, parseError(err)
 	}
 
-	// Async: fetch in background, push events when done.
+	// Async: fetch in background, push events when done. The server-scoped ctx
+	// outlives the request and is canceled on daemon shutdown.
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -279,10 +280,10 @@ func (d *Daemon) handleRefreshFolder(_ context.Context, _ *daemonrpc.Conn, param
 
 		d.broadcastToSubscribers(args.AccountID, args.Folder, daemonrpc.EventSyncStarted, daemonrpc.SyncStartedEvent(args))
 
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		fetchCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
 		defer cancel()
 
-		emails, err := p.FetchEmails(ctx, args.Folder, 50, 0)
+		emails, err := p.FetchEmails(fetchCtx, args.Folder, 50, 0)
 		if err != nil {
 			d.broadcastToSubscribers(args.AccountID, args.Folder, daemonrpc.EventSyncError, daemonrpc.SyncErrorEvent{
 				AccountID: args.AccountID,
