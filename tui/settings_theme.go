@@ -46,12 +46,9 @@ func (m *Settings) viewTheme() string {
 			label += " (" + t("settings_theme.current") + ")"
 		}
 
-		cursor := "  "
-		style := accountItemStyle
-		if m.themeCursor == i {
-			cursor = "> "
-			style = selectedAccountItemStyle
-		}
+		selected := m.themeCursor == i
+		cursor := m.contentCursor(selected)
+		style := m.contentItemStyle(selected)
 
 		b.WriteString(style.Render(cursor+label) + "\n")
 	}

@@ -123,7 +123,7 @@
       "category_encryption": "Шифрование Приложения",
       "category_plugins": "Плагины",
       "help_menu": "↑/↓: навигация • вправо/enter: выбор • esc: назад",
-      "help_content": "esc: назад в меню"
+      "help_content": "left/esc: назад в меню"
     },
     "settings_accounts": {
       "title": "Настройки Учётных Записей",

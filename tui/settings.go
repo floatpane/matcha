@@ -194,34 +194,7 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
-		// Global shortcut to return to menu from content pane
-		if m.activePane == PaneContent && msg.String() == "esc" {
-			// unless we are in crypto config or encryption editing which have their own esc logic
-			if (m.activeCategory != CategoryAccounts || !m.isCryptoConfig) &&
-				(m.activeCategory != CategoryEncryption || m.encFocusIndex <= -1) &&
-				(m.activeCategory != CategoryPlugins || (!m.pluginEditing && m.pluginSelected == "")) {
-				m.activePane = PaneMenu
-				return m, nil
-			}
-		}
-
-		if m.activePane == PaneMenu {
-			return m.updateMenu(msg)
-		}
-		switch m.activeCategory {
-		case CategoryGeneral:
-			return m.updateGeneral(msg)
-		case CategoryAccounts:
-			return m.updateAccounts(msg)
-		case CategoryTheme:
-			return m.updateTheme(msg)
-		case CategoryMailingLists:
-			return m.updateMailingLists(msg)
-		case CategoryEncryption:
-			return m.updateEncryption(msg)
-		case CategoryPlugins:
-			return m.updatePlugins(msg)
-		}
+		return m.updateKeyPress(msg)
 
 	case SecureModeEnabledMsg:
 		m.encEnabling = false
@@ -268,6 +241,80 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m *Settings) updateKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	// Global shortcut to return to menu from content pane
+	if m.activePane == PaneContent && msg.String() == "esc" {
+		// unless we are in crypto config or encryption editing which have their own esc logic
+		if (m.activeCategory != CategoryAccounts || !m.isCryptoConfig) &&
+			(m.activeCategory != CategoryEncryption || m.encFocusIndex <= -1) &&
+			(m.activeCategory != CategoryPlugins || (!m.pluginEditing && m.pluginSelected == "")) {
+			m.activePane = PaneMenu
+			return m, nil
+		}
+	}
+
+	if m.activePane == PaneContent && msg.String() == keyLeft && m.canFocusSettingsMenuWithLeft() {
+		m.activePane = PaneMenu
+		return m, nil
+	}
+
+	if m.activePane == PaneMenu {
+		return m.updateMenu(msg)
+	}
+	switch m.activeCategory {
+	case CategoryGeneral:
+		return m.updateGeneral(msg)
+	case CategoryAccounts:
+		return m.updateAccounts(msg)
+	case CategoryTheme:
+		return m.updateTheme(msg)
+	case CategoryMailingLists:
+		return m.updateMailingLists(msg)
+	case CategoryEncryption:
+		return m.updateEncryption(msg)
+	case CategoryPlugins:
+		return m.updatePlugins(msg)
+	}
+
+	return m, nil
+}
+
+func (m *Settings) canFocusSettingsMenuWithLeft() bool {
+	switch m.activeCategory {
+	case CategoryAccounts:
+		return !m.isCryptoConfig && !m.confirmingDelete
+	case CategoryEncryption:
+		return config.IsSecureModeEnabled() && !m.confirmingDisable
+	case CategoryPlugins:
+		return !m.pluginEditing && m.pluginSelected == ""
+	case CategoryGeneral, CategoryTheme, CategoryMailingLists:
+		return true
+	default:
+		return true
+	}
+}
+
+func (m *Settings) contentItemStyle(selected bool) lipgloss.Style {
+	if selected && m.activePane == PaneContent {
+		return selectedAccountItemStyle
+	}
+	return accountItemStyle
+}
+
+func (m *Settings) contentCursor(selected bool) string {
+	if selected && m.activePane == PaneContent {
+		return "> "
+	}
+	return "  "
+}
+
+func (m *Settings) contentFocusStyle() lipgloss.Style {
+	if m.activePane == PaneContent {
+		return settingsFocusedStyle
+	}
+	return settingsBlurredStyle
 }
 
 func (m *Settings) updateMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -340,7 +387,11 @@ func (m *Settings) View() tea.View {
 
 		style := accountItemStyle
 		if m.menuCursor == i {
-			style = selectedAccountItemStyle
+			if m.activePane == PaneMenu {
+				style = selectedAccountItemStyle
+			} else {
+				style = selectedAccountItemStyle.UnsetBold()
+			}
 		}
 
 		left.WriteString(style.Render(cursor+c) + "\n")

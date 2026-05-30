@@ -153,23 +153,17 @@ func (m *Settings) viewAccounts() string {
 
 		line := fmt.Sprintf("%s - %s", displayName, accountEmailStyle.Render(providerInfo))
 
-		cursor := "  "
-		style := accountItemStyle
-		if m.accountsCursor == i {
-			cursor = "> "
-			style = selectedAccountItemStyle
-		}
+		selected := m.accountsCursor == i
+		cursor := m.contentCursor(selected)
+		style := m.contentItemStyle(selected)
 
 		b.WriteString(style.Render(cursor+line) + "\n")
 	}
 
 	// Add Account option
-	cursor := "  "
-	style := accountItemStyle
-	if m.accountsCursor == len(m.cfg.Accounts) {
-		cursor = "> "
-		style = selectedAccountItemStyle
-	}
+	selected := m.accountsCursor == len(m.cfg.Accounts)
+	cursor := m.contentCursor(selected)
+	style := m.contentItemStyle(selected)
 	b.WriteString(style.Render(cursor+t("settings_accounts.add_account")) + "\n\n")
 
 	b.WriteString(helpStyle.Render(t("settings_accounts.help")))

@@ -74,21 +74,15 @@ func (m *Settings) viewMailingLists() string {
 		})
 		line := fmt.Sprintf("%s - %s", list.Name, accountEmailStyle.Render(addrCount))
 
-		cursor := "  "
-		style := accountItemStyle
-		if m.listsCursor == i {
-			cursor = "> "
-			style = selectedAccountItemStyle
-		}
+		selected := m.listsCursor == i
+		cursor := m.contentCursor(selected)
+		style := m.contentItemStyle(selected)
 		b.WriteString(style.Render(cursor+line) + "\n")
 	}
 
-	cursor := "  "
-	style := accountItemStyle
-	if m.listsCursor == len(m.cfg.MailingLists) {
-		cursor = "> "
-		style = selectedAccountItemStyle
-	}
+	selected := m.listsCursor == len(m.cfg.MailingLists)
+	cursor := m.contentCursor(selected)
+	style := m.contentItemStyle(selected)
 	b.WriteString(style.Render(cursor+t("settings_mailing_lists.add_list")) + "\n\n")
 
 	b.WriteString(helpStyle.Render(t("settings_mailing_lists.help")))

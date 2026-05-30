@@ -21,6 +21,7 @@ require (
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 	github.com/floatpane/bubble-overlay v0.0.1
 	github.com/floatpane/jwz-go v0.0.1
+	github.com/floatpane/go-uds-jsonrpc v0.0.1
 	github.com/floatpane/termimage v0.2.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
