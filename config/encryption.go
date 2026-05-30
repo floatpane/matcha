@@ -375,27 +375,18 @@ func collectDataFiles() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	cacheFiles := []string{"email_cache.json", "contacts.json", "drafts.json", "folder_cache.json"}
+
 	for _, f := range cacheFiles {
 		files = append(files, filepath.Join(cDir, f))
 	}
 
-	// Folder email cache files
-	folderDir := filepath.Join(cDir, "folder_emails")
-	if entries, err := os.ReadDir(folderDir); err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				files = append(files, filepath.Join(folderDir, entry.Name()))
-			}
-		}
-	}
-
-	// Email body cache files
-	bodyDir := filepath.Join(cDir, "email_bodies")
-	if entries, err := os.ReadDir(bodyDir); err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				files = append(files, filepath.Join(bodyDir, entry.Name()))
+	for _, f := range cacheDirectories {
+		dir := filepath.Join(cDir, f)
+		if entries, err := os.ReadDir(dir); err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					files = append(files, filepath.Join(dir, entry.Name()))
+				}
 			}
 		}
 	}

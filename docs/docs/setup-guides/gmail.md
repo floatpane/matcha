@@ -46,7 +46,8 @@ OAuth2 lets you authorize Matcha through Google's standard sign-in flow. No app 
 
  ![OAuth consent screen](../assets/setup-guides/gmail/oauth-consent-screen.png) 
 
-> **Note:** Your app will be in "Testing" mode, which is perfectly fine for personal use. Google will show an "unverified app" warning during sign-in — just click **Continue**. Tokens in testing mode expire after 7 days, after which you'll need to re-authorize with `matcha gmail auth`.
+> [!NOTE]
+> Your app will be in "Testing" mode, which is perfectly fine for personal use. Google will show an "unverified app" warning during sign-in — just click **Continue**. Tokens in testing mode expire after 7 days, after which you'll need to re-authorize with `matcha gmail auth`.
 
 ### 4. Create OAuth credentials
 
@@ -143,7 +144,8 @@ If you prefer not to set up OAuth2, you can use an app password instead. App Pas
 4. Click **Generate**.
 5. Copy the 16-character app password shown by Google.
 
-> **⚠️ Important:** Treat this app password as you would your primary password. Never share it, or expose it publicly. This credential grants full access to your Gmail account. The app password sits locally in your device and is never shared with us.
+> [!CAUTION]
+> Treat this app password as you would your primary password. Never share it, or expose it publicly. This credential grants full access to your Gmail account. The app password sits locally in your device and is never shared with us.
 
 ![Generate Google App Password](../assets/setup-guides/gmail/generate-app-password.jpg)
 
