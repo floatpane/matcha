@@ -72,6 +72,8 @@ github.com/floatpane/bubble-overlay v0.0.1 h1:5xU8cNigDPYegvgGMfOG23fIDXhrqXPvLT
 github.com/floatpane/bubble-overlay v0.0.1/go.mod h1:Csi1byxb9L8EAb8X13XdWF5aX5YiBD5C9WEWACyGa8A=
 github.com/floatpane/go-openpgp-card-hl v0.0.1 h1:1DYmzwGDb8eneZxbc/xtwjXeFY8DFL3eYnUooMT0L0w=
 github.com/floatpane/go-openpgp-card-hl v0.0.1/go.mod h1:Mrx+ukCnpEpMAxyB0p8Ch2gu78Q3Ir40BxBybb2jirw=
+github.com/floatpane/go-secretbox v0.1.0 h1:xNryazmCP0oR/yVxIkHRc5bcV56YrbisY+bMl8BBfwU=
+github.com/floatpane/go-secretbox v0.1.0/go.mod h1:uNVTLb1jty9ZT5HIp3zdFIB3K4V3r2V38QaI+bWMVao=
 github.com/floatpane/go-uds-jsonrpc v0.0.1 h1:/sBlCXVAP9SyLWLj0wlFI07dX/SfXeUM67B4tRwK2QA=
 github.com/floatpane/go-uds-jsonrpc v0.0.1/go.mod h1:G/YeDIocGkPIU+uyhJ/e8ynn9wIEMIkJ74d3VUuC4rM=
 github.com/floatpane/jwz-go v0.0.1 h1:OAl/vaUYn+/8zFR47WaCybBGoQItb1ZkFplNrmeO3ps=
