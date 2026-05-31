@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/floatpane/go-secretbox"
@@ -165,7 +166,7 @@ func DisableSecureMode(cfg *Config) error {
 		if err != nil {
 			continue // file may not be encrypted
 		}
-		if err := os.WriteFile(f, plain, 0o600); err != nil { //nolint:gosec
+		if err := writeDataFile(f, plain, 0o600); err != nil {
 			return err
 		}
 	}
@@ -218,7 +219,7 @@ func reEncryptCacheFiles() error {
 		if err != nil {
 			continue
 		}
-		if err := SecureWriteFile(f, data, 0o600); err != nil {
+		if err := secureWriteDataFile(f, data, 0o600); err != nil {
 			return err
 		}
 	}
@@ -249,7 +250,9 @@ func collectDataFiles() ([]string, error) {
 		if entries, err := os.ReadDir(dir); err == nil {
 			for _, entry := range entries {
 				if !entry.IsDir() {
-					files = append(files, filepath.Join(dir, entry.Name()))
+					// filepath.Base strips any directory components from the
+					// entry name, preventing traversal via crafted filenames.
+					files = append(files, filepath.Join(dir, filepath.Base(entry.Name())))
 				}
 			}
 		}
@@ -259,7 +262,7 @@ func collectDataFiles() ([]string, error) {
 	if entries, err := os.ReadDir(sigDir); err == nil {
 		for _, entry := range entries {
 			if !entry.IsDir() {
-				files = append(files, filepath.Join(sigDir, entry.Name()))
+				files = append(files, filepath.Join(sigDir, filepath.Base(entry.Name())))
 			}
 		}
 	}
@@ -353,6 +356,50 @@ func migrateLegacyMeta(password string) error {
 		_ = v.WriteFile(p.path, p.data, p.perm)
 	}
 	return nil
+}
+
+// secureWriteDataFile validates path is within app directories then delegates
+// to SecureWriteFile (which encrypts when the vault is unlocked).
+func secureWriteDataFile(path string, data []byte, perm os.FileMode) error {
+	cfgDir, err := configDir()
+	if err != nil {
+		return err
+	}
+	cDir, err := cacheDir()
+	if err != nil {
+		return err
+	}
+	clean := filepath.Clean(path)
+	if !isUnder(clean, cfgDir) && !isUnder(clean, cDir) {
+		return fmt.Errorf("config: refusing write outside app directories: %s", clean)
+	}
+	return SecureWriteFile(clean, data, perm)
+}
+
+// writeDataFile writes data to path only if path is within the application's
+// config or cache directories. It cleans the path first. This breaks the taint
+// flow for any directory-entry–derived paths returned by collectDataFiles.
+func writeDataFile(path string, data []byte, perm os.FileMode) error {
+	cfgDir, err := configDir()
+	if err != nil {
+		return err
+	}
+	cDir, err := cacheDir()
+	if err != nil {
+		return err
+	}
+	clean := filepath.Clean(path)
+	if !isUnder(clean, cfgDir) && !isUnder(clean, cDir) {
+		return fmt.Errorf("config: refusing write outside app directories: %s", clean)
+	}
+	return os.WriteFile(clean, data, perm) //nolint:gosec
+}
+
+// isUnder reports whether path is inside (or equal to) base.
+// Uses filepath.Rel so it is OS-path-separator aware.
+func isUnder(path, base string) bool {
+	rel, err := filepath.Rel(base, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func zeroSlice(b []byte) {
