@@ -74,8 +74,8 @@ github.com/floatpane/jwz-go v0.0.1 h1:OAl/vaUYn+/8zFR47WaCybBGoQItb1ZkFplNrmeO3p
 github.com/floatpane/jwz-go v0.0.1/go.mod h1:1b/JE4K+LBIBGtWbFdM1BXpN6ZbGWIv7IXPRbXD4oRE=
 github.com/floatpane/go-uds-jsonrpc v0.0.1 h1:/sBlCXVAP9SyLWLj0wlFI07dX/SfXeUM67B4tRwK2QA=
 github.com/floatpane/go-uds-jsonrpc v0.0.1/go.mod h1:G/YeDIocGkPIU+uyhJ/e8ynn9wIEMIkJ74d3VUuC4rM=
-github.com/floatpane/termimage v0.2.0 h1:NGjG7VUFAqpuYiPn/Vqcq2eHYqLZNmD3HkAdQTV0Lc0=
-github.com/floatpane/termimage v0.2.0/go.mod h1:5Mcw99w/AI4pmYVVyZKM4DkldHClH6uYO0eCQQGmaes=
+github.com/floatpane/termimage v0.2.1 h1:jYPBg+SSl5PHFpN96tccBYXG4ZERoJ61ALyRDJMqonU=
+github.com/floatpane/termimage v0.2.1/go.mod h1:j8AaqyNtVAsPgbGblXprh33G0/5/CopWWgkXi3QB09I=
 github.com/godbus/dbus/v5 v5.2.2 h1:TUR3TgtSVDmjiXOgAAyaZbYmIeP3DPkld3jgKGV8mXQ=
 github.com/godbus/dbus/v5 v5.2.2/go.mod h1:3AAv2+hPq5rdnr5txxxRwiGjPXamgoIHgz9FPBfOp3c=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
