@@ -118,8 +118,8 @@ schema = 3
     hash = 'sha256-A7M71cI5f640oxbSsBk1WxFFoqJtsPQQ+DsTfgOAm60='
 
   [mod.'github.com/floatpane/termimage']
-    version = 'v0.2.0'
-    hash = 'sha256-Ycx9E1//VpJ35WnU1FWnp1cXIgkRmRnpXF/YqjGlyDw='
+    version = 'v0.2.1'
+    hash = 'sha256-neUcMsh3A+koHxIcW/TFUAlNgyAdkuEKlZ19PQ5uAhs='
 
   [mod.'github.com/godbus/dbus/v5']
     version = 'v5.2.2'
@@ -198,8 +198,8 @@ schema = 3
     hash = 'sha256-/6Ajm6bIPt5xXNL5mmeNfJh4EZjgFgVlHEwp1TiC5cM='
 
   [mod.'golang.org/x/image']
-    version = 'v0.28.0'
-    hash = 'sha256-TkfNKPRea7gWtH8mQCNHQc0ce6LIO7XDgOoH5U6P51Q='
+    version = 'v0.41.0'
+    hash = 'sha256-kAqfrX6aS2f+j7fyEsk8YZt2b/VG/m3zGWRNbXnlUzA='
 
   [mod.'golang.org/x/net']
     version = 'v0.55.0'
