@@ -113,9 +113,17 @@ schema = 3
     version = 'v0.0.0-20241020182733-b788ff22d5a6'
     hash = 'sha256-eil7taerUmXI7lGOrcw56I0ilBzayRhhf1Sjixyc4oA='
 
+  [mod.'github.com/floatpane/bubble-overlay']
+    version = 'v0.0.1'
+    hash = 'sha256-YQ+g7GhiufcasMU8f0zt6ar46ykXZMHFBPFROt2n17I='
+
   [mod.'github.com/floatpane/go-uds-jsonrpc']
     version = 'v0.0.1'
     hash = 'sha256-A7M71cI5f640oxbSsBk1WxFFoqJtsPQQ+DsTfgOAm60='
+
+  [mod.'github.com/floatpane/jwz-go']
+    version = 'v0.0.1'
+    hash = 'sha256-aO+FXEQHAO4jviLFvfO4qhiyZA2jxfREUwBu6px2b6M='
 
   [mod.'github.com/floatpane/termimage']
     version = 'v0.2.1'
