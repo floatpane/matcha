@@ -121,6 +121,10 @@ schema = 3
     version = 'v0.0.1'
     hash = 'sha256-qssT4qCMoe9dgFISyCLhthlPe36dBJNnGU1bHjbCpK4='
 
+  [mod.'github.com/floatpane/go-secretbox']
+    version = 'v0.1.0'
+    hash = 'sha256-s2spJZpjXg5RzTbLY6Xe11EBVM49xLwB6wLwA4/reD8='
+
   [mod.'github.com/floatpane/go-uds-jsonrpc']
     version = 'v0.0.1'
     hash = 'sha256-A7M71cI5f640oxbSsBk1WxFFoqJtsPQQ+DsTfgOAm60='
