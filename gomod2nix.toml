@@ -117,6 +117,10 @@ schema = 3
     version = 'v0.0.1'
     hash = 'sha256-YQ+g7GhiufcasMU8f0zt6ar46ykXZMHFBPFROt2n17I='
 
+  [mod.'github.com/floatpane/go-openpgp-card-hl']
+    version = 'v0.0.1'
+    hash = 'sha256-qssT4qCMoe9dgFISyCLhthlPe36dBJNnGU1bHjbCpK4='
+
   [mod.'github.com/floatpane/go-uds-jsonrpc']
     version = 'v0.0.1'
     hash = 'sha256-A7M71cI5f640oxbSsBk1WxFFoqJtsPQQ+DsTfgOAm60='
