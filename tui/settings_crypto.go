@@ -111,6 +111,23 @@ func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
 		}
 	}
 
+	// Forward any remaining key press (typing, backspace, paste, cursor) to the
+	// focused text input. The toggle/button rows (2, 5, 7, 8, 9) have no input.
+	var cmd tea.Cmd
+	switch m.cryptoFocusIndex {
+	case 0:
+		m.smimeCertInput, cmd = m.smimeCertInput.Update(msg)
+	case 1:
+		m.smimeKeyInput, cmd = m.smimeKeyInput.Update(msg)
+	case 3:
+		m.pgpPublicKeyInput, cmd = m.pgpPublicKeyInput.Update(msg)
+	case 4:
+		m.pgpPrivateKeyInput, cmd = m.pgpPrivateKeyInput.Update(msg)
+	case 6:
+		m.pgpPINInput, cmd = m.pgpPINInput.Update(msg)
+	}
+	cmds = append(cmds, cmd)
+
 	return m, tea.Batch(cmds...)
 }
 
