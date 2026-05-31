@@ -6,21 +6,21 @@ require (
 	charm.land/bubbles/v2 v2.1.0
 	charm.land/bubbletea/v2 v2.0.6
 	charm.land/lipgloss/v2 v2.0.3
-	cunicu.li/go-iso7816 v0.8.8
-	cunicu.li/go-openpgp-card v0.3.11
 	git.sr.ht/~rockorager/go-jmap v0.5.3
 	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/arran4/golang-ical v0.3.5
 	github.com/charmbracelet/x/ansi v0.11.7
-	github.com/ebfe/scard v0.0.0-20241214075232-7af069cabc25
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-maildir v0.6.0
 	github.com/emersion/go-message v0.18.2
 	github.com/emersion/go-pgpmail v0.2.2
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
+	github.com/floatpane/bubble-overlay v0.0.1
+	github.com/floatpane/go-openpgp-card-hl v0.0.1
 	github.com/floatpane/go-uds-jsonrpc v0.0.1
-	github.com/floatpane/termimage v0.2.0
+	github.com/floatpane/jwz-go v0.0.1
+	github.com/floatpane/termimage v0.2.1
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/knadh/go-pop3 v1.0.2
@@ -36,6 +36,8 @@ require (
 )
 
 require (
+	cunicu.li/go-iso7816 v0.8.8 // indirect
+	cunicu.li/go-openpgp-card v0.3.11 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
@@ -48,6 +50,7 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
+	github.com/ebfe/scard v0.0.0-20241214075232-7af069cabc25 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/landlock-lsm/go-landlock v0.8.1 // indirect
@@ -57,7 +60,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sahilm/fuzzy v0.1.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/image v0.28.0 // indirect
+	golang.org/x/image v0.41.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/oauth2 v0.27.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect

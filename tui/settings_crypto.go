@@ -11,107 +11,144 @@ import (
 const cryptoConfigMaxFocus = 9
 
 func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
-	var cmds []tea.Cmd
-
 	key := msg.Key()
 	isEnter := key.Code == tea.KeyEnter || key.Code == tea.KeyReturn || key.Code == tea.KeyKpEnter
 	isSpace := key.Code == tea.KeySpace
-
-	setFocus := func(next int) tea.Cmd {
-		m.cryptoFocusIndex = next
-		m.smimeCertInput.Blur()
-		m.smimeKeyInput.Blur()
-		m.pgpPublicKeyInput.Blur()
-		m.pgpPrivateKeyInput.Blur()
-		m.pgpPINInput.Blur()
-
-		switch m.cryptoFocusIndex {
-		case 0:
-			return m.smimeCertInput.Focus()
-		case 1:
-			return m.smimeKeyInput.Focus()
-		case 3:
-			return m.pgpPublicKeyInput.Focus()
-		case 4:
-			return m.pgpPrivateKeyInput.Focus()
-		case 6:
-			return m.pgpPINInput.Focus()
-		}
-		return nil
-	}
 
 	switch msg.String() {
 	case "esc":
 		m.isCryptoConfig = false
 		return m, nil
 	case "tab", keyShiftTab, "up", keyDown:
-		if msg.String() == keyShiftTab || msg.String() == "up" {
-			m.cryptoFocusIndex--
-			if m.cryptoFocusIndex < 0 {
-				m.cryptoFocusIndex = cryptoConfigMaxFocus
-			}
-		} else {
-			m.cryptoFocusIndex++
-			if m.cryptoFocusIndex > cryptoConfigMaxFocus {
-				m.cryptoFocusIndex = 0
-			}
-		}
-		if m.cryptoFocusIndex == 6 && m.pgpKeySource != keyYubikey {
-			if msg.String() == keyShiftTab || msg.String() == "up" {
-				m.cryptoFocusIndex = 5
-			} else {
-				m.cryptoFocusIndex = 7
-			}
-		}
-		cmds = append(cmds, setFocus(m.cryptoFocusIndex))
-		return m, tea.Batch(cmds...)
+		return m, m.cryptoNavigate(msg.String())
 	}
 
 	if isEnter {
-		switch m.cryptoFocusIndex {
-		case 8: // Save
-			m.cfg.Accounts[m.editingAccountIdx].SMIMECert = m.smimeCertInput.Value()
-			m.cfg.Accounts[m.editingAccountIdx].SMIMEKey = m.smimeKeyInput.Value()
-			m.cfg.Accounts[m.editingAccountIdx].PGPPublicKey = m.pgpPublicKeyInput.Value()
-			m.cfg.Accounts[m.editingAccountIdx].PGPPrivateKey = m.pgpPrivateKeyInput.Value()
-			m.cfg.Accounts[m.editingAccountIdx].PGPKeySource = m.pgpKeySource
-			m.cfg.Accounts[m.editingAccountIdx].PGPPIN = m.pgpPINInput.Value()
-			_ = config.SaveConfig(m.cfg)
-			m.isCryptoConfig = false
-			return m, nil
-		case 9: // Cancel
-			m.isCryptoConfig = false
-			return m, nil
-		default:
-			// advance to next
-			next := m.cryptoFocusIndex + 1
-			if next == 6 && m.pgpKeySource != keyYubikey {
-				next = 7
-			}
-			cmds = append(cmds, setFocus(next))
-			return m, tea.Batch(cmds...)
-		}
+		return m, m.cryptoHandleEnter()
+	}
+	if isSpace && m.cryptoToggle() {
+		return m, nil
 	}
 
-	if isSpace {
-		switch m.cryptoFocusIndex {
-		case 2:
-			m.cfg.Accounts[m.editingAccountIdx].SMIMESignByDefault = !m.cfg.Accounts[m.editingAccountIdx].SMIMESignByDefault
-			return m, nil
-		case 5:
-			if m.pgpKeySource == "file" {
-				m.pgpKeySource = keyYubikey
-			} else {
-				m.pgpKeySource = "file"
-			}
-			return m, nil
-		case 7:
-			m.cfg.Accounts[m.editingAccountIdx].PGPSignByDefault = !m.cfg.Accounts[m.editingAccountIdx].PGPSignByDefault
-			return m, nil
+	// Forward any remaining key press (typing, backspace, paste, cursor) to the
+	// focused text input.
+	return m, m.cryptoForwardInput(msg)
+}
+
+// cryptoSetFocus moves focus to index next, blurring every input and focusing
+// the one (if any) bound to that row.
+func (m *Settings) cryptoSetFocus(next int) tea.Cmd {
+	m.cryptoFocusIndex = next
+	m.smimeCertInput.Blur()
+	m.smimeKeyInput.Blur()
+	m.pgpPublicKeyInput.Blur()
+	m.pgpPrivateKeyInput.Blur()
+	m.pgpPINInput.Blur()
+
+	switch m.cryptoFocusIndex {
+	case 0:
+		return m.smimeCertInput.Focus()
+	case 1:
+		return m.smimeKeyInput.Focus()
+	case 3:
+		return m.pgpPublicKeyInput.Focus()
+	case 4:
+		return m.pgpPrivateKeyInput.Focus()
+	case 6:
+		return m.pgpPINInput.Focus()
+	}
+	return nil
+}
+
+// cryptoNavigate handles tab/shift-tab/up/down, skipping the YubiKey PIN row
+// (index 6) when the key source is not a YubiKey.
+func (m *Settings) cryptoNavigate(s string) tea.Cmd {
+	back := s == keyShiftTab || s == "up"
+	if back {
+		m.cryptoFocusIndex--
+		if m.cryptoFocusIndex < 0 {
+			m.cryptoFocusIndex = cryptoConfigMaxFocus
+		}
+	} else {
+		m.cryptoFocusIndex++
+		if m.cryptoFocusIndex > cryptoConfigMaxFocus {
+			m.cryptoFocusIndex = 0
 		}
 	}
+	if m.cryptoFocusIndex == 6 && m.pgpKeySource != keyYubikey {
+		if back {
+			m.cryptoFocusIndex = 5
+		} else {
+			m.cryptoFocusIndex = 7
+		}
+	}
+	return m.cryptoSetFocus(m.cryptoFocusIndex)
+}
 
-	return m, tea.Batch(cmds...)
+// cryptoHandleEnter saves (row 8), cancels (row 9), or advances focus.
+func (m *Settings) cryptoHandleEnter() tea.Cmd {
+	switch m.cryptoFocusIndex {
+	case 8: // Save
+		acct := &m.cfg.Accounts[m.editingAccountIdx]
+		acct.SMIMECert = m.smimeCertInput.Value()
+		acct.SMIMEKey = m.smimeKeyInput.Value()
+		acct.PGPPublicKey = m.pgpPublicKeyInput.Value()
+		acct.PGPPrivateKey = m.pgpPrivateKeyInput.Value()
+		acct.PGPKeySource = m.pgpKeySource
+		acct.PGPPIN = m.pgpPINInput.Value()
+		_ = config.SaveConfig(m.cfg)
+		m.isCryptoConfig = false
+		return nil
+	case 9: // Cancel
+		m.isCryptoConfig = false
+		return nil
+	default:
+		next := m.cryptoFocusIndex + 1
+		if next == 6 && m.pgpKeySource != keyYubikey {
+			next = 7
+		}
+		return m.cryptoSetFocus(next)
+	}
+}
+
+// cryptoToggle flips the boolean/choice rows (Sign By Default, Key Source).
+// It reports whether the current row was a toggle.
+func (m *Settings) cryptoToggle() bool {
+	acct := &m.cfg.Accounts[m.editingAccountIdx]
+	switch m.cryptoFocusIndex {
+	case 2:
+		acct.SMIMESignByDefault = !acct.SMIMESignByDefault
+	case 5:
+		if m.pgpKeySource == "file" {
+			m.pgpKeySource = keyYubikey
+		} else {
+			m.pgpKeySource = "file"
+		}
+	case 7:
+		acct.PGPSignByDefault = !acct.PGPSignByDefault
+	default:
+		return false
+	}
+	return true
+}
+
+// cryptoForwardInput routes a key press to the focused text input. The
+// toggle/button rows (2, 5, 7, 8, 9) have no input and are no-ops.
+func (m *Settings) cryptoForwardInput(msg tea.KeyPressMsg) tea.Cmd {
+	var cmd tea.Cmd
+	switch m.cryptoFocusIndex {
+	case 0:
+		m.smimeCertInput, cmd = m.smimeCertInput.Update(msg)
+	case 1:
+		m.smimeKeyInput, cmd = m.smimeKeyInput.Update(msg)
+	case 3:
+		m.pgpPublicKeyInput, cmd = m.pgpPublicKeyInput.Update(msg)
+	case 4:
+		m.pgpPrivateKeyInput, cmd = m.pgpPrivateKeyInput.Update(msg)
+	case 6:
+		m.pgpPINInput, cmd = m.pgpPINInput.Update(msg)
+	}
+	return cmd
 }
 
 func (m *Settings) viewSMIMEConfig() string {
