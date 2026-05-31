@@ -70,10 +70,12 @@ github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6/go.mod h1:iL2twTe
 github.com/emersion/go-textwrapper v0.0.0-20200911093747-65d896831594/go.mod h1:aqO8z8wPrjkscevZJFVE1wXJrLpC5LtJG7fqLOsPb2U=
 github.com/floatpane/bubble-overlay v0.0.1 h1:5xU8cNigDPYegvgGMfOG23fIDXhrqXPvLTaEB7uHGK4=
 github.com/floatpane/bubble-overlay v0.0.1/go.mod h1:Csi1byxb9L8EAb8X13XdWF5aX5YiBD5C9WEWACyGa8A=
-github.com/floatpane/jwz-go v0.0.1 h1:OAl/vaUYn+/8zFR47WaCybBGoQItb1ZkFplNrmeO3ps=
-github.com/floatpane/jwz-go v0.0.1/go.mod h1:1b/JE4K+LBIBGtWbFdM1BXpN6ZbGWIv7IXPRbXD4oRE=
+github.com/floatpane/go-openpgp-card-hl v0.0.1 h1:1DYmzwGDb8eneZxbc/xtwjXeFY8DFL3eYnUooMT0L0w=
+github.com/floatpane/go-openpgp-card-hl v0.0.1/go.mod h1:Mrx+ukCnpEpMAxyB0p8Ch2gu78Q3Ir40BxBybb2jirw=
 github.com/floatpane/go-uds-jsonrpc v0.0.1 h1:/sBlCXVAP9SyLWLj0wlFI07dX/SfXeUM67B4tRwK2QA=
 github.com/floatpane/go-uds-jsonrpc v0.0.1/go.mod h1:G/YeDIocGkPIU+uyhJ/e8ynn9wIEMIkJ74d3VUuC4rM=
+github.com/floatpane/jwz-go v0.0.1 h1:OAl/vaUYn+/8zFR47WaCybBGoQItb1ZkFplNrmeO3ps=
+github.com/floatpane/jwz-go v0.0.1/go.mod h1:1b/JE4K+LBIBGtWbFdM1BXpN6ZbGWIv7IXPRbXD4oRE=
 github.com/floatpane/termimage v0.2.1 h1:jYPBg+SSl5PHFpN96tccBYXG4ZERoJ61ALyRDJMqonU=
 github.com/floatpane/termimage v0.2.1/go.mod h1:j8AaqyNtVAsPgbGblXprh33G0/5/CopWWgkXi3QB09I=
 github.com/godbus/dbus/v5 v5.2.2 h1:TUR3TgtSVDmjiXOgAAyaZbYmIeP3DPkld3jgKGV8mXQ=
