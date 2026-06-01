@@ -69,5 +69,3 @@ require (
 	golang.org/x/sys v0.45.0 // indirect
 	kernel.org/pub/linux/libs/security/libcap/psx v1.2.77 // indirect
 )
-
-replace github.com/floatpane/go-icalendar => ../go-icalendar
