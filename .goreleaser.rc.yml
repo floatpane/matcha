@@ -1,0 +1,77 @@
+# GoReleaser configuration for release-candidate (pre-release) builds.
+# Like .goreleaser.yml but skips Homebrew, WinGet and Nix tap publishing —
+# those taps should only ever point at a stable release. RC artifacts are
+# attached to a GitHub pre-release; Snapcraft is pushed to the `candidate`
+# channel by the workflow. Driven by a real `vX.Y.Z-rcN` tag (not --snapshot).
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: matcha
+    main: .
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -buildid= -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+    env:
+      - CGO_ENABLED=1
+      - >-
+        {{- if eq .Os "darwin" }}SDKROOT={{ .Env.SDK_PATH }}{{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}MACOSX_DEPLOYMENT_TARGET=11.0{{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}CGO_CFLAGS=-isysroot {{ .Env.SDK_PATH }} -mmacosx-version-min=11.0{{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}CGO_LDFLAGS=-isysroot {{ .Env.SDK_PATH }}
+        {{- else if eq .Os "linux" }}CGO_LDFLAGS=-L{{ .Env.PCSC_DIR }}/lib/{{ .Arch }}
+        {{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}
+          {{- if eq .Arch "amd64"}}CC=clang -arch x86_64 -isysroot {{ .Env.SDK_PATH }}{{- end }}
+          {{- if eq .Arch "arm64"}}CC=clang -arch arm64 -isysroot {{ .Env.SDK_PATH }}{{- end }}
+        {{- else if eq .Os "linux" }}
+          {{- if eq .Arch "amd64" }}CC=zig cc -target x86_64-linux-musl -lc{{- end }}
+          {{- if eq .Arch "arm64"}}CC=zig cc -target aarch64-linux-musl -lc{{- end }}
+        {{- else if eq .Os "windows" }}
+          {{- if eq .Arch "amd64" }}CC=zig cc -target x86_64-windows-gnu -lc{{- end }}
+          {{- if eq .Arch "arm64"}}CC=zig cc -target aarch64-windows-gnu -lc{{- end }}
+        {{- end }}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: ["zip"]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  use: github-native
+
+# Force pre-release regardless of tag parsing, and let GoReleaser create the
+# GitHub release with the rc artifacts attached.
+release:
+  draft: false
+  prerelease: true
+  name_template: "{{ .Tag }}"
+  footer: |
+    ---
+    > [!WARNING]
+    > This is a **release candidate** for v1 — not a final release. Expect bugs and report them.
+
+    - **Snapcraft:** `snap install matcha --candidate`

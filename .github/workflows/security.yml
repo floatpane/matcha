@@ -2,9 +2,10 @@ name: Security
 
 on:
   push:
-    branches: [master]
+    branches: [master, release/v1]
   pull_request:
-    branches: [master]
+    branches: [master, release/v1]
+  merge_group:
   schedule:
     - cron: "0 6 * * 1"
 
