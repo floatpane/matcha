@@ -25,6 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.compute.outputs.tag }}
+      prev_stable: ${{ steps.compute.outputs.prev_stable }}
     steps:
       - name: Guard branch
         if: github.ref != 'refs/heads/release/v1'
@@ -52,6 +53,15 @@ jobs:
           TAG="v${BASE}-rc${NEXT}"
           echo "Next release candidate: $TAG"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          # Last STABLE release tag (no -rc / nightly / preview). Used as the
+          # changelog base so every rc's notes are cumulative since the last
+          # stable — covering all prior rc changes too, not just the last rc.
+          PREV_STABLE=$(git tag -l 'v*' \
+            | grep -vE '\-rc|nightly|preview' \
+            | sort -V | tail -1 || true)
+          echo "Changelog base (last stable): ${PREV_STABLE:-<none>}"
+          echo "prev_stable=$PREV_STABLE" >> "$GITHUB_OUTPUT"
 
       - name: Create and push tag
         if: ${{ !inputs.dry_run }}
@@ -163,6 +173,9 @@ jobs:
         env:
           SDK_PATH: ${{ steps.macos_sdk.outputs.path }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Force the changelog base to the last stable tag so rc notes are
+          # cumulative across every rc since that release.
+          GORELEASER_PREVIOUS_TAG: ${{ needs.tag.outputs.prev_stable }}
 
   snapcraft:
     needs: [tag, goreleaser]
