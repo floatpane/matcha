@@ -70,6 +70,8 @@ github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6/go.mod h1:iL2twTe
 github.com/emersion/go-textwrapper v0.0.0-20200911093747-65d896831594/go.mod h1:aqO8z8wPrjkscevZJFVE1wXJrLpC5LtJG7fqLOsPb2U=
 github.com/floatpane/bubble-overlay v0.0.1 h1:5xU8cNigDPYegvgGMfOG23fIDXhrqXPvLTaEB7uHGK4=
 github.com/floatpane/bubble-overlay v0.0.1/go.mod h1:Csi1byxb9L8EAb8X13XdWF5aX5YiBD5C9WEWACyGa8A=
+github.com/floatpane/go-icalendar v0.0.1 h1:lF9NhEI4TobX8valDakAFfCnBhM2GDITWMVymhXzD8c=
+github.com/floatpane/go-icalendar v0.0.1/go.mod h1:LSy9G+LwUZtfNIAjLlEVRXkuc2A+hq6+pVCIFOiEAyE=
 github.com/floatpane/go-openpgp-card-hl v0.0.1 h1:1DYmzwGDb8eneZxbc/xtwjXeFY8DFL3eYnUooMT0L0w=
 github.com/floatpane/go-openpgp-card-hl v0.0.1/go.mod h1:Mrx+ukCnpEpMAxyB0p8Ch2gu78Q3Ir40BxBybb2jirw=
 github.com/floatpane/go-secretbox v0.1.0 h1:xNryazmCP0oR/yVxIkHRc5bcV56YrbisY+bMl8BBfwU=
