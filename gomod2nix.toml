@@ -117,6 +117,10 @@ schema = 3
     version = 'v0.0.1'
     hash = 'sha256-YQ+g7GhiufcasMU8f0zt6ar46ykXZMHFBPFROt2n17I='
 
+  [mod.'github.com/floatpane/go-icalendar']
+    version = 'v0.0.1'
+    hash = 'sha256-pWL1yAiNKYsecSyas7jUtyW+FC/Exnb74e/XVsRlu5U='
+
   [mod.'github.com/floatpane/go-openpgp-card-hl']
     version = 'v0.0.1'
     hash = 'sha256-qssT4qCMoe9dgFISyCLhthlPe36dBJNnGU1bHjbCpK4='
