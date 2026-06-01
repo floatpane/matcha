@@ -121,6 +121,10 @@ schema = 3
     version = 'v0.0.1'
     hash = 'sha256-pWL1yAiNKYsecSyas7jUtyW+FC/Exnb74e/XVsRlu5U='
 
+  [mod.'github.com/floatpane/go-keybind']
+    version = 'v0.0.1'
+    hash = 'sha256-hXPLDYyK0YQ2uclQKt4MM607gHblh1t9BQkPkZy1B1Y='
+
   [mod.'github.com/floatpane/go-openpgp-card-hl']
     version = 'v0.0.1'
     hash = 'sha256-qssT4qCMoe9dgFISyCLhthlPe36dBJNnGU1bHjbCpK4='
