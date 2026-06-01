@@ -28,12 +28,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	calendar "github.com/floatpane/go-icalendar"
 	"github.com/floatpane/matcha/backend"
 	_ "github.com/floatpane/matcha/backend/imap"
 	_ "github.com/floatpane/matcha/backend/jmap"
 	_ "github.com/floatpane/matcha/backend/maildir"
 	_ "github.com/floatpane/matcha/backend/pop3"
-	"github.com/floatpane/matcha/calendar"
 	matchaCli "github.com/floatpane/matcha/cli"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/clib/macos"
