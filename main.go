@@ -242,26 +242,45 @@ func waitForLogEntry(ch <-chan logging.Entry) tea.Cmd {
 	}
 }
 
-func (m *mainModel) syncUnreadBadge() {
-	if runtime.GOOS != goosDarwin {
-		return
-	}
+func unreadBadgeCount(emailsByAcct, folderEmails map[string][]fetcher.Email) int {
 	count := 0
+	seen := make(map[string]struct{})
+
+	countUnread := func(e fetcher.Email) {
+		if e.IsRead {
+			return
+		}
+		key := fmt.Sprintf("%s:%d", e.AccountID, e.UID)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		count++
+	}
+
 	// Count unread across all accounts (cached/loaded emails)
-	for _, emails := range m.emailsByAcct {
+	for _, emails := range emailsByAcct {
 		for _, e := range emails {
-			if !e.IsRead {
-				count++
-			}
+			countUnread(e)
 		}
 	}
 	// Also check folderEmails for unread status
-	for _, emails := range m.folderEmails {
+	for _, emails := range folderEmails {
 		for _, e := range emails {
-			if !e.IsRead {
-				count++
-			}
+			countUnread(e)
 		}
+	}
+	return count
+}
+
+func (m *mainModel) syncUnreadBadge() {
+	if runtime.GOOS != goosDarwin && loglevel.Get() < loglevel.LevelDebug {
+		return
+	}
+	count := unreadBadgeCount(m.emailsByAcct, m.folderEmails)
+	loglevel.Debugf("unread badge count: %d", count)
+	if runtime.GOOS != goosDarwin {
+		return
 	}
 	_ = macos.SetBadge(count)
 }
