@@ -17,6 +17,7 @@ require (
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 	github.com/floatpane/bubble-overlay v0.0.1
 	github.com/floatpane/go-icalendar v0.0.1
+	github.com/floatpane/go-keybind v0.0.1
 	github.com/floatpane/go-openpgp-card-hl v0.0.1
 	github.com/floatpane/go-secretbox v0.1.0
 	github.com/floatpane/go-uds-jsonrpc v0.0.1

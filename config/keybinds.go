@@ -3,12 +3,11 @@ package config
 import (
 	_ "embed"
 	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
+
+	keybind "github.com/floatpane/go-keybind"
 )
 
-const keyDelete = "delete"
+const keyDelete = "delete" // used in ValidateKeybinds action map keys
 
 //go:embed default_keybinds.json
 var defaultKeybindsJSON []byte
@@ -94,27 +93,9 @@ func defaultKeybinds() KeybindsConfig {
 // LoadKeybindsFromDir reads keybinds.json from cfgDir, writing defaults if
 // the file does not exist, then updates the package-level Keybinds var.
 func LoadKeybindsFromDir(cfgDir string) error {
-	path := filepath.Join(cfgDir, "keybinds.json")
-
-	data, err := os.ReadFile(path)
+	kb, err := keybind.Load(cfgDir, "keybinds.json", defaultKeybinds())
 	if err != nil {
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("keybinds: read %s: %w", path, err)
-		}
-		// File missing — write defaults.
-		if err := os.MkdirAll(cfgDir, 0700); err != nil {
-			return fmt.Errorf("keybinds: mkdir %s: %w", cfgDir, err)
-		}
-		if err := os.WriteFile(path, defaultKeybindsJSON, 0600); err != nil {
-			return fmt.Errorf("keybinds: write defaults to %s: %w", path, err)
-		}
-		Keybinds = defaultKeybinds()
-		return nil
-	}
-
-	kb := defaultKeybinds()
-	if err := json.Unmarshal(data, &kb); err != nil {
-		return fmt.Errorf("keybinds: parse %s: %w", path, err)
+		return err
 	}
 	Keybinds = kb
 	return nil
@@ -124,73 +105,55 @@ func LoadKeybindsFromDir(cfgDir string) error {
 // actions within the same area are mapped to the same key. Cross-area
 // duplicates are intentional (e.g. "d" = delete in both inbox and email view).
 func ValidateKeybinds(kb KeybindsConfig) []string {
-	var conflicts []string
-
-	check := func(area string, bindings map[string]string) {
-		seen := make(map[string]string) // key → action name
-		for action, key := range bindings {
-			if key == "" {
-				continue
-			}
-			if prev, ok := seen[key]; ok {
-				conflicts = append(conflicts,
-					fmt.Sprintf("conflict in %s: key %q used for both %q and %q", area, key, prev, action))
-			} else {
-				seen[key] = action
-			}
-		}
-	}
-
-	check("global", map[string]string{
-		"quit":     kb.Global.Quit,
-		"cancel":   kb.Global.Cancel,
-		"nav_up":   kb.Global.NavUp,
-		"nav_down": kb.Global.NavDown,
+	return keybind.Validate(map[string]map[string]string{
+		"global": {
+			"quit":     kb.Global.Quit,
+			"cancel":   kb.Global.Cancel,
+			"nav_up":   kb.Global.NavUp,
+			"nav_down": kb.Global.NavDown,
+		},
+		"inbox": {
+			"visual_mode":     kb.Inbox.VisualMode,
+			"toggle_threaded": kb.Inbox.ToggleThreaded,
+			keyDelete:         kb.Inbox.Delete,
+			"archive":         kb.Inbox.Archive,
+			"refresh":         kb.Inbox.Refresh,
+			"search":          kb.Inbox.Search,
+			"filter":          kb.Inbox.Filter,
+			"open":            kb.Inbox.Open,
+			"next_tab":        kb.Inbox.NextTab,
+			"prev_tab":        kb.Inbox.PrevTab,
+		},
+		"email": {
+			"reply":             kb.Email.Reply,
+			"forward":           kb.Email.Forward,
+			keyDelete:           kb.Email.Delete,
+			"archive":           kb.Email.Archive,
+			"toggle_images":     kb.Email.ToggleImages,
+			"rsvp_accept":       kb.Email.RsvpAccept,
+			"rsvp_decline":      kb.Email.RsvpDecline,
+			"rsvp_tentative":    kb.Email.RsvpTentative,
+			"focus_attachments": kb.Email.FocusAttachments,
+		},
+		"composer": {
+			"external_editor": kb.Composer.ExternalEditor,
+			"next_field":      kb.Composer.NextField,
+			"prev_field":      kb.Composer.PrevField,
+			keyDelete:         kb.Composer.Delete,
+			// spell_* bindings intentionally excluded — spell_accept reusing
+			// "tab" with next_field and spell_dismiss reusing "esc" with cancel
+			// are deliberate: the spellcheck popup intercepts before those handlers.
+		},
+		"folder": {
+			"next_folder":   kb.Folder.NextFolder,
+			"prev_folder":   kb.Folder.PrevFolder,
+			"move":          kb.Folder.Move,
+			"focus_preview": kb.Folder.FocusPreview,
+			"focus_inbox":   kb.Folder.FocusInbox,
+		},
+		"drafts": {
+			"open":    kb.Drafts.Open,
+			keyDelete: kb.Drafts.Delete,
+		},
 	})
-	check("inbox", map[string]string{
-		"visual_mode":     kb.Inbox.VisualMode,
-		"toggle_threaded": kb.Inbox.ToggleThreaded,
-		keyDelete:         kb.Inbox.Delete,
-		"archive":         kb.Inbox.Archive,
-		"refresh":         kb.Inbox.Refresh,
-		"search":          kb.Inbox.Search,
-		"filter":          kb.Inbox.Filter,
-		"open":            kb.Inbox.Open,
-		"next_tab":        kb.Inbox.NextTab,
-		"prev_tab":        kb.Inbox.PrevTab,
-	})
-	check("email", map[string]string{
-		"reply":             kb.Email.Reply,
-		"forward":           kb.Email.Forward,
-		keyDelete:           kb.Email.Delete,
-		"archive":           kb.Email.Archive,
-		"toggle_images":     kb.Email.ToggleImages,
-		"rsvp_accept":       kb.Email.RsvpAccept,
-		"rsvp_decline":      kb.Email.RsvpDecline,
-		"rsvp_tentative":    kb.Email.RsvpTentative,
-		"focus_attachments": kb.Email.FocusAttachments,
-	})
-	check("composer", map[string]string{
-		"external_editor": kb.Composer.ExternalEditor,
-		"next_field":      kb.Composer.NextField,
-		"prev_field":      kb.Composer.PrevField,
-		keyDelete:         kb.Composer.Delete,
-		// spell_* bindings intentionally excluded from this conflict
-		// check — spell_accept reusing "tab" with next_field, and
-		// spell_dismiss reusing "esc" with cancel, are deliberate: the
-		// spellcheck popup intercepts before those handlers fire.
-	})
-	check("folder", map[string]string{
-		"next_folder":   kb.Folder.NextFolder,
-		"prev_folder":   kb.Folder.PrevFolder,
-		"move":          kb.Folder.Move,
-		"focus_preview": kb.Folder.FocusPreview,
-		"focus_inbox":   kb.Folder.FocusInbox,
-	})
-	check("drafts", map[string]string{
-		"open":    kb.Drafts.Open,
-		keyDelete: kb.Drafts.Delete,
-	})
-
-	return conflicts
 }
