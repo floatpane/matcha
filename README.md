@@ -19,6 +19,9 @@
 
 </div> 
 
+> [!NOTE]
+> Matcha is in active development of v1. You can see the [`release/v1` branch](https://github.com/floatpane/matcha/tree/release/v1). v0 will still be maintained with bug fixes and minor features, but all major new features will be added to v1. You will be able to use v1 release candidates soon!
+
 > [!TIP]
 > There are [nightly releases](https://github.com/floatpane/matcha/releases/tag/nightlyv0)!
 
