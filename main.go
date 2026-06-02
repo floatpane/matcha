@@ -1810,10 +1810,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				}
 			}
 			m.folderEmails[folderName] = filtered
-			go saveFolderEmailsToCache(folderName, filtered)
-		}
+		go saveFolderEmailsToCache(folderName, filtered)
+	}
 
-		return m, m.deleteFolderEmailCmd(msg.UID, msg.AccountID, folderName, msg.Mailbox)
+	m.syncUnreadBadge()
+	return m, m.deleteFolderEmailCmd(msg.UID, msg.AccountID, folderName, msg.Mailbox)
 
 	case tui.ArchiveEmailMsg:
 		tui.ClearKittyGraphics()
@@ -1843,10 +1844,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				}
 			}
 			m.folderEmails[folderName] = filtered
-			go saveFolderEmailsToCache(folderName, filtered)
-		}
+		go saveFolderEmailsToCache(folderName, filtered)
+	}
 
-		return m, m.archiveFolderEmailCmd(msg.UID, msg.AccountID, folderName, msg.Mailbox)
+	m.syncUnreadBadge()
+	return m, m.archiveFolderEmailCmd(msg.UID, msg.AccountID, folderName, msg.Mailbox)
 
 	case tui.EmailMarkedReadMsg:
 		if msg.Err != nil {
@@ -1905,10 +1907,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				}
 			}
 			m.folderEmails[folderName] = filtered
-			go saveFolderEmailsToCache(folderName, filtered)
-		}
+		go saveFolderEmailsToCache(folderName, filtered)
+	}
 
-		return m, m.batchDeleteEmailsCmd(msg.UIDs, msg.AccountID, folderName, msg.Mailbox, len(msg.UIDs))
+	m.syncUnreadBadge()
+	return m, m.batchDeleteEmailsCmd(msg.UIDs, msg.AccountID, folderName, msg.Mailbox, len(msg.UIDs))
 
 	case tui.BatchArchiveEmailsMsg:
 		tui.ClearKittyGraphics()
@@ -1939,10 +1942,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				}
 			}
 			m.folderEmails[folderName] = filtered
-			go saveFolderEmailsToCache(folderName, filtered)
-		}
+		go saveFolderEmailsToCache(folderName, filtered)
+	}
 
-		return m, m.batchArchiveEmailsCmd(msg.UIDs, msg.AccountID, folderName, msg.Mailbox, len(msg.UIDs))
+	m.syncUnreadBadge()
+	return m, m.batchArchiveEmailsCmd(msg.UIDs, msg.AccountID, folderName, msg.Mailbox, len(msg.UIDs))
 
 	case tui.BatchMoveEmailsMsg:
 		if m.config == nil {
