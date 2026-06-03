@@ -18,7 +18,8 @@ Plain text, not encrypted. Edit with any text editor. Restart matcha to apply ch
     "quit": "ctrl+c",
     "cancel": "esc",
     "nav_up": "k",
-    "nav_down": "j"
+    "nav_down": "j",
+    "command_palette": "ctrl+k"
   },
   "inbox": {
     "visual_mode": "v",
@@ -61,6 +62,23 @@ Plain text, not encrypted. Edit with any text editor. Restart matcha to apply ch
   }
 }
 ```
+
+## Command palette
+
+Press `command_palette` (`ctrl+k` by default) from the start menu, inbox, folder
+list, or an open email to bring up a searchable command palette — the same idea
+as Zed or VS Code. Start typing to fuzzy-filter, `↑`/`↓` to move, `enter` to run,
+`esc` to dismiss.
+
+The palette lists the global navigation commands (Compose, Inbox, Drafts,
+Marketplace, Settings, Main menu, Quit) plus the actions for whatever view you
+opened it from (reply/forward/delete/archive in an email; refresh/search/filter/
+toggle threaded/delete/archive in the inbox). Each palette action simply replays
+its keybinding, so it always matches whatever you've configured — and you can
+rely on the palette for less-common actions instead of memorizing every key.
+
+The palette is suppressed while typing in the composer, login, and other
+text-entry views so the trigger key never interrupts editing.
 
 ## Areas
 

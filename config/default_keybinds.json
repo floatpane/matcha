@@ -3,7 +3,8 @@
     "quit": "ctrl+c",
     "cancel": "esc",
     "nav_up": "k",
-    "nav_down": "j"
+    "nav_down": "j",
+    "command_palette": "ctrl+k"
   },
   "inbox": {
     "visual_mode": "v",

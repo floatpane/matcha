@@ -22,6 +22,7 @@ The TUI layer is the interactive frontend of Matcha. Each view implements the `t
 | `choice.go` | Main menu / start screen. Presents account selection, navigation to inbox, compose, drafts, marketplace, sent, folders, trash/archive, and settings. |
 | `marketplace.go` | Plugin marketplace browser. Fetches the plugin registry from GitHub, displays a scrollable list with install status badges, and installs plugins on selection. Can run standalone (`matcha marketplace`) or from the main menu. |
 | `filepicker.go` | File browser for selecting email attachments. Navigates the filesystem with directory listing and file selection. |
+| `command_palette.go` | Zed/VS Code-style command palette modal. Fuzzy-filters a context-aware list of commands (global navigation + the active view's actions) and dispatches the chosen command. Owned and triggered by the top-level model in `main.go`. |
 
 ### Supporting Files
 

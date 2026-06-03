@@ -123,6 +123,10 @@ type mainModel struct {
 	showLogPanel bool
 	logCh        <-chan logging.Entry
 	logPanel     *tui.LogPanel
+	// Command palette overlay (Zed/VS Code style). When paletteOpen is true the
+	// palette captures all key input and is rendered on top of the active view.
+	palette     *tui.CommandPalette
+	paletteOpen bool
 }
 
 type logEntryMsg struct {
@@ -300,8 +304,44 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.palette != nil {
+			m.palette.SetSize(m.width, m.contentHeight())
+		}
 		m.current, cmd = m.current.Update(m.currentWindowSize())
 		return m, cmd
+	}
+
+	// Command palette: while open it captures all key input. Non-key messages
+	// (background fetches, etc.) fall through so the view underneath keeps
+	// updating.
+	if m.paletteOpen {
+		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+			switch keyMsg.String() {
+			case "ctrl+c":
+				// Quit must always work, even with the palette open.
+				m.idleWatcher.StopAll()
+				if m.service != nil {
+					m.service.Close() //nolint:errcheck,gosec
+				}
+				return m, tea.Quit
+			case config.Keybinds.Global.Cancel:
+				m.closePalette()
+				return m, nil
+			case "enter":
+				actionCmd := m.palette.SelectedCmd()
+				m.closePalette()
+				return m, actionCmd
+			default:
+				return m, m.palette.Update(keyMsg)
+			}
+		}
+	} else if keyMsg, ok := msg.(tea.KeyPressMsg); ok &&
+		config.Keybinds.Global.CommandPalette != "" &&
+		keyMsg.String() == config.Keybinds.Global.CommandPalette &&
+		m.paletteAllowed() {
+		m.palette = tui.NewCommandPalette(m.buildPaletteCommands(), m.width, m.contentHeight())
+		m.paletteOpen = true
+		return m, m.palette.Init()
 	}
 
 	if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == config.Keybinds.Global.Cancel {
@@ -2054,8 +2094,147 @@ func (m *mainModel) View() tea.View {
 	if m.showLogPanel {
 		v.Content = m.renderWithLogPanel(v.Content)
 	}
+	if m.paletteOpen && m.palette != nil {
+		v.Content = m.palette.Render(v.Content, m.width, m.contentHeight())
+	}
 	v.AltScreen = true
 	return v
+}
+
+// closePalette dismisses the command palette overlay.
+func (m *mainModel) closePalette() {
+	m.paletteOpen = false
+	m.palette = nil
+}
+
+// paletteAllowed reports whether the command palette may be opened for the
+// active view. It is suppressed for text-entry views (where the trigger key
+// would interfere with typing) and while an inbox search/filter is active.
+func (m *mainModel) paletteAllowed() bool {
+	switch v := m.current.(type) {
+	case *tui.Composer, *tui.Login, *tui.SignatureEditor, *tui.MailingListEditor,
+		*tui.PasswordPrompt, *tui.FilePicker, *tui.Status:
+		return false
+	case *tui.Inbox:
+		return !v.IsSearchActive() && !v.IsFilterActive()
+	case *tui.FolderInbox:
+		if inbox := v.GetInbox(); inbox != nil {
+			return !inbox.IsSearchActive() && !inbox.IsFilterActive()
+		}
+	}
+	return true
+}
+
+// buildPaletteCommands assembles the command list for the active view. Context
+// actions (which map to the view's existing keybinds) come first, followed by
+// the always-available global navigation commands.
+func (m *mainModel) buildPaletteCommands() []tui.PaletteCommand {
+	kb := config.Keybinds
+	var cmds []tui.PaletteCommand
+
+	switch m.current.(type) {
+	case *tui.EmailView:
+		cmds = append(cmds,
+			tui.PaletteCommand{Title: "Reply", Hint: kb.Email.Reply, Keywords: "respond answer", Action: keyAction(kb.Email.Reply)},
+			tui.PaletteCommand{Title: "Forward", Hint: kb.Email.Forward, Keywords: "fwd send on", Action: keyAction(kb.Email.Forward)},
+			tui.PaletteCommand{Title: "Archive email", Hint: kb.Email.Archive, Keywords: "file store", Action: keyAction(kb.Email.Archive)},
+			tui.PaletteCommand{Title: "Delete email", Hint: kb.Email.Delete, Keywords: "trash remove", Action: keyAction(kb.Email.Delete)},
+			tui.PaletteCommand{Title: "Toggle images", Hint: kb.Email.ToggleImages, Keywords: "pictures show hide", Action: keyAction(kb.Email.ToggleImages)},
+		)
+	case *tui.Inbox, *tui.FolderInbox:
+		cmds = append(cmds,
+			tui.PaletteCommand{Title: "Refresh", Hint: kb.Inbox.Refresh, Keywords: "reload sync fetch", Action: keyAction(kb.Inbox.Refresh)},
+			tui.PaletteCommand{Title: "Search mail", Hint: kb.Inbox.Search, Keywords: "find query", Action: keyAction(kb.Inbox.Search)},
+			tui.PaletteCommand{Title: "Filter", Hint: kb.Inbox.Filter, Keywords: "narrow", Action: keyAction(kb.Inbox.Filter)},
+			tui.PaletteCommand{Title: "Toggle threaded view", Hint: kb.Inbox.ToggleThreaded, Keywords: "conversation thread", Action: keyAction(kb.Inbox.ToggleThreaded)},
+			tui.PaletteCommand{Title: "Select / visual mode", Hint: kb.Inbox.VisualMode, Keywords: "multi batch", Action: keyAction(kb.Inbox.VisualMode)},
+			tui.PaletteCommand{Title: "Archive selected", Hint: kb.Inbox.Archive, Keywords: "file store", Action: keyAction(kb.Inbox.Archive)},
+			tui.PaletteCommand{Title: "Delete selected", Hint: kb.Inbox.Delete, Keywords: "trash remove", Action: keyAction(kb.Inbox.Delete)},
+		)
+	}
+
+	cmds = append(cmds,
+		tui.PaletteCommand{Title: "Compose new email", Keywords: "write new mail send", Action: func() tea.Msg { return tui.GoToSendMsg{} }},
+		tui.PaletteCommand{Title: "Go to Inbox", Keywords: "mail folders", Action: func() tea.Msg { return tui.GoToInboxMsg{} }},
+		tui.PaletteCommand{Title: "Drafts", Keywords: "saved unsent", Action: func() tea.Msg { return tui.GoToDraftsMsg{} }},
+		tui.PaletteCommand{Title: "Plugin marketplace", Keywords: "plugins install extensions", Action: func() tea.Msg { return tui.GoToMarketplaceMsg{} }},
+		tui.PaletteCommand{Title: "Settings", Keywords: "preferences config accounts theme", Action: func() tea.Msg { return tui.GoToSettingsMsg{} }},
+		tui.PaletteCommand{Title: "Main menu", Keywords: "home start choice", Action: func() tea.Msg { return tui.GoToChoiceMenuMsg{} }},
+		tui.PaletteCommand{Title: "Quit Matcha", Keywords: "exit close", Action: func() tea.Msg { return tea.Quit() }},
+	)
+	return cmds
+}
+
+// keyAction returns a palette action that replays a keybinding to the active
+// view as a synthetic key press, reusing that view's existing handler. Returns
+// nil for an empty binding (a no-op when selected).
+func keyAction(binding string) func() tea.Msg {
+	if binding == "" {
+		return nil
+	}
+	k := keyMsgFromBinding(binding)
+	return func() tea.Msg { return k }
+}
+
+var namedKeyCodes = map[string]rune{
+	"tab":       tea.KeyTab,
+	"enter":     tea.KeyEnter,
+	"return":    tea.KeyEnter,
+	"esc":       tea.KeyEscape,
+	"escape":    tea.KeyEscape,
+	"space":     tea.KeySpace,
+	"backspace": tea.KeyBackspace,
+	"delete":    tea.KeyDelete,
+	"up":        tea.KeyUp,
+	"down":      tea.KeyDown,
+	"left":      tea.KeyLeft,
+	"right":     tea.KeyRight,
+	"home":      tea.KeyHome,
+	"end":       tea.KeyEnd,
+	"pgup":      tea.KeyPgUp,
+	"pgdown":    tea.KeyPgDown,
+}
+
+// keyMsgFromBinding turns a keybinding string (e.g. "r", "T", "ctrl+e",
+// "shift+tab") into a synthetic key press whose String() reproduces the binding
+// exactly, so it matches the view's keybinding comparisons.
+func keyMsgFromBinding(s string) tea.KeyPressMsg {
+	parts := strings.Split(s, "+")
+	base := parts[len(parts)-1]
+
+	var mod tea.KeyMod
+	for _, p := range parts[:len(parts)-1] {
+		switch p {
+		case "ctrl":
+			mod |= tea.ModCtrl
+		case "alt", "opt", "option":
+			mod |= tea.ModAlt
+		case "shift":
+			mod |= tea.ModShift
+		case "meta", "cmd", "command":
+			mod |= tea.ModMeta
+		case "super", "win":
+			mod |= tea.ModSuper
+		case "hyper":
+			mod |= tea.ModHyper
+		}
+	}
+
+	if code, ok := namedKeyCodes[base]; ok {
+		return tea.KeyPressMsg{Code: code, Mod: mod}
+	}
+
+	r := []rune(base)
+	if len(r) == 0 {
+		return tea.KeyPressMsg{Mod: mod}
+	}
+	km := tea.KeyPressMsg{Code: r[0], Mod: mod}
+	// With no modifiers, set Text so String() reproduces the literal binding
+	// (handles uppercase letters like "T" and symbols like "/").
+	if mod == 0 {
+		km.Text = base
+	}
+	return km
 }
 
 func (m *mainModel) currentWindowSize() tea.WindowSizeMsg {
