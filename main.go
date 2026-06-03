@@ -2160,7 +2160,7 @@ func (m *mainModel) buildPaletteCommands() []tui.PaletteCommand {
 		tui.PaletteCommand{Title: "Plugin marketplace", Keywords: "plugins install extensions", Action: func() tea.Msg { return tui.GoToMarketplaceMsg{} }},
 		tui.PaletteCommand{Title: "Settings", Keywords: "preferences config accounts theme", Action: func() tea.Msg { return tui.GoToSettingsMsg{} }},
 		tui.PaletteCommand{Title: "Main menu", Keywords: "home start choice", Action: func() tea.Msg { return tui.GoToChoiceMenuMsg{} }},
-		tui.PaletteCommand{Title: "Quit Matcha", Keywords: "exit close", Action: func() tea.Msg { return tea.Quit() }},
+		tui.PaletteCommand{Title: "Quit Matcha", Keywords: "exit close", Action: tea.Quit},
 	)
 	return cmds
 }
