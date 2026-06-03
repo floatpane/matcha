@@ -88,6 +88,92 @@ matcha send --from work@company.com --to someone@example.com --subject "Hi" --bo
 | `0` | Email sent successfully |
 | `1` | Error (missing flags, bad config, send failure) |
 
+## matcha apply
+
+Apply a patch you received by email — the output of `git format-patch` /
+`git send-email` — to a local working tree. This is matcha's "git-mail"
+workflow: review a patch in your inbox, then apply it without leaving the
+terminal.
+
+```bash
+matcha apply [patch-file] [flags]
+```
+
+The patch is read from `patch-file`, or from **stdin** when no file is given
+(or when the file is `-`). Matcha **never runs git** — it parses the email and
+writes the file changes directly, confined to the target directory.
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--repo` | Working tree to apply into (default: current directory) |
+| `--check` | Validate only — report what would change, write nothing (dry run) |
+| `--reverse` | Unapply the patch instead of applying it |
+| `--series` | Treat the input as an mbox and apply the whole patch series in order |
+| `-h` | Show help |
+
+### Examples
+
+**Apply a saved patch to a project:**
+
+```bash
+matcha apply fix.patch --repo ~/src/myproject
+```
+
+**Pipe a patch straight from git:**
+
+```bash
+git format-patch -1 --stdout | matcha apply --repo .
+```
+
+**Dry-run before committing to it:**
+
+```bash
+matcha apply --check fix.patch --repo ~/src/myproject
+```
+
+**Apply a whole series from an mbox:**
+
+```bash
+matcha apply series.mbox --series --repo ~/src/myproject
+```
+
+**Undo a patch you applied:**
+
+```bash
+matcha apply --reverse fix.patch --repo ~/src/myproject
+```
+
+### How it behaves
+
+- **Transactional (per patch).** Every hunk is matched in memory before
+  anything is written. If a hunk does not apply, the file is left untouched and
+  the command exits non-zero — you never get a half-applied file.
+- **Offset-tolerant, context-exact.** A patch still applies when surrounding
+  edits have shifted the target lines, but the context itself must match —
+  matcha will not silently patch the wrong place.
+- **Path-confined.** Patches whose paths try to escape `--repo` (via `../` or
+  an absolute path) are rejected before any file is touched.
+- **Series caveat.** `--series` is transactional per patch, not across the
+  whole series: if patch 3 of 5 conflicts, patches 1–2 are already written.
+  Use `--check --series` first to validate the whole set.
+
+Matcha does **not** create a git commit, move `HEAD`, or touch the index — it
+only edits files. Commit the result yourself once you are happy with it.
+
+> Under the hood, `matcha apply` uses the standalone
+> [`go-mailpatch`](https://github.com/floatpane/go-mailpatch) (parsing) and
+> [`go-patchapply`](https://github.com/floatpane/go-patchapply) (applying)
+> libraries, extracted from matcha.
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Patch applied (or, with `--check`, would apply) cleanly |
+| `1` | Error (parse failure, hunk conflict, unsafe path, missing/existing file) |
+
 ## matcha marketplace
 
 Open the interactive plugin marketplace in the terminal. Fetches the plugin registry from GitHub and displays a browsable list of available plugins.

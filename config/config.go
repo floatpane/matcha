@@ -38,6 +38,18 @@ const (
 	DateFormatEU  = "DD/MM/YYYY HH:MM"
 )
 
+var cacheFiles = []string{
+	"email_cache.json",
+	"contacts.json",
+	"drafts.json",
+	"folder_cache.json",
+}
+
+var cacheDirectories = []string{
+	"folder_emails",
+	"email_bodies",
+}
+
 type SessionCache struct {
 	once  sync.Once
 	cache tls.ClientSessionCache
@@ -342,6 +354,21 @@ func cacheDir() (string, error) {
 	return filepath.Join(home, ".cache", "matcha"), nil
 }
 
+func migrate(src, dst string) error {
+	if _, err := os.Stat(src); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if _, err := os.Stat(dst); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return os.Rename(src, dst)
+}
+
 // MigrateCacheFiles moves cache files from ~/.config/matcha/ to ~/.cache/matcha/ if needed.
 // This is a one-time migration for existing installations.
 func MigrateCacheFiles() error {
@@ -357,29 +384,15 @@ func MigrateCacheFiles() error {
 		return err
 	}
 
-	// Files to migrate
-	files := []string{"email_cache.json", "contacts.json", "drafts.json", "folder_cache.json"}
-	for _, f := range files {
-		oldPath := filepath.Join(src, f)
-		newPath := filepath.Join(dst, f)
-		if _, err := os.Stat(oldPath); err == nil {
-			// Only migrate if destination doesn't already exist
-			if _, err := os.Stat(newPath); err != nil {
-				if err := os.Rename(oldPath, newPath); err != nil {
-					return err
-				}
-			}
+	for _, f := range cacheFiles {
+		if err := migrate(filepath.Join(src, f), filepath.Join(dst, f)); err != nil {
+			return err
 		}
 	}
 
-	// Migrate folder_emails directory
-	oldDir := filepath.Join(src, "folder_emails")
-	newDir := filepath.Join(dst, "folder_emails")
-	if info, err := os.Stat(oldDir); err == nil && info.IsDir() {
-		if _, err := os.Stat(newDir); err != nil {
-			if err := os.Rename(oldDir, newDir); err != nil {
-				return err
-			}
+	for _, f := range cacheDirectories {
+		if err := migrate(filepath.Join(src, f), filepath.Join(dst, f)); err != nil {
+			return err
 		}
 	}
 
@@ -422,6 +435,7 @@ type secureDiskAccount struct {
 	JMAPEndpoint       string `json:"jmap_endpoint,omitempty"`
 	POP3Server         string `json:"pop3_server,omitempty"`
 	POP3Port           int    `json:"pop3_port,omitempty"`
+	MaildirPath        string `json:"maildir_path,omitempty"`
 	CatchAll           bool   `json:"catch_all,omitempty"`
 }
 
@@ -517,6 +531,7 @@ func SaveConfig(config *Config) error {
 				JMAPEndpoint:       acc.JMAPEndpoint,
 				POP3Server:         acc.POP3Server,
 				POP3Port:           acc.POP3Port,
+				MaildirPath:        acc.MaildirPath,
 				CatchAll:           acc.CatchAll,
 			})
 		}
@@ -579,6 +594,7 @@ func LoadConfig() (*Config, error) {
 		JMAPEndpoint       string `json:"jmap_endpoint,omitempty"`
 		POP3Server         string `json:"pop3_server,omitempty"`
 		POP3Port           int    `json:"pop3_port,omitempty"`
+		MaildirPath        string `json:"maildir_path,omitempty"`
 		CatchAll           bool   `json:"catch_all,omitempty"`
 	}
 	type diskConfig struct {
@@ -665,6 +681,7 @@ func LoadConfig() (*Config, error) {
 			JMAPEndpoint:       rawAcc.JMAPEndpoint,
 			POP3Server:         rawAcc.POP3Server,
 			POP3Port:           rawAcc.POP3Port,
+			MaildirPath:        rawAcc.MaildirPath,
 			CatchAll:           rawAcc.CatchAll,
 			SC:                 &SessionCache{},
 		}

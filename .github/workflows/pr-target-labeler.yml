@@ -1,0 +1,105 @@
+name: PR Target Labeler
+
+# Decides where a PR is destined and reflects it with labels:
+#   (no label)    -> master only (default)
+#   backport/v1   -> merge to master AND backport to release/v1 ("both")
+#   target/v1     -> the PR already targets release/v1 directly (v1 only)
+#
+# Maintainers steer routing with comment commands on the PR:
+#   /backport v1      add the backport/v1 label
+#   /no-backport v1   remove it
+# The actual cherry-pick is performed by backport.yml once the PR is merged.
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  # Auto-label based on the PR's base branch and an explicit "backport" hint
+  # in the title/body. Never removes backport/v1 (a maintainer may have set it).
+  auto:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const issue_number = pr.number;
+            const base = pr.base.ref;
+            const have = new Set(pr.labels.map(l => l.name));
+            const add = [];
+
+            if (base === 'release/v1') {
+              if (!have.has('target/v1')) add.push('target/v1');
+            } else {
+              const text = `${pr.title}\n${pr.body || ''}`;
+              if (/\bback[- ]?port\b/i.test(text) && !have.has('backport/v1')) {
+                add.push('backport/v1');
+              }
+            }
+
+            if (add.length) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: add });
+              console.log(`added: ${add.join(', ')}`);
+            }
+
+  # Comment commands. Restricted to users with write access to the repo.
+  command:
+    if: >
+      github.event_name == 'issue_comment'
+      && github.event.issue.pull_request
+      && (startsWith(github.event.comment.body, '/backport')
+          || startsWith(github.event.comment.body, '/no-backport'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const body = context.payload.comment.body.trim();
+            const assoc = context.payload.comment.author_association;
+            const commenter = context.payload.comment.user.login;
+
+            if (!['OWNER', 'MEMBER', 'COLLABORATOR'].includes(assoc)) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number,
+                body: `Sorry @${commenter}, only maintainers can change backport routing.`,
+              });
+              return;
+            }
+
+            // Only the v1 target is supported for now.
+            if (!/\bv1\b/.test(body)) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number,
+                body: `Usage: \`/backport v1\` or \`/no-backport v1\`.`,
+              });
+              return;
+            }
+
+            const remove = body.startsWith('/no-backport');
+            if (remove) {
+              try {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number, name: 'backport/v1' });
+              } catch (e) {
+                if (e.status !== 404) throw e;
+              }
+            } else {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: ['backport/v1'] });
+            }
+
+            await github.rest.reactions.createForIssueComment({
+              owner, repo, comment_id: context.payload.comment.id, content: 'rocket',
+            });

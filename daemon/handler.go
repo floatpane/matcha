@@ -20,56 +20,29 @@ const (
 	mutateTimeout = 30 * time.Second
 )
 
-func (d *Daemon) handleRequest(conn *daemonrpc.Conn, req *daemonrpc.Request) {
-	switch req.Method {
-	case daemonrpc.MethodPing:
-		d.handlePing(conn, req)
-	case daemonrpc.MethodGetStatus:
-		d.handleGetStatus(conn, req)
-	case daemonrpc.MethodGetAccounts:
-		d.handleGetAccounts(conn, req)
-	case daemonrpc.MethodReloadConfig:
-		d.handleReloadConfig(conn, req)
-	case daemonrpc.MethodFetchEmails:
-		d.handleFetchEmails(conn, req)
-	case daemonrpc.MethodFetchEmailBody:
-		d.handleFetchEmailBody(conn, req)
-	case daemonrpc.MethodDeleteEmails:
-		d.handleDeleteEmails(conn, req)
-	case daemonrpc.MethodArchiveEmails:
-		d.handleArchiveEmails(conn, req)
-	case daemonrpc.MethodMoveEmails:
-		d.handleMoveEmails(conn, req)
-	case daemonrpc.MethodMarkRead:
-		d.handleMarkRead(conn, req)
-	case daemonrpc.MethodFetchFolders:
-		d.handleFetchFolders(conn, req)
-	case daemonrpc.MethodRefreshFolder:
-		d.handleRefreshFolder(conn, req)
-	case daemonrpc.MethodSubscribe:
-		d.handleSubscribe(conn, req)
-	case daemonrpc.MethodUnsubscribe:
-		d.handleUnsubscribe(conn, req)
-	default:
-		conn.SendError(req.ID, daemonrpc.ErrCodeNotFound, fmt.Sprintf("unknown method: %s", req.Method)) //nolint:errcheck,gosec
-	}
-}
-
-func decodeParams[T any](req *daemonrpc.Request) (T, error) {
-	var params T
-	if req.Params != nil {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return params, err
+// decodeParams unmarshals raw JSON params into T. A nil/empty payload yields
+// the zero value.
+func decodeParams[T any](params json.RawMessage) (T, error) {
+	var p T
+	if params != nil {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return p, err
 		}
 	}
-	return params, nil
+	return p, nil
 }
 
-func (d *Daemon) handlePing(conn *daemonrpc.Conn, req *daemonrpc.Request) {
-	conn.SendResponse(req.ID, daemonrpc.PingResult{Pong: true}) //nolint:errcheck,gosec
+// parseError wraps a params-decoding failure with the parse error code so the
+// server forwards it verbatim instead of mapping to ErrCodeInternal.
+func parseError(err error) error {
+	return &daemonrpc.Error{Code: daemonrpc.ErrCodeParse, Message: err.Error()}
 }
 
-func (d *Daemon) handleGetStatus(conn *daemonrpc.Conn, req *daemonrpc.Request) {
+func (d *Daemon) handlePing(_ context.Context, _ *daemonrpc.Conn, _ json.RawMessage) (any, error) {
+	return daemonrpc.PingResult{Pong: true}, nil
+}
+
+func (d *Daemon) handleGetStatus(_ context.Context, _ *daemonrpc.Conn, _ json.RawMessage) (any, error) {
 	d.mu.RLock()
 	accounts := make([]string, 0, len(d.config.Accounts))
 	for _, acct := range d.config.Accounts {
@@ -77,15 +50,15 @@ func (d *Daemon) handleGetStatus(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	}
 	d.mu.RUnlock()
 
-	conn.SendResponse(req.ID, daemonrpc.StatusResult{ //nolint:errcheck,gosec
+	return daemonrpc.StatusResult{
 		Running:  true,
 		Uptime:   int64(time.Since(d.startTime).Seconds()),
 		Accounts: accounts,
 		PID:      os.Getpid(),
-	})
+	}, nil
 }
 
-func (d *Daemon) handleGetAccounts(conn *daemonrpc.Conn, req *daemonrpc.Request) {
+func (d *Daemon) handleGetAccounts(_ context.Context, _ *daemonrpc.Conn, _ json.RawMessage) (any, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -102,62 +75,54 @@ func (d *Daemon) handleGetAccounts(conn *daemonrpc.Conn, req *daemonrpc.Request)
 			Protocol: protocol,
 		})
 	}
-	conn.SendResponse(req.ID, infos) //nolint:errcheck,gosec
+	return infos, nil
 }
 
-func (d *Daemon) handleReloadConfig(conn *daemonrpc.Conn, req *daemonrpc.Request) {
+func (d *Daemon) handleReloadConfig(_ context.Context, _ *daemonrpc.Conn, _ json.RawMessage) (any, error) {
 	if err := d.ReloadConfig(); err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, err
 	}
-	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
+	return true, nil
 }
 
-func (d *Daemon) handleFetchEmails(conn *daemonrpc.Conn, req *daemonrpc.Request) {
-	params, err := decodeParams[daemonrpc.FetchEmailsParams](req)
+func (d *Daemon) handleFetchEmails(ctx context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.FetchEmailsParams](params)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, parseError(err)
 	}
 
-	p, err := d.getProvider(params.AccountID)
+	p, err := d.getProvider(args.AccountID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
 
-	emails, err := p.FetchEmails(ctx, params.Folder, params.Limit, params.Offset)
+	emails, err := p.FetchEmails(ctx, args.Folder, args.Limit, args.Offset)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, err
 	}
-
-	conn.SendResponse(req.ID, emails) //nolint:errcheck,gosec
+	return emails, nil
 }
 
-func (d *Daemon) handleFetchEmailBody(conn *daemonrpc.Conn, req *daemonrpc.Request) {
-	params, err := decodeParams[daemonrpc.FetchEmailBodyParams](req)
+func (d *Daemon) handleFetchEmailBody(ctx context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.FetchEmailBodyParams](params)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, parseError(err)
 	}
 
-	p, err := d.getProvider(params.AccountID)
+	p, err := d.getProvider(args.AccountID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
 
-	body, mimeType, attachments, err := p.FetchEmailBody(ctx, params.Folder, params.UID)
+	body, mimeType, attachments, err := p.FetchEmailBody(ctx, args.Folder, args.UID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, err
 	}
 
 	// Convert backend.Attachment to daemonrpc.AttachmentInfo for wire transfer.
@@ -171,195 +136,180 @@ func (d *Daemon) handleFetchEmailBody(conn *daemonrpc.Conn, req *daemonrpc.Reque
 		})
 	}
 
-	conn.SendResponse(req.ID, daemonrpc.FetchEmailBodyResult{ //nolint:errcheck,gosec
+	return daemonrpc.FetchEmailBodyResult{
 		Body:         body,
 		BodyMIMEType: mimeType,
 		Attachments:  attInfos,
-	})
+	}, nil
 }
 
-func (d *Daemon) handleDeleteEmails(conn *daemonrpc.Conn, req *daemonrpc.Request) {
-	params, err := decodeParams[daemonrpc.DeleteEmailsParams](req)
+func (d *Daemon) handleDeleteEmails(ctx context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.DeleteEmailsParams](params)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, parseError(err)
 	}
 
-	p, err := d.getProvider(params.AccountID)
+	p, err := d.getProvider(args.AccountID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), mutateTimeout)
+	ctx, cancel := context.WithTimeout(ctx, mutateTimeout)
 	defer cancel()
 
-	if err := p.DeleteEmails(ctx, params.Folder, params.UIDs); err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
-		return
+	if err := p.DeleteEmails(ctx, args.Folder, args.UIDs); err != nil {
+		return nil, err
 	}
-	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
+	return true, nil
 }
 
-func (d *Daemon) handleArchiveEmails(conn *daemonrpc.Conn, req *daemonrpc.Request) {
-	params, err := decodeParams[daemonrpc.ArchiveEmailsParams](req)
+func (d *Daemon) handleArchiveEmails(ctx context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.ArchiveEmailsParams](params)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, parseError(err)
 	}
 
-	p, err := d.getProvider(params.AccountID)
+	p, err := d.getProvider(args.AccountID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), mutateTimeout)
+	ctx, cancel := context.WithTimeout(ctx, mutateTimeout)
 	defer cancel()
 
-	if err := p.ArchiveEmails(ctx, params.Folder, params.UIDs); err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
-		return
+	if err := p.ArchiveEmails(ctx, args.Folder, args.UIDs); err != nil {
+		return nil, err
 	}
-	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
+	return true, nil
 }
 
-func (d *Daemon) handleMoveEmails(conn *daemonrpc.Conn, req *daemonrpc.Request) {
-	params, err := decodeParams[daemonrpc.MoveEmailsParams](req)
+func (d *Daemon) handleMoveEmails(ctx context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.MoveEmailsParams](params)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, parseError(err)
 	}
 
-	p, err := d.getProvider(params.AccountID)
+	p, err := d.getProvider(args.AccountID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), mutateTimeout)
+	ctx, cancel := context.WithTimeout(ctx, mutateTimeout)
 	defer cancel()
 
-	if err := p.MoveEmails(ctx, params.UIDs, params.SourceFolder, params.DestFolder); err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
-		return
+	if err := p.MoveEmails(ctx, args.UIDs, args.SourceFolder, args.DestFolder); err != nil {
+		return nil, err
 	}
-	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
+	return true, nil
 }
 
-func (d *Daemon) handleMarkRead(conn *daemonrpc.Conn, req *daemonrpc.Request) {
-	params, err := decodeParams[daemonrpc.MarkReadParams](req)
+func (d *Daemon) handleMarkRead(ctx context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.MarkReadParams](params)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, parseError(err)
 	}
 
-	p, err := d.getProvider(params.AccountID)
+	p, err := d.getProvider(args.AccountID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), mutateTimeout)
+	ctx, cancel := context.WithTimeout(ctx, mutateTimeout)
 	defer cancel()
 
-	for _, uid := range params.UIDs {
+	for _, uid := range args.UIDs {
 		var err error
-		if params.Read {
-			err = p.MarkAsRead(ctx, params.Folder, uid)
+		if args.Read {
+			err = p.MarkAsRead(ctx, args.Folder, uid)
 		} else {
-			err = p.MarkAsUnread(ctx, params.Folder, uid)
+			err = p.MarkAsUnread(ctx, args.Folder, uid)
 		}
 		if err != nil {
-			log.Printf("daemon: mark read=%v %d failed: %v", params.Read, uid, err)
+			log.Printf("daemon: mark read=%v %d failed: %v", args.Read, uid, err)
 		}
 	}
-	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
+	return true, nil
 }
 
-func (d *Daemon) handleFetchFolders(conn *daemonrpc.Conn, req *daemonrpc.Request) {
-	params, err := decodeParams[daemonrpc.FetchFoldersParams](req)
+func (d *Daemon) handleFetchFolders(ctx context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.FetchFoldersParams](params)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, parseError(err)
 	}
 
-	p, err := d.getProvider(params.AccountID)
+	p, err := d.getProvider(args.AccountID)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), mutateTimeout)
+	ctx, cancel := context.WithTimeout(ctx, mutateTimeout)
 	defer cancel()
 
 	folders, err := p.FetchFolders(ctx)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeInternal, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, err
 	}
-	conn.SendResponse(req.ID, folders) //nolint:errcheck,gosec
+	return folders, nil
 }
 
-func (d *Daemon) handleRefreshFolder(conn *daemonrpc.Conn, req *daemonrpc.Request) {
-	params, err := decodeParams[daemonrpc.RefreshFolderParams](req)
+func (d *Daemon) handleRefreshFolder(ctx context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.RefreshFolderParams](params)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, parseError(err)
 	}
 
-	// Async: fetch in background, push events when done.
+	// Async: fetch in background, push events when done. The server-scoped ctx
+	// outlives the request and is canceled on daemon shutdown.
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("daemon: refresh panic for account = %s folder = %s: %v", params.AccountID, params.Folder, r)
-				d.broadcastToSubscribers(params.AccountID, params.Folder, daemonrpc.EventSyncError, daemonrpc.SyncErrorEvent{
-					AccountID: params.AccountID,
-					Folder:    params.Folder,
+				log.Printf("daemon: refresh panic for account = %s folder = %s: %v", args.AccountID, args.Folder, r)
+				d.broadcastToSubscribers(args.AccountID, args.Folder, daemonrpc.EventSyncError, daemonrpc.SyncErrorEvent{
+					AccountID: args.AccountID,
+					Folder:    args.Folder,
 					Error:     fmt.Sprintf("panic: %v", r),
 				})
 			}
 		}()
 
-		p, err := d.getProvider(params.AccountID)
+		p, err := d.getProvider(args.AccountID)
 		if err != nil {
 			log.Printf("daemon: refresh provider error: %v", err)
 			return
 		}
 
-		d.broadcastToSubscribers(params.AccountID, params.Folder, daemonrpc.EventSyncStarted, daemonrpc.SyncStartedEvent(params))
+		d.broadcastToSubscribers(args.AccountID, args.Folder, daemonrpc.EventSyncStarted, daemonrpc.SyncStartedEvent(args))
 
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		fetchCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
 		defer cancel()
 
-		emails, err := p.FetchEmails(ctx, params.Folder, 50, 0)
+		emails, err := p.FetchEmails(fetchCtx, args.Folder, 50, 0)
 		if err != nil {
-			d.broadcastToSubscribers(params.AccountID, params.Folder, daemonrpc.EventSyncError, daemonrpc.SyncErrorEvent{
-				AccountID: params.AccountID,
-				Folder:    params.Folder,
+			d.broadcastToSubscribers(args.AccountID, args.Folder, daemonrpc.EventSyncError, daemonrpc.SyncErrorEvent{
+				AccountID: args.AccountID,
+				Folder:    args.Folder,
 				Error:     err.Error(),
 			})
 			return
 		}
 
-		d.broadcastToSubscribers(params.AccountID, params.Folder, daemonrpc.EventSyncComplete, daemonrpc.SyncCompleteEvent{
-			AccountID:  params.AccountID,
-			Folder:     params.Folder,
+		d.broadcastToSubscribers(args.AccountID, args.Folder, daemonrpc.EventSyncComplete, daemonrpc.SyncCompleteEvent{
+			AccountID:  args.AccountID,
+			Folder:     args.Folder,
 			EmailCount: len(emails),
 		})
 	}()
 
-	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
+	return true, nil
 }
 
-func (d *Daemon) handleSubscribe(conn *daemonrpc.Conn, req *daemonrpc.Request) {
-	params, err := decodeParams[daemonrpc.SubscribeParams](req)
+func (d *Daemon) handleSubscribe(_ context.Context, conn *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.SubscribeParams](params)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, parseError(err)
 	}
 
-	key := params.AccountID + ":" + params.Folder
+	key := args.AccountID + ":" + args.Folder
 
 	d.subMu.Lock()
 	if d.subscriptions[conn] == nil {
@@ -369,17 +319,16 @@ func (d *Daemon) handleSubscribe(conn *daemonrpc.Conn, req *daemonrpc.Request) {
 	d.subMu.Unlock()
 
 	log.Printf("daemon: client subscribed to %s", key)
-	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
+	return true, nil
 }
 
-func (d *Daemon) handleUnsubscribe(conn *daemonrpc.Conn, req *daemonrpc.Request) {
-	params, err := decodeParams[daemonrpc.UnsubscribeParams](req)
+func (d *Daemon) handleUnsubscribe(_ context.Context, conn *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.UnsubscribeParams](params)
 	if err != nil {
-		conn.SendError(req.ID, daemonrpc.ErrCodeParse, err.Error()) //nolint:errcheck,gosec
-		return
+		return nil, parseError(err)
 	}
 
-	key := params.AccountID + ":" + params.Folder
+	key := args.AccountID + ":" + args.Folder
 
 	d.subMu.Lock()
 	if subs, ok := d.subscriptions[conn]; ok {
@@ -387,5 +336,5 @@ func (d *Daemon) handleUnsubscribe(conn *daemonrpc.Conn, req *daemonrpc.Request)
 	}
 	d.subMu.Unlock()
 
-	conn.SendResponse(req.ID, true) //nolint:errcheck,gosec
+	return true, nil
 }

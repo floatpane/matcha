@@ -1,0 +1,127 @@
+name: Backport to release/v1
+
+# Cherry-picks a merged PR's commit straight onto release/v1 and pushes it —
+# no intermediate PR. Fires when:
+#   - a PR labeled `backport/v1` is merged into master, or
+#   - a maintainer comments `/backport v1` on an already-merged PR.
+# On a clean cherry-pick the commit is pushed directly. On conflict nothing is
+# pushed; the source PR is labeled `backport-failed` and a comment asks for a
+# manual cherry-pick.
+
+on:
+  pull_request_target:
+    types: [closed]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  backport:
+    name: Backport
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'pull_request_target'
+        && github.event.pull_request.merged == true
+        && contains(github.event.pull_request.labels.*.name, 'backport/v1'))
+      || (github.event_name == 'issue_comment'
+        && github.event.issue.pull_request
+        && github.event.issue.state == 'closed'
+        && startsWith(github.event.comment.body, '/backport v1')
+        && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    steps:
+      - name: Resolve PR and merge commit
+        id: pr
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const num = context.eventName === 'issue_comment'
+              ? context.payload.issue.number
+              : context.payload.pull_request.number;
+
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: num });
+
+            if (!pr.merged || !pr.merge_commit_sha) {
+              core.notice(`PR #${num} is not merged; nothing to backport.`);
+              core.setOutput('run', 'false');
+              return;
+            }
+            core.setOutput('run', 'true');
+            core.setOutput('number', String(num));
+            core.setOutput('sha', pr.merge_commit_sha);
+            core.setOutput('title', pr.title);
+
+      - name: Checkout
+        if: steps.pr.outputs.run == 'true'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: release/v1
+          token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+
+      - name: Cherry-pick onto release/v1
+        if: steps.pr.outputs.run == 'true'
+        id: pick
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.pr.outputs.sha }}"
+          git config user.name "Floatpane Bot"
+          git config user.email "us@floatpane.com"
+          git fetch --no-tags origin "$SHA"
+
+          # A true merge commit has >1 parent and needs a mainline (-m 1);
+          # squash/rebase merges are a single commit cherry-picked as-is.
+          PARENTS=$(git rev-list --parents -n1 "$SHA" | wc -w)
+          PICK_ARGS="-x"
+          if [ "$PARENTS" -gt 2 ]; then PICK_ARGS="-x -m 1"; fi
+
+          if git cherry-pick $PICK_ARGS "$SHA"; then
+            git push origin HEAD:release/v1
+            echo "status=ok" >> "$GITHUB_OUTPUT"
+          else
+            git cherry-pick --abort || true
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Report result
+        if: steps.pr.outputs.run == 'true'
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = Number('${{ steps.pr.outputs.number }}');
+            const status = '${{ steps.pick.outputs.status }}';
+            const sha = '${{ steps.pr.outputs.sha }}';
+
+            if (status === 'ok') {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: ['backported'] });
+              try {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number, name: 'backport-failed' });
+              } catch (e) { if (e.status !== 404) throw e; }
+              await github.rest.issues.createComment({
+                owner, repo, issue_number,
+                body: `Cherry-picked \`${sha.substring(0, 7)}\` onto \`release/v1\`.`,
+              });
+            } else {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: ['backport-failed'] });
+              await github.rest.issues.createComment({
+                owner, repo, issue_number,
+                body: [
+                  `Backport to \`release/v1\` hit a conflict — cherry-pick it manually:`,
+                  '```bash',
+                  'git fetch origin',
+                  'git checkout release/v1',
+                  `git cherry-pick -x ${sha}`,
+                  '# resolve conflicts, then:',
+                  'git push origin release/v1',
+                  '```',
+                ].join('\n'),
+              });
+              core.setFailed('Cherry-pick conflict.');
+            }

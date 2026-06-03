@@ -156,12 +156,9 @@ func (m *Settings) viewPlugins() string {
 		}
 
 		for i, s := range schemas {
-			cursor := "  "
-			style := accountItemStyle
-			if m.pluginListCursor == i {
-				cursor = "> "
-				style = selectedAccountItemStyle
-			}
+			selected := m.pluginListCursor == i
+			cursor := m.contentCursor(selected)
+			style := m.contentItemStyle(selected)
 			line := fmt.Sprintf("%s (%d %s)", s.Plugin, len(s.Defs), pluralSettings(len(s.Defs)))
 			b.WriteString(style.Render(cursor+line) + "\n")
 		}
@@ -174,12 +171,9 @@ func (m *Settings) viewPlugins() string {
 	b.WriteString(accountEmailStyle.Render(m.pluginSelected) + "\n\n")
 
 	for i, def := range defs {
-		cursor := "  "
-		style := accountItemStyle
-		if m.pluginSettingCursor == i {
-			cursor = "> "
-			style = selectedAccountItemStyle
-		}
+		selected := m.pluginSettingCursor == i
+		cursor := m.contentCursor(selected)
+		style := m.contentItemStyle(selected)
 
 		label := def.Label
 		if label == "" {
@@ -193,7 +187,7 @@ func (m *Settings) viewPlugins() string {
 
 	if m.pluginEditing {
 		b.WriteString("\n")
-		b.WriteString(settingsFocusedStyle.Render("Edit "+m.pluginEditingKey) + "\n")
+		b.WriteString(m.contentFocusStyle().Render("Edit "+m.pluginEditingKey) + "\n")
 		b.WriteString(m.pluginInput.View() + "\n")
 		b.WriteString("\n")
 		b.WriteString(helpStyle.Render("enter save • esc cancel"))

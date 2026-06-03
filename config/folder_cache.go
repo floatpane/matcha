@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/floatpane/matcha/internal/threading"
+	threading "github.com/floatpane/jwz-go"
 )
 
 // CachedFolders stores folder names for a single account.

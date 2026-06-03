@@ -1,5 +1,3 @@
-<!-- GitAds-Verify: E4MV39T49YJXPDDL5VL456ARZP2SJRPV -->
-
 <div align="center">
 
 ---
@@ -98,10 +96,6 @@ Thank you to our sponsors for supporting Matcha's development!
 ### Individual Sponsors:
 
 [David H. Colmenares](https://github.com/hipomenes) | Elliot Hornes | Robert M. | James L. | Chris D. 
-
-[![Sponsored by GitAds](https://gitads.dev/v1/ad-serve?source=floatpane/matcha@github)](https://gitads.dev/v1/ad-track?source=floatpane/matcha@github)
-
-_Clicking this add helps us fund our expenses!_
 
 <div align="center">
 

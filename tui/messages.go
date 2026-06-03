@@ -1,8 +1,8 @@
 package tui
 
 import (
+	calendar "github.com/floatpane/go-icalendar"
 	"github.com/floatpane/matcha/backend"
-	"github.com/floatpane/matcha/calendar"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/daemonrpc"
 	"github.com/floatpane/matcha/fetcher"

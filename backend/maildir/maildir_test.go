@@ -288,3 +288,58 @@ func TestCapabilitiesReflectsArchivePresence(t *testing.T) {
 		t.Error("CanFetchFolders must be true")
 	}
 }
+
+// makeNestedMaildir creates an mbsync/isync-style tree: the root has no
+// cur/new/tmp of its own; each named subdirectory is a self-contained
+// Maildir folder.
+func makeNestedMaildir(t *testing.T, folders ...string) string {
+	t.Helper()
+	root := t.TempDir()
+	for _, folder := range folders {
+		for _, sub := range []string{"cur", "new", "tmp"} {
+			if err := os.MkdirAll(filepath.Join(root, folder, sub), 0o755); err != nil {
+				t.Fatalf("mkdir %s/%s: %v", folder, sub, err)
+			}
+		}
+	}
+	return root
+}
+
+func TestNestedLayoutListsFoldersAndFetchesInbox(t *testing.T) {
+	root := makeNestedMaildir(t, "INBOX", "Sent", "Archive", "Drafts")
+	dropMessage(t, filepath.Join(root, "INBOX"), "1700000000.n.host", "nested hi", "body", time.Now())
+
+	p := newProvider(t, root)
+	if !p.nested {
+		t.Fatal("expected nested layout to be detected")
+	}
+
+	folders, err := p.FetchFolders(context.Background())
+	if err != nil {
+		t.Fatalf("FetchFolders: %v", err)
+	}
+	if len(folders) == 0 || folders[0].Name != "INBOX" {
+		t.Errorf("INBOX should be listed first, got %+v", folders)
+	}
+	names := map[string]bool{}
+	for _, f := range folders {
+		names[f.Name] = true
+	}
+	for _, want := range []string{"INBOX", "Sent", "Archive", "Drafts"} {
+		if !names[want] {
+			t.Errorf("missing folder %q in %v", want, names)
+		}
+	}
+
+	emails, err := p.FetchEmails(context.Background(), "INBOX", 10, 0)
+	if err != nil {
+		t.Fatalf("FetchEmails: %v", err)
+	}
+	if len(emails) != 1 || emails[0].Subject != "nested hi" {
+		t.Errorf("want 1 message with subject 'nested hi', got %+v", emails)
+	}
+
+	if !p.Capabilities().CanArchive {
+		t.Error("CanArchive should be true when Archive subfolder exists in nested layout")
+	}
+}

@@ -213,6 +213,7 @@ type Folder struct {
 	Name       string
 	Delimiter  string
 	Attributes []string
+	Unread     uint32
 }
 
 // OutgoingEmail contains everything needed to send an email.

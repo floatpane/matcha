@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/floatpane/matcha/fetcher"
 )
 
 func TestSanitizeFilenameTruncatesCJKOnUTF8Boundary(t *testing.T) {
@@ -56,5 +58,21 @@ func TestParseGlobalFlagsDoesNotConsumeSubcommandFlags(t *testing.T) {
 	}
 	if got := strings.Join(args, " "); got != "matcha send --logs" {
 		t.Fatalf("args = %q, want %q", got, "matcha send --logs")
+	}
+}
+
+func TestUnreadBadgeCountDeduplicatesOverlappingStores(t *testing.T) {
+	email := fetcher.Email{UID: 42, AccountID: "acct-a"}
+	got := unreadBadgeCount(
+		map[string][]fetcher.Email{
+			"acct-a": {email},
+		},
+		map[string][]fetcher.Email{
+			folderInbox: {email},
+		},
+	)
+
+	if got != 1 {
+		t.Fatalf("unreadBadgeCount() = %d, want 1", got)
 	}
 }

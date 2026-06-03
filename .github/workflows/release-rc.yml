@@ -1,21 +1,88 @@
-name: Release
+name: Release Candidate
+
+# Cuts a v1 release-candidate pre-release (e.g. v1.0.0-rc3) from the
+# release/v1 stabilization branch. The rc number is computed automatically
+# from existing tags. Run manually from the Actions tab.
 
 on:
   workflow_dispatch:
+    inputs:
+      base_version:
+        description: "Base version the rc leads up to"
+        type: string
+        default: "1.0.0"
+      dry_run:
+        description: "Compute and print the next tag without tagging or releasing"
+        type: boolean
+        default: false
 
 permissions:
-  contents: write # to create releases, tags and upload assets
-  pull-requests: read # to read pull request titles and labels for changelog
+  contents: write # to create tags and the GitHub pre-release
   id-token: write # to sign the release
 
 jobs:
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.compute.outputs.tag }}
+      prev_stable: ${{ steps.compute.outputs.prev_stable }}
+    steps:
+      - name: Guard branch
+        if: github.ref != 'refs/heads/release/v1'
+        run: |
+          echo "::error::Release candidates must be cut from release/v1 (got ${{ github.ref }})."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compute next rc tag
+        id: compute
+        run: |
+          set -euo pipefail
+          BASE="${{ inputs.base_version }}"
+          git fetch --tags --force
+          # Highest existing rc number for this base version, 0 if none yet.
+          LATEST=$(git tag -l "v${BASE}-rc*" \
+            | sed -E "s/^v${BASE}-rc//" \
+            | grep -E '^[0-9]+$' \
+            | sort -n | tail -1 || true)
+          NEXT=$(( ${LATEST:-0} + 1 ))
+          TAG="v${BASE}-rc${NEXT}"
+          echo "Next release candidate: $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          # Last STABLE release tag (no -rc / nightly / preview). Used as the
+          # changelog base so every rc's notes are cumulative since the last
+          # stable — covering all prior rc changes too, not just the last rc.
+          PREV_STABLE=$(git tag -l 'v*' \
+            | grep -vE '\-rc|nightly|preview' \
+            | sort -V | tail -1 || true)
+          echo "Changelog base (last stable): ${PREV_STABLE:-<none>}"
+          echo "prev_stable=$PREV_STABLE" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.compute.outputs.tag }}"
+          git config user.name "Floatpane Bot"
+          git config user.email "us@floatpane.com"
+          git tag -a "$TAG" -m "Release candidate $TAG"
+          git push origin "$TAG"
+
   goreleaser:
+    needs: tag
+    if: ${{ !inputs.dry_run }}
     runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ needs.tag.outputs.tag }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -24,17 +91,6 @@ jobs:
 
       - name: Set up Zig
         uses: goto-bus-stop/setup-zig@v2
-
-      - name: Bump version and push tag
-        id: tag_version
-        uses: mathieudutour/github-tag-action@v6.2
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Fetch the new tag
-        run: git fetch --tags
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up libpcsclite for Linux cross-compilation
         run: |
@@ -93,7 +149,7 @@ jobs:
           ar rcs "$PCSC_DIR/lib/amd64/libpcsclite.a" "$RUNNER_TEMP/pcsclite_stub_amd64.o"
           ar rcs "$PCSC_DIR/lib/arm64/libpcsclite.a" "$RUNNER_TEMP/pcsclite_stub_arm64.o"
 
-          # Create pkg-config file
+          # Create pkg-config file — Libs will be overridden per-arch via CGO_LDFLAGS in goreleaser
           cat > "$PCSC_DIR/lib/pkgconfig/libpcsclite.pc" << EOF
           Name: libpcsclite
           Description: PC/SC Lite
@@ -110,19 +166,21 @@ jobs:
         run: echo "path=$(xcrun --show-sdk-path)" >> $GITHUB_OUTPUT
 
       - name: Run GoReleaser
-        if: steps.tag_version.outputs.new_tag
         uses: goreleaser/goreleaser-action@v7
         with:
           version: latest
-          args: release --clean
+          args: release --clean --config .goreleaser.rc.yml
         env:
           SDK_PATH: ${{ steps.macos_sdk.outputs.path }}
-          GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Force the changelog base to the last stable tag so rc notes are
+          # cumulative across every rc since that release.
+          GORELEASER_PREVIOUS_TAG: ${{ needs.tag.outputs.prev_stable }}
 
   snapcraft:
+    needs: [tag, goreleaser]
+    if: ${{ !inputs.dry_run }}
     runs-on: ${{ matrix.runner }}
-    needs: goreleaser
     strategy:
       matrix:
         include:
@@ -135,6 +193,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ needs.tag.outputs.tag }}
 
       - name: Install Snapcraft and LXD
         run: |
@@ -147,7 +206,7 @@ jobs:
       - name: Build snap
         run: sg lxd -c 'snapcraft pack --use-lxd --build-for=${{ matrix.arch }}'
 
-      - name: Upload snap
+      - name: Upload snap to candidate channel
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-        run: snapcraft upload --release=stable *.snap
+        run: snapcraft upload --release=candidate *.snap

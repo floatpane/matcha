@@ -1,44 +1,27 @@
 package daemonrpc
 
 import (
-	"fmt"
-	"os"
 	"path/filepath"
-	"runtime"
+
+	udsrpc "github.com/floatpane/go-uds-jsonrpc"
 )
 
-// runtimeDir returns the base directory for daemon runtime files.
-// Linux: $XDG_RUNTIME_DIR/matcha/
-// macOS: ~/Library/Caches/matcha/
-func runtimeDir() string {
-	switch runtime.GOOS {
-	case "darwin":
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, "Library", "Caches", "matcha")
-	default: // linux and others
-		if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
-			return filepath.Join(dir, "matcha")
-		}
-		// Fallback: /tmp/matcha-<uid>
-		return filepath.Join(os.TempDir(), "matcha-"+uidStr())
-	}
-}
-
-func uidStr() string {
-	return fmt.Sprintf("%d", os.Getuid())
-}
+// appName is the per-user runtime directory namespace for matcha's daemon
+// files. It matches the historical layout: $XDG_RUNTIME_DIR/matcha/ on Linux,
+// ~/Library/Caches/matcha/ on macOS.
+const appName = "matcha"
 
 // SocketPath returns the path to the daemon's Unix domain socket.
 func SocketPath() string {
-	return filepath.Join(runtimeDir(), "daemon.sock")
+	return filepath.Join(udsrpc.RuntimeDir(appName), "daemon.sock")
 }
 
 // PIDPath returns the path to the daemon's PID file.
 func PIDPath() string {
-	return filepath.Join(runtimeDir(), "daemon.pid")
+	return filepath.Join(udsrpc.RuntimeDir(appName), "daemon.pid")
 }
 
 // EnsureRuntimeDir creates the runtime directory if it doesn't exist.
 func EnsureRuntimeDir() error {
-	return os.MkdirAll(runtimeDir(), 0700)
+	return udsrpc.EnsureRuntimeDir(appName)
 }

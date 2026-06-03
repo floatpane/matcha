@@ -139,6 +139,23 @@
   color: c2e0c6
   description: Docs site / README
 
+# --- Release / v1 routing ---
+- name: backport/v1
+  color: 0e8a16
+  description: Merge to master and backport to release/v1
+- name: target/v1
+  color: 1d76db
+  description: PR targets the release/v1 branch directly
+- name: backported
+  color: c5def5
+  description: Cherry-picked onto release/v1
+- name: backport-failed
+  color: b60205
+  description: Cherry-pick conflict — needs manual backport
+- name: skip-changelog
+  color: ededed
+  description: Exclude from generated release notes
+
 # --- Size ---
 - name: size/XS
   color: "3cbf00"

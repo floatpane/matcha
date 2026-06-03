@@ -11,9 +11,9 @@ import (
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	threading "github.com/floatpane/jwz-go"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
-	"github.com/floatpane/matcha/internal/threading"
 	"github.com/floatpane/matcha/theme"
 )
 

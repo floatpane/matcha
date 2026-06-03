@@ -8,9 +8,14 @@
     --ifm-color-primary-lightest: #dcfce7;
     --ifm-code-font-size: 95%;
     --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+
+    --gh-note:      #0969da;
+    --gh-tip:       #1a7f37;
+    --gh-important: #8250df;
+    --gh-warning:   #9a6700;
+    --gh-caution:   #cf222e;
 }
 
-/* For dark mode */
 [data-theme="dark"] {
     --ifm-color-primary: #4ade80;
     --ifm-color-primary-dark: #22c55e;
@@ -20,4 +25,72 @@
     --ifm-color-primary-lighter: #bbf7d0;
     --ifm-color-primary-lightest: #dcfce7;
     --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+
+    --gh-note:      #1f6feb;
+    --gh-tip:       #3fb950;
+    --gh-important: #a371f7;
+    --gh-warning:   #d29922;
+    --gh-caution:   #f85149;
+}
+
+/* GitHub-style alerts */
+.alert {
+    --ifm-alert-background-color: transparent;
+    --ifm-alert-shadow: none;
+    border-width: 0 0 0 4px;
+    border-radius: 2px;
+}
+
+[class*='admonitionHeading'] {
+    text-transform: capitalize;
+}
+
+.alert--secondary {
+    --ifm-alert-border-color: var(--gh-note);
+    --ifm-alert-foreground-color: var(--ifm-font-color-base);
+}
+.alert--secondary [class*='admonitionHeading'],
+.alert--secondary [class*='admonitionIcon'] svg {
+    color: var(--gh-note);
+    fill: var(--gh-note);
+}
+
+.alert--success {
+    --ifm-alert-border-color: var(--gh-tip);
+    --ifm-alert-foreground-color: var(--ifm-font-color-base);
+}
+.alert--success [class*='admonitionHeading'],
+.alert--success [class*='admonitionIcon'] svg {
+    color: var(--gh-tip);
+    fill: var(--gh-tip);
+}
+
+.alert--info {
+    --ifm-alert-border-color: var(--gh-important);
+    --ifm-alert-foreground-color: var(--ifm-font-color-base);
+}
+.alert--info [class*='admonitionHeading'],
+.alert--info [class*='admonitionIcon'] svg {
+    color: var(--gh-important);
+    fill: var(--gh-important);
+}
+
+.alert--warning {
+    --ifm-alert-border-color: var(--gh-warning);
+    --ifm-alert-foreground-color: var(--ifm-font-color-base);
+}
+.alert--warning [class*='admonitionHeading'],
+.alert--warning [class*='admonitionIcon'] svg {
+    color: var(--gh-warning);
+    fill: var(--gh-warning);
+}
+
+.alert--danger {
+    --ifm-alert-border-color: var(--gh-caution);
+    --ifm-alert-foreground-color: var(--ifm-font-color-base);
+}
+.alert--danger [class*='admonitionHeading'],
+.alert--danger [class*='admonitionIcon'] svg {
+    color: var(--gh-caution);
+    fill: var(--gh-caution);
 }

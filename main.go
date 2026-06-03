@@ -28,12 +28,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	calendar "github.com/floatpane/go-icalendar"
 	"github.com/floatpane/matcha/backend"
 	_ "github.com/floatpane/matcha/backend/imap"
 	_ "github.com/floatpane/matcha/backend/jmap"
 	_ "github.com/floatpane/matcha/backend/maildir"
 	_ "github.com/floatpane/matcha/backend/pop3"
-	"github.com/floatpane/matcha/calendar"
 	matchaCli "github.com/floatpane/matcha/cli"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/clib/macos"
@@ -242,26 +242,45 @@ func waitForLogEntry(ch <-chan logging.Entry) tea.Cmd {
 	}
 }
 
-func (m *mainModel) syncUnreadBadge() {
-	if runtime.GOOS != goosDarwin {
-		return
-	}
+func unreadBadgeCount(emailsByAcct, folderEmails map[string][]fetcher.Email) int {
 	count := 0
+	seen := make(map[string]struct{})
+
+	countUnread := func(e fetcher.Email) {
+		if e.IsRead {
+			return
+		}
+		key := fmt.Sprintf("%s:%d", e.AccountID, e.UID)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		count++
+	}
+
 	// Count unread across all accounts (cached/loaded emails)
-	for _, emails := range m.emailsByAcct {
+	for _, emails := range emailsByAcct {
 		for _, e := range emails {
-			if !e.IsRead {
-				count++
-			}
+			countUnread(e)
 		}
 	}
 	// Also check folderEmails for unread status
-	for _, emails := range m.folderEmails {
+	for _, emails := range folderEmails {
 		for _, e := range emails {
-			if !e.IsRead {
-				count++
-			}
+			countUnread(e)
 		}
+	}
+	return count
+}
+
+func (m *mainModel) syncUnreadBadge() {
+	if runtime.GOOS != goosDarwin && loglevel.Get() < loglevel.LevelDebug {
+		return
+	}
+	count := unreadBadgeCount(m.emailsByAcct, m.folderEmails)
+	loglevel.Debugf("unread badge count: %d", count)
+	if runtime.GOOS != goosDarwin {
+		return
 	}
 	_ = macos.SetBadge(count)
 }
@@ -832,9 +851,27 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if account == nil {
 			return m, nil
 		}
-		m.previousModel = m.current
-		m.current = tui.NewStatus("Moving email...")
-		return m, tea.Batch(m.current.Init(), moveEmailToFolderCmd(account, msg.UID, msg.AccountID, msg.SourceFolder, msg.DestFolder))
+
+		folderName := folderInbox
+		if m.folderInbox != nil {
+			folderName = m.folderInbox.GetCurrentFolder()
+			m.folderInbox.GetInbox().RemoveEmail(msg.UID, msg.AccountID)
+		}
+
+		m.removeEmailFromStores(msg.UID, msg.AccountID)
+
+		if emails, ok := m.folderEmails[folderName]; ok {
+			var filtered []fetcher.Email
+			for _, e := range emails {
+				if e.UID != msg.UID || e.AccountID != msg.AccountID {
+					filtered = append(filtered, e)
+				}
+			}
+			m.folderEmails[folderName] = filtered
+			go saveFolderEmailsToCache(folderName, filtered)
+		}
+
+		return m, m.moveEmailToFolderCmd(msg.UID, msg.AccountID, msg.SourceFolder, msg.DestFolder)
 
 	case tui.UpdatePreviewMsg:
 		// Trigger preview body fetch
@@ -920,11 +957,6 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 				return tui.RestoreViewMsg{}
 			})
-		}
-		// Remove email from current view
-		if m.folderInbox != nil {
-			m.folderInbox.RemoveEmail(msg.UID, msg.AccountID)
-			m.current = m.folderInbox
 		}
 		return m, nil
 
@@ -1752,8 +1784,6 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	case tui.DeleteEmailMsg:
 		tui.ClearKittyGraphics()
-		m.previousModel = m.current
-		m.current = tui.NewStatus("Deleting email...")
 
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
@@ -1765,14 +1795,28 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 		folderName := folderInbox
 		if m.folderInbox != nil {
+			m.current = m.folderInbox
 			folderName = m.folderInbox.GetCurrentFolder()
+			m.folderInbox.GetInbox().RemoveEmail(msg.UID, msg.AccountID)
 		}
-		return m, tea.Batch(m.current.Init(), deleteFolderEmailCmd(account, msg.UID, msg.AccountID, folderName, msg.Mailbox))
+
+		m.removeEmailFromStores(msg.UID, msg.AccountID)
+
+		if emails, ok := m.folderEmails[folderName]; ok {
+			var filtered []fetcher.Email
+			for _, e := range emails {
+				if e.UID != msg.UID || e.AccountID != msg.AccountID {
+					filtered = append(filtered, e)
+				}
+			}
+			m.folderEmails[folderName] = filtered
+			go saveFolderEmailsToCache(folderName, filtered)
+		}
+
+		return m, m.deleteFolderEmailCmd(msg.UID, msg.AccountID, folderName, msg.Mailbox)
 
 	case tui.ArchiveEmailMsg:
 		tui.ClearKittyGraphics()
-		m.previousModel = m.current
-		m.current = tui.NewStatus("Archiving email...")
 
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
@@ -1784,9 +1828,25 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 		folderName := folderInbox
 		if m.folderInbox != nil {
+			m.current = m.folderInbox
 			folderName = m.folderInbox.GetCurrentFolder()
+			m.folderInbox.GetInbox().RemoveEmail(msg.UID, msg.AccountID)
 		}
-		return m, tea.Batch(m.current.Init(), archiveFolderEmailCmd(account, msg.UID, msg.AccountID, folderName, msg.Mailbox))
+
+		m.removeEmailFromStores(msg.UID, msg.AccountID)
+
+		if emails, ok := m.folderEmails[folderName]; ok {
+			var filtered []fetcher.Email
+			for _, e := range emails {
+				if e.UID != msg.UID || e.AccountID != msg.AccountID {
+					filtered = append(filtered, e)
+				}
+			}
+			m.folderEmails[folderName] = filtered
+			go saveFolderEmailsToCache(folderName, filtered)
+		}
+
+		return m, m.archiveFolderEmailCmd(msg.UID, msg.AccountID, folderName, msg.Mailbox)
 
 	case tui.EmailMarkedReadMsg:
 		if msg.Err != nil {
@@ -1814,24 +1874,10 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			})
 		}
 
-		// Remove email from stores
-		m.removeEmailFromStores(msg.UID, msg.AccountID)
-
-		if m.folderInbox != nil {
-			m.folderInbox.RemoveEmail(msg.UID, msg.AccountID)
-			m.current = m.folderInbox
-			m.current, _ = m.current.Update(m.currentWindowSize())
-			return m, m.current.Init()
-		}
-		m.current = tui.NewChoice()
-		m.current, _ = m.current.Update(m.currentWindowSize())
-		return m, m.current.Init()
+		return m, nil
 
 	case tui.BatchDeleteEmailsMsg:
 		tui.ClearKittyGraphics()
-		m.previousModel = m.current
-		count := len(msg.UIDs)
-		m.current = tui.NewStatus(fmt.Sprintf("Deleting %d emails...", count))
 
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
@@ -1844,18 +1890,28 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		folderName := folderInbox
 		if m.folderInbox != nil {
 			folderName = m.folderInbox.GetCurrentFolder()
+			m.folderInbox.GetInbox().RemoveEmails(msg.UIDs, msg.AccountID)
 		}
 
-		return m, tea.Batch(
-			m.current.Init(),
-			m.batchDeleteEmailsCmd(account, msg.UIDs, msg.AccountID, folderName, msg.Mailbox, count),
-		)
+		for _, uid := range msg.UIDs {
+			m.removeEmailFromStores(uid, msg.AccountID)
+		}
+
+		if emails, ok := m.folderEmails[folderName]; ok {
+			var filtered []fetcher.Email
+			for _, e := range emails {
+				if e.AccountID != msg.AccountID || !slices.Contains(msg.UIDs, e.UID) {
+					filtered = append(filtered, e)
+				}
+			}
+			m.folderEmails[folderName] = filtered
+			go saveFolderEmailsToCache(folderName, filtered)
+		}
+
+		return m, m.batchDeleteEmailsCmd(msg.UIDs, msg.AccountID, folderName, msg.Mailbox, len(msg.UIDs))
 
 	case tui.BatchArchiveEmailsMsg:
 		tui.ClearKittyGraphics()
-		m.previousModel = m.current
-		count := len(msg.UIDs)
-		m.current = tui.NewStatus(fmt.Sprintf("Archiving %d emails...", count))
 
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
@@ -1868,12 +1924,25 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		folderName := folderInbox
 		if m.folderInbox != nil {
 			folderName = m.folderInbox.GetCurrentFolder()
+			m.folderInbox.GetInbox().RemoveEmails(msg.UIDs, msg.AccountID)
 		}
 
-		return m, tea.Batch(
-			m.current.Init(),
-			m.batchArchiveEmailsCmd(account, msg.UIDs, msg.AccountID, folderName, msg.Mailbox, count),
-		)
+		for _, uid := range msg.UIDs {
+			m.removeEmailFromStores(uid, msg.AccountID)
+		}
+
+		if emails, ok := m.folderEmails[folderName]; ok {
+			var filtered []fetcher.Email
+			for _, e := range emails {
+				if e.AccountID != msg.AccountID || !slices.Contains(msg.UIDs, e.UID) {
+					filtered = append(filtered, e)
+				}
+			}
+			m.folderEmails[folderName] = filtered
+			go saveFolderEmailsToCache(folderName, filtered)
+		}
+
+		return m, m.batchArchiveEmailsCmd(msg.UIDs, msg.AccountID, folderName, msg.Mailbox, len(msg.UIDs))
 
 	case tui.BatchMoveEmailsMsg:
 		if m.config == nil {
@@ -1884,14 +1953,28 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			return m, nil
 		}
 
-		count := len(msg.UIDs)
-		m.previousModel = m.current
-		m.current = tui.NewStatus(fmt.Sprintf("Moving %d emails...", count))
+		folderName := folderInbox
+		if m.folderInbox != nil {
+			folderName = m.folderInbox.GetCurrentFolder()
+			m.folderInbox.GetInbox().RemoveEmails(msg.UIDs, msg.AccountID)
+		}
 
-		return m, tea.Batch(
-			m.current.Init(),
-			m.batchMoveEmailsCmd(account, msg.UIDs, msg.AccountID, msg.SourceFolder, msg.DestFolder, count),
-		)
+		for _, uid := range msg.UIDs {
+			m.removeEmailFromStores(uid, msg.AccountID)
+		}
+
+		if emails, ok := m.folderEmails[folderName]; ok {
+			var filtered []fetcher.Email
+			for _, e := range emails {
+				if e.AccountID != msg.AccountID || !slices.Contains(msg.UIDs, e.UID) {
+					filtered = append(filtered, e)
+				}
+			}
+			m.folderEmails[folderName] = filtered
+			go saveFolderEmailsToCache(folderName, filtered)
+		}
+
+		return m, m.batchMoveEmailsCmd(msg.UIDs, msg.AccountID, msg.SourceFolder, msg.DestFolder, len(msg.UIDs))
 
 	case tui.BatchEmailActionDoneMsg:
 		if msg.Err != nil {
@@ -1902,18 +1985,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			})
 		}
 
-		// Success - show brief confirmation
-		successMsg := fmt.Sprintf("%d emails %sd successfully", msg.SuccessCount, msg.Action)
-		if msg.FailureCount > 0 {
-			successMsg = fmt.Sprintf("%d of %d emails %sd (%d failed)",
-				msg.SuccessCount, msg.Count, msg.Action, msg.FailureCount)
-		}
-
-		m.current = tui.NewStatus(successMsg)
-
-		return m, tea.Tick(1500*time.Millisecond, func(t time.Time) tea.Msg {
-			return tui.RestoreViewMsg{}
-		})
+		return m, nil
 
 	case tui.DownloadAttachmentMsg:
 		m.previousModel = m.current
@@ -2931,46 +3003,54 @@ func markEmailAsUnreadCmd(account *config.Account, uid uint32, accountID string,
 	}
 }
 
-func deleteFolderEmailCmd(account *config.Account, uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
+func (m *mainModel) deleteFolderEmailCmd(uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
 	return func() tea.Msg {
-		err := fetcher.DeleteFolderEmail(account, folderName, uid)
+		if m.service == nil {
+			return tui.EmailActionDoneMsg{
+				UID:       uid,
+				AccountID: accountID,
+				Mailbox:   mailbox,
+				Err:       fmt.Errorf("service not initialized"),
+			}
+		}
+		err := m.service.DeleteEmails(accountID, folderName, []uint32{uid})
 		return tui.EmailActionDoneMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
 	}
 }
 
-func archiveFolderEmailCmd(account *config.Account, uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
+func (m *mainModel) archiveFolderEmailCmd(uid uint32, accountID string, folderName string, mailbox tui.MailboxKind) tea.Cmd {
 	return func() tea.Msg {
-		err := fetcher.ArchiveFolderEmail(account, folderName, uid)
+		if m.service == nil {
+			return tui.EmailActionDoneMsg{
+				UID:       uid,
+				AccountID: accountID,
+				Mailbox:   mailbox,
+				Err:       fmt.Errorf("service not initialized"),
+			}
+		}
+		err := m.service.ArchiveEmails(accountID, folderName, []uint32{uid})
 		return tui.EmailActionDoneMsg{UID: uid, AccountID: accountID, Mailbox: mailbox, Err: err}
 	}
 }
 
-func (m *mainModel) batchDeleteEmailsCmd(account *config.Account, uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
+func (m *mainModel) batchDeleteEmailsCmd(uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), httpclient.IMAPBatchActionTimeout)
-		defer cancel()
-
-		p := m.getProvider(account)
-		if p == nil {
+		if m.service == nil {
 			return tui.BatchEmailActionDoneMsg{
-				Count:  count,
-				Action: "delete",
-				Err:    fmt.Errorf("provider not found"),
+				Count:        count,
+				SuccessCount: 0,
+				FailureCount: count,
+				Action:       "delete",
+				Mailbox:      mailbox,
+				Err:          fmt.Errorf("service not initialized"),
 			}
 		}
 
-		err := p.DeleteEmails(ctx, folderName, uids)
+		err := m.service.DeleteEmails(accountID, folderName, uids)
 
-		// Remove emails from local state on success
-		if err == nil && m.folderInbox != nil {
-			m.folderInbox.GetInbox().RemoveEmails(uids, accountID)
-		}
-
-		successCount := count
-		failureCount := 0
+		successCount, failureCount := count, 0
 		if err != nil {
-			failureCount = count
-			successCount = 0
+			successCount, failureCount = 0, count
 		}
 
 		return tui.BatchEmailActionDoneMsg{
@@ -2984,31 +3064,24 @@ func (m *mainModel) batchDeleteEmailsCmd(account *config.Account, uids []uint32,
 	}
 }
 
-func (m *mainModel) batchArchiveEmailsCmd(account *config.Account, uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
+func (m *mainModel) batchArchiveEmailsCmd(uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), httpclient.IMAPBatchActionTimeout)
-		defer cancel()
-
-		p := m.getProvider(account)
-		if p == nil {
+		if m.service == nil {
 			return tui.BatchEmailActionDoneMsg{
-				Count:  count,
-				Action: "archive",
-				Err:    fmt.Errorf("provider not found"),
+				Count:        count,
+				SuccessCount: 0,
+				FailureCount: count,
+				Action:       "archive",
+				Mailbox:      mailbox,
+				Err:          fmt.Errorf("service not initialized"),
 			}
 		}
 
-		err := p.ArchiveEmails(ctx, folderName, uids)
+		err := m.service.ArchiveEmails(accountID, folderName, uids)
 
-		if err == nil && m.folderInbox != nil {
-			m.folderInbox.GetInbox().RemoveEmails(uids, accountID)
-		}
-
-		successCount := count
-		failureCount := 0
+		successCount, failureCount := count, 0
 		if err != nil {
-			failureCount = count
-			successCount = 0
+			successCount, failureCount = 0, count
 		}
 
 		return tui.BatchEmailActionDoneMsg{
@@ -3022,31 +3095,23 @@ func (m *mainModel) batchArchiveEmailsCmd(account *config.Account, uids []uint32
 	}
 }
 
-func (m *mainModel) batchMoveEmailsCmd(account *config.Account, uids []uint32, accountID, sourceFolder, destFolder string, count int) tea.Cmd {
+func (m *mainModel) batchMoveEmailsCmd(uids []uint32, accountID, sourceFolder, destFolder string, count int) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), httpclient.IMAPBatchActionTimeout)
-		defer cancel()
-
-		p := m.getProvider(account)
-		if p == nil {
+		if m.service == nil {
 			return tui.BatchEmailActionDoneMsg{
-				Count:  count,
-				Action: "move",
-				Err:    fmt.Errorf("provider not found"),
+				Count:        count,
+				SuccessCount: 0,
+				FailureCount: count,
+				Action:       "move",
+				Err:          fmt.Errorf("service not initialized"),
 			}
 		}
 
-		err := p.MoveEmails(ctx, uids, sourceFolder, destFolder)
+		err := m.service.MoveEmails(accountID, uids, sourceFolder, destFolder)
 
-		if err == nil && m.folderInbox != nil {
-			m.folderInbox.GetInbox().RemoveEmails(uids, accountID)
-		}
-
-		successCount := count
-		failureCount := 0
+		successCount, failureCount := count, 0
 		if err != nil {
-			failureCount = count
-			successCount = 0
+			successCount, failureCount = 0, count
 		}
 
 		return tui.BatchEmailActionDoneMsg{
@@ -3059,9 +3124,19 @@ func (m *mainModel) batchMoveEmailsCmd(account *config.Account, uids []uint32, a
 	}
 }
 
-func moveEmailToFolderCmd(account *config.Account, uid uint32, accountID string, sourceFolder, destFolder string) tea.Cmd {
+func (m *mainModel) moveEmailToFolderCmd(uid uint32, accountID string, sourceFolder, destFolder string) tea.Cmd {
 	return func() tea.Msg {
-		err := fetcher.MoveEmailToFolder(account, uid, sourceFolder, destFolder)
+		if m.service == nil {
+			return tui.EmailMovedMsg{
+				UID:          uid,
+				AccountID:    accountID,
+				SourceFolder: sourceFolder,
+				DestFolder:   destFolder,
+				Err:          fmt.Errorf("service not initialized"),
+			}
+		}
+
+		err := m.service.MoveEmails(accountID, []uint32{uid}, sourceFolder, destFolder)
 		return tui.EmailMovedMsg{
 			UID:          uid,
 			AccountID:    accountID,
@@ -3948,6 +4023,15 @@ func main() { //nolint:gocyclo
 	// Send email CLI subcommand: matcha send --to <email> --subject <subject> [flags]
 	if len(os.Args) > 1 && os.Args[1] == "send" {
 		runSendCLI(os.Args[2:])
+		exit(0)
+	}
+
+	// Apply patch CLI subcommand: matcha apply [patch-file] --repo <dir>
+	if len(os.Args) > 1 && os.Args[1] == "apply" {
+		if err := matchaCli.RunApply(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "apply failed: %v\n", err)
+			exit(1)
+		}
 		exit(0)
 	}
 

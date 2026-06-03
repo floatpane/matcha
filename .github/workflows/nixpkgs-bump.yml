@@ -9,8 +9,6 @@ name: Nixpkgs Bump PR
 #   - Initial matcha package already merged into nixpkgs (this workflow updates, not inits)
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       version:
