@@ -221,26 +221,39 @@ func (p *CommandPalette) renderRow(cmd PaletteCommand, selected bool, inner int)
 	return rendered + strings.Repeat(" ", gap) + hint
 }
 
-// Render composites the palette box centered over the given background content,
-// sized to the screen. Background rows behind the box are replaced (modal look).
+// Render composites the palette box as a floating layer centered over the given
+// background, using a lipgloss canvas so the background stays visible on every
+// side of the box (only the box's own rectangle is drawn over).
 func (p *CommandPalette) Render(background string, screenW, screenH int) string {
 	box := p.View()
-	bgLines := strings.Split(background, "\n")
-	for len(bgLines) < screenH {
-		bgLines = append(bgLines, "")
-	}
-	boxLines := strings.Split(box, "\n")
+	boxW, boxH := lipgloss.Width(box), lipgloss.Height(box)
 
-	startRow := (screenH - len(boxLines)) / 2
-	if startRow < 0 {
-		startRow = 0
+	col := (screenW - boxW) / 2
+	if col < 0 {
+		col = 0
 	}
-	for i, line := range boxLines {
-		row := startRow + i
-		if row < 0 || row >= len(bgLines) {
-			continue
-		}
-		bgLines[row] = lipgloss.PlaceHorizontal(screenW, lipgloss.Center, line)
+	row := (screenH - boxH) / 2
+	if row < 0 {
+		row = 0
 	}
-	return strings.Join(bgLines, "\n")
+
+	// Normalize the background to exactly screenW×screenH so the box centers
+	// against the real screen rather than the (possibly ragged) content bounds.
+	lines := strings.Split(background, "\n")
+	if len(lines) > screenH {
+		lines = lines[:screenH]
+	}
+	for len(lines) < screenH {
+		lines = append(lines, "")
+	}
+	for i, ln := range lines {
+		lines[i] = lipgloss.PlaceHorizontal(screenW, lipgloss.Left, ln)
+	}
+	background = strings.Join(lines, "\n")
+
+	canvas := lipgloss.NewCompositor(
+		lipgloss.NewLayer(background),
+		lipgloss.NewLayer(box).X(col).Y(row).Z(1),
+	)
+	return canvas.Render()
 }
