@@ -69,14 +69,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go: ["1.26.3"]
     steps:
       - uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: ${{ matrix.go }}
+          go-version: "1.26.4"
 
       - name: Install system deps (linux)
         if: runner.os == 'Linux'
