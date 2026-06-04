@@ -1732,7 +1732,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			}
 		}()
 
-		return m, tea.Batch(m.current.Init(), sendEmail(account, msg))
+		return m, tea.Batch(m.current.Init(), m.sendEmailCmd(account, msg))
 
 	case tui.SendRSVPMsg:
 		account := m.config.GetAccountByID(msg.AccountID)
@@ -2628,7 +2628,7 @@ func splitEmails(s string) []string {
 	return res
 }
 
-func sendEmail(account *config.Account, msg tui.SendEmailMsg) tea.Cmd {
+func (m *mainModel) sendEmailCmd(account *config.Account, msg tui.SendEmailMsg) tea.Cmd {
 	return func() tea.Msg {
 		if account == nil {
 			return tui.EmailResultMsg{Err: fmt.Errorf("no account configured")}
@@ -2644,21 +2644,19 @@ func sendEmail(account *config.Account, msg tui.SendEmailMsg) tea.Cmd {
 		recipients := splitEmails(msg.To)
 		cc := splitEmails(msg.Cc)
 		bcc := splitEmails(msg.Bcc)
+
 		body := msg.Body
-		// Append signature if present
 		if msg.Signature != "" {
 			body = body + "\n\n" + msg.Signature
 		}
-		// Append quoted text if present (for replies)
 		if msg.QuotedText != "" {
 			body += msg.QuotedText
 		}
-		images := make(map[string][]byte)
-		attachments := make(map[string][]byte)
 
+		// Process inline images.
+		images := make(map[string][]byte)
 		re := regexp.MustCompile(`!\[.*?\]\((.*?)\)`)
 		matches := re.FindAllStringSubmatch(body, -1)
-
 		for _, match := range matches {
 			imgPath := match[1]
 			imgData, err := os.ReadFile(imgPath)
@@ -2671,8 +2669,10 @@ func sendEmail(account *config.Account, msg tui.SendEmailMsg) tea.Cmd {
 			body = strings.Replace(body, imgPath, "cid:"+cid, 1)
 		}
 
-		htmlBody := markdownToHTML([]byte(body))
+		htmlBody := string(markdownToHTML([]byte(body)))
 
+		// Read attachment files into memory.
+		attachments := make(map[string][]byte)
 		for _, attachPath := range msg.AttachmentPaths {
 			fileData, err := os.ReadFile(attachPath)
 			if err != nil {
@@ -2683,17 +2683,25 @@ func sendEmail(account *config.Account, msg tui.SendEmailMsg) tea.Cmd {
 			attachments[filename] = fileData
 		}
 
-		rawMsg, err := sender.SendEmail(account, recipients, cc, bcc, msg.Subject, body, string(htmlBody), images, attachments, msg.InReplyTo, msg.References, msg.SignSMIME, msg.EncryptSMIME, msg.SignPGP, false)
+		err := m.service.SendEmail(
+			account.ID,
+			recipients,
+			cc,
+			bcc,
+			msg.Subject,
+			body,
+			htmlBody,
+			attachments,
+			msg.InReplyTo,
+			msg.References,
+			msg.SignSMIME,
+			msg.EncryptSMIME,
+			msg.SignPGP,
+			false,
+		)
 		if err != nil {
 			log.Printf("Failed to send email: %v", err)
 			return tui.EmailResultMsg{Err: err}
-		}
-
-		// Append to Sent folder via IMAP (Gmail auto-saves, so skip it)
-		if account.ServiceProvider != "gmail" {
-			if err := fetcher.AppendToSentMailbox(account, rawMsg); err != nil {
-				log.Printf("Failed to append sent message to Sent folder: %v", err)
-			}
 		}
 
 		return tui.EmailResultMsg{}

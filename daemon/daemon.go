@@ -88,6 +88,7 @@ func (d *Daemon) registerHandlers() {
 	d.server.Handle(daemonrpc.MethodArchiveEmails, d.handleArchiveEmails)
 	d.server.Handle(daemonrpc.MethodMoveEmails, d.handleMoveEmails)
 	d.server.Handle(daemonrpc.MethodMarkRead, d.handleMarkRead)
+	d.server.Handle(daemonrpc.MethodSendEmail, d.handleSendEmail)
 	d.server.Handle(daemonrpc.MethodFetchFolders, d.handleFetchFolders)
 	d.server.Handle(daemonrpc.MethodRefreshFolder, d.handleRefreshFolder)
 	d.server.Handle(daemonrpc.MethodSubscribe, d.handleSubscribe)

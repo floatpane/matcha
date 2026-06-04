@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/floatpane/matcha/daemonrpc"
+	"github.com/floatpane/matcha/fetcher"
+	"github.com/floatpane/matcha/sender"
 )
 
 // Per-handler timeouts. fetchTimeout covers reads against the upstream IMAP
@@ -335,6 +337,51 @@ func (d *Daemon) handleUnsubscribe(_ context.Context, conn *daemonrpc.Conn, para
 		delete(subs, key)
 	}
 	d.subMu.Unlock()
+
+	return true, nil
+}
+
+func (d *Daemon) handleSendEmail(ctx context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.SendEmailParams](params)
+	if err != nil {
+		return nil, parseError(err)
+	}
+
+	acct := d.getAccount(args.AccountID)
+	if acct == nil {
+		return nil, fmt.Errorf("no account for %s", args.AccountID)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	defer cancel()
+
+	rawMsg, err := sender.SendEmail(
+		acct,
+		args.To,
+		args.Cc,
+		args.Bcc,
+		args.Subject,
+		args.Body,
+		args.HTMLBody,
+		nil,
+		args.Attachments,
+		args.InReplyTo,
+		args.References,
+		args.SignSMIME,
+		args.EncryptSMIME,
+		args.SignPGP,
+		args.EncryptPGP,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if acct.ServiceProvider != "gmail" {
+		if err := fetcher.AppendToSentMailbox(acct, rawMsg); err != nil {
+			log.Printf("daemon: append to sent failed: %v", err)
+		}
+	}
 
 	return true, nil
 }

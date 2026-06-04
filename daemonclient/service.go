@@ -2,6 +2,7 @@ package daemonclient
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -10,6 +11,8 @@ import (
 	"github.com/floatpane/matcha/backend"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/daemonrpc"
+	"github.com/floatpane/matcha/fetcher"
+	"github.com/floatpane/matcha/sender"
 )
 
 // Service abstracts daemon-backed vs direct email operations.
@@ -24,6 +27,7 @@ type Service interface {
 	MoveEmails(accountID string, uids []uint32, src, dst string) error
 	MarkRead(accountID, folder string, uids []uint32) error
 	MarkUnread(accountID, folder string, uids []uint32) error
+	SendEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool) error
 	FetchFolders(accountID string) ([]backend.Folder, error)
 	RefreshFolder(accountID, folder string) error
 	Subscribe(accountID, folder string) error
@@ -168,6 +172,25 @@ func (s *daemonService) MarkUnread(accountID, folder string, uids []uint32) erro
 		Folder:    folder,
 		UIDs:      uids,
 		Read:      false,
+	}, nil)
+}
+
+func (s *daemonService) SendEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool) error {
+	return s.client.Call(daemonrpc.MethodSendEmail, daemonrpc.SendEmailParams{
+		AccountID:    accountID,
+		To:           to,
+		Cc:           cc,
+		Bcc:          bcc,
+		Subject:      subject,
+		Body:         body,
+		HTMLBody:     htmlBody,
+		Attachments:  attachments,
+		InReplyTo:    inReplyTo,
+		References:   references,
+		SignSMIME:    signSMIME,
+		EncryptSMIME: encryptSMIME,
+		SignPGP:      signPGP,
+		EncryptPGP:   encryptPGP,
 	}, nil)
 }
 
@@ -364,5 +387,43 @@ func (s *directService) Close() error {
 		p.Close() //nolint:errcheck,gosec
 	}
 	close(s.events)
+	return nil
+}
+
+func (s *directService) SendEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool) error {
+	acct := s.cfg.GetAccountByID(accountID)
+
+	if acct == nil {
+		return fmt.Errorf("no account for %s", accountID)
+	}
+
+	rawMsg, err := sender.SendEmail(
+		acct,
+		to,
+		cc,
+		bcc,
+		subject,
+		body,
+		htmlBody,
+		nil,
+		attachments,
+		inReplyTo,
+		references,
+		signSMIME,
+		encryptSMIME,
+		signPGP,
+		encryptPGP,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	if acct.ServiceProvider != "gmail" {
+		if err := fetcher.AppendToSentMailbox(acct, rawMsg); err != nil {
+			log.Printf("direct: append to sent failed: %v", err)
+		}
+	}
+
 	return nil
 }
