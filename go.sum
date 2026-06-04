@@ -68,8 +68,8 @@ github.com/emersion/go-pgpmail v0.2.2/go.mod h1:mRB5P7QKiAuOvcT36tdRZvm7nSt7V+f6
 github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 h1:oP4q0fw+fOSWn3DfFi4EXdT+B+gTtzx8GC9xsc26Znk=
 github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6/go.mod h1:iL2twTeMvZnrg54ZoPDNfJaJaqy0xIQFuBdrLsmspwQ=
 github.com/emersion/go-textwrapper v0.0.0-20200911093747-65d896831594/go.mod h1:aqO8z8wPrjkscevZJFVE1wXJrLpC5LtJG7fqLOsPb2U=
-github.com/floatpane/bubble-overlay v0.0.1 h1:5xU8cNigDPYegvgGMfOG23fIDXhrqXPvLTaEB7uHGK4=
-github.com/floatpane/bubble-overlay v0.0.1/go.mod h1:Csi1byxb9L8EAb8X13XdWF5aX5YiBD5C9WEWACyGa8A=
+github.com/floatpane/bubble-overlay v0.1.0 h1:W/D7/U7VEBHJRiIyMpadQrBCJUfvs/Xb6zXJgHzFFZI=
+github.com/floatpane/bubble-overlay v0.1.0/go.mod h1:quqZnQYU56JLcQYbOGlYFc9Yk4v5jwkx1lozuRQoaio=
 github.com/floatpane/go-icalendar v0.0.1 h1:lF9NhEI4TobX8valDakAFfCnBhM2GDITWMVymhXzD8c=
 github.com/floatpane/go-icalendar v0.0.1/go.mod h1:LSy9G+LwUZtfNIAjLlEVRXkuc2A+hq6+pVCIFOiEAyE=
 github.com/floatpane/go-keybind v0.0.1 h1:UrzPQ4ldR9sKQt/efpUfcs6gH8Mwy2NO5vwFTVf0dy0=

@@ -9,9 +9,8 @@ import (
 )
 
 // TestCommandPaletteRenderKeepsBackgroundOnBoxRows verifies the palette is drawn
-// as a floating layer: background content to the left and right of the box must
-// remain visible on the same rows the box occupies (the whole point of using a
-// canvas instead of blanking full rows).
+// as a floating layer via overlay.Center: background content to the left and
+// right of the box must remain visible on the same rows the box occupies.
 func TestCommandPaletteRenderKeepsBackgroundOnBoxRows(t *testing.T) {
 	const screenW, screenH = 100, 24
 

@@ -6,6 +6,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	overlay "github.com/floatpane/bubble-overlay"
 	"github.com/floatpane/matcha/theme"
 )
 
@@ -222,38 +223,8 @@ func (p *CommandPalette) renderRow(cmd PaletteCommand, selected bool, inner int)
 }
 
 // Render composites the palette box as a floating layer centered over the given
-// background, using a lipgloss canvas so the background stays visible on every
-// side of the box (only the box's own rectangle is drawn over).
+// background using overlay.Center from github.com/floatpane/bubble-overlay.
+// The background is preserved on all sides; only the box's own cells are replaced.
 func (p *CommandPalette) Render(background string, screenW, screenH int) string {
-	box := p.View()
-	boxW, boxH := lipgloss.Width(box), lipgloss.Height(box)
-
-	col := (screenW - boxW) / 2
-	if col < 0 {
-		col = 0
-	}
-	row := (screenH - boxH) / 2
-	if row < 0 {
-		row = 0
-	}
-
-	// Normalize the background to exactly screenW×screenH so the box centers
-	// against the real screen rather than the (possibly ragged) content bounds.
-	lines := strings.Split(background, "\n")
-	if len(lines) > screenH {
-		lines = lines[:screenH]
-	}
-	for len(lines) < screenH {
-		lines = append(lines, "")
-	}
-	for i, ln := range lines {
-		lines[i] = lipgloss.PlaceHorizontal(screenW, lipgloss.Left, ln)
-	}
-	background = strings.Join(lines, "\n")
-
-	canvas := lipgloss.NewCompositor(
-		lipgloss.NewLayer(background),
-		lipgloss.NewLayer(box).X(col).Y(row).Z(1),
-	)
-	return canvas.Render()
+	return overlay.Center(background, p.View(), screenW, screenH)
 }
