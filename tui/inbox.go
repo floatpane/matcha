@@ -65,6 +65,10 @@ func filterKey() string {
 	return "f"
 }
 
+func commandPaletteKey() string {
+	return config.Keybinds.Global.CommandPalette
+}
+
 type itemDelegate struct {
 	inbox *Inbox
 }
@@ -454,15 +458,12 @@ func (m *Inbox) updateList() {
 	l.Styles.PaginationStyle = paginationStyle
 	l.Styles.HelpStyle = inboxHelpStyle
 	l.SetStatusBarItemName("email", "emails")
+	// The help bar is deliberately minimal: navigation essentials plus a hint
+	// for the command palette. Less-common actions (visual mode, threaded,
+	// delete, archive, refresh, search, …) are reachable from the palette
+	// instead of crowding the bar — see buildPaletteCommands in main.go.
 	l.AdditionalShortHelpKeys = func() []key.Binding {
-		bindings := []key.Binding{
-			key.NewBinding(key.WithKeys("v"), key.WithHelp("v", t("inbox.visual_mode"))),
-			key.NewBinding(key.WithKeys(m.toggleThreadedKey()), key.WithHelp(m.toggleThreadedKey(), "threaded")),
-			key.NewBinding(key.WithKeys("d"), key.WithHelp("\uf014 d", t("inbox.delete"))),
-			key.NewBinding(key.WithKeys("a"), key.WithHelp("\uea98 a", t("inbox.archive"))),
-			key.NewBinding(key.WithKeys("r"), key.WithHelp("\ue348 r", t("inbox.refresh"))),
-			key.NewBinding(key.WithKeys(searchKey()), key.WithHelp(searchKey(), t("inbox.search"))),
-		}
+		var bindings []key.Binding
 		if len(m.tabs) > 1 {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "prev tab")),
@@ -470,6 +471,9 @@ func (m *Inbox) updateList() {
 			)
 		}
 		bindings = append(bindings, m.extraShortHelpKeys...)
+		if pk := commandPaletteKey(); pk != "" {
+			bindings = append(bindings, key.NewBinding(key.WithKeys(pk), key.WithHelp(pk, "commands")))
+		}
 		for _, pk := range m.pluginKeyBindings {
 			bindings = append(bindings, key.NewBinding(key.WithKeys(pk.Key), key.WithHelp(pk.Key, pk.Description)))
 		}
