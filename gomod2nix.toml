@@ -114,8 +114,8 @@ schema = 3
     hash = 'sha256-eil7taerUmXI7lGOrcw56I0ilBzayRhhf1Sjixyc4oA='
 
   [mod.'github.com/floatpane/bubble-overlay']
-    version = 'v0.0.1'
-    hash = 'sha256-YQ+g7GhiufcasMU8f0zt6ar46ykXZMHFBPFROt2n17I='
+    version = 'v0.1.0'
+    hash = 'sha256-WSWz8HoyEpnYcdyFTeYWWBkoP4axsyFOXFgZ0oCAHsE='
 
   [mod.'github.com/floatpane/go-icalendar']
     version = 'v0.0.1'
