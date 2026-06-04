@@ -341,7 +341,7 @@ func (d *Daemon) handleUnsubscribe(_ context.Context, conn *daemonrpc.Conn, para
 	return true, nil
 }
 
-func (d *Daemon) handleSendEmail(ctx context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+func (d *Daemon) handleSendEmail(_ context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
 	args, err := decodeParams[daemonrpc.SendEmailParams](params)
 	if err != nil {
 		return nil, parseError(err)
@@ -351,9 +351,6 @@ func (d *Daemon) handleSendEmail(ctx context.Context, _ *daemonrpc.Conn, params 
 	if acct == nil {
 		return nil, fmt.Errorf("no account for %s", args.AccountID)
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
-	defer cancel()
 
 	rawMsg, err := sender.SendEmail(
 		acct,
