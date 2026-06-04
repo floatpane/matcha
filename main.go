@@ -2150,6 +2150,7 @@ func (m *mainModel) buildPaletteCommands() []tui.PaletteCommand {
 			tui.PaletteCommand{Title: "Select / visual mode", Hint: kb.Inbox.VisualMode, Keywords: "multi batch", Action: keyAction(kb.Inbox.VisualMode)},
 			tui.PaletteCommand{Title: "Archive selected", Hint: kb.Inbox.Archive, Keywords: "file store", Action: keyAction(kb.Inbox.Archive)},
 			tui.PaletteCommand{Title: "Delete selected", Hint: kb.Inbox.Delete, Keywords: "trash remove", Action: keyAction(kb.Inbox.Delete)},
+			tui.PaletteCommand{Title: "Move to folder", Hint: kb.Folder.Move, Keywords: "file relocate", Action: keyAction(kb.Folder.Move)},
 		)
 	}
 

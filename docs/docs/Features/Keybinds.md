@@ -80,6 +80,12 @@ rely on the palette for less-common actions instead of memorizing every key.
 The palette is suppressed while typing in the composer, login, and other
 text-entry views so the trigger key never interrupts editing.
 
+Because the palette covers them, the bottom help bar stays intentionally short —
+it shows only navigation essentials (folder/tab switching, split-pane focus) and
+a `commands` hint for the palette. Every other action (visual mode, threaded
+toggle, delete, archive, refresh, search, move to folder, …) is one `ctrl+k`
+away. The keys themselves still work even when they're not printed on the bar.
+
 ## Areas
 
 | Area       | Where it applies                                         |
