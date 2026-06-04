@@ -593,10 +593,6 @@ func (m *FolderInbox) View() tea.View {
 		content = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, inboxView)
 	}
 
-	// Ensure help bar is always at the very bottom of the total view
-	help := helpStyle.Render(t("folder_inbox.help"))
-	content = lipgloss.JoinVertical(lipgloss.Left, content, help)
-
 	// If move overlay is active, render it on top
 	if m.movingEmail {
 		content = m.renderWithMoveOverlay(content)
@@ -685,9 +681,6 @@ func (m *FolderInbox) renderWithMoveOverlay(content string) string {
 			b.WriteString("\n")
 		}
 	}
-
-	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render(t("folder_inbox.help")))
 
 	overlay := moveOverlayStyle.Render(b.String())
 
