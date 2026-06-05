@@ -1316,12 +1316,12 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			}
 			// Set language from config
 			lang := i18n.DetectLanguage(cfg)
-			log.Printf("Detected language: %s", lang)
+			loglevel.Verbosef("Detected language: %s", lang)
 			if err := i18n.GetManager().SetLanguage(lang); err != nil {
 				log.Printf("Failed to set language %s: %v", lang, err)
 			} else {
-				log.Printf("Language set to: %s", i18n.GetManager().GetLanguage())
-				log.Printf("Test translation: %s", i18n.GetManager().T("composer.title"))
+				loglevel.Verbosef("Language set to: %s", i18n.GetManager().GetLanguage())
+				loglevel.Verbosef("Test translation: %s", i18n.GetManager().T("composer.title"))
 			}
 		}
 		_ = config.EnsurePGPDir()
