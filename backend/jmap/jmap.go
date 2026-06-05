@@ -282,8 +282,8 @@ func searchLimit(query backend.SearchQuery) uint32 {
 	return 100
 }
 
-func (p *Provider) FetchEmailBody(_ context.Context, _ string, uid uint32) (string, string, []backend.Attachment, error) {
-	jmapID, err := p.lookupJMAPID(uid)
+func (p *Provider) FetchEmailBody(_ context.Context, folder string, uid uint32) (string, string, []backend.Attachment, error) {
+	jmapID, err := p.resolveUID(folder, uid)
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -677,6 +677,55 @@ func (p *Provider) Close() error {
 
 // Verify interface compliance at compile time.
 var _ backend.Provider = (*Provider)(nil)
+
+// resolveUID returns the JMAP ID for the given uint32 UID. It checks the
+// in-memory cache first (fast path when FetchEmails ran on the same instance),
+// then falls back to querying the mailbox so the backend works correctly even
+// when a fresh Provider instance is created per call.
+func (p *Provider) resolveUID(folder string, uid uint32) (jmapclient.ID, error) {
+	if id, err := p.lookupJMAPID(uid); err == nil {
+		return id, nil
+	}
+	return p.resolveUIDByQuery(folder, uid)
+}
+
+// resolveUIDByQuery fetches all email IDs in the folder from JMAP via
+// Email/query, hashes each one, and returns the ID whose hash matches uid.
+// It also warms the local cache as a side effect.
+func (p *Provider) resolveUIDByQuery(folder string, uid uint32) (jmapclient.ID, error) {
+	mboxID, err := p.resolveMailboxID(folder)
+	if err != nil {
+		return "", fmt.Errorf("jmap: resolving mailbox for UID lookup: %w", err)
+	}
+
+	req := &jmapclient.Request{}
+	req.Invoke(&email.Query{
+		Account: p.accountID,
+		Filter:  &email.FilterCondition{InMailbox: mboxID},
+		Limit:   10000,
+	})
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("jmap: querying IDs for UID lookup: %w", err)
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for _, inv := range resp.Responses {
+		if r, ok := inv.Args.(*email.QueryResponse); ok {
+			for _, id := range r.IDs {
+				h := jmapIDToUID(id)
+				p.idToJMAPID[h] = id
+				if h == uid {
+					return id, nil
+				}
+			}
+		}
+	}
+	return "", fmt.Errorf("jmap: no email found for UID %d in folder %q", uid, folder)
+}
 
 // lookupJMAPID resolves a uint32 UID hash back to the JMAP string ID.
 func (p *Provider) lookupJMAPID(uid uint32) (jmapclient.ID, error) {
