@@ -9,8 +9,7 @@ import (
 	"time"
 
 	"github.com/floatpane/matcha/daemonrpc"
-	"github.com/floatpane/matcha/fetcher"
-	"github.com/floatpane/matcha/sender"
+	"github.com/google/uuid"
 )
 
 // Per-handler timeouts. fetchTimeout covers reads against the upstream IMAP
@@ -341,44 +340,45 @@ func (d *Daemon) handleUnsubscribe(_ context.Context, conn *daemonrpc.Conn, para
 	return true, nil
 }
 
-func (d *Daemon) handleSendEmail(_ context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
-	args, err := decodeParams[daemonrpc.SendEmailParams](params)
+func (d *Daemon) handleQueueEmail(_ context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.QueueEmailParams](params)
 	if err != nil {
 		return nil, parseError(err)
 	}
 
-	acct := d.getAccount(args.AccountID)
-	if acct == nil {
-		return nil, fmt.Errorf("no account for %s", args.AccountID)
+	id := uuid.New().String()
+	entry := &OutboxEntry{
+		ID:     id,
+		Params: args.Email,
+		SendAt: time.Now().Add(time.Duration(args.DelaySeconds) * time.Second),
 	}
 
-	rawMsg, err := sender.SendEmail(
-		acct,
-		args.To,
-		args.Cc,
-		args.Bcc,
-		args.Subject,
-		args.Body,
-		args.HTMLBody,
-		nil,
-		args.Attachments,
-		args.InReplyTo,
-		args.References,
-		args.SignSMIME,
-		args.EncryptSMIME,
-		args.SignPGP,
-		args.EncryptPGP,
-	)
+	d.outboxMu.Lock()
+	d.outbox[id] = entry
+	d.outboxMu.Unlock()
 
+	log.Printf("daemon: queued email %s, sending in %ds", id, args.DelaySeconds)
+
+	return daemonrpc.QueueEmailResult{JobID: id}, nil
+}
+
+func (d *Daemon) handleCancelEmail(_ context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.CancelEmailParams](params)
 	if err != nil {
-		return nil, err
+		return nil, parseError(err)
 	}
 
-	if acct.ServiceProvider != "gmail" {
-		if err := fetcher.AppendToSentMailbox(acct, rawMsg); err != nil {
-			log.Printf("daemon: append to sent failed: %v", err)
-		}
+	d.outboxMu.Lock()
+	_, exists := d.outbox[args.JobID]
+	if exists {
+		delete(d.outbox, args.JobID)
+	}
+	d.outboxMu.Unlock()
+
+	if !exists {
+		return nil, fmt.Errorf("job %s not found", args.JobID)
 	}
 
+	log.Printf("daemon: cancelled email %s", args.JobID)
 	return true, nil
 }

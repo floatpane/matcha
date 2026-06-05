@@ -27,7 +27,8 @@ type Service interface {
 	MoveEmails(accountID string, uids []uint32, src, dst string) error
 	MarkRead(accountID, folder string, uids []uint32) error
 	MarkUnread(accountID, folder string, uids []uint32) error
-	SendEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool) error
+	QueueEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool, delaySeconds int) (string, error)
+	CancelEmail(jobID string) error
 	FetchFolders(accountID string) ([]backend.Folder, error)
 	RefreshFolder(accountID, folder string) error
 	Subscribe(accountID, folder string) error
@@ -175,22 +176,33 @@ func (s *daemonService) MarkUnread(accountID, folder string, uids []uint32) erro
 	}, nil)
 }
 
-func (s *daemonService) SendEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool) error {
-	return s.client.Call(daemonrpc.MethodSendEmail, daemonrpc.SendEmailParams{
-		AccountID:    accountID,
-		To:           to,
-		Cc:           cc,
-		Bcc:          bcc,
-		Subject:      subject,
-		Body:         body,
-		HTMLBody:     htmlBody,
-		Attachments:  attachments,
-		InReplyTo:    inReplyTo,
-		References:   references,
-		SignSMIME:    signSMIME,
-		EncryptSMIME: encryptSMIME,
-		SignPGP:      signPGP,
-		EncryptPGP:   encryptPGP,
+func (s *daemonService) QueueEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool, delaySeconds int) (string, error) {
+	var result daemonrpc.QueueEmailResult
+	err := s.client.Call(daemonrpc.MethodQueueEmail, daemonrpc.QueueEmailParams{
+		Email: daemonrpc.SendEmailParams{
+			AccountID:    accountID,
+			To:           to,
+			Cc:           cc,
+			Bcc:          bcc,
+			Subject:      subject,
+			Body:         body,
+			HTMLBody:     htmlBody,
+			Attachments:  attachments,
+			InReplyTo:    inReplyTo,
+			References:   references,
+			SignSMIME:    signSMIME,
+			EncryptSMIME: encryptSMIME,
+			SignPGP:      signPGP,
+			EncryptPGP:   encryptPGP,
+		},
+		DelaySeconds: delaySeconds,
+	}, &result)
+	return result.JobID, err
+}
+
+func (s *daemonService) CancelEmail(jobID string) error {
+	return s.client.Call(daemonrpc.MethodCancelEmail, daemonrpc.CancelEmailParams{
+		JobID: jobID,
 	}, nil)
 }
 
@@ -390,11 +402,10 @@ func (s *directService) Close() error {
 	return nil
 }
 
-func (s *directService) SendEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool) error {
+func (s *directService) QueueEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool, _ int) (string, error) {
 	acct := s.cfg.GetAccountByID(accountID)
-
 	if acct == nil {
-		return fmt.Errorf("no account for %s", accountID)
+		return "", fmt.Errorf("no account for %s", accountID)
 	}
 
 	rawMsg, err := sender.SendEmail(
@@ -414,9 +425,8 @@ func (s *directService) SendEmail(accountID string, to, cc, bcc []string, subjec
 		signPGP,
 		encryptPGP,
 	)
-
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	if acct.ServiceProvider != "gmail" {
@@ -425,5 +435,9 @@ func (s *directService) SendEmail(accountID string, to, cc, bcc []string, subjec
 		}
 	}
 
+	return "", nil
+}
+
+func (s *directService) CancelEmail(_ string) error {
 	return nil
 }

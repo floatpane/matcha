@@ -16,6 +16,7 @@ import (
 	"github.com/floatpane/matcha/daemonrpc"
 	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/notify"
+	"github.com/floatpane/matcha/sender"
 )
 
 const inboxFolder = "INBOX"
@@ -46,6 +47,15 @@ type Daemon struct {
 
 	shutdown chan struct{}
 	done     chan struct{}
+
+	outbox   map[string]*OutboxEntry
+	outboxMu sync.Mutex
+}
+
+type OutboxEntry struct {
+	ID     string
+	Params daemonrpc.SendEmailParams
+	SendAt time.Time
 }
 
 // New creates a daemon with the given config.
@@ -59,6 +69,7 @@ func New(cfg *config.Config) *Daemon {
 		idleUpdates:   idleUpdates,
 		shutdown:      make(chan struct{}),
 		done:          make(chan struct{}),
+		outbox:        make(map[string]*OutboxEntry),
 	}
 
 	d.server = udsrpc.NewServer()
@@ -88,11 +99,12 @@ func (d *Daemon) registerHandlers() {
 	d.server.Handle(daemonrpc.MethodArchiveEmails, d.handleArchiveEmails)
 	d.server.Handle(daemonrpc.MethodMoveEmails, d.handleMoveEmails)
 	d.server.Handle(daemonrpc.MethodMarkRead, d.handleMarkRead)
-	d.server.Handle(daemonrpc.MethodSendEmail, d.handleSendEmail)
 	d.server.Handle(daemonrpc.MethodFetchFolders, d.handleFetchFolders)
 	d.server.Handle(daemonrpc.MethodRefreshFolder, d.handleRefreshFolder)
 	d.server.Handle(daemonrpc.MethodSubscribe, d.handleSubscribe)
 	d.server.Handle(daemonrpc.MethodUnsubscribe, d.handleUnsubscribe)
+	d.server.Handle(daemonrpc.MethodQueueEmail, d.handleQueueEmail)
+	d.server.Handle(daemonrpc.MethodCancelEmail, d.handleCancelEmail)
 }
 
 // Run starts the daemon: creates providers, starts the socket listener,
@@ -157,6 +169,8 @@ func (d *Daemon) Run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	d.syncCancel = cancel
 	go d.backgroundSync(ctx)
+
+	go d.processOutbox(ctx)
 
 	// Serve client connections via the shared RPC server. Canceling serveCtx
 	// closes the listener and unblocks Serve.
@@ -506,4 +520,63 @@ func (d *Daemon) updateFolderCache(folderName, accountID string, newEmails []con
 
 	// Save merged cache
 	return config.SaveFolderEmailCache(folderName, merged)
+}
+
+func (d *Daemon) processOutbox(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			d.outboxMu.Lock()
+			for id, entry := range d.outbox {
+				if time.Now().After(entry.SendAt) {
+					delete(d.outbox, id)
+					go d.sendOutboxEntry(entry)
+				}
+			}
+			d.outboxMu.Unlock()
+		}
+	}
+}
+
+func (d *Daemon) sendOutboxEntry(entry *OutboxEntry) {
+	acct := d.getAccount(entry.Params.AccountID)
+	if acct == nil {
+		log.Printf("daemon: outbox send failed, no account for %s", entry.Params.AccountID)
+		return
+	}
+
+	rawMsg, err := sender.SendEmail(
+		acct,
+		entry.Params.To,
+		entry.Params.Cc,
+		entry.Params.Bcc,
+		entry.Params.Subject,
+		entry.Params.Body,
+		entry.Params.HTMLBody,
+		nil,
+		entry.Params.Attachments,
+		entry.Params.InReplyTo,
+		entry.Params.References,
+		entry.Params.SignSMIME,
+		entry.Params.EncryptSMIME,
+		entry.Params.SignPGP,
+		entry.Params.EncryptPGP,
+	)
+	if err != nil {
+		log.Printf("daemon: outbox send failed for %s: %v", entry.ID, err)
+		return
+	}
+
+	if acct.ServiceProvider != "gmail" {
+		if err := fetcher.AppendToSentMailbox(acct, rawMsg); err != nil {
+			log.Printf("daemon: append to sent failed for %s: %v", entry.ID, err)
+		}
+	}
+
+	log.Printf("daemon: outbox sent email %s", entry.ID)
 }
