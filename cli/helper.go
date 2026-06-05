@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"net"
@@ -10,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/floatpane/matcha/assets"
 	"github.com/floatpane/matcha/daemonrpc"
@@ -81,6 +83,7 @@ func installHelper() error {
 	}
 	// Remove any previous install so a stale binary can't linger.
 	_ = stopLaunchAgent()
+	stopRunningHelper()
 	os.RemoveAll(appDir) //nolint:errcheck,gosec
 
 	contentsDir := filepath.Join(appDir, "Contents")
@@ -96,7 +99,7 @@ func installHelper() error {
 	// Write the logo PNG into Resources so the Swift app has a stable path for
 	// the menu bar icon and notification image.
 	iconPNG := filepath.Join(resourcesDir, "logo.png")
-	if err := os.WriteFile(iconPNG, assets.Logo, 0644); err != nil { //nolint:gosec
+	if err := os.WriteFile(iconPNG, assets.Logo, 0644); err != nil {
 		return fmt.Errorf("could not write logo: %w", err)
 	}
 
@@ -104,13 +107,13 @@ func installHelper() error {
 	// a standard square size, so resize a temporary copy to 512x512 first.
 	icnsPath := filepath.Join(resourcesDir, helperAppName+".icns")
 	tmpIcon := filepath.Join(os.TempDir(), "matcha_helper_icon.png")
-	if err := os.WriteFile(tmpIcon, assets.Logo, 0644); err == nil { //nolint:gosec
-		_ = exec.Command("sips", "-z", "512", "512", tmpIcon).Run()                        //nolint:noctx,errcheck
-		_ = exec.Command("sips", "-s", "format", "icns", tmpIcon, "--out", icnsPath).Run() //nolint:noctx,errcheck
-		os.Remove(tmpIcon)                                                                 //nolint:errcheck,gosec
+	if err := os.WriteFile(tmpIcon, assets.Logo, 0644); err == nil {
+		_ = exec.Command("sips", "-z", "512", "512", tmpIcon).Run()                        //nolint:noctx
+		_ = exec.Command("sips", "-s", "format", "icns", tmpIcon, "--out", icnsPath).Run() //nolint:noctx
+		_ = os.Remove(tmpIcon)
 	}
 
-	if err := os.WriteFile(filepath.Join(contentsDir, "Info.plist"), []byte(helperInfoPlist()), 0644); err != nil { //nolint:gosec
+	if err := os.WriteFile(filepath.Join(contentsDir, "Info.plist"), []byte(helperInfoPlist()), 0644); err != nil {
 		return err
 	}
 
@@ -121,7 +124,7 @@ func installHelper() error {
 	swiftSrc = strings.ReplaceAll(swiftSrc, "{{ICON_PATH}}", iconPNG)
 
 	tmpSwift := filepath.Join(os.TempDir(), "matcha_menubar.swift")
-	if err := os.WriteFile(tmpSwift, []byte(swiftSrc), 0644); err != nil { //nolint:gosec
+	if err := os.WriteFile(tmpSwift, []byte(swiftSrc), 0644); err != nil {
 		return err
 	}
 	defer os.Remove(tmpSwift) //nolint:errcheck
@@ -142,7 +145,7 @@ func installHelper() error {
 
 	// Register the bundle with Launch Services.
 	lsregister := "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
-	_ = exec.Command(lsregister, "-f", appDir).Run() //nolint:noctx,errcheck
+	_ = exec.Command(lsregister, "-f", appDir).Run() //nolint:noctx
 
 	// Install and load the LaunchAgent so it runs now and at login.
 	if err := installLaunchAgent(exeDest); err != nil {
@@ -160,6 +163,7 @@ func uninstallHelper() error {
 		// Non-fatal: the agent may not be loaded.
 		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 	}
+	stopRunningHelper()
 
 	agentPath, err := helperLaunchAgentPath()
 	if err != nil {
@@ -203,7 +207,10 @@ func installedLabel(ok bool) string {
 }
 
 func daemonLabel() string {
-	conn, err := net.Dial("unix", daemonrpc.SocketPath())
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "unix", daemonrpc.SocketPath())
 	if err != nil {
 		return "not running"
 	}
@@ -229,7 +236,7 @@ func installLaunchAgent(exePath string) error {
 	if err := os.MkdirAll(filepath.Dir(agentPath), 0750); err != nil {
 		return err
 	}
-	if err := os.WriteFile(agentPath, []byte(helperLaunchAgentPlist(exePath)), 0644); err != nil { //nolint:gosec
+	if err := os.WriteFile(agentPath, []byte(helperLaunchAgentPlist(exePath)), 0644); err != nil {
 		return err
 	}
 
@@ -237,9 +244,17 @@ func installLaunchAgent(exePath string) error {
 	// systems. Both are best-effort — the agent still runs at next login.
 	domain := "gui/" + strconv.Itoa(os.Getuid())
 	if err := exec.Command("launchctl", "bootstrap", domain, agentPath).Run(); err != nil { //nolint:noctx
-		_ = exec.Command("launchctl", "load", "-w", agentPath).Run() //nolint:noctx,errcheck
+		_ = exec.Command("launchctl", "load", "-w", agentPath).Run() //nolint:noctx
 	}
 	return nil
+}
+
+// stopRunningHelper terminates any running helper instances by name. The
+// LaunchAgent's bootout only stops processes launchd itself started, so an
+// instance launched another way (or an orphan from a prior install) would
+// otherwise linger and post duplicate notifications. Best-effort.
+func stopRunningHelper() {
+	_ = exec.Command("killall", helperExecutable).Run() //nolint:noctx
 }
 
 // stopLaunchAgent unloads the LaunchAgent if present.
@@ -253,7 +268,7 @@ func stopLaunchAgent() error {
 	}
 	domain := "gui/" + strconv.Itoa(os.Getuid())
 	if err := exec.Command("launchctl", "bootout", domain+"/"+helperBundleID).Run(); err != nil { //nolint:noctx
-		_ = exec.Command("launchctl", "unload", "-w", agentPath).Run() //nolint:noctx,errcheck
+		_ = exec.Command("launchctl", "unload", "-w", agentPath).Run() //nolint:noctx
 	}
 	return nil
 }

@@ -1,5 +1,6 @@
 import Cocoa
 import Darwin
+import UserNotifications
 
 // MatchaHelper — a macOS menu bar agent for the Matcha terminal email client.
 //
@@ -217,7 +218,7 @@ final class DaemonClient {
 
 // MARK: - App
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSUserNotificationCenterDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var statusItem: NSStatusItem!
     private var client: DaemonClient!
     private let presencePath: String
@@ -227,6 +228,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSUserNotificationCent
     private var subscribed = Set<String>()
     private var reconnectScheduled = false
     private var refreshTimer: Timer?
+    // Per-account fetch coalescing: at most one FetchFolders in flight per
+    // account, with a single follow-up if more refreshes arrive meanwhile. This
+    // stops a burst of events (NewMail + SyncComplete) from racing and firing
+    // duplicate notifications for the same new message.
+    private var fetchInFlight = Set<String>()
+    private var refetchPending = Set<String>()
 
     private var socketPath: String {
         "\(NSHomeDirectory())/Library/Caches/matcha/daemon.sock"
@@ -238,11 +245,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSUserNotificationCent
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // NSUserNotification is deprecated, but unlike UserNotifications it works
-        // for an ad-hoc-signed bundle (no Apple Developer ID). The Matcha icon on
-        // the banner comes from the bundle's app icon automatically.
-        NSUserNotificationCenter.default.delegate = self
         logLine("started")
+        // Request notification permission on launch. This is the only way macOS
+        // lets an app become "allowed" — there's no API to self-enable. On a
+        // fresh install the user gets a one-tap "Allow" prompt (after which
+        // banners are on by default); the Matcha icon comes from the bundle.
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error = error {
+                logLine("notif auth error: \(error.localizedDescription)")
+            } else {
+                logLine("notif auth granted=\(granted)")
+            }
+        }
         writePresenceMarker()
         // Construct the client before building the status item: rebuildMenu()
         // reads client.isConnected.
@@ -423,35 +439,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSUserNotificationCent
 
     private func refreshUnread() {
         for account in accounts {
-            let accountID = account.id
-            client.call("FetchFolders", params: ["account_id": accountID]) { [weak self] result in
-                guard let self = self else { return }
-                let folders = (result as? [[String: Any]]) ?? []
-                // Count INBOX unread only. Summing every folder would fold in
-                // Trash/Junk/Archive (e.g. hundreds of "unread" deleted
-                // messages), which isn't what the badge should reflect — and it
-                // matches what the daemon watches and notifies on.
-                var total = 0
-                for folder in folders {
-                    guard let name = folder["Name"] as? String,
-                          name.uppercased() == "INBOX" else { continue }
-                    if let unread = (folder["Unread"] as? NSNumber)?.intValue {
-                        total += unread
-                    }
+            fetchUnread(account.id)
+        }
+    }
+
+    private func fetchUnread(_ accountID: String) {
+        // Coalesce: if a fetch is already running for this account, just mark a
+        // follow-up and return, so concurrent triggers don't double-count.
+        if fetchInFlight.contains(accountID) {
+            refetchPending.insert(accountID)
+            return
+        }
+        fetchInFlight.insert(accountID)
+        client.call("FetchFolders", params: ["account_id": accountID]) { [weak self] result in
+            guard let self = self else { return }
+            self.fetchInFlight.remove(accountID)
+            let folders = (result as? [[String: Any]]) ?? []
+            // Count INBOX unread only. Summing every folder would fold in
+            // Trash/Junk/Archive (e.g. hundreds of "unread" deleted
+            // messages), which isn't what the badge should reflect — and it
+            // matches what the daemon watches and notifies on.
+            var total = 0
+            for folder in folders {
+                guard let name = folder["Name"] as? String,
+                      name.uppercased() == "INBOX" else { continue }
+                if let unread = (folder["Unread"] as? NSNumber)?.intValue {
+                    total += unread
                 }
-                // Notify when INBOX unread rises. This is more reliable than the
-                // daemon's NewMail event (which depends on IMAP IDLE pushing in
-                // time): any path that detects new mail — IDLE, a sync, or the
-                // backstop poll — raises the count and triggers the banner. A nil
-                // previous value means this is the first read (or a reconnect),
-                // so we don't notify for the initial state.
-                let previous = self.unreadByAccount[accountID]
-                self.unreadByAccount[accountID] = total
+            }
+            // Notify when INBOX unread rises. This is more reliable than the
+            // daemon's NewMail event (which depends on IMAP IDLE pushing in
+            // time): any path that detects new mail — IDLE, a sync, or the
+            // backstop poll — raises the count and triggers the banner. A nil
+            // previous value means this is the first read (or a reconnect),
+            // so we don't notify for the initial state.
+            let previous = self.unreadByAccount[accountID]
+            self.unreadByAccount[accountID] = total
+            if previous != total {
                 logLine("unread INBOX for \(self.emailForAccount(accountID)) = \(total) (total \(self.totalUnread))")
-                if let previous = previous, total > previous {
-                    self.notifyNewMail(accountID: accountID, newCount: total - previous)
-                }
-                self.refreshUI()
+            }
+            if let previous = previous, total > previous {
+                self.notifyNewMail(accountID: accountID, newCount: total - previous)
+            }
+            self.refreshUI()
+            // Run a single coalesced follow-up if more triggers arrived while
+            // this fetch was in flight.
+            if self.refetchPending.remove(accountID) != nil {
+                self.fetchUnread(accountID)
             }
         }
     }
@@ -459,7 +493,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSUserNotificationCent
     // MARK: Events
 
     private func handleEvent(_ type: String, _ data: [String: Any]) {
-        logLine("event: \(type) \(data)")
         // Every event that could mean new mail just re-reads the unread count;
         // refreshUnread() posts the notification when the count rises. This keeps
         // a single, reliable notification trigger instead of depending on NewMail.
@@ -477,25 +510,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSUserNotificationCent
 
     private func notifyNewMail(accountID: String, newCount: Int) {
         let account = emailForAccount(accountID)
-        let notification = NSUserNotification()
-        notification.title = newCount > 1 ? "\(newCount) new messages" : "New mail"
-        notification.informativeText = account.isEmpty ? "You have new mail" : "New mail for \(account)"
-        notification.soundName = NSUserNotificationDefaultSoundName
-        // contentImage shows a thumbnail on the right; the matcha app icon on the
-        // left is supplied by the bundle automatically.
-        if let img = NSImage(contentsOfFile: iconPath) {
-            notification.contentImage = img
+        let content = UNMutableNotificationContent()
+        content.title = newCount > 1 ? "\(newCount) new messages" : "New mail"
+        content.body = account.isEmpty ? "You have new mail" : "New mail for \(account)"
+        content.sound = .default
+        // The Matcha app icon (the bundle icon) is shown on the banner by macOS
+        // automatically, so no attachment is needed.
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                logLine("notif add error for \(account): \(error.localizedDescription)")
+            } else {
+                logLine("posted notification for \(account)")
+            }
         }
-        NSUserNotificationCenter.default.deliver(notification)
-        logLine("delivered notification for \(account)")
     }
 
-    func userNotificationCenter(_ center: NSUserNotificationCenter, shouldPresent notification: NSUserNotification) -> Bool {
-        return true
+    // Show the banner even if the agent happens to be frontmost.
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
     }
 
-    func userNotificationCenter(_ center: NSUserNotificationCenter, didActivate notification: NSUserNotification) {
+    // Open Matcha when the user clicks the banner.
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
         launchMatcha()
+        completionHandler()
     }
 
     // MARK: Actions
