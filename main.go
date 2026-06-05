@@ -4278,6 +4278,15 @@ func main() { //nolint:gocyclo
 		exit(0)
 	}
 
+	// Menu bar helper CLI subcommand (macOS): matcha helper <install|uninstall|status>
+	if len(os.Args) > 1 && os.Args[1] == "helper" {
+		if err := matchaCli.RunHelper(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "helper: %v\n", err)
+			exit(1)
+		}
+		exit(0)
+	}
+
 	// Marketplace TUI subcommand: matcha marketplace
 	if len(os.Args) > 1 && os.Args[1] == "marketplace" {
 		mp := tui.NewMarketplace(true)

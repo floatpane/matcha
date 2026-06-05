@@ -62,6 +62,22 @@ The existing `-v` and `--version` flags continue to print the Matcha version.
 
 [Setup Guide](https://docs.matcha.email/setup-guides/ai-rewrite)
 
+### macOS Menu Bar Helper
+
+On macOS, Matcha ships with an optional menu bar helper. It lives in the menu bar
+and shows your **unread count**, posts native **notifications with the Matcha icon**
+on new mail, and lists your accounts so you can **open Matcha** in a terminal with a
+click. It talks to the Matcha daemon, so no extra configuration is needed.
+
+```bash
+matcha helper install     # build & start the menu bar app (runs at login)
+matcha helper status      # check whether it's installed and the daemon is up
+matcha helper uninstall   # remove it
+```
+
+Building the helper uses the Xcode Command Line Tools' `swiftc` (the same requirement
+as `matcha setup-mailto`).
+
 ## Documentation
 
 Matcha Documention is available on [our website](https://docs.matcha.email)
