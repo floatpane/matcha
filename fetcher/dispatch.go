@@ -2,15 +2,16 @@ package fetcher
 
 import (
 	"github.com/floatpane/matcha/backend"
+	_ "github.com/floatpane/matcha/backend/jmap"    // register jmap backend
 	_ "github.com/floatpane/matcha/backend/maildir" // register maildir backend
 	"github.com/floatpane/matcha/config"
 )
 
 // hasBackendProvider reports whether the account is served by a non-IMAP
-// backend (currently only "maildir") and should be routed through the
-// backend.Provider abstraction instead of the legacy IMAP code path.
+// backend (currently only "maildir" and "jmap") and should be routed through
+// the backend.Provider abstraction instead of the legacy IMAP code path.
 func hasBackendProvider(account *config.Account) bool {
-	return account != nil && account.Protocol == "maildir"
+	return account != nil && (account.Protocol == "maildir" || account.Protocol == "jmap")
 }
 
 // newBackendProvider builds the backend.Provider for the account. Callers

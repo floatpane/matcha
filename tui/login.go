@@ -94,7 +94,7 @@ func NewLogin(hideTips bool) *Login {
 			t.Placeholder = "Send As Email (optional From header override)"
 			t.Prompt = "✉️ > "
 		case inputAuthMethod:
-			t.Placeholder = "Auth Method (password or oauth2)"
+			t.Placeholder = "Auth Method (password, oauth2, or token)"
 			t.Prompt = "🔐 > "
 		case inputPassword:
 			t.Placeholder = "Password / App Password"
@@ -178,7 +178,7 @@ func (m *Login) visibleFields() []int {
 	switch proto {
 	case protocolJMAP:
 		// JMAP: no provider selector, just endpoint + common fields
-		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputSendAsEmail, inputCatchAll, inputPassword, inputJMAPEndpoint)
+		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputSendAsEmail, inputCatchAll, inputAuthMethod, inputPassword, inputJMAPEndpoint)
 	case protocolPOP3:
 		// POP3: custom server fields + SMTP for sending
 		fields = append(fields, inputName, inputEmail, inputFetchEmail, inputSendAsEmail, inputCatchAll, inputPassword,
@@ -313,6 +313,13 @@ func (m *Login) updateFlags() {
 	provider := m.inputs[inputProvider].Value()
 	m.showCustom = provider == "custom"
 	m.useOAuth2 = m.inputs[inputAuthMethod].Value() == "oauth2"
+
+	authMethod := m.inputs[inputAuthMethod].Value()
+	if m.protocol() == protocolJMAP && (authMethod == "token" || authMethod == "") {
+		m.inputs[inputPassword].Placeholder = "API Token"
+	} else {
+		m.inputs[inputPassword].Placeholder = "Password / App Password"
+	}
 }
 
 // validPort parses a port string and returns the integer value if it is within
@@ -335,12 +342,20 @@ func (m *Login) submitForm() func() tea.Msg {
 	smtpPort := validPort(m.inputs[inputSMTPPort].Value(), 587)
 	pop3Port := validPort(m.inputs[inputPOP3Port].Value(), 995)
 
-	authMethod := "password"
-	if m.useOAuth2 {
-		authMethod = "oauth2"
-	}
-
 	proto := m.protocol()
+
+	var authMethod string
+	switch {
+	case proto == protocolJMAP:
+		authMethod = m.inputs[inputAuthMethod].Value()
+		if authMethod == "" {
+			authMethod = "token"
+		}
+	case m.useOAuth2:
+		authMethod = "oauth2"
+	default:
+		authMethod = "password"
+	}
 
 	insecure := m.inputs[inputInsecure].Value() == "true"
 	catchAll := m.inputs[inputCatchAll].Value() == "true"
@@ -414,6 +429,7 @@ func (m *Login) protocolFieldViews(proto string) []string {
 	switch proto {
 	case protocolJMAP:
 		return append(common,
+			m.inputs[inputAuthMethod].View(),
 			m.inputs[inputPassword].View(),
 			"",
 			listHeader.Render("JMAP Settings:"),
@@ -500,7 +516,11 @@ func (m *Login) View() tea.View {
 	case inputSendAsEmail:
 		tip = "Optional From header override for outgoing email. Leave blank to send as the fetched address."
 	case inputAuthMethod:
-		tip = "Type 'oauth2' for OAuth2 or 'password' for app password."
+		if m.protocol() == protocolJMAP {
+			tip = "Type 'token' for API token (Bearer auth, default) or 'password' for HTTP Basic auth."
+		} else {
+			tip = "Type 'oauth2' for OAuth2 or 'password' for app password."
+		}
 	case inputPassword:
 		tip = "Your password or an app-specific password if using 2FA."
 	case inputIMAPServer:

@@ -53,7 +53,7 @@ func New(account *config.Account) (*Provider, error) {
 		SessionEndpoint: account.JMAPEndpoint,
 	}
 
-	if account.AuthMethod == "oauth2" {
+	if account.AuthMethod == "oauth2" || account.AuthMethod == "token" || account.AuthMethod == "" {
 		client.WithAccessToken(account.Password)
 	} else {
 		client.WithBasicAuth(account.Email, account.Password)
