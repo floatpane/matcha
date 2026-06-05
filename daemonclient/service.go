@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/floatpane/matcha/backend"
+	_ "github.com/floatpane/matcha/backend/jmap"    // register jmap backend for directService
+	_ "github.com/floatpane/matcha/backend/maildir" // register maildir backend for directService
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/daemonrpc"
 )

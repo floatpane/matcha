@@ -362,8 +362,8 @@ func (p *Provider) FetchAttachment(_ context.Context, _ string, _ uint32, partID
 	return io.ReadAll(reader)
 }
 
-func (p *Provider) MarkAsRead(_ context.Context, _ string, uid uint32) error {
-	jmapID, err := p.lookupJMAPID(uid)
+func (p *Provider) MarkAsRead(_ context.Context, folder string, uid uint32) error {
+	jmapID, err := p.resolveUID(folder, uid)
 	if err != nil {
 		return err
 	}
@@ -380,8 +380,8 @@ func (p *Provider) MarkAsRead(_ context.Context, _ string, uid uint32) error {
 	return err
 }
 
-func (p *Provider) MarkAsUnread(_ context.Context, _ string, uid uint32) error {
-	jmapID, err := p.lookupJMAPID(uid)
+func (p *Provider) MarkAsUnread(_ context.Context, folder string, uid uint32) error {
+	jmapID, err := p.resolveUID(folder, uid)
 	if err != nil {
 		return err
 	}
@@ -398,8 +398,8 @@ func (p *Provider) MarkAsUnread(_ context.Context, _ string, uid uint32) error {
 	return err
 }
 
-func (p *Provider) DeleteEmail(_ context.Context, _ string, uid uint32) error {
-	jmapID, err := p.lookupJMAPID(uid)
+func (p *Provider) DeleteEmail(_ context.Context, folder string, uid uint32) error {
+	jmapID, err := p.resolveUID(folder, uid)
 	if err != nil {
 		return err
 	}
@@ -428,8 +428,8 @@ func (p *Provider) DeleteEmail(_ context.Context, _ string, uid uint32) error {
 	return err
 }
 
-func (p *Provider) ArchiveEmail(_ context.Context, _ string, uid uint32) error {
-	jmapID, err := p.lookupJMAPID(uid)
+func (p *Provider) ArchiveEmail(_ context.Context, folder string, uid uint32) error {
+	jmapID, err := p.resolveUID(folder, uid)
 	if err != nil {
 		return err
 	}
@@ -450,8 +450,8 @@ func (p *Provider) ArchiveEmail(_ context.Context, _ string, uid uint32) error {
 	return err
 }
 
-func (p *Provider) MoveEmail(_ context.Context, uid uint32, _, dstFolder string) error {
-	jmapID, err := p.lookupJMAPID(uid)
+func (p *Provider) MoveEmail(_ context.Context, uid uint32, srcFolder, dstFolder string) error {
+	jmapID, err := p.resolveUID(srcFolder, uid)
 	if err != nil {
 		return err
 	}
