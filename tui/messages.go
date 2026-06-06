@@ -48,9 +48,8 @@ type EmailQueuedMsg struct {
 	DelaySeconds int
 }
 
-type UndoSendTickMsg struct {
-	JobID       string
-	SecondsLeft int
+type EmailDelayExpiredMsg struct {
+	JobID string
 }
 
 type UndoSendMsg struct {

@@ -147,7 +147,7 @@ func (c *Config) GetBodyCacheThreshold() int {
 
 func (c *Config) GetUndoDelaySeconds() int {
 	if c.UndoDelaySeconds <= 0 {
-		return 10
+		return 5
 	}
 	return c.UndoDelaySeconds
 }

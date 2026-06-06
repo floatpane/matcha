@@ -1752,25 +1752,30 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	case tui.EmailQueuedMsg:
 		m.pendingJobID = msg.JobID
-		m.current = tui.NewStatus(fmt.Sprintf("Sending in %ds... (%s to undo)", msg.DelaySeconds, config.Keybinds.Composer.UndoSend))
-		return m, tea.Batch(m.current.Init(), undoSendTickCmd(msg.JobID, msg.DelaySeconds))
+		m.current = tui.NewStatus(fmt.Sprintf("Message sent (%s to undo)", config.Keybinds.Composer.UndoSend))
+		return m, tea.Batch(
+			m.current.Init(),
+			tea.Tick(
+				time.Duration(msg.DelaySeconds)*time.Second, func(t time.Time) tea.Msg {
+					return tui.EmailDelayExpiredMsg{JobID: msg.JobID}
+				}),
+		)
 
-	case tui.UndoSendTickMsg:
-		if m.pendingJobID == "" {
-			return m, nil
-		}
-
-		if msg.SecondsLeft <= 0 {
+	case tui.EmailDelayExpiredMsg:
+		if m.pendingJobID == msg.JobID {
 			m.pendingJobID = ""
+			m.previousModel = nil
+
 			if m.plugins != nil {
 				m.plugins.CallHook(plugin.HookEmailSendAfter)
 			}
+
 			m.current = tui.NewChoice()
 			m.current, _ = m.current.Update(m.currentWindowSize())
 			return m, m.current.Init()
 		}
-		m.current = tui.NewStatus(fmt.Sprintf("Sending in %ds... (%s to undo)", msg.SecondsLeft, config.Keybinds.Composer.UndoSend))
-		return m, tea.Batch(m.current.Init(), undoSendTickCmd(msg.JobID, msg.SecondsLeft))
+
+		return m, nil
 
 	case tui.UndoSendMsg:
 		if m.previousModel != nil {
@@ -1781,10 +1786,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}
 
 		m.previousModel = tui.NewChoice()
-		m.current = tui.NewStatus("Email cancelled.")
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return tui.RestoreViewMsg{}
-		})
+		return m, m.current.Init()
 
 	case tui.SendRSVPMsg:
 		account := m.config.GetAccountByID(msg.AccountID)
@@ -2745,15 +2747,6 @@ func (m *mainModel) sendEmailCmd(account *config.Account, msg tui.SendEmailMsg) 
 
 		return tui.EmailQueuedMsg{JobID: jobID, DelaySeconds: delaySeconds}
 	}
-}
-
-func undoSendTickCmd(jobID string, secondsLeft int) tea.Cmd {
-	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
-		return tui.UndoSendTickMsg{
-			JobID:       jobID,
-			SecondsLeft: secondsLeft - 1,
-		}
-	})
 }
 
 func sendRSVP(account *config.Account, msg tui.SendRSVPMsg) tea.Cmd {

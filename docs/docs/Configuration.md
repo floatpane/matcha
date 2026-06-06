@@ -51,7 +51,7 @@ Configuration is stored in `~/.config/matcha/config.json`.
   "disable_spellcheck": false,
   "disable_spell_suggestions": false,
   "body_cache_threshold_mb": 100,
-  "undo_delay_seconds": 10
+  "undo_delay_seconds": 5
 }
 ```
 
@@ -67,7 +67,7 @@ Configuration is stored in `~/.config/matcha/config.json`.
 
 `body_cache_threshold_mb` sets the maximum size (in megabytes) for the local email body cache. When this limit is reached, least recently accessed cached emails are evicted across all folders to make room for new ones. Defaults to `100` MB if not specified.
 
-`undo_delay_seconds` sets the delay (in seconds) before a sent email is actually delivered, giving you a chance to cancel mistakes. During this window, a countdown shows "Sending in Xs... (u to undo)". Pressing the configured undo key cancels the send. After the delay expires, the email is transmitted and cannot be undone. Set to `0` to send immediately with no undo window. Defaults to `10` seconds if not specified.
+`undo_delay_seconds` sets the delay (in seconds) before a sent email is actually delivered, giving you a chance to cancel mistakes. During this window, a countdown shows "Sending in Xs... (u to undo)". Pressing the configured undo key cancels the send. After the delay expires, the email is transmitted and cannot be undone. Set to `0` to send immediately with no undo window. Defaults to `5` seconds if not specified.
 
 ## Data Locations
 
