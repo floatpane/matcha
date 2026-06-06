@@ -340,7 +340,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		if msg.String() == "u" {
+		if msg.String() == config.Keybinds.Composer.UndoSend {
 			if m.pendingJobID != "" {
 				jobID := m.pendingJobID
 				m.pendingJobID = ""
@@ -1752,7 +1752,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	case tui.EmailQueuedMsg:
 		m.pendingJobID = msg.JobID
-		m.current = tui.NewStatus(fmt.Sprintf("Sending in %ds... (u to undo)", msg.DelaySeconds))
+		m.current = tui.NewStatus(fmt.Sprintf("Sending in %ds... (%s to undo)", msg.DelaySeconds, config.Keybinds.Composer.UndoSend))
 		return m, tea.Batch(m.current.Init(), undoSendTickCmd(msg.JobID, msg.DelaySeconds))
 
 	case tui.UndoSendTickMsg:
@@ -1769,7 +1769,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.current, _ = m.current.Update(m.currentWindowSize())
 			return m, m.current.Init()
 		}
-		m.current = tui.NewStatus(fmt.Sprintf("Sending in %ds... (u to undo)", msg.SecondsLeft))
+		m.current = tui.NewStatus(fmt.Sprintf("Sending in %ds... (%s to undo)", msg.SecondsLeft, config.Keybinds.Composer.UndoSend))
 		return m, tea.Batch(m.current.Init(), undoSendTickCmd(msg.JobID, msg.SecondsLeft))
 
 	case tui.UndoSendMsg:
@@ -2696,19 +2696,21 @@ func (m *mainModel) sendEmailCmd(account *config.Account, msg tui.SendEmailMsg) 
 		recipients := splitEmails(msg.To)
 		cc := splitEmails(msg.Cc)
 		bcc := splitEmails(msg.Bcc)
-
 		body := msg.Body
+		// Append signature if present
 		if msg.Signature != "" {
 			body = body + "\n\n" + msg.Signature
 		}
+		// Append quoted text if present (for replies)
 		if msg.QuotedText != "" {
 			body += msg.QuotedText
 		}
-
-		// Process inline images.
 		images := make(map[string][]byte)
+		attachments := make(map[string][]byte)
+
 		re := regexp.MustCompile(`!\[.*?\]\((.*?)\)`)
 		matches := re.FindAllStringSubmatch(body, -1)
+
 		for _, match := range matches {
 			imgPath := match[1]
 			imgData, err := os.ReadFile(imgPath)
@@ -2721,10 +2723,8 @@ func (m *mainModel) sendEmailCmd(account *config.Account, msg tui.SendEmailMsg) 
 			body = strings.Replace(body, imgPath, "cid:"+cid, 1)
 		}
 
-		htmlBody := string(markdownToHTML([]byte(body)))
+		htmlBody := markdownToHTML([]byte(body))
 
-		// Read attachment files into memory.
-		attachments := make(map[string][]byte)
 		for _, attachPath := range msg.AttachmentPaths {
 			fileData, err := os.ReadFile(attachPath)
 			if err != nil {
@@ -2735,29 +2735,15 @@ func (m *mainModel) sendEmailCmd(account *config.Account, msg tui.SendEmailMsg) 
 			attachments[filename] = fileData
 		}
 
-		jobID, err := m.service.QueueEmail(
-			account.ID,
-			recipients,
-			cc,
-			bcc,
-			msg.Subject,
-			body,
-			htmlBody,
-			attachments,
-			msg.InReplyTo,
-			msg.References,
-			msg.SignSMIME,
-			msg.EncryptSMIME,
-			msg.SignPGP,
-			false,
-			10,
-		)
+		delaySeconds := m.config.GetUndoDelaySeconds()
+		jobID, err := m.service.QueueEmail(account.ID, recipients, cc, bcc, msg.Subject, body, string(htmlBody), images, attachments, msg.InReplyTo, msg.References, msg.SignSMIME, msg.EncryptSMIME, msg.SignPGP, false, delaySeconds)
+
 		if err != nil {
 			log.Printf("Failed to queue email: %v", err)
 			return tui.EmailResultMsg{Err: err}
 		}
 
-		return tui.EmailQueuedMsg{JobID: jobID, DelaySeconds: 10}
+		return tui.EmailQueuedMsg{JobID: jobID, DelaySeconds: delaySeconds}
 	}
 }
 

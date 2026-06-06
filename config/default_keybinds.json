@@ -36,7 +36,8 @@
     "spell_next": "ctrl+n",
     "spell_prev": "ctrl+p",
     "spell_accept": "tab",
-    "spell_dismiss": "esc"
+    "spell_dismiss": "esc",
+    "undo_send": "u"
   },
   "folder": {
     "next_folder": "tab",

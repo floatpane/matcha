@@ -129,6 +129,7 @@ type Config struct {
 	DateFormat              string        `json:"date_format,omitempty"`
 	Language                string        `json:"language,omitempty"` // Language code (e.g., "en", "es", "de")
 	BodyCacheThresholdMB    int           `json:"body_cache_threshold_mb,omitempty"`
+	UndoDelaySeconds        int           `json:"undo_delay_seconds,omitempty"`
 	// PluginSettings stores user-configurable values for installed plugins,
 	// keyed by plugin name then setting key. Values are JSON-native types
 	// (bool, float64, string) matching the plugin's declared schema.
@@ -142,6 +143,13 @@ func (c *Config) GetBodyCacheThreshold() int {
 		return 100 * 1024 * 1024
 	}
 	return c.BodyCacheThresholdMB * 1024 * 1024
+}
+
+func (c *Config) GetUndoDelaySeconds() int {
+	if c.UndoDelaySeconds <= 0 {
+		return 10
+	}
+	return c.UndoDelaySeconds
 }
 
 // GetDateFormat returns the Go time reference layout translated from the
@@ -612,6 +620,7 @@ func LoadConfig() (*Config, error) {
 		DateFormat              string                            `json:"date_format,omitempty"`
 		Language                string                            `json:"language,omitempty"`
 		BodyCacheThresholdMB    int                               `json:"body_cache_threshold_mb,omitempty"`
+		UndoDelaySeconds        int                               `json:"undo_delay_seconds,omitempty"`
 		PluginSettings          map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
 	}
 
@@ -654,6 +663,7 @@ func LoadConfig() (*Config, error) {
 	config.DateFormat = raw.DateFormat
 	config.Language = raw.Language
 	config.BodyCacheThresholdMB = raw.BodyCacheThresholdMB
+	config.UndoDelaySeconds = raw.UndoDelaySeconds
 	config.PluginSettings = raw.PluginSettings
 
 	for _, rawAcc := range raw.Accounts {

@@ -27,7 +27,7 @@ type Service interface {
 	MoveEmails(accountID string, uids []uint32, src, dst string) error
 	MarkRead(accountID, folder string, uids []uint32) error
 	MarkUnread(accountID, folder string, uids []uint32) error
-	QueueEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool, delaySeconds int) (string, error)
+	QueueEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, images map[string][]byte, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool, delaySeconds int) (string, error)
 	CancelEmail(jobID string) error
 	FetchFolders(accountID string) ([]backend.Folder, error)
 	RefreshFolder(accountID, folder string) error
@@ -176,7 +176,7 @@ func (s *daemonService) MarkUnread(accountID, folder string, uids []uint32) erro
 	}, nil)
 }
 
-func (s *daemonService) QueueEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool, delaySeconds int) (string, error) {
+func (s *daemonService) QueueEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, images map[string][]byte, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool, delaySeconds int) (string, error) {
 	var result daemonrpc.QueueEmailResult
 	err := s.client.Call(daemonrpc.MethodQueueEmail, daemonrpc.QueueEmailParams{
 		Email: daemonrpc.SendEmailParams{
@@ -402,7 +402,7 @@ func (s *directService) Close() error {
 	return nil
 }
 
-func (s *directService) QueueEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool, _ int) (string, error) {
+func (s *directService) QueueEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, images map[string][]byte, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool, _ int) (string, error) {
 	acct := s.cfg.GetAccountByID(accountID)
 	if acct == nil {
 		return "", fmt.Errorf("no account for %s", accountID)
@@ -416,7 +416,7 @@ func (s *directService) QueueEmail(accountID string, to, cc, bcc []string, subje
 		subject,
 		body,
 		htmlBody,
-		nil,
+		images,
 		attachments,
 		inReplyTo,
 		references,
