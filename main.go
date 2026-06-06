@@ -123,6 +123,7 @@ type mainModel struct {
 	showLogPanel bool
 	logCh        <-chan logging.Entry
 	logPanel     *tui.LogPanel
+	pendingJobID string
 }
 
 type logEntryMsg struct {
@@ -339,6 +340,18 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
+		if msg.String() == "u" {
+			if m.pendingJobID != "" {
+				jobID := m.pendingJobID
+				m.pendingJobID = ""
+				return m, func() tea.Msg {
+					if err := m.service.CancelEmail(jobID); err != nil {
+						return tui.EmailResultMsg{Err: fmt.Errorf("could not undo: email may have already been sent")}
+					}
+					return tui.UndoSendMsg{JobID: jobID}
+				}
+			}
+		}
 		if msg.String() == "ctrl+c" {
 			m.idleWatcher.StopAll()
 			if m.service != nil {
@@ -1688,6 +1701,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if m.plugins != nil {
 			m.plugins.CallSendHook(plugin.HookEmailSendBefore, msg.To, msg.Cc, msg.Subject, msg.AccountID)
 		}
+
+		m.previousModel = m.current
+
 		// Get draft ID before clearing composer (if it's a composer)
 		var draftID string
 		if composer, ok := m.current.(*tui.Composer); ok {
@@ -1733,6 +1749,42 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}()
 
 		return m, tea.Batch(m.current.Init(), m.sendEmailCmd(account, msg))
+
+	case tui.EmailQueuedMsg:
+		m.pendingJobID = msg.JobID
+		m.current = tui.NewStatus(fmt.Sprintf("Sending in %ds... (u to undo)", msg.DelaySeconds))
+		return m, tea.Batch(m.current.Init(), undoSendTickCmd(msg.JobID, msg.DelaySeconds))
+
+	case tui.UndoSendTickMsg:
+		if m.pendingJobID == "" {
+			return m, nil
+		}
+
+		if msg.SecondsLeft <= 0 {
+			m.pendingJobID = ""
+			if m.plugins != nil {
+				m.plugins.CallHook(plugin.HookEmailSendAfter)
+			}
+			m.current = tui.NewChoice()
+			m.current, _ = m.current.Update(m.currentWindowSize())
+			return m, m.current.Init()
+		}
+		m.current = tui.NewStatus(fmt.Sprintf("Sending in %ds... (u to undo)", msg.SecondsLeft))
+		return m, tea.Batch(m.current.Init(), undoSendTickCmd(msg.JobID, msg.SecondsLeft))
+
+	case tui.UndoSendMsg:
+		if m.previousModel != nil {
+			m.current = m.previousModel
+			m.previousModel = nil
+			m.current, _ = m.current.Update(m.currentWindowSize())
+			return m, m.current.Init()
+		}
+
+		m.previousModel = tui.NewChoice()
+		m.current = tui.NewStatus("Email cancelled.")
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return tui.RestoreViewMsg{}
+		})
 
 	case tui.SendRSVPMsg:
 		account := m.config.GetAccountByID(msg.AccountID)
@@ -2683,7 +2735,7 @@ func (m *mainModel) sendEmailCmd(account *config.Account, msg tui.SendEmailMsg) 
 			attachments[filename] = fileData
 		}
 
-		err := m.service.SendEmail(
+		jobID, err := m.service.QueueEmail(
 			account.ID,
 			recipients,
 			cc,
@@ -2698,14 +2750,24 @@ func (m *mainModel) sendEmailCmd(account *config.Account, msg tui.SendEmailMsg) 
 			msg.EncryptSMIME,
 			msg.SignPGP,
 			false,
+			10,
 		)
 		if err != nil {
-			log.Printf("Failed to send email: %v", err)
+			log.Printf("Failed to queue email: %v", err)
 			return tui.EmailResultMsg{Err: err}
 		}
 
-		return tui.EmailResultMsg{}
+		return tui.EmailQueuedMsg{JobID: jobID, DelaySeconds: 10}
 	}
+}
+
+func undoSendTickCmd(jobID string, secondsLeft int) tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return tui.UndoSendTickMsg{
+			JobID:       jobID,
+			SecondsLeft: secondsLeft - 1,
+		}
+	})
 }
 
 func sendRSVP(account *config.Account, msg tui.SendRSVPMsg) tea.Cmd {
