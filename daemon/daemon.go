@@ -558,7 +558,7 @@ func (d *Daemon) sendOutboxEntry(entry *OutboxEntry) {
 		entry.Params.Subject,
 		entry.Params.Body,
 		entry.Params.HTMLBody,
-		nil,
+		entry.Params.Images,
 		entry.Params.Attachments,
 		entry.Params.InReplyTo,
 		entry.Params.References,

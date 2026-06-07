@@ -131,6 +131,7 @@ type SendEmailParams struct {
 	Subject      string            `json:"subject"`
 	Body         string            `json:"body"`
 	HTMLBody     string            `json:"html_body,omitempty"`
+	Images       map[string][]byte `json:"images,omitempty"`
 	Attachments  map[string][]byte `json:"attachments,omitempty"`
 	InReplyTo    string            `json:"in_reply_to,omitempty"`
 	References   []string          `json:"references,omitempty"`

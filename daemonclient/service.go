@@ -187,6 +187,7 @@ func (s *daemonService) QueueEmail(accountID string, to, cc, bcc []string, subje
 			Subject:      subject,
 			Body:         body,
 			HTMLBody:     htmlBody,
+			Images:       images,
 			Attachments:  attachments,
 			InReplyTo:    inReplyTo,
 			References:   references,
