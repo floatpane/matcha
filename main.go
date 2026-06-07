@@ -1725,6 +1725,11 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			account = m.config.GetFirstAccount()
 		}
 
+		// Ensure the service is initialized even when composing without visiting inbox.
+		if m.service == nil && m.config != nil {
+			m.service = daemonclient.NewService(m.config)
+		}
+
 		statusText := "Sending email..."
 		if msg.SignPGP && account != nil && account.PGPKeySource == "yubikey" {
 			statusText = "Touch your YubiKey to sign..."

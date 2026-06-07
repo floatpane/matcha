@@ -544,6 +544,12 @@ func (d *Daemon) processOutbox(ctx context.Context) {
 }
 
 func (d *Daemon) sendOutboxEntry(entry *OutboxEntry) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("daemon: panic sending outbox entry %s: %v", entry.ID, r)
+		}
+	}()
+
 	acct := d.getAccount(entry.Params.AccountID)
 	if acct == nil {
 		log.Printf("daemon: outbox send failed, no account for %s", entry.Params.AccountID)
