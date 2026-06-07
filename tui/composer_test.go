@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/floatpane/matcha/config"
 )
 
@@ -383,6 +384,161 @@ func TestComposerUpdate(t *testing.T) {
 		// Verify the selected account
 		if multiComposer.GetSelectedAccountID() != "account-2" {
 			t.Errorf("Expected selected account ID 'account-2', got %q", multiComposer.GetSelectedAccountID())
+		}
+	})
+
+	t.Run("Account picker filters accounts", func(t *testing.T) {
+		accounts := []config.Account{
+			{ID: "personal", Email: "personal@example.com", Name: "Personal"},
+			{ID: "billing", Email: "billing@example.com", Name: "Billing"},
+			{ID: "support", Email: "support@example.com", Name: "Support"},
+		}
+		composer := NewComposerWithAccounts(accounts, "personal", "", "", "", false)
+		composer.focusIndex = focusFrom
+
+		model, _ := composer.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		composer = model.(*Composer)
+		view := ansi.Strip(composer.View().Content)
+		if strings.Contains(view, "Filter:") {
+			t.Fatalf("Expected account picker filter to be hidden before pressing f, got:\n%s", view)
+		}
+
+		model, _ = composer.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
+		composer = model.(*Composer)
+		for _, r := range "supp" {
+			model, _ = composer.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+			composer = model.(*Composer)
+		}
+
+		if composer.accountPickerFilter != "supp" {
+			t.Fatalf("Expected filter %q, got %q", "supp", composer.accountPickerFilter)
+		}
+		if composer.GetSelectedAccountID() != "personal" {
+			t.Fatalf("Expected active filter input not to select an account, got %q", composer.GetSelectedAccountID())
+		}
+
+		view = ansi.Strip(composer.View().Content)
+		if !strings.Contains(view, "Filter: supp") {
+			t.Fatalf("Expected account picker view to show filter, got:\n%s", view)
+		}
+		if !strings.Contains(view, "“supp” 1 account • 2 filtered") {
+			t.Fatalf("Expected account picker status below active filter, got:\n%s", view)
+		}
+		if strings.Contains(view, "> Support") {
+			t.Fatalf("Expected active filter input not to show an account cursor, got:\n%s", view)
+		}
+		if strings.Contains(view, "Billing") {
+			t.Fatalf("Expected filtered account picker view to hide Billing, got:\n%s", view)
+		}
+
+		model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		composer = model.(*Composer)
+		if composer.accountPickerFiltering {
+			t.Fatal("Expected enter to leave account picker filter input mode")
+		}
+		view = ansi.Strip(composer.View().Content)
+		if !strings.Contains(view, "> Support") {
+			t.Fatalf("Expected applied filter to focus the filtered account list, got:\n%s", view)
+		}
+		if strings.Contains(view, "Filter: supp") {
+			t.Fatalf("Expected applied filter view to hide filter input, got:\n%s", view)
+		}
+		if !strings.Contains(view, "“supp” 1 account • 2 filtered") {
+			t.Fatalf("Expected applied filter status to remain visible, got:\n%s", view)
+		}
+		if strings.Index(view, "“supp” 1 account") > strings.Index(view, "> Support") {
+			t.Fatalf("Expected applied filter status above account list, got:\n%s", view)
+		}
+		if !composer.showAccountPicker {
+			t.Fatal("Expected account picker to remain open after applying filter")
+		}
+		if composer.GetSelectedAccountID() != "support" {
+			t.Fatalf("Expected selected account ID support, got %q", composer.GetSelectedAccountID())
+		}
+
+		model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		composer = model.(*Composer)
+		if composer.showAccountPicker {
+			t.Fatal("Expected account picker to close after selection")
+		}
+	})
+
+	t.Run("Account picker filter treats j and k as input until applied", func(t *testing.T) {
+		accounts := []config.Account{
+			{ID: "one", Email: "one@example.com", Name: "One"},
+			{ID: "jk", Email: "jk@example.com", Name: "JK"},
+			{ID: "two", Email: "two@example.com", Name: "Two"},
+		}
+		composer := NewComposerWithAccounts(accounts, "one", "", "", "", false)
+		composer.focusIndex = focusFrom
+
+		model, _ := composer.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		composer = model.(*Composer)
+		model, _ = composer.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
+		composer = model.(*Composer)
+		model, _ = composer.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+		composer = model.(*Composer)
+		model, _ = composer.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
+		composer = model.(*Composer)
+
+		if composer.accountPickerFilter != "jk" {
+			t.Fatalf("Expected j/k to be typed into active filter, got %q", composer.accountPickerFilter)
+		}
+		if composer.GetSelectedAccountID() != "one" {
+			t.Fatalf("Expected active filter typing not to navigate accounts, got %q", composer.GetSelectedAccountID())
+		}
+
+		model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		composer = model.(*Composer)
+		if composer.accountPickerFiltering {
+			t.Fatal("Expected enter to apply filter and focus account list")
+		}
+		if composer.GetSelectedAccountID() != "jk" {
+			t.Fatalf("Expected applied jk filter to select jk account, got %q", composer.GetSelectedAccountID())
+		}
+
+		model, _ = composer.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+		composer = model.(*Composer)
+		if composer.accountPickerFilter != "" {
+			t.Fatalf("Expected esc to clear applied filter, got %q", composer.accountPickerFilter)
+		}
+		if !composer.showAccountPicker {
+			t.Fatal("Expected esc to clear filter before closing account picker")
+		}
+
+		model, _ = composer.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+		composer = model.(*Composer)
+		if composer.GetSelectedAccountID() != "two" {
+			t.Fatalf("Expected j to navigate after filter is cleared, got %q", composer.GetSelectedAccountID())
+		}
+	})
+
+	t.Run("Account picker filter uses configured keybind", func(t *testing.T) {
+		previous := config.Keybinds
+		t.Cleanup(func() {
+			config.Keybinds = previous
+		})
+		config.Keybinds.Composer.AccountPickerFilter = "ctrl+f"
+
+		accounts := []config.Account{
+			{ID: "one", Email: "one@example.com", Name: "One"},
+			{ID: "two", Email: "two@example.com", Name: "Two"},
+		}
+		composer := NewComposerWithAccounts(accounts, "one", "", "", "", false)
+		composer.focusIndex = focusFrom
+
+		model, _ := composer.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		composer = model.(*Composer)
+		model, _ = composer.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
+		composer = model.(*Composer)
+		if composer.accountPickerFiltering {
+			t.Fatal("Expected default f key not to start account picker filtering after remap")
+		}
+
+		model, _ = composer.Update(tea.KeyPressMsg{Code: 'f', Mod: tea.ModCtrl})
+		composer = model.(*Composer)
+		if !composer.accountPickerFiltering {
+			t.Fatal("Expected configured ctrl+f key to start account picker filtering")
 		}
 	})
 

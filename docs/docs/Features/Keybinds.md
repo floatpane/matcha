@@ -47,7 +47,9 @@ Plain text, not encrypted. Edit with any text editor. Restart matcha to apply ch
   "composer": {
     "external_editor": "ctrl+e",
     "next_field": "tab",
-    "prev_field": "shift+tab"
+    "prev_field": "shift+tab",
+    "delete": "d",
+    "account_picker_filter": "f"
   },
   "folder": {
     "next_folder": "tab",
