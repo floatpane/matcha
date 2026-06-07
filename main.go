@@ -28,6 +28,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	overlay "github.com/floatpane/bubble-overlay"
 	calendar "github.com/floatpane/go-icalendar"
 	"github.com/floatpane/matcha/backend"
 	_ "github.com/floatpane/matcha/backend/imap"
@@ -124,6 +125,7 @@ type mainModel struct {
 	logCh        <-chan logging.Entry
 	logPanel     *tui.LogPanel
 	pendingJobID string
+	sendNotice   string
 }
 
 type logEntryMsg struct {
@@ -1730,11 +1732,13 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.service = daemonclient.NewService(m.config)
 		}
 
-		statusText := "Sending email..."
+		noticeText := "Sending email..."
 		if msg.SignPGP && account != nil && account.PGPKeySource == "yubikey" {
-			statusText = "Touch your YubiKey to sign..."
+			noticeText = "Touch your YubiKey to sign..."
 		}
-		m.current = tui.NewStatus(statusText)
+		m.sendNotice = noticeText
+		m.current = tui.NewChoice()
+		m.current, _ = m.current.Update(m.currentWindowSize())
 
 		// Save contact and delete draft in background
 		go func() {
@@ -1764,18 +1768,16 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	case tui.EmailQueuedMsg:
 		m.pendingJobID = msg.JobID
-		m.current = tui.NewStatus(fmt.Sprintf("Message sent (%s to undo)", config.Keybinds.Composer.UndoSend))
-		return m, tea.Batch(
-			m.current.Init(),
-			tea.Tick(
-				time.Duration(msg.DelaySeconds)*time.Second, func(t time.Time) tea.Msg {
-					return tui.EmailDelayExpiredMsg{JobID: msg.JobID}
-				}),
-		)
+		m.sendNotice = fmt.Sprintf("Message sent (%s to undo)", config.Keybinds.Composer.UndoSend)
+		return m, tea.Tick(
+			time.Duration(msg.DelaySeconds)*time.Second, func(t time.Time) tea.Msg {
+				return tui.EmailDelayExpiredMsg{JobID: msg.JobID}
+			})
 
 	case tui.EmailDelayExpiredMsg:
 		if m.pendingJobID == msg.JobID {
 			m.pendingJobID = ""
+			m.sendNotice = ""
 			m.previousModel = nil
 
 			if m.plugins != nil {
@@ -1790,14 +1792,15 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, nil
 
 	case tui.UndoSendMsg:
+		m.sendNotice = ""
 		if m.previousModel != nil {
 			m.current = m.previousModel
 			m.previousModel = nil
 			m.current, _ = m.current.Update(m.currentWindowSize())
 			return m, m.current.Init()
 		}
-
-		m.previousModel = tui.NewChoice()
+		m.current = tui.NewChoice()
+		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
 
 	case tui.SendRSVPMsg:
@@ -1832,6 +1835,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		})
 
 	case tui.EmailResultMsg:
+		m.sendNotice = ""
 		if msg.Err != nil {
 			log.Printf("Failed to send email: %v", msg.Err)
 			m.previousModel = tui.NewChoice()
@@ -2120,8 +2124,23 @@ func (m *mainModel) View() tea.View {
 	if m.showLogPanel {
 		v.Content = m.renderWithLogPanel(v.Content)
 	}
+	if m.sendNotice != "" {
+		v.Content = m.renderSendNoticeOverlay(v.Content)
+	}
 	v.AltScreen = true
 	return v
+}
+
+func (m *mainModel) renderSendNoticeOverlay(content string) string {
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.ActiveTheme.Accent).
+		Padding(0, 1).
+		Render(m.sendNotice)
+	lines := strings.Split(box, "\n")
+	boxWidth := lipgloss.Width(lines[0])
+	col := max(0, m.width-boxWidth)
+	return overlay.Block(content, lines, 0, col)
 }
 
 func (m *mainModel) currentWindowSize() tea.WindowSizeMsg {
