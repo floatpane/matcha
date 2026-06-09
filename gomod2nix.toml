@@ -234,20 +234,20 @@ schema = 3
     hash = 'sha256-TBKV2c/m0SgPqrJSE0ltJXfImrYPafNuziLN25jgsYY='
 
   [mod.'golang.org/x/sync']
-    version = 'v0.20.0'
-    hash = 'sha256-ybcjhCfK6lroUM0yswUvWooW8MOQZBXyiSqoxG6Uy0Y='
+    version = 'v0.21.0'
+    hash = 'sha256-2n7PVb1krz7UpnXYGVmCrxV0fZBnjQdVVt6eVudEPYY='
 
   [mod.'golang.org/x/sys']
-    version = 'v0.45.0'
-    hash = 'sha256-hkBoNazrDA67ER6sWhb+EKxx9nJ24+nz3zGy+zT5Hvw='
+    version = 'v0.46.0'
+    hash = 'sha256-NzRXMSEk6upeudJvUEPVnw6clJ3d8UdC/vdfANWAc8g='
 
   [mod.'golang.org/x/term']
-    version = 'v0.43.0'
-    hash = 'sha256-gFV1oGgs/vpRamvDWmu93voN57iyZMk/hh+oL8L9VrQ='
+    version = 'v0.44.0'
+    hash = 'sha256-nzbvOgvGRbx1qpq1rbk7b6zNsNeNj8mOGoyZLtnzq3w='
 
   [mod.'golang.org/x/text']
-    version = 'v0.37.0'
-    hash = 'sha256-8XDOnlPIybcDRy89fkjG5VqtIt5Ku+LmaqYhgKl7i1E='
+    version = 'v0.38.0'
+    hash = 'sha256-PzREcn7yzTAJ0WBvyYL/2/r+tfoeKTY/E5HVXi/CJsU='
 
   [mod.'kernel.org/pub/linux/libs/security/libcap/psx']
     version = 'v1.2.77'
