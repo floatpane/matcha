@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -611,5 +612,69 @@ func TestConfigGetDateFormatCustom(t *testing.T) {
 	c := &Config{DateFormat: "DD/MM/YYYY HH:MM"}
 	if got, want := c.GetDateFormat(), "02/01/2006 15:04"; got != want {
 		t.Fatalf("GetDateFormat() = %q, want %q", got, want)
+	}
+}
+
+// TestPassCmd verifies that pass_cmd is persisted to JSON, that the password is resolved
+// from the command at load time, and that no password is written to the keyring.
+func TestPassCmd(t *testing.T) {
+	keyring.MockInit()
+	t.Setenv("HOME", t.TempDir())
+
+	cfg := &Config{
+		Accounts: []Account{
+			{
+				ID:              "pass-id-1",
+				Name:            "PassCmd User",
+				Email:           "pass@example.com",
+				PassCmd:         "echo supersecret",
+				ServiceProvider: "custom",
+				SC:              &SessionCache{},
+			},
+		},
+	}
+
+	if err := SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig() failed: %v", err)
+	}
+
+	// The JSON on disk must contain pass_cmd and must NOT contain a password field.
+	cfgPath, err := configFile()
+	if err != nil {
+		t.Fatalf("configFile() failed: %v", err)
+	}
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("ReadFile() failed: %v", err)
+	}
+	var disk map[string]interface{}
+	if err := json.Unmarshal(raw, &disk); err != nil {
+		t.Fatalf("Unmarshal() failed: %v", err)
+	}
+	accounts := disk["accounts"].([]interface{})
+	diskAcc := accounts[0].(map[string]interface{})
+	if diskAcc["pass_cmd"] != "echo supersecret" {
+		t.Errorf("expected pass_cmd in JSON, got %v", diskAcc["pass_cmd"])
+	}
+	if _, ok := diskAcc["password"]; ok {
+		t.Error("password must not appear in JSON when pass_cmd is set")
+	}
+
+	// Keyring must not have been written for this account.
+	if _, err := keyring.Get(keyringServiceName, "pass@example.com"); err == nil {
+		t.Error("keyring entry must not be created when pass_cmd is set")
+	}
+
+	// On reload, Password must be populated by running the command.
+	loaded, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig() failed: %v", err)
+	}
+	acc := loaded.Accounts[0]
+	if acc.PassCmd != "echo supersecret" {
+		t.Errorf("PassCmd not preserved: got %q", acc.PassCmd)
+	}
+	if acc.Password != "supersecret" {
+		t.Errorf("Password not resolved from pass_cmd: got %q", acc.Password)
 	}
 }
