@@ -1,11 +1,11 @@
 package config
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"context"
 	"log"
 	"os"
 	"os/exec"
