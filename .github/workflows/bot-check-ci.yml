@@ -61,7 +61,7 @@ jobs:
               lint: "Run `make lint` locally.",
               'mod-tidy': "Run `go mod tidy` and commit `go.mod`/`go.sum`.",
               nix: "Run `nix flake check --no-build` locally.",
-              snap: "Validate `snapcraft.yaml` with `snapcraft list-plugins`.",
+              snap: "Validate `snapcraft.yaml` with `snapcraft plugins`.",
               flatpak: "Validate the Flatpak manifest YAML structure.",
               website: "Run `cd docs && npm ci && npx docusaurus build`.",
               'lua-plugins': "Run `luac -p plugins/*.lua` to check Lua syntax.",

@@ -115,7 +115,7 @@ jobs:
         run: |
           sudo snap install snapcraft --classic
           # Verify snapcraft can parse the project file
-          snapcraft list-plugins
+          snapcraft plugins
           # Validate YAML structure and required fields
           python3 << 'PYEOF'
           import yaml, sys
