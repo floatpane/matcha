@@ -3,10 +3,10 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Matcha — a TUI email client, by Floatpane</title>
+        <title>Matcha — email for your terminal, by Floatpane</title>
         <meta
             name="description"
-            content="Matcha is a modern TUI email client by Floatpane. Vim keybindings, PGP, IMAP multi-account, markdown composing, Lua plugins."
+            content="Matcha is a keyboard-native email client for the terminal. Multi-account IMAP, PGP, markdown composing, and a CLI that pipes. One binary. No cloud."
         />
 
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -16,15 +16,7 @@
             rel="stylesheet"
         />
         <link rel="icon" type="image/png" href="assets/favicon.png" />
-        <link rel="stylesheet" href="styles.css?v=3" />
-
-        <script>
-            /*EDITMODE-BEGIN*/
-            const TWEAK_DEFAULTS = {
-                datasetKey: "default",
-            };
-            /*EDITMODE-END*/
-        </script>
+        <link rel="stylesheet" href="styles.css?v=4" />
     </head>
     <body>
         <div id="root"></div>
@@ -45,8 +37,7 @@
             crossorigin="anonymous"
         ></script>
 
-        <script type="text/babel" src="components/tui.jsx?v=3"></script>
-        <script type="text/babel" src="components/site.jsx?v=3"></script>
+        <script type="text/babel" src="components/site.jsx?v=4"></script>
 
         <script type="text/babel">
             const root = ReactDOM.createRoot(document.getElementById("root"));

@@ -1,5 +1,44 @@
 const { useState, useEffect } = React;
 
+// --- Global hooks ---
+
+function useScrollReveal() {
+  useEffect(() => {
+    const els = document.querySelectorAll(".reveal");
+    if (!els.length) return;
+    if (!("IntersectionObserver" in window)) {
+      els.forEach((el) => el.classList.add("visible"));
+      return;
+    }
+    const obs = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) {
+            e.target.classList.add("visible");
+            obs.unobserve(e.target);
+          }
+        });
+      },
+      { threshold: 0.08, rootMargin: "0px 0px -40px 0px" },
+    );
+    els.forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
+  }, []);
+}
+
+function useMouseGlow() {
+  useEffect(() => {
+    const move = (e) => {
+      document.documentElement.style.setProperty("--mx", e.clientX + "px");
+      document.documentElement.style.setProperty("--my", e.clientY + "px");
+    };
+    window.addEventListener("mousemove", move, { passive: true });
+    return () => window.removeEventListener("mousemove", move);
+  }, []);
+}
+
+// --- Components ---
+
 function FloatpaneMark({ size = 20 }) {
   return (
     <img
@@ -15,7 +54,6 @@ function FloatpaneMark({ size = 20 }) {
 function MatchaWordmark() {
   const [version, setVersion] = useState("v0.8.2");
   useEffect(() => {
-    // floatpane/matcha repo — fetch latest release tag
     fetch("https://api.github.com/repos/floatpane/matcha/releases/latest")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
@@ -61,7 +99,6 @@ function TopNav() {
       </a>
       <nav className="nav-links">
         <a href="#features">Features</a>
-        <a href="#keys">Keybinds</a>
         <a href="#install">Install</a>
         <a href="https://docs.matcha.email">Docs ↗</a>
         <a href="https://github.com/floatpane/matcha" className="nav-github">
@@ -78,9 +115,64 @@ function TopNav() {
   );
 }
 
-function Hero({ datasetKey, setDatasetKey }) {
-  const [pressed, setPressed] = useState(false);
-  const TUI = window.MatchaTUI;
+function QuickStart() {
+  const CMD1 = "brew install floatpane/matcha/matcha";
+  const CMD2 = "matcha";
+  const [l1, setL1] = useState("");
+  const [l2, setL2] = useState("");
+  const [phase, setPhase] = useState("pre"); // pre → t1 → pause → t2 → done
+
+  useEffect(() => {
+    let t;
+    if (phase === "pre") {
+      t = setTimeout(() => setPhase("t1"), 1400);
+    } else if (phase === "t1") {
+      if (l1.length < CMD1.length) {
+        t = setTimeout(() => setL1(CMD1.slice(0, l1.length + 1)), 36);
+      } else {
+        t = setTimeout(() => setPhase("pause"), 420);
+      }
+    } else if (phase === "pause") {
+      t = setTimeout(() => setPhase("t2"), 320);
+    } else if (phase === "t2") {
+      if (l2.length < CMD2.length) {
+        t = setTimeout(() => setL2(CMD2.slice(0, l2.length + 1)), 90);
+      } else {
+        setPhase("done");
+      }
+    }
+    return () => clearTimeout(t);
+  }, [phase, l1, l2]);
+
+  const caret1 = phase === "pre" || phase === "t1" || phase === "pause";
+  const showL2 = phase === "t2" || phase === "done";
+
+  return (
+    <div className="quickstart">
+      <div className="qs-bar">
+        <span className="qs-dot qs-r" />
+        <span className="qs-dot qs-y" />
+        <span className="qs-dot qs-g" />
+        <span className="qs-bar-label">terminal</span>
+      </div>
+      <pre className="qs-code">
+        <span className="qs-prompt">$ </span>
+        {l1}
+        {caret1 && <span className="qs-caret" />}
+        {showL2 && (
+          <>
+            {"\n"}
+            <span className="qs-prompt">$ </span>
+            {l2}
+            <span className="qs-caret" />
+          </>
+        )}
+      </pre>
+    </div>
+  );
+}
+
+function Hero() {
   return (
     <section className="hero" id="top">
       <div className="hero-copy">
@@ -89,25 +181,24 @@ function Hero({ datasetKey, setDatasetKey }) {
           <span>by floatpane · local-first · secure · no telemetry</span>
         </div>
         <h1 className="hero-h1">
-          A powerful, feature-rich
+          Email for people who
           <br />
-          email client <em>for your terminal.</em>
+          live in the <em>terminal.</em>
         </h1>
         <p className="hero-sub">
-          Matcha is a modern TUI email client for people who live in the shell.
-          Vim keybindings, PGP, IMAP multi-account, markdown composing,
-          visual-mode batch ops, and a CLI that speaks your language.
+          Matcha is a keyboard-native email client built for the shell.
+          Multi-account IMAP, PGP encryption, markdown composing, and a CLI
+          that pipes. One static binary. No cloud. No trackers.
         </p>
         <div className="hero-cta">
-          <a href="#install" className="btn btn-primary">
-            <span>Install</span>
-            <span className="btn-k">↵</span>
+          <a href="#install" className="btn btn-primary btn-lg">
+            Install now
           </a>
-          <a href="https://docs.matcha.email" className="btn btn-ghost">
-            <span>Read the docs</span>
-            <span className="btn-k">→</span>
+          <a href="https://docs.matcha.email" className="btn btn-ghost btn-lg">
+            Read the docs <span className="btn-k">→</span>
           </a>
         </div>
+        <QuickStart />
         <div className="hero-meta">
           <div>
             <span className="dim">license</span> MIT
@@ -120,45 +211,6 @@ function Hero({ datasetKey, setDatasetKey }) {
           </div>
         </div>
       </div>
-
-      <div className="hero-demo">
-        <div className="hero-demo-chrome">
-          <div className="hero-demo-label">
-            <span className="dim">demo ·</span>
-            <button
-              className={"demo-swap " + (datasetKey === "default" ? "on" : "")}
-              onClick={() => setDatasetKey("default")}
-            >
-              drew's inbox
-            </button>
-            <button
-              className={"demo-swap " + (datasetKey === "dev" ? "on" : "")}
-              onClick={() => setDatasetKey("dev")}
-            >
-              floatpane dev
-            </button>
-            <button
-              className={"demo-swap " + (datasetKey === "personal" ? "on" : "")}
-              onClick={() => setDatasetKey("personal")}
-            >
-              personal
-            </button>
-          </div>
-          <div className="hero-demo-hint">
-            {pressed ? (
-              <span>✓ keyboard live</span>
-            ) : (
-              <span className="dim">
-                click · <kbd>j</kbd>
-                <kbd>k</kbd> · <kbd>tab</kbd> · <kbd>↵</kbd>
-              </span>
-            )}
-          </div>
-        </div>
-        {TUI && (
-          <TUI datasetKey={datasetKey} onKeyPressed={() => setPressed(true)} />
-        )}
-      </div>
     </section>
   );
 }
@@ -166,14 +218,14 @@ function Hero({ datasetKey, setDatasetKey }) {
 const FEATURES = [
   {
     k: "01",
-    title: "Email, the way you move",
-    body: "Read, reply, delete, archive — all from the home row. j/k to move, h/l between accounts, tab between folders. No mouse, no modals.",
-    mono: "j  k  h  l  r  d  a  ↵",
+    title: "Keyboard-native",
+    body: "Read, reply, delete, archive — all from the keyboard. Navigate messages, switch accounts, and jump between folders without touching the mouse.",
+    mono: "j  k  r  d  a  ↵  esc",
   },
   {
     k: "02",
-    title: "Visual mode, for real",
-    body: "Press v to enter Vim-style multi-select. Expand with j/k, then d, a, or m to run batch ops as a single IMAP command.",
+    title: "Visual mode batch ops",
+    body: "Enter visual mode to select a range of messages, then delete, archive, or move them all as a single IMAP command.",
     mono: "v  j j j  d\n→ deleted 4 messages",
   },
   {
@@ -185,19 +237,19 @@ const FEATURES = [
   {
     k: "04",
     title: "Multi-account, tabbed",
-    body: "IMAP, Gmail, Fastmail, Proton Bridge — all tabbed in one window. h and l switch between them so you never reply from the wrong address.",
+    body: "IMAP, Gmail, Fastmail, Proton Bridge — all in one window. Switch between them instantly so you never reply from the wrong address.",
     mono: "← me@andrinoff\n→ drew@floatpane",
   },
   {
     k: "05",
     title: "Fuzzy filter",
-    body: "Press / to fuzzy-filter across senders, subjects, and bodies in the active view. Results stream in as you type.",
+    body: "Filter across senders, subjects, and bodies in the active view. Results stream in as you type.",
     mono: "/lena  →  3 hits",
   },
   {
     k: "06",
     title: "Local-first drafts",
-    body: "Every keystroke hits disk before it hits the wire. Close the laptop, open it anywhere, pick up mid-sentence. Esc saves.",
+    body: "Every keystroke hits disk before it hits the wire. Close the laptop, open it anywhere, pick up mid-sentence.",
     mono: "~/.cache/matcha/drafts",
   },
   {
@@ -208,22 +260,22 @@ const FEATURES = [
   },
   {
     k: "08",
-    title: "AI, on your terms",
-    body: "Rewrite drafts with the model of your choice. Let agents send on your behalf — with strict scopes and an audit log.",
-    mono: "alt + r: make it more formal",
+    title: "Inline image rendering",
+    body: "Images render inline via iTerm2 or kitty graphics where supported. Toggle with a key. Off by default, always.",
+    mono: "→ ◧ images on",
   },
   {
     k: "09",
-    title: "Smart image rendering",
-    body: "Images render inline via iterm2 or kitty-graphics where supported. Toggle with i. Off by default, always.",
-    mono: "i  →  ◧ images on",
+    title: "Full-disk encryption",
+    body: "Encrypt all local data with a password that is never stored — not on disk, not in the keyring. Matcha shows a lock screen on startup. Forget the password and there is no reset.",
+    mono: "matcha is locked\n> ••••••••\nenter: unlock",
   },
 ];
 
 function Features() {
   return (
     <section className="features" id="features">
-      <div className="section-head">
+      <div className="section-head reveal">
         <div className="section-head-l">
           <div className="section-eyebrow">§ features</div>
           <h2 className="section-h2">
@@ -234,13 +286,17 @@ function Features() {
         </div>
         <p className="section-head-r">
           Matcha is opinionated. It won't follow you around the web, won't
-          upsell you on AI credits, and won't sync your signatures to a SaaS. It
+          upsell you on credits, and won't sync your signatures to a SaaS. It
           reads mail. It writes mail. It stays out of the way.
         </p>
       </div>
       <div className="feature-grid">
-        {FEATURES.map((f) => (
-          <article key={f.k} className="feature">
+        {FEATURES.map((f, i) => (
+          <article
+            key={f.k}
+            className="feature reveal"
+            style={{ transitionDelay: `${i * 55}ms` }}
+          >
             <div className="feature-head">
               <span className="feature-k">{f.k}</span>
               <span className="feature-dash">——</span>
@@ -249,113 +305,6 @@ function Features() {
             <p className="feature-body">{f.body}</p>
             <pre className="feature-mono">{f.mono}</pre>
           </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function Keybinds() {
-  const rows = [
-    {
-      g: "motion",
-      items: [
-        ["j / k", "next / prev message"],
-        ["↑ / ↓", "next / prev message"],
-        ["h / l", "prev / next account"],
-        ["← / →", "prev / next account"],
-        ["tab", "next folder"],
-        ["shift-tab", "prev folder"],
-      ],
-    },
-    {
-      g: "inbox",
-      items: [
-        ["↵", "open email"],
-        ["r", "refresh"],
-        ["d", "delete"],
-        ["a", "archive"],
-        ["/", "filter"],
-        ["v", "visual mode"],
-        ["esc", "back / main menu"],
-      ],
-    },
-    {
-      g: "visual mode",
-      items: [
-        ["v", "enter visual mode"],
-        ["j / k", "expand selection"],
-        ["d", "delete all selected"],
-        ["a", "archive all selected"],
-        ["m", "move to folder"],
-        ["v / esc", "exit visual mode"],
-      ],
-    },
-    {
-      g: "email view",
-      items: [
-        ["j / k", "scroll body"],
-        ["r", "reply"],
-        ["d", "delete"],
-        ["a", "archive"],
-        ["tab", "focus attachments"],
-        ["i", "toggle images"],
-        ["esc", "back to inbox"],
-      ],
-    },
-    {
-      g: "attachments",
-      items: [
-        ["j / k", "navigate"],
-        ["↵", "download & open"],
-        ["tab / esc", "back to body"],
-      ],
-    },
-    {
-      g: "composer",
-      items: [
-        ["tab / shift-tab", "navigate fields"],
-        ["↵ on From", "select account"],
-        ["↵ on Attachment", "open file picker"],
-        ["↵ on Send", "send email"],
-        ["↑ / ↓", "contact suggestions"],
-        ["esc", "save draft & exit"],
-      ],
-    },
-  ];
-  return (
-    <section className="keybinds" id="keys">
-      <div className="section-head">
-        <div className="section-head-l">
-          <div className="section-eyebrow">§ keybinds</div>
-          <h2 className="section-h2">
-            Vim-native.
-            <br />
-            <span className="dim">Home row to inbox zero.</span>
-          </h2>
-        </div>
-        <p className="section-head-r">
-          Every binding is documented at{" "}
-          <a href="https://docs.matcha.email" className="underline-link">
-            docs.matcha.email
-          </a>
-          . Muscle-memory for vimmers, learnable for everyone else.
-        </p>
-      </div>
-      <div className="keybinds-grid">
-        {rows.map((row) => (
-          <div key={row.g} className="keybinds-col">
-            <div className="keybinds-col-head">── {row.g} ──</div>
-            {row.items.map(([k, label]) => (
-              <div key={k} className="keybind-row">
-                <span className="keybind-k">
-                  <kbd>{k}</kbd>
-                </span>
-                <span className="keybind-dots">{"·".repeat(26)}</span>
-                <span className="keybind-label">{label}</span>
-              </div>
-            ))}
-          </div>
         ))}
       </div>
     </section>
@@ -416,7 +365,7 @@ function Install() {
   const t = INSTALL_TABS[tab];
   return (
     <section className="install" id="install">
-      <div className="section-head">
+      <div className="section-head reveal">
         <div className="section-head-l">
           <div className="section-eyebrow">§ install</div>
           <h2 className="section-h2">
@@ -437,7 +386,7 @@ function Install() {
           .
         </p>
       </div>
-      <div className="install-card">
+      <div className="install-card reveal" style={{ transitionDelay: "0.15s" }}>
         <div className="install-tabs">
           {Object.keys(INSTALL_TABS).map((k) => (
             <button
@@ -469,15 +418,21 @@ function CTA() {
   return (
     <section className="cta">
       <div className="cta-inner">
-        <div className="cta-pre">$ _</div>
-        <h2 className="cta-h2">
+        <div className="cta-pre reveal">$ _</div>
+        <h2
+          className="cta-h2 reveal"
+          style={{ transitionDelay: "0.12s" }}
+        >
           Your inbox is waiting
           <br />
           in the terminal.
         </h2>
-        <div className="cta-row">
+        <div
+          className="cta-row reveal"
+          style={{ transitionDelay: "0.24s" }}
+        >
           <a href="#install" className="btn btn-primary btn-lg">
-            make your emails secure
+            install matcha
           </a>
           <a href="https://docs.matcha.email" className="btn btn-ghost btn-lg">
             read the docs →
@@ -495,7 +450,7 @@ function Footer() {
         <div className="footer-brand">
           <MatchaWordmark />
           <p className="footer-tag">
-            a modern TUI email client.
+            a keyboard-native email client.
             <br />
             made with care by floatpane.
           </p>
@@ -504,7 +459,6 @@ function Footer() {
           <div>
             <div className="footer-h">product</div>
             <a href="#features">features</a>
-            <a href="#keys">keybinds</a>
             <a href="#install">install</a>
             <a href="https://github.com/floatpane/matcha/releases">releases</a>
           </div>
@@ -544,79 +498,17 @@ function Footer() {
   );
 }
 
-// ---------- Tweaks ----------
-function Tweaks({ datasetKey, setDatasetKey, visible }) {
-  if (!visible) return null;
-  return (
-    <div className="tweaks">
-      <div className="tweaks-head">Tweaks</div>
-      <div className="tweaks-sub">Demo content</div>
-      {Object.entries({
-        default: "drew's inbox",
-        dev: "floatpane dev",
-        personal: "personal",
-      }).map(([k, label]) => (
-        <button
-          key={k}
-          onClick={() => setDatasetKey(k)}
-          className={"tweaks-opt " + (datasetKey === k ? "on" : "")}
-        >
-          <span className="tweaks-dot">{datasetKey === k ? "●" : "○"}</span>
-          <span>{label}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function App() {
-  const [datasetKey, setDatasetKey] = useState(() => {
-    try {
-      return localStorage.getItem("matcha-dataset") || "default";
-    } catch {
-      return "default";
-    }
-  });
-  const [tweaksVisible, setTweaksVisible] = useState(false);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("matcha-dataset", datasetKey);
-    } catch {}
-  }, [datasetKey]);
-
-  useEffect(() => {
-    const onMsg = (e) => {
-      const d = e.data || {};
-      if (d.type === "__activate_edit_mode") setTweaksVisible(true);
-      if (d.type === "__deactivate_edit_mode") setTweaksVisible(false);
-    };
-    window.addEventListener("message", onMsg);
-    window.parent.postMessage({ type: "__edit_mode_available" }, "*");
-    return () => window.removeEventListener("message", onMsg);
-  }, []);
-
-  useEffect(() => {
-    window.parent.postMessage(
-      { type: "__edit_mode_set_keys", edits: { datasetKey } },
-      "*",
-    );
-  }, [datasetKey]);
-
+  useScrollReveal();
+  useMouseGlow();
   return (
     <div className="site">
       <TopNav />
-      <Hero datasetKey={datasetKey} setDatasetKey={setDatasetKey} />
+      <Hero />
       <Features />
-      <Keybinds />
       <Install />
       <CTA />
       <Footer />
-      <Tweaks
-        datasetKey={datasetKey}
-        setDatasetKey={setDatasetKey}
-        visible={tweaksVisible}
-      />
     </div>
   );
 }
