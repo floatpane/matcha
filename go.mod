@@ -68,12 +68,7 @@ require (
 	golang.org/x/image v0.41.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/oauth2 v0.27.0 // indirect
-<<<<<<< HEAD
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
-=======
-	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
->>>>>>> d188d37 (chore(deps): golang.org/x/term ^ v0.44.0 (#1458))
 	kernel.org/pub/linux/libs/security/libcap/psx v1.2.77 // indirect
 )
