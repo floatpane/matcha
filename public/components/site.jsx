@@ -320,6 +320,10 @@ const INSTALL_TABS = {
     plat: "Windows 10 / 11",
     cmd: "$ winget install --id=floatpane.matcha\n$ matcha",
   },
+  scoop: {
+    plat: "Windows",
+    cmd: "$ scoop install matcha\n$ matcha",
+  },
   snap: { plat: "Ubuntu · Linux", cmd: "$ sudo snap install matcha\n$ matcha" },
   flatpak: {
     plat: "Linux",
@@ -328,7 +332,11 @@ const INSTALL_TABS = {
   aur: { plat: "Arch Linux", cmd: "$ yay -S matcha-client-bin\n$ matcha" },
   nix: {
     plat: "NixOS · any Nix",
-    cmd: "$ nix profile install github:floatpane/matcha\n$ matcha",
+    cmd: "$ nix profile install github:floatpane/nix-matcha\n$ matcha",
+  },
+  nixpkgs: {
+    plat: "NixOS · nixpkgs",
+    cmd: "$ nix profile install nixpkgs#matcha\n$ matcha",
   },
 };
 
