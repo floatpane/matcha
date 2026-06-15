@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"context"
 	"log"
 	"os"
 	"os/exec"
@@ -767,7 +768,7 @@ func LoadConfig() (*Config, error) {
 
 // resolvePassCmd runs cmd via the shell and returns its trimmed stdout as the password.
 func resolvePassCmd(cmd string) (string, error) {
-	out, err := exec.Command("sh", "-c", cmd).Output()
+	out, err := exec.CommandContext(context.Background(), "sh", "-c", cmd).Output()
 	if err != nil {
 		return "", err
 	}
