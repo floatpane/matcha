@@ -1247,6 +1247,10 @@ func (m *Inbox) IsSearchActive() bool {
 	return m != nil && (m.searchOverlay != nil || m.searchActive)
 }
 
+func (m *Inbox) IsSearchOverlayOpen() bool {
+	return m != nil && m.searchOverlay != nil
+}
+
 func (m *Inbox) IsFilterActive() bool {
 	return m != nil && (m.list.FilterState() == list.Filtering || m.list.FilterState() == list.FilterApplied)
 }

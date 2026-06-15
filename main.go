@@ -332,8 +332,8 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.applyPluginFields(composer)
 		}
 
-		// Check plugin key bindings for the current view
-		if m.plugins != nil {
+		// Check plugin key bindings for the current view, but not while the search overlay is open
+		if m.plugins != nil && !m.isSearchOverlayOpen() {
 			if bindingCmd := m.handlePluginKeyBinding(keyMsg); bindingCmd != nil {
 				cmds = append(cmds, bindingCmd)
 			}
@@ -2456,6 +2456,16 @@ func (m *mainModel) handlePluginKeyBinding(msg tea.KeyPressMsg) tea.Cmd {
 		return tea.Batch(m.pluginFlagCmds()...)
 	}
 	return nil
+}
+
+func (m *mainModel) isSearchOverlayOpen() bool {
+	switch v := m.current.(type) {
+	case *tui.Inbox:
+		return v.IsSearchOverlayOpen()
+	case *tui.FolderInbox:
+		return v.GetInbox().IsSearchOverlayOpen()
+	}
+	return false
 }
 
 func (m *mainModel) syncPluginKeyBindings() {
