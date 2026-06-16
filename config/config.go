@@ -669,6 +669,7 @@ func LoadConfig() (*Config, error) {
 		UndoDelaySeconds        int                               `json:"undo_delay_seconds,omitempty"`
 		PluginSettings          map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
 		HasSeenSetupGuide       bool                              `json:"has_seen_setup_guide,omitempty"`
+		MouseEnabled            *bool                             `json:"mouse_enabled,omitempty"`
 	}
 
 	var raw diskConfig
@@ -715,6 +716,7 @@ func LoadConfig() (*Config, error) {
 	config.UndoDelaySeconds = raw.UndoDelaySeconds
 	config.PluginSettings = raw.PluginSettings
 	config.HasSeenSetupGuide = raw.HasSeenSetupGuide
+	config.MouseEnabled = raw.MouseEnabled
 
 	for _, rawAcc := range raw.Accounts {
 		acc := Account{
