@@ -198,12 +198,13 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.MouseWheelMsg:
 		if m.activePane == PaneMenu {
-			if msg.Button == tea.MouseWheelDown {
+			switch msg.Button {
+			case tea.MouseWheelDown:
 				if m.menuCursor < 6 {
 					m.menuCursor++
 					m.activeCategory = SettingsCategory(m.menuCursor)
 				}
-			} else if msg.Button == tea.MouseWheelUp {
+			case tea.MouseWheelUp:
 				if m.menuCursor > 0 {
 					m.menuCursor--
 					m.activeCategory = SettingsCategory(m.menuCursor)

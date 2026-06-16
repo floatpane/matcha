@@ -104,7 +104,8 @@ func (m Marketplace) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.state != marketplaceReady {
 			return m, nil
 		}
-		if msg.Button == tea.MouseWheelDown {
+		switch msg.Button {
+		case tea.MouseWheelDown:
 			if m.cursor < len(m.entries)-1 {
 				m.cursor++
 				visible := m.visibleRows()
@@ -112,7 +113,7 @@ func (m Marketplace) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.offset = m.cursor - visible + 1
 				}
 			}
-		} else if msg.Button == tea.MouseWheelUp {
+		case tea.MouseWheelUp:
 			if m.cursor > 0 {
 				m.cursor--
 				if m.cursor < m.offset {
@@ -173,50 +174,55 @@ func (m Marketplace) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
-		kb := config.Keybinds
-		if m.state != marketplaceReady {
-			if msg.String() == "q" || msg.String() == kb.Global.Cancel || msg.String() == kb.Global.Quit {
-				if m.standalone {
-					return m, tea.Quit
-				}
-				return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
-			}
-			return m, nil
-		}
+		return m.handleKeyPress(msg)
+	}
+	return m, nil
+}
 
-		switch msg.String() {
-		case "q", kb.Global.Cancel:
+func (m Marketplace) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	kb := config.Keybinds
+	if m.state != marketplaceReady {
+		if msg.String() == "q" || msg.String() == kb.Global.Cancel || msg.String() == kb.Global.Quit {
 			if m.standalone {
 				return m, tea.Quit
 			}
 			return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
-		case kb.Global.Quit:
+		}
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "q", kb.Global.Cancel:
+		if m.standalone {
 			return m, tea.Quit
-		case "up", kb.Global.NavUp:
-			if m.cursor > 0 {
-				m.cursor--
-				if m.cursor < m.offset {
-					m.offset = m.cursor
-				}
+		}
+		return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
+	case kb.Global.Quit:
+		return m, tea.Quit
+	case "up", kb.Global.NavUp:
+		if m.cursor > 0 {
+			m.cursor--
+			if m.cursor < m.offset {
+				m.offset = m.cursor
 			}
-		case keyDown, kb.Global.NavDown:
-			if m.cursor < len(m.entries)-1 {
-				m.cursor++
-				visible := m.visibleRows()
-				if m.cursor >= m.offset+visible {
-					m.offset = m.cursor - visible + 1
-				}
+		}
+	case keyDown, kb.Global.NavDown:
+		if m.cursor < len(m.entries)-1 {
+			m.cursor++
+			visible := m.visibleRows()
+			if m.cursor >= m.offset+visible {
+				m.offset = m.cursor - visible + 1
 			}
-		case keyEnter:
-			if m.cursor < len(m.entries) {
-				entry := m.entries[m.cursor]
-				if m.installed[entry.Name] {
-					m.status = fmt.Sprintf("%s is already installed", entry.Name)
-					return m, nil
-				}
-				m.status = fmt.Sprintf("Installing %s...", entry.Name)
-				return m, installPlugin(entry)
+		}
+	case keyEnter:
+		if m.cursor < len(m.entries) {
+			entry := m.entries[m.cursor]
+			if m.installed[entry.Name] {
+				m.status = fmt.Sprintf("%s is already installed", entry.Name)
+				return m, nil
 			}
+			m.status = fmt.Sprintf("Installing %s...", entry.Name)
+			return m, installPlugin(entry)
 		}
 	}
 	return m, nil

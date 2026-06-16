@@ -72,9 +72,10 @@ func (p *CommandPalette) SetSize(width, height int) {
 // and dismissal are handled by the owner via SelectedCmd.
 func (p *CommandPalette) Update(msg tea.Msg) tea.Cmd {
 	if wheel, ok := msg.(tea.MouseWheelMsg); ok {
-		if wheel.Button == tea.MouseWheelDown {
+		switch wheel.Button {
+		case tea.MouseWheelDown:
 			p.moveCursor(1)
-		} else if wheel.Button == tea.MouseWheelUp {
+		case tea.MouseWheelUp:
 			p.moveCursor(-1)
 		}
 		return nil

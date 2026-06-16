@@ -113,9 +113,10 @@ func (m *Drafts) Init() tea.Cmd {
 func (m *Drafts) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.MouseWheelMsg:
-		if msg.Button == tea.MouseWheelDown {
+		switch msg.Button {
+		case tea.MouseWheelDown:
 			m.list.CursorDown()
-		} else if msg.Button == tea.MouseWheelUp {
+		case tea.MouseWheelUp:
 			m.list.CursorUp()
 		}
 		return m, nil
@@ -226,7 +227,8 @@ func (m *Drafts) View() tea.View {
 	var b strings.Builder
 
 	var v tea.View
-	if m.confirmDelete {
+	switch {
+	case m.confirmDelete:
 		dialog := DialogBoxStyle.Render(
 			lipgloss.JoinVertical(lipgloss.Center,
 				"Delete this draft?",
@@ -234,12 +236,12 @@ func (m *Drafts) View() tea.View {
 			),
 		)
 		v = tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
-	} else if len(m.drafts) == 0 {
+	case len(m.drafts) == 0:
 		emptyMsg := lipgloss.NewStyle().
 			Foreground(theme.ActiveTheme.Secondary).
 			Render("No drafts saved.\n\nPress esc to go back.")
 		v = tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, emptyMsg))
-	} else {
+	default:
 		// list.View() still returns string in v2
 		b.WriteString(m.list.View())
 		v = tea.NewView(b.String())

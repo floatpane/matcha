@@ -129,7 +129,7 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 					return m, func() tea.Msg { return GoToSignatureEditorMsg{} }
 				}
 			case 13: // Mouse Support
-				enabled := !(config.MouseEnabled != nil && *config.MouseEnabled)
+				enabled := config.MouseEnabled == nil || !*config.MouseEnabled
 				config.MouseEnabled = &enabled
 				return m, func() tea.Msg { return MouseSupportChosenMsg{Enabled: enabled} }
 			}

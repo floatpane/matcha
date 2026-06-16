@@ -83,15 +83,25 @@ func (m Choice) computeMenuStartY() int {
 
 func (m Choice) handleSelect() (tea.Model, tea.Cmd) {
 	idx := m.cursor
-	if idx == 0 {
+	marketplaceIdx := 2
+	settingsIdx := 3
+	if m.hasSavedDrafts {
+		marketplaceIdx = 3
+		settingsIdx = 4
+	}
+	switch idx {
+	case 0:
 		return m, func() tea.Msg { return GoToInboxMsg{} }
-	} else if idx == 1 {
+	case 1:
 		return m, func() tea.Msg { return GoToSendMsg{} }
-	} else if m.hasSavedDrafts && idx == 2 {
-		return m, func() tea.Msg { return GoToDraftsMsg{} }
-	} else if (m.hasSavedDrafts && idx == 3) || (!m.hasSavedDrafts && idx == 2) {
+	case marketplaceIdx - 1:
+		if m.hasSavedDrafts {
+			return m, func() tea.Msg { return GoToDraftsMsg{} }
+		}
 		return m, func() tea.Msg { return GoToMarketplaceMsg{} }
-	} else if (m.hasSavedDrafts && idx == 4) || (!m.hasSavedDrafts && idx == 3) {
+	case marketplaceIdx:
+		return m, func() tea.Msg { return GoToMarketplaceMsg{} }
+	case settingsIdx:
 		return m, func() tea.Msg { return GoToSettingsMsg{} }
 	}
 	return m, nil
@@ -105,9 +115,10 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseWheelMsg:
-		if msg.Button == tea.MouseWheelDown {
+		switch msg.Button {
+		case tea.MouseWheelDown:
 			m.cursor = (m.cursor + 1) % len(m.choices)
-		} else if msg.Button == tea.MouseWheelUp {
+		case tea.MouseWheelUp:
 			m.cursor = (m.cursor - 1 + len(m.choices)) % len(m.choices)
 		}
 		return m, nil

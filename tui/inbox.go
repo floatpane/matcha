@@ -834,9 +834,10 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	switch msg := msg.(type) {
 	case tea.MouseWheelMsg:
-		if msg.Button == tea.MouseWheelDown {
+		switch msg.Button {
+		case tea.MouseWheelDown:
 			m.list.CursorDown()
-		} else if msg.Button == tea.MouseWheelUp {
+		case tea.MouseWheelUp:
 			m.list.CursorUp()
 		}
 		return m, nil

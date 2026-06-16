@@ -229,9 +229,10 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 	switch msg := msg.(type) {
 	case tea.MouseWheelMsg:
 		if msg.X < sidebarWidth {
-			if msg.Button == tea.MouseWheelDown {
+			switch msg.Button {
+			case tea.MouseWheelDown:
 				m.activeFolderIdx = (m.activeFolderIdx + 1) % len(m.folders)
-			} else if msg.Button == tea.MouseWheelUp {
+			case tea.MouseWheelUp:
 				m.activeFolderIdx = (m.activeFolderIdx - 1 + len(m.folders)) % len(m.folders)
 			}
 			if len(m.folders) > 0 {
