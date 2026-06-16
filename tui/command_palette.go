@@ -71,6 +71,14 @@ func (p *CommandPalette) SetSize(width, height int) {
 // other key is forwarded to the text input and re-filters the list. Selection
 // and dismissal are handled by the owner via SelectedCmd.
 func (p *CommandPalette) Update(msg tea.Msg) tea.Cmd {
+	if wheel, ok := msg.(tea.MouseWheelMsg); ok {
+		if wheel.Button == tea.MouseWheelDown {
+			p.moveCursor(1)
+		} else if wheel.Button == tea.MouseWheelUp {
+			p.moveCursor(-1)
+		}
+		return nil
+	}
 	if key, ok := msg.(tea.KeyPressMsg); ok {
 		switch key.String() {
 		case "up", "ctrl+p", "ctrl+k":

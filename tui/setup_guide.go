@@ -17,6 +17,7 @@ const (
 	setupStepHelper   // macOS-only
 	setupStepMailto   // macOS + Linux
 	setupStepShowcase // interactive inbox demo
+	setupStepMouse    // ask about mouse support
 	setupStepDone
 )
 
@@ -177,6 +178,9 @@ func (m *SetupGuide) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case setupStepShowcase:
 		m.handleShowcaseKey(msg)
 
+	case setupStepMouse:
+		return m.handleMouseKey(msg)
+
 	case setupStepDone:
 		if msg.String() == keyEnter || msg.String() == " " {
 			return m, func() tea.Msg { return SetupGuideDoneMsg{} }
@@ -307,6 +311,20 @@ func (m *SetupGuide) handleShowcaseKey(msg tea.KeyPressMsg) {
 	}
 }
 
+func (m *SetupGuide) handleMouseKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y", keyEnter:
+		m.advanceStep()
+		return m, func() tea.Msg { return MouseSupportChosenMsg{Enabled: true} }
+	case "n", "N":
+		m.advanceStep()
+		return m, func() tea.Msg { return MouseSupportChosenMsg{Enabled: false} }
+	case "q", keyCtrlC:
+		return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
+	}
+	return m, nil
+}
+
 func (m *SetupGuide) advanceStep() {
 	m.cursor = 0
 	next := m.step + 1
@@ -366,6 +384,8 @@ func (m *SetupGuide) View() tea.View {
 		content = m.viewHelper()
 	case setupStepMailto:
 		content = m.viewMailto()
+	case setupStepMouse:
+		content = m.viewMouse()
 	case setupStepDone:
 		content = m.viewDone()
 	}
@@ -386,11 +406,11 @@ func (m *SetupGuide) View() tea.View {
 }
 
 func (m *SetupGuide) viewProgress() string {
-	steps := []int{setupStepWelcome, setupStepFeatures, setupStepShowcase, setupStepDone}
+	steps := []int{setupStepWelcome, setupStepFeatures, setupStepShowcase, setupStepMouse, setupStepDone}
 	if m.isMac {
-		steps = []int{setupStepWelcome, setupStepFeatures, setupStepHelper, setupStepMailto, setupStepShowcase, setupStepDone}
+		steps = []int{setupStepWelcome, setupStepFeatures, setupStepHelper, setupStepMailto, setupStepShowcase, setupStepMouse, setupStepDone}
 	} else if m.isLinux {
-		steps = []int{setupStepWelcome, setupStepFeatures, setupStepMailto, setupStepShowcase, setupStepDone}
+		steps = []int{setupStepWelcome, setupStepFeatures, setupStepMailto, setupStepShowcase, setupStepMouse, setupStepDone}
 	}
 
 	var dots []string
@@ -780,6 +800,20 @@ func (m *SetupGuide) viewTourTooltip() string {
 	}
 
 	return tourTooltipStyle.Render(b.String())
+}
+
+func (m *SetupGuide) viewMouse() string {
+	var b strings.Builder
+	b.WriteString(sgTitleStyle.Render("  🖱  Mouse Support") + "\n\n")
+	b.WriteString(sgSubtitleStyle.Render(
+		"  Would you like to enable mouse support?\n"+
+			"  Click to select, scroll to navigate, double-click\n"+
+			"  to open emails.\n",
+	) + "\n\n")
+	b.WriteString(sgDimStyle.Render("  You can change this later in Settings → General.\n\n"))
+	b.WriteString(sgOkStyle.Render("  y") + sgDimStyle.Render(" — enable mouse support\n"))
+	b.WriteString(sgDimStyle.Render("  n — keyboard only  ·  enter — enable"))
+	return b.String()
 }
 
 func (m *SetupGuide) viewDone() string {

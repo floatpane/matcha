@@ -67,12 +67,62 @@ func (m Choice) Init() tea.Cmd {
 	return nil
 }
 
+func (m Choice) computeMenuStartY() int {
+	y := 1 // docStyle top margin (Margin(1, 2))
+	y += 6 // choiceLogo: blank line + 5 ascii art lines (trailing \n doesn't add a visible row)
+	if len(m.keybindWarnings) > 0 {
+		y += len(m.keybindWarnings) + 1 // one row per warning + trailing \n
+	}
+	// listHeader with PaddingBottom(1) = 2 rows, then \n\n = 2 more rows
+	y += 4
+	if m.UpdateAvailable {
+		y += 3 // update message (1 row) + \n\n (2 rows)
+	}
+	return y
+}
+
+func (m Choice) handleSelect() (tea.Model, tea.Cmd) {
+	idx := m.cursor
+	if idx == 0 {
+		return m, func() tea.Msg { return GoToInboxMsg{} }
+	} else if idx == 1 {
+		return m, func() tea.Msg { return GoToSendMsg{} }
+	} else if m.hasSavedDrafts && idx == 2 {
+		return m, func() tea.Msg { return GoToDraftsMsg{} }
+	} else if (m.hasSavedDrafts && idx == 3) || (!m.hasSavedDrafts && idx == 2) {
+		return m, func() tea.Msg { return GoToMarketplaceMsg{} }
+	} else if (m.hasSavedDrafts && idx == 4) || (!m.hasSavedDrafts && idx == 3) {
+		return m, func() tea.Msg { return GoToSettingsMsg{} }
+	}
+	return m, nil
+}
+
 func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
+
+	case tea.MouseWheelMsg:
+		if msg.Button == tea.MouseWheelDown {
+			m.cursor = (m.cursor + 1) % len(m.choices)
+		} else if msg.Button == tea.MouseWheelUp {
+			m.cursor = (m.cursor - 1 + len(m.choices)) % len(m.choices)
+		}
+		return m, nil
+
+	case tea.MouseClickMsg:
+		if msg.Button != tea.MouseLeft {
+			return m, nil
+		}
+		idx := msg.Y - m.computeMenuStartY()
+		if idx >= 0 && idx < len(m.choices) {
+			m.cursor = idx
+			return m.handleSelect()
+		}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		kb := config.Keybinds
 		switch msg.String() {
@@ -81,24 +131,7 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keyDown, kb.Global.NavDown:
 			m.cursor = (m.cursor + 1) % len(m.choices)
 		case keyEnter:
-			// Use cursor index instead of string comparison
-			idx := m.cursor
-			if idx == 0 { //nolint:gocritic
-				// Inbox
-				return m, func() tea.Msg { return GoToInboxMsg{} }
-			} else if idx == 1 {
-				// Compose
-				return m, func() tea.Msg { return GoToSendMsg{} }
-			} else if m.hasSavedDrafts && idx == 2 {
-				// Drafts
-				return m, func() tea.Msg { return GoToDraftsMsg{} }
-			} else if (m.hasSavedDrafts && idx == 3) || (!m.hasSavedDrafts && idx == 2) {
-				// Marketplace
-				return m, func() tea.Msg { return GoToMarketplaceMsg{} }
-			} else if (m.hasSavedDrafts && idx == 4) || (!m.hasSavedDrafts && idx == 3) {
-				// Settings
-				return m, func() tea.Msg { return GoToSettingsMsg{} }
-			}
+			return m.handleSelect()
 		}
 	}
 
@@ -181,5 +214,9 @@ func (m Choice) View() tea.View {
 		mainContent += "\n\n"
 	}
 
-	return tea.NewView(docStyle.Render(mainContent + helpView))
+	v := tea.NewView(docStyle.Render(mainContent + helpView))
+	if config.MouseEnabled != nil && *config.MouseEnabled {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
+	return v
 }

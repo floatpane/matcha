@@ -46,6 +46,10 @@ const (
 	SplitPaneVertical   = "vertical"
 )
 
+// MouseEnabled is set at startup from the loaded Config and controls whether
+// TUI views request mouse event capture. nil = user has not been asked yet.
+var MouseEnabled *bool
+
 var cacheFiles = []string{
 	"email_cache.json",
 	"contacts.json",
@@ -149,6 +153,8 @@ type Config struct {
 	PluginSettings map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
 
 	HasSeenSetupGuide bool `json:"has_seen_setup_guide,omitempty"`
+	// MouseEnabled controls whether mouse events are captured. nil means "not asked yet".
+	MouseEnabled *bool `json:"mouse_enabled,omitempty"`
 }
 
 // GetSplitPaneOrientation returns the configured split pane orientation,
@@ -490,6 +496,7 @@ type secureDiskConfig struct {
 	Language                string                            `json:"language,omitempty"`
 	PluginSettings          map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
 	HasSeenSetupGuide       bool                              `json:"has_seen_setup_guide,omitempty"`
+	MouseEnabled            *bool                             `json:"mouse_enabled,omitempty"`
 }
 
 // SaveConfig saves the given configuration to the config file and passwords to the keyring.

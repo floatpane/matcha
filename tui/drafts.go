@@ -75,6 +75,8 @@ type Drafts struct {
 	height        int
 	confirmDelete bool
 	selectedDraft *config.Draft
+	lastClickTime time.Time
+	lastClickY    int
 }
 
 // NewDrafts creates a new drafts list view
@@ -110,6 +112,41 @@ func (m *Drafts) Init() tea.Cmd {
 
 func (m *Drafts) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.MouseWheelMsg:
+		if msg.Button == tea.MouseWheelDown {
+			m.list.CursorDown()
+		} else if msg.Button == tea.MouseWheelUp {
+			m.list.CursorUp()
+		}
+		return m, nil
+
+	case tea.MouseClickMsg:
+		if msg.Button != tea.MouseLeft || m.confirmDelete {
+			return m, nil
+		}
+		// Default delegate: Height()=2, Spacing()=1 → 3 rows per item
+		// List header: title row + status row + 1 padding = 3 rows
+		const listHeaderH = 3
+		const itemH = 3
+		cursorInPage := (msg.Y - listHeaderH) / itemH
+		if cursorInPage >= 0 {
+			idx := m.list.Paginator.Page*m.list.Paginator.PerPage + cursorInPage
+			if idx >= 0 && idx < len(m.list.Items()) {
+				m.list.Select(idx)
+				now := time.Now()
+				isDoubleClick := msg.Y == m.lastClickY && now.Sub(m.lastClickTime) < 500*time.Millisecond
+				m.lastClickTime = now
+				m.lastClickY = msg.Y
+				if isDoubleClick {
+					if draftItm, ok := m.list.SelectedItem().(draftItem); ok {
+						d := draftItm.draft
+						return m, func() tea.Msg { return OpenDraftMsg{Draft: d} }
+					}
+				}
+			}
+		}
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -188,6 +225,7 @@ func (m *Drafts) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Drafts) View() tea.View {
 	var b strings.Builder
 
+	var v tea.View
 	if m.confirmDelete {
 		dialog := DialogBoxStyle.Render(
 			lipgloss.JoinVertical(lipgloss.Center,
@@ -195,19 +233,21 @@ func (m *Drafts) View() tea.View {
 				HelpStyle.Render("\n(y/n)"),
 			),
 		)
-		return tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
-	}
-
-	if len(m.drafts) == 0 {
+		v = tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
+	} else if len(m.drafts) == 0 {
 		emptyMsg := lipgloss.NewStyle().
 			Foreground(theme.ActiveTheme.Secondary).
 			Render("No drafts saved.\n\nPress esc to go back.")
-		return tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, emptyMsg))
+		v = tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, emptyMsg))
+	} else {
+		// list.View() still returns string in v2
+		b.WriteString(m.list.View())
+		v = tea.NewView(b.String())
 	}
-
-	// list.View() still returns string in v2
-	b.WriteString(m.list.View())
-	return tea.NewView(b.String())
+	if config.MouseEnabled != nil && *config.MouseEnabled {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
+	return v
 }
 
 // SetDrafts updates the drafts list

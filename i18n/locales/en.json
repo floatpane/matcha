@@ -79,7 +79,9 @@
       "drafts": "Drafts",
       "help": "Use ↑/↓ to navigate, enter to select, and ctrl+c to quit.",
       "unknown": "unknown",
-      "update_available": "Update available: {latest} (installed: {current}) — run `matcha update` to upgrade"
+      "update_available": "Update available: {latest} (installed: {current}) — run `matcha update` to upgrade",
+      "mouse_prompt": "Enable mouse support? (click, scroll, and select with your mouse) [y/n]",
+      "mouse_help": "Press y to enable or n to disable. You can change this later in Settings."
     },
     "folder_inbox": {
       "folders_title": "Folders",
@@ -174,6 +176,7 @@
       "signature": "Edit Signature",
       "signature_configured": "configured",
       "signature_not_configured": "not configured",
+      "mouse_support": "Mouse Support",
       "on": "ON",
       "off": "OFF",
       "restart_required": "Restart required to apply language change"

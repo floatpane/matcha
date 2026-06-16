@@ -185,11 +185,47 @@ func (m *Settings) Init() tea.Cmd {
 	return textinput.Blink
 }
 
+// categoriesStartY returns the screen row where the first settings category appears.
+// Layout: docStyle top margin (1) + title row (1) + \n\n (2) = 4.
+func (m *Settings) categoriesStartY() int {
+	return 4
+}
+
 func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.MouseWheelMsg:
+		if m.activePane == PaneMenu {
+			if msg.Button == tea.MouseWheelDown {
+				if m.menuCursor < 6 {
+					m.menuCursor++
+					m.activeCategory = SettingsCategory(m.menuCursor)
+				}
+			} else if msg.Button == tea.MouseWheelUp {
+				if m.menuCursor > 0 {
+					m.menuCursor--
+					m.activeCategory = SettingsCategory(m.menuCursor)
+				}
+			}
+		}
+		return m, tea.Batch(cmds...)
+
+	case tea.MouseClickMsg:
+		if msg.Button == tea.MouseLeft {
+			// Left pane: docStyle left margin (2) through left pane width (30) + margin = x < 32
+			if msg.X >= 2 && msg.X < 32 {
+				catIdx := msg.Y - m.categoriesStartY()
+				if catIdx >= 0 && catIdx < 7 {
+					m.menuCursor = catIdx
+					m.activeCategory = SettingsCategory(catIdx)
+					m.activePane = PaneContent
+				}
+			}
+		}
+		return m, tea.Batch(cmds...)
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -469,7 +505,11 @@ func (m *Settings) View() tea.View {
 		content += "\n\n"
 	}
 
-	return tea.NewView(docStyle.Render(content + helpView))
+	v := tea.NewView(docStyle.Render(content + helpView))
+	if config.MouseEnabled != nil && *config.MouseEnabled {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
+	return v
 }
 
 func (m *Settings) UpdateConfig(cfg *config.Config) {

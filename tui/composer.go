@@ -606,11 +606,72 @@ func truncateSuggestionDisplay(s string, maxLen int) string {
 	return string(runes[:maxLen-3]) + "..."
 }
 
+// setFocusTo blurs all inputs, sets focusIndex to the given constant, and
+// focuses the corresponding input widget.
+func (m *Composer) setFocusTo(focus int) tea.Cmd {
+	m.fromInput.Blur()
+	m.toInput.Blur()
+	m.ccInput.Blur()
+	m.bccInput.Blur()
+	m.subjectInput.Blur()
+	m.bodyInput.Blur()
+	m.signatureInput.Blur()
+	m.spellShow = false
+	m.spellSuggestions = nil
+	m.focusIndex = focus
+	switch focus {
+	case focusFrom:
+		if m.isCatchAllAccount() {
+			return m.fromInput.Focus()
+		}
+	case focusTo:
+		return m.toInput.Focus()
+	case focusCc:
+		return m.ccInput.Focus()
+	case focusBcc:
+		return m.bccInput.Focus()
+	case focusSubject:
+		return m.subjectInput.Focus()
+	case focusBody:
+		return m.bodyInput.Focus()
+	case focusSignature:
+		return m.signatureInput.Focus()
+	}
+	return nil
+}
+
 func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.MouseClickMsg:
+		if msg.Button == tea.MouseLeft && !m.confirmingExit && !m.showNotice && !m.showAccountPicker && !m.showPluginPrompt {
+			bodyH := m.bodyInput.Height()
+			sigH := m.signatureInput.Height()
+			var newFocus int
+			switch {
+			case msg.Y == 1:
+				newFocus = focusFrom
+			case msg.Y == 2:
+				newFocus = focusTo
+			case msg.Y == 3:
+				newFocus = focusCc
+			case msg.Y == 4:
+				newFocus = focusBcc
+			case msg.Y == 5:
+				newFocus = focusSubject
+			case msg.Y >= 6 && msg.Y < 6+bodyH:
+				newFocus = focusBody
+			case msg.Y >= 6+bodyH+1 && msg.Y < 6+bodyH+1+sigH:
+				newFocus = focusSignature
+			default:
+				return m, tea.Batch(cmds...)
+			}
+			cmds = append(cmds, m.setFocusTo(newFocus))
+		}
+		return m, tea.Batch(cmds...)
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -1298,7 +1359,11 @@ func (m *Composer) View() tea.View { //nolint:gocyclo
 	if m.spellShow && len(m.spellSuggestions) > 0 && m.focusIndex == focusBody {
 		out = m.overlaySpellPopup(out, composerViewElements)
 	}
-	return tea.NewView(out)
+	v := tea.NewView(out)
+	if config.MouseEnabled != nil && *config.MouseEnabled {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
+	return v
 }
 
 // overlaySpellPopup floats the suggestion box at the body cursor position

@@ -635,3 +635,9 @@ type GoToSetupGuideMsg struct{}
 
 // SetupGuideDoneMsg signals that the user completed (or dismissed) the setup guide.
 type SetupGuideDoneMsg struct{}
+
+// MouseSupportChosenMsg is dispatched from the Choice screen when the user
+// answers the "enable mouse support?" startup question.
+type MouseSupportChosenMsg struct {
+	Enabled bool
+}

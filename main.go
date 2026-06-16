@@ -193,6 +193,7 @@ func newInitialModel(cfg *config.Config, mailtoURL *url.URL) *mainModel {
 		default:
 			initialModel.current = tui.NewChoice()
 		}
+		config.MouseEnabled = cfg.MouseEnabled
 		initialModel.config = cfg
 	}
 	return initialModel
@@ -398,6 +399,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			default:
 				return m, m.palette.Update(keyMsg)
 			}
+		}
+		if _, ok := msg.(tea.MouseWheelMsg); ok {
+			return m, m.palette.Update(msg)
 		}
 	} else if keyMsg, ok := msg.(tea.KeyPressMsg); ok &&
 		config.Keybinds.Global.CommandPalette != "" &&
@@ -1533,6 +1537,17 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		m.current = tui.NewChoice()
 		m.current, _ = m.current.Update(m.currentWindowSize())
 		return m, m.current.Init()
+
+	case tui.MouseSupportChosenMsg:
+		if m.config != nil {
+			enabled := msg.Enabled
+			m.config.MouseEnabled = &enabled
+			config.MouseEnabled = &enabled
+			if err := config.SaveConfig(m.config); err != nil {
+				log.Printf("could not save mouse-enabled flag: %v", err)
+			}
+		}
+		return m, nil
 
 	case tui.SetupGuideDoneMsg:
 		if m.config != nil && !m.config.HasSeenSetupGuide {

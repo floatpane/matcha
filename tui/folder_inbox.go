@@ -227,6 +227,53 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 	}
 
 	switch msg := msg.(type) {
+	case tea.MouseWheelMsg:
+		if msg.X < sidebarWidth {
+			if msg.Button == tea.MouseWheelDown {
+				m.activeFolderIdx = (m.activeFolderIdx + 1) % len(m.folders)
+			} else if msg.Button == tea.MouseWheelUp {
+				m.activeFolderIdx = (m.activeFolderIdx - 1 + len(m.folders)) % len(m.folders)
+			}
+			if len(m.folders) > 0 {
+				return m, m.switchFolder()
+			}
+			return m, nil
+		}
+		if m.previewPane != nil {
+			if m.isVerticalSplit() {
+				if msg.Y < m.calculateInboxHeight() {
+					_, cmd := m.inbox.Update(msg)
+					return m, cmd
+				}
+				_, cmd := m.previewPane.Update(msg)
+				return m, cmd
+			}
+			if msg.X < sidebarWidth+m.calculateInboxWidth() {
+				_, cmd := m.inbox.Update(msg)
+				return m, cmd
+			}
+			_, cmd := m.previewPane.Update(msg)
+			return m, cmd
+		}
+		_, cmd := m.inbox.Update(msg)
+		return m, cmd
+
+	case tea.MouseClickMsg:
+		if msg.Button != tea.MouseLeft {
+			return m, nil
+		}
+		if msg.X < sidebarWidth {
+			// title(1) + PaddingBottom(1) = 2 header rows (explicit \n doesn't add a row)
+			folderIdx := msg.Y - 2
+			if folderIdx >= 0 && folderIdx < len(m.folders) {
+				m.activeFolderIdx = folderIdx
+				return m, m.switchFolder()
+			}
+			return m, nil
+		}
+		_, cmd := m.inbox.Update(msg)
+		return m, cmd
+
 	case tea.KeyPressMsg:
 		// Don't intercept keys while filtering
 		if m.inbox.list.FilterState() == list.Filtering {
@@ -601,7 +648,11 @@ func (m *FolderInbox) View() tea.View {
 		content = m.renderWithMoveOverlay(content)
 	}
 
-	return tea.NewView(content)
+	v := tea.NewView(content)
+	if config.MouseEnabled != nil && *config.MouseEnabled {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
+	return v
 }
 
 func (m *FolderInbox) renderSidebar() string {

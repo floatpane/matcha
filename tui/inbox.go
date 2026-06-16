@@ -347,6 +347,9 @@ type Inbox struct {
 	// older than a week. When empty, the built-in defaults apply.
 	dateFormat    string
 	detailedDates bool
+
+	lastClickTime time.Time
+	lastClickY    int
 }
 
 // SetDateFormat configures the Go time layout used to render absolute
@@ -830,6 +833,52 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.MouseWheelMsg:
+		if msg.Button == tea.MouseWheelDown {
+			m.list.CursorDown()
+		} else if msg.Button == tea.MouseWheelUp {
+			m.list.CursorUp()
+		}
+		return m, nil
+
+	case tea.MouseClickMsg:
+		if msg.Button != tea.MouseLeft {
+			return m, nil
+		}
+		// tabBarH: 5 rows if multiple accounts (text+PaddingBottom+BorderBottom+MarginBottom+\n), else 0
+		// list header: 3 rows (title row + status row + 1 padding row)
+		tabBarH := 0
+		if len(m.tabs) > 1 {
+			tabBarH = 5
+		}
+		listContentStartY := tabBarH + 3
+		cursorInPage := msg.Y - listContentStartY
+		if cursorInPage >= 0 {
+			idx := m.list.Paginator.Page*m.list.Paginator.PerPage + cursorInPage
+			if idx >= 0 && idx < len(m.list.Items()) {
+				m.list.Select(idx)
+				now := time.Now()
+				isDoubleClick := msg.Y == m.lastClickY && now.Sub(m.lastClickTime) < 500*time.Millisecond
+				m.lastClickTime = now
+				m.lastClickY = msg.Y
+				if isDoubleClick {
+					if selectedItem, ok := m.list.SelectedItem().(item); ok && selectedItem.uid != 0 {
+						i := selectedItem.originalIndex
+						uid := selectedItem.uid
+						accountID := selectedItem.accountID
+						var email *fetcher.Email
+						if m.searchActive {
+							email = m.GetEmailAtIndex(i)
+						}
+						return m, func() tea.Msg {
+							return ViewEmailMsg{Index: i, UID: uid, AccountID: accountID, Mailbox: m.mailbox, Email: email}
+						}
+					}
+				}
+			}
+		}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		if m.searchOverlay != nil {
 			if msg.String() == config.Keybinds.Global.Cancel {
@@ -1239,7 +1288,11 @@ func (m *Inbox) View() tea.View {
 
 	b.WriteString(helpView)
 
-	return tea.NewView(b.String())
+	v := tea.NewView(b.String())
+	if config.MouseEnabled != nil && *config.MouseEnabled {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
+	return v
 }
 
 // GetCurrentAccountID returns the currently selected account ID

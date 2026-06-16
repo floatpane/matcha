@@ -30,6 +30,7 @@ func (m *Settings) buildGeneralOptions() []generalOption {
 		{"settings_general.date_format", getDateFormatLabel(m.cfg.DateFormat), "Change how dates and times are displayed."},
 		{"settings_general.language", getLanguageLabel(m.cfg.GetLanguage()), "Change the interface language. Changes apply instantly."},
 		{"settings_general.signature", getSignatureStatus(), "Configure the global signature appended to your outgoing emails."},
+		{"settings_general.mouse_support", onOff(config.MouseEnabled != nil && *config.MouseEnabled), "Enable mouse clicks and scroll wheel in the TUI. Takes effect immediately."},
 	}
 
 	return opts
@@ -127,6 +128,10 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				if msg.String() == keyEnter || msg.String() == keyRight || msg.String() == "l" {
 					return m, func() tea.Msg { return GoToSignatureEditorMsg{} }
 				}
+			case 13: // Mouse Support
+				enabled := !(config.MouseEnabled != nil && *config.MouseEnabled)
+				config.MouseEnabled = &enabled
+				return m, func() tea.Msg { return MouseSupportChosenMsg{Enabled: enabled} }
 			}
 			if saved {
 				return m, func() tea.Msg { return ConfigSavedMsg{} }
