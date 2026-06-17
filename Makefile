@@ -29,7 +29,7 @@ build-rust:
 build: build-rust
 	CGO_LDFLAGS="-L$(SPELLDICT_LIB)" go build -o $(BUILD_DIR)/$(BINARY_NAME) .
 
-install:
+install: build-rust
 	@echo "Building and installing $(BINARY_NAME)..."
 	@EXISTING=$$(which $(BINARY_NAME) 2>/dev/null); \
 	DEST=$$([ -n "$$EXISTING" ] && dirname "$$EXISTING" || echo "$(INSTALL_DIR)"); \
@@ -39,11 +39,11 @@ install:
 	echo "Version: $$VERSION"; \
 	echo "Commit: $$COMMIT"; \
 	echo "Date: $$DATE"; \
-	go build -ldflags="-X 'main.version=$$VERSION' -X 'main.commit=$$COMMIT' -X 'main.date=$$DATE'" -o $(BUILD_DIR)/$(BINARY_NAME) .; \
+	CGO_LDFLAGS="-L$(SPELLDICT_LIB)" go build -ldflags="-X 'main.version=$$VERSION' -X 'main.commit=$$COMMIT' -X 'main.date=$$DATE'" -o $(BUILD_DIR)/$(BINARY_NAME) .; \
 	install -m 755 $(BUILD_DIR)/$(BINARY_NAME) "$$DEST/$(BINARY_NAME)"; \
 	echo "Installed to $$DEST/$(BINARY_NAME)"
 
-build-full:
+build-full: build-rust
 	@echo "Building with version information..."
 	@VERSION=$$(git describe --tags --abbrev=0 2>/dev/null || echo "dev"); \
 	COMMIT=$$(git rev-parse --short HEAD 2>/dev/null || echo "unknown"); \
@@ -51,22 +51,22 @@ build-full:
 	echo "Version: $$VERSION"; \
 	echo "Commit: $$COMMIT"; \
 	echo "Date: $$DATE"; \
-	go build -ldflags="-X 'main.version=$$VERSION' -X 'main.commit=$$COMMIT' -X 'main.date=$$DATE'" -o $(BUILD_DIR)/$(BINARY_NAME)-full .;
+	CGO_LDFLAGS="-L$(SPELLDICT_LIB)" go build -ldflags="-X 'main.version=$$VERSION' -X 'main.commit=$$COMMIT' -X 'main.date=$$DATE'" -o $(BUILD_DIR)/$(BINARY_NAME)-full .;
 
-run:
-	go run .
+run: build-rust
+	CGO_LDFLAGS="-L$(SPELLDICT_LIB)" go run .
 
-run-log:
-	go run . --debug --logs
+run-log: build-rust
+	CGO_LDFLAGS="-L$(SPELLDICT_LIB)" go run . --debug --logs
 
-test:
-	go test ./...
+test: build-rust
+	CGO_LDFLAGS="-L$(SPELLDICT_LIB)" go test ./...
 
-test-verbose:
-	go test -v ./...
+test-verbose: build-rust
+	CGO_LDFLAGS="-L$(SPELLDICT_LIB)" go test -v ./...
 
-test-coverage:
-	go test -coverprofile=coverage.out ./...
+test-coverage: build-rust
+	CGO_LDFLAGS="-L$(SPELLDICT_LIB)" go test -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
 clean:
