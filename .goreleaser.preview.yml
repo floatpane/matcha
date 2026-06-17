@@ -30,8 +30,9 @@ builds:
       - >-
         {{- if eq .Os "darwin" }}CGO_CFLAGS=-isysroot {{ .Env.SDK_PATH }} -mmacosx-version-min=11.0{{- end }}
       - >-
-        {{- if eq .Os "darwin" }}CGO_LDFLAGS=-isysroot {{ .Env.SDK_PATH }}
-        {{- else if eq .Os "linux" }}CGO_LDFLAGS=-L{{ .Env.PCSC_DIR }}/lib/{{ .Arch }}
+        {{- if eq .Os "darwin" }}CGO_LDFLAGS=-isysroot {{ .Env.SDK_PATH }} -L{{ .Env.SPELLDICT_DIR }}/{{ if eq .Arch "amd64" }}x86_64{{ else }}aarch64{{ end }}-apple-darwin/release
+        {{- else if eq .Os "linux" }}CGO_LDFLAGS=-L{{ .Env.PCSC_DIR }}/lib/{{ .Arch }} -L{{ .Env.SPELLDICT_DIR }}/{{ if eq .Arch "amd64" }}x86_64{{ else }}aarch64{{ end }}-unknown-linux-musl/release
+        {{- else if eq .Os "windows" }}CGO_LDFLAGS=-L{{ .Env.SPELLDICT_DIR }}/{{ if eq .Arch "amd64" }}x86_64-pc-windows-gnu{{ else }}aarch64-pc-windows-gnullvm{{ end }}/release
         {{- end }}
       - >-
         {{- if eq .Os "darwin" }}
