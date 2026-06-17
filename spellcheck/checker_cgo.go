@@ -3,9 +3,12 @@
 package spellcheck
 
 /*
+// The -L path is injected via CGO_LDFLAGS (set by make/CI) so the same
+// source file works for both native and cross-compiled targets.
+// Local default: clib/spelldict/target/release (built by `make build-rust`).
 #cgo CFLAGS: -I${SRCDIR}/../clib/spelldict
-#cgo darwin LDFLAGS: -L${SRCDIR}/../clib/spelldict/target/release -lspelldict
-#cgo linux LDFLAGS: -L${SRCDIR}/../clib/spelldict/target/release -lspelldict -ldl -lpthread -lm
+#cgo LDFLAGS: -lspelldict
+#cgo linux LDFLAGS: -ldl -lpthread -lm
 #include "spelldict.h"
 #include <stdlib.h>
 */

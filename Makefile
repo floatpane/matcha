@@ -4,6 +4,7 @@ INSTALL_DIR ?= /usr/local/bin
 
 BINARY_NAME=matcha
 BUILD_DIR=bin
+SPELLDICT_LIB := $(abspath clib/spelldict/target/release)
 
 generate_gif:
 	alias matcha="go run ."
@@ -26,7 +27,7 @@ build-rust:
 	cargo build --release --manifest-path clib/spelldict/Cargo.toml
 
 build: build-rust
-	go build -o $(BUILD_DIR)/$(BINARY_NAME) .
+	CGO_LDFLAGS="-L$(SPELLDICT_LIB)" go build -o $(BUILD_DIR)/$(BINARY_NAME) .
 
 install:
 	@echo "Building and installing $(BINARY_NAME)..."

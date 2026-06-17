@@ -25,14 +25,26 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
 
+      - name: Install Rust toolchain
+        if: runner.os != 'Windows'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust spelldict library
+        if: runner.os != 'Windows'
+        run: cargo build --release --manifest-path clib/spelldict/Cargo.toml
+
       - name: Tidy modules
         run: go mod tidy
 
       - name: Test
         run: go test -v ./...
+        env:
+          CGO_LDFLAGS: ${{ runner.os != 'Windows' && format('-L{0}/clib/spelldict/target/release', github.workspace) || '' }}
 
       - name: Build
         run: go build -v ./...
+        env:
+          CGO_LDFLAGS: ${{ runner.os != 'Windows' && format('-L{0}/clib/spelldict/target/release', github.workspace) || '' }}
 
   lint:
     runs-on: ubuntu-latest
