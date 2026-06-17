@@ -66,7 +66,7 @@ func TestTokenize(t *testing.T) {
 	}
 }
 
-func TestParseHunspellDicSkipsCountLine(t *testing.T) {
+func TestCheckerSkipsCountLine(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "x.dic")
 	// First line is a count, words follow, with hunspell-style flags.
@@ -74,12 +74,12 @@ func TestParseHunspellDicSkipsCountLine(t *testing.T) {
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	w, _, err := parseHunspellDic(p)
-	if err != nil {
+	c := NewChecker()
+	if err := c.Load(p, "test"); err != nil {
 		t.Fatal(err)
 	}
 	for _, k := range []string{"foo", "bar", "baz"} {
-		if _, ok := w[k]; !ok {
+		if !c.Check(k) {
 			t.Errorf("missing %q", k)
 		}
 	}

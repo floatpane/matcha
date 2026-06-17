@@ -1,4 +1,4 @@
-.PHONY: build test run run-log clean lint fmt vet build-full install generate_screenshots
+.PHONY: build test run run-log clean lint fmt vet build-full install generate_screenshots build-rust
 
 INSTALL_DIR ?= /usr/local/bin
 
@@ -22,7 +22,10 @@ generate_screenshots:
 	@rm -f screenshots/*.gif 2>/dev/null || true
 	@echo "Screenshots saved to docs/docs/assets/features/"
 
-build:
+build-rust:
+	cargo build --release --manifest-path clib/spelldict/Cargo.toml
+
+build: build-rust
 	go build -o $(BUILD_DIR)/$(BINARY_NAME) .
 
 install:
@@ -68,6 +71,7 @@ test-coverage:
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -f coverage.out coverage.html
+	cargo clean --manifest-path clib/spelldict/Cargo.toml
 
 fmt:
 	go fmt ./...
