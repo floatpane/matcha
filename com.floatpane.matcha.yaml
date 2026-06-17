@@ -4,6 +4,7 @@ runtime-version: "23.08"
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.golang
+  - org.freedesktop.Sdk.Extension.rust-stable
 
 command: matcha
 finish-args:
@@ -80,6 +81,20 @@ modules:
           Cflags: -I${includedir}
           Libs: -L${libdir} -lpcsclite
 
+  - name: spelldict
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/spelldict/cargo
+    build-commands:
+      - cargo build --release --manifest-path clib/spelldict/Cargo.toml
+      - install -Dm644 clib/spelldict/target/release/libspelldict.a /app/lib/libspelldict.a
+      - install -Dm644 clib/spelldict/spelldict.h /app/include/spelldict.h
+    sources:
+      - type: dir
+        path: .
+
   - name: matcha
     buildsystem: simple
     build-options:
@@ -87,6 +102,7 @@ modules:
       env:
         GOCACHE: /app/.cache/go-build
         GOPATH: /app/.go
+        CGO_LDFLAGS: -L/app/lib
       build-args:
         - --share=network
     build-commands:
