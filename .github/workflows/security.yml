@@ -29,7 +29,15 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust spelldict library
+        run: cargo build --release --manifest-path clib/spelldict/Cargo.toml
+
       - name: Run govulncheck
+        env:
+          CGO_LDFLAGS: -L${{ github.workspace }}/clib/spelldict/target/release
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck -show verbose ./...
@@ -48,10 +56,17 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust spelldict library
+        run: cargo build --release --manifest-path clib/spelldict/Cargo.toml
+
       - name: Run gosec
         uses: securego/gosec@master
         env:
           GOTOOLCHAIN: auto
+          CGO_LDFLAGS: -L${{ github.workspace }}/clib/spelldict/target/release
         with:
           args: "-no-fail -fmt=sarif -out=gosec.sarif -severity=medium -confidence=medium -exclude=G101,G115,G204,G304,G306,G401,G501 ./..."
 
@@ -114,6 +129,12 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust spelldict library
+        run: cargo build --release --manifest-path clib/spelldict/Cargo.toml
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
@@ -121,6 +142,8 @@ jobs:
           queries: security-extended
 
       - name: Build
+        env:
+          CGO_LDFLAGS: -L${{ github.workspace }}/clib/spelldict/target/release
         run: go build ./...
 
       - name: Analyze
