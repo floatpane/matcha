@@ -1,9 +1,10 @@
-.PHONY: build test run run-log clean lint fmt vet build-full install generate_screenshots
+.PHONY: build test run run-log clean lint fmt vet build-full install generate_screenshots build-rust
 
 INSTALL_DIR ?= /usr/local/bin
 
 BINARY_NAME=matcha
 BUILD_DIR=bin
+SPELLDICT_LIB := $(abspath clib/spelldict/target/release)
 
 generate_gif:
 	alias matcha="go run ."
@@ -22,8 +23,11 @@ generate_screenshots:
 	@rm -f screenshots/*.gif 2>/dev/null || true
 	@echo "Screenshots saved to docs/docs/assets/features/"
 
-build:
-	go build -o $(BUILD_DIR)/$(BINARY_NAME) .
+build-rust:
+	cargo build --release --manifest-path clib/spelldict/Cargo.toml
+
+build: build-rust
+	CGO_LDFLAGS="-L$(SPELLDICT_LIB)" go build -o $(BUILD_DIR)/$(BINARY_NAME) .
 
 install:
 	@echo "Building and installing $(BINARY_NAME)..."
@@ -68,6 +72,7 @@ test-coverage:
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -f coverage.out coverage.html
+	cargo clean --manifest-path clib/spelldict/Cargo.toml
 
 fmt:
 	go fmt ./...

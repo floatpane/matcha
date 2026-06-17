@@ -40,6 +40,12 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust spelldict library
+        run: cargo build --release --manifest-path clib/spelldict/Cargo.toml
+
       - name: Wait for greenmail
         run: |
           for i in $(seq 1 60); do
@@ -59,6 +65,7 @@ jobs:
           MATCHA_TEST_IMAP_PORT: "3993"
           MATCHA_TEST_SMTP_PORT: "3465"
           MATCHA_TEST_API_PORT: "8080"
+          CGO_LDFLAGS: -L${{ github.workspace }}/clib/spelldict/target/release
         run: |
           go test -v -tags=integration -timeout=10m -count=1 ./tests/integration/...
 
@@ -81,7 +88,29 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'Windows' && 'x86_64-pc-windows-gnu' || '' }}
+
+      - name: Build Rust spelldict library
+        shell: bash
+        run: |
+          WORKSPACE="$(pwd)"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=gcc \
+              cargo build --release --manifest-path clib/spelldict/Cargo.toml --target x86_64-pc-windows-gnu
+            # cygpath -m converts the Git Bash POSIX path (/d/a/...) to a Windows
+            # mixed path (D:/a/...) that MinGW's ld.exe can actually resolve.
+            echo "SPELLDICT_LIB=$(cygpath -m "${WORKSPACE}/clib/spelldict/target/x86_64-pc-windows-gnu/release")" >> "$GITHUB_ENV"
+          else
+            cargo build --release --manifest-path clib/spelldict/Cargo.toml
+            echo "SPELLDICT_LIB=${WORKSPACE}/clib/spelldict/target/release" >> "$GITHUB_ENV"
+          fi
+
       - name: Race-enabled unit tests
+        env:
+          CGO_LDFLAGS: -L${{ env.SPELLDICT_LIB }}
         run: go test -race -timeout=10m ./...
 
   fuzz:
@@ -99,6 +128,12 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust spelldict library
+        run: cargo build --release --manifest-path clib/spelldict/Cargo.toml
+
       - name: Discover fuzz targets
         id: discover
         run: |
@@ -114,6 +149,8 @@ jobs:
 
       - name: Run fuzz targets (30s each)
         if: steps.discover.outputs.targets != ''
+        env:
+          CGO_LDFLAGS: -L${{ github.workspace }}/clib/spelldict/target/release
         run: |
           for file in ${{ steps.discover.outputs.targets }}; do
             dir=$(dirname "$file")

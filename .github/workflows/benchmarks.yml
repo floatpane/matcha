@@ -27,6 +27,12 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust spelldict library
+        run: cargo build --release --manifest-path clib/spelldict/Cargo.toml
+
       - name: Install benchstat
         run: go install golang.org/x/perf/cmd/benchstat@latest
 
@@ -40,6 +46,8 @@ jobs:
           fi
 
       - name: Benchmark PR
+        env:
+          CGO_LDFLAGS: -L${{ github.workspace }}/clib/spelldict/target/release
         run: |
           go test -run=^$ -bench=. -benchmem -benchtime=3x -count=6 ./backend/ ./tui/ \
             | tee new.txt
@@ -48,6 +56,8 @@ jobs:
         run: git checkout ${{ steps.base.outputs.ref }}
 
       - name: Benchmark base
+        env:
+          CGO_LDFLAGS: -L${{ github.workspace }}/clib/spelldict/target/release
         run: |
           go test -run=^$ -bench=. -benchmem -benchtime=3x -count=6 ./backend/ ./tui/ \
             | tee old.txt || echo "base benchmarks failed" > old.txt

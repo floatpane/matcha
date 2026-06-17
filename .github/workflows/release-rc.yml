@@ -92,6 +92,38 @@ jobs:
       - name: Set up Zig
         uses: goto-bus-stop/setup-zig@v2
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: >-
+            x86_64-apple-darwin,
+            aarch64-apple-darwin,
+            x86_64-unknown-linux-musl,
+            aarch64-unknown-linux-musl,
+            x86_64-pc-windows-gnu,
+            aarch64-pc-windows-gnullvm
+
+      - name: Build Rust spelldict for all release targets
+        run: |
+          MANIFEST=clib/spelldict/Cargo.toml
+
+          cargo build --release --manifest-path "$MANIFEST" --target x86_64-apple-darwin
+          cargo build --release --manifest-path "$MANIFEST" --target aarch64-apple-darwin
+
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER="zig cc -target x86_64-linux-musl" \
+            cargo build --release --manifest-path "$MANIFEST" --target x86_64-unknown-linux-musl
+
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="zig cc -target aarch64-linux-musl" \
+            cargo build --release --manifest-path "$MANIFEST" --target aarch64-unknown-linux-musl
+
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER="zig cc -target x86_64-windows-gnu" \
+            cargo build --release --manifest-path "$MANIFEST" --target x86_64-pc-windows-gnu
+
+          CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER="zig cc -target aarch64-windows-gnu" \
+            cargo build --release --manifest-path "$MANIFEST" --target aarch64-pc-windows-gnullvm
+
+          echo "SPELLDICT_DIR=$GITHUB_WORKSPACE/clib/spelldict/target" >> $GITHUB_ENV
+
       - name: Set up libpcsclite for Linux cross-compilation
         run: |
           PCSC_DIR="$RUNNER_TEMP/pcsclite"

@@ -7,12 +7,9 @@
 package spellcheck
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
-	"unicode"
 )
 
 // DictsDir returns the directory where dictionaries are stored.
@@ -45,64 +42,4 @@ func DictInstalled(lang string) bool {
 	}
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir() && info.Size() > 0
-}
-
-// parseHunspellDic reads a Hunspell .dic file and returns the set of base
-// words plus the set of letter runes that appear in those words. The
-// first line (when numeric) is treated as a count and skipped. Each entry
-// may carry "/FLAGS" affix metadata which we strip — we don't expand
-// affix rules, so the checker recognises base forms only.
-func parseHunspellDic(path string) (map[string]struct{}, map[rune]struct{}, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, nil, fmt.Errorf("open dict: %w", err)
-	}
-	defer f.Close() //nolint:errcheck
-
-	words := make(map[string]struct{}, 50000)
-	runes := make(map[rune]struct{}, 64)
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-
-	first := true
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if first {
-			first = false
-			if _, err := fmt.Sscanf(line, "%d", new(int)); err == nil && !strings.ContainsAny(line, " \t") {
-				continue
-			}
-		}
-		if idx := strings.IndexByte(line, '/'); idx >= 0 {
-			line = line[:idx]
-		}
-		if idx := strings.IndexByte(line, '\t'); idx >= 0 {
-			line = line[:idx]
-		}
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		lower := strings.ToLower(line)
-		words[lower] = struct{}{}
-		for _, r := range lower {
-			if isDictLetter(r) {
-				runes[r] = struct{}{}
-			}
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, nil, fmt.Errorf("scan dict: %w", err)
-	}
-	return words, runes, nil
-}
-
-func isDictLetter(r rune) bool {
-	if r < 0x80 {
-		return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
-	}
-	return unicode.IsLetter(r)
 }
