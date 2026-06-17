@@ -1,4 +1,6 @@
-.PHONY: build test run run-log clean lint fmt vet build-full generate_screenshots
+.PHONY: build test run run-log clean lint fmt vet build-full install generate_screenshots
+
+INSTALL_DIR ?= /usr/local/bin
 
 BINARY_NAME=matcha
 BUILD_DIR=bin
@@ -22,6 +24,20 @@ generate_screenshots:
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY_NAME) .
+
+install:
+	@echo "Building and installing $(BINARY_NAME)..."
+	@EXISTING=$$(which $(BINARY_NAME) 2>/dev/null); \
+	DEST=$$([ -n "$$EXISTING" ] && dirname "$$EXISTING" || echo "$(INSTALL_DIR)"); \
+	VERSION=$$([ -n "$(VERSION)" ] && echo "$(VERSION)" || git describe --tags --abbrev=0 2>/dev/null || echo "dev"); \
+	COMMIT=$$(git rev-parse --short HEAD 2>/dev/null || echo "unknown"); \
+	DATE=$$(date +%Y-%m-%d); \
+	echo "Version: $$VERSION"; \
+	echo "Commit: $$COMMIT"; \
+	echo "Date: $$DATE"; \
+	go build -ldflags="-X 'main.version=$$VERSION' -X 'main.commit=$$COMMIT' -X 'main.date=$$DATE'" -o $(BUILD_DIR)/$(BINARY_NAME) .; \
+	install -m 755 $(BUILD_DIR)/$(BINARY_NAME) "$$DEST/$(BINARY_NAME)"; \
+	echo "Installed to $$DEST/$(BINARY_NAME)"
 
 build-full:
 	@echo "Building with version information..."
