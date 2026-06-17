@@ -9,6 +9,7 @@ package spellcheck
 #cgo CFLAGS: -I${SRCDIR}/../clib/spelldict
 #cgo LDFLAGS: -lspelldict
 #cgo linux LDFLAGS: -ldl -lpthread -lm
+#cgo windows LDFLAGS: -lntdll
 #include "spelldict.h"
 #include <stdlib.h>
 */
