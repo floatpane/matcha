@@ -26,25 +26,35 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
 
       - name: Install Rust toolchain
-        if: runner.os != 'Windows'
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'Windows' && 'x86_64-pc-windows-gnu' || '' }}
 
       - name: Build Rust spelldict library
-        if: runner.os != 'Windows'
-        run: cargo build --release --manifest-path clib/spelldict/Cargo.toml
+        shell: bash
+        run: |
+          WORKSPACE="$(pwd)"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=gcc \
+              cargo build --release --manifest-path clib/spelldict/Cargo.toml --target x86_64-pc-windows-gnu
+            echo "SPELLDICT_LIB=${WORKSPACE}/clib/spelldict/target/x86_64-pc-windows-gnu/release" >> "$GITHUB_ENV"
+          else
+            cargo build --release --manifest-path clib/spelldict/Cargo.toml
+            echo "SPELLDICT_LIB=${WORKSPACE}/clib/spelldict/target/release" >> "$GITHUB_ENV"
+          fi
 
       - name: Tidy modules
         run: go mod tidy
 
       - name: Test
-        run: go test -v ./...
         env:
-          CGO_LDFLAGS: ${{ runner.os != 'Windows' && format('-L{0}/clib/spelldict/target/release', github.workspace) || '' }}
+          CGO_LDFLAGS: -L${{ env.SPELLDICT_LIB }}
+        run: go test -v ./...
 
       - name: Build
-        run: go build -v ./...
         env:
-          CGO_LDFLAGS: ${{ runner.os != 'Windows' && format('-L{0}/clib/spelldict/target/release', github.workspace) || '' }}
+          CGO_LDFLAGS: -L${{ env.SPELLDICT_LIB }}
+        run: go build -v ./...
 
   lint:
     runs-on: ubuntu-latest
