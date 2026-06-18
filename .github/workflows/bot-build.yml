@@ -68,7 +68,7 @@ jobs:
             core.setOutput('repo', pr.head.repo.full_name);
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ steps.pr.outputs.repo }}
           ref: ${{ steps.pr.outputs.ref }}

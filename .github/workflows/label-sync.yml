@@ -26,7 +26,7 @@ jobs:
       LABELS_FILE: .github/labels.yml
       PRUNE: ${{ github.event.inputs.prune || 'false' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Upsert labels
         run: |
