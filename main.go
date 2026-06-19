@@ -145,6 +145,9 @@ type mainModel struct {
 	sendNotice    string
 	pendingAction *pendingEmailAction
 	actionNotice  string
+	// unreadBadge caches the unread count last pushed to the OS badge so the
+	// value the badge derives from is observable after email operations.
+	unreadBadge int
 }
 
 type logEntryMsg struct {
@@ -296,10 +299,11 @@ func unreadBadgeCount(emailsByAcct, folderEmails map[string][]fetcher.Email) int
 }
 
 func (m *mainModel) syncUnreadBadge() {
+	count := unreadBadgeCount(m.emailsByAcct, m.folderEmails)
+	m.unreadBadge = count
 	if runtime.GOOS != goosDarwin && loglevel.Get() < loglevel.LevelDebug {
 		return
 	}
-	count := unreadBadgeCount(m.emailsByAcct, m.folderEmails)
 	loglevel.Debugf("unread badge count: %d", count)
 	if runtime.GOOS != goosDarwin {
 		return
@@ -1936,6 +1940,8 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			go saveFolderEmailsToCache(folderName, filtered)
 		}
 
+		m.syncUnreadBadge()
+
 		pa := &pendingEmailAction{
 			jobID:      fmt.Sprintf("action-%d", time.Now().UnixNano()),
 			kind:       actionKindDelete,
@@ -1985,6 +1991,8 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.folderEmails[folderName] = filtered
 			go saveFolderEmailsToCache(folderName, filtered)
 		}
+
+		m.syncUnreadBadge()
 
 		pa := &pendingEmailAction{
 			jobID:      fmt.Sprintf("action-%d", time.Now().UnixNano()),
@@ -2065,6 +2073,8 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			go saveFolderEmailsToCache(folderName, filtered)
 		}
 
+		m.syncUnreadBadge()
+
 		pa := &pendingEmailAction{
 			jobID:      fmt.Sprintf("action-%d", time.Now().UnixNano()),
 			kind:       actionKindDelete,
@@ -2118,6 +2128,8 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.folderEmails[folderName] = filtered
 			go saveFolderEmailsToCache(folderName, filtered)
 		}
+
+		m.syncUnreadBadge()
 
 		pa := &pendingEmailAction{
 			jobID:      fmt.Sprintf("action-%d", time.Now().UnixNano()),
