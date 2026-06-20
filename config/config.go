@@ -159,7 +159,8 @@ type Config struct {
 
 	HasSeenSetupGuide bool `json:"has_seen_setup_guide,omitempty"`
 	// MouseEnabled controls whether mouse events are captured. nil means "not asked yet".
-	MouseEnabled *bool `json:"mouse_enabled,omitempty"`
+	MouseEnabled       *bool `json:"mouse_enabled,omitempty"`
+	ShowOriginalOnReply bool  `json:"show_original_on_reply,omitempty"`
 }
 
 // GetSplitPaneOrientation returns the configured split pane orientation,
@@ -520,6 +521,7 @@ type secureDiskConfig struct {
 	PluginSettings          map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
 	HasSeenSetupGuide       bool                              `json:"has_seen_setup_guide,omitempty"`
 	MouseEnabled            *bool                             `json:"mouse_enabled,omitempty"`
+	ShowOriginalOnReply     bool                              `json:"show_original_on_reply,omitempty"`
 }
 
 // SaveConfig saves the given configuration to the config file and passwords to the keyring.
@@ -577,6 +579,7 @@ func SaveConfig(config *Config) error {
 			DateFormat:              config.DateFormat,
 			PluginSettings:          config.PluginSettings,
 			HasSeenSetupGuide:       config.HasSeenSetupGuide,
+			ShowOriginalOnReply:     config.ShowOriginalOnReply,
 		}
 		for _, acc := range config.Accounts {
 			var securePassword string
@@ -702,6 +705,7 @@ func LoadConfig() (*Config, error) {
 		PluginSettings          map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
 		HasSeenSetupGuide       bool                              `json:"has_seen_setup_guide,omitempty"`
 		MouseEnabled            *bool                             `json:"mouse_enabled,omitempty"`
+		ShowOriginalOnReply     bool                              `json:"show_original_on_reply,omitempty"`
 	}
 
 	var raw diskConfig
@@ -749,6 +753,7 @@ func LoadConfig() (*Config, error) {
 	config.PluginSettings = raw.PluginSettings
 	config.HasSeenSetupGuide = raw.HasSeenSetupGuide
 	config.MouseEnabled = raw.MouseEnabled
+	config.ShowOriginalOnReply = raw.ShowOriginalOnReply
 
 	for _, rawAcc := range raw.Accounts {
 		acc := Account{

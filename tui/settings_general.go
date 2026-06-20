@@ -31,6 +31,7 @@ func (m *Settings) buildGeneralOptions() []generalOption {
 		{"settings_general.language", getLanguageLabel(m.cfg.GetLanguage()), "Change the interface language. Changes apply instantly."},
 		{"settings_general.signature", getSignatureStatus(), "Configure the global signature appended to your outgoing emails."},
 		{"settings_general.mouse_support", onOff(config.MouseEnabled != nil && *config.MouseEnabled), "Enable mouse clicks and scroll wheel in the TUI. Takes effect immediately."},
+		{"settings_general.show_original_on_reply", onOff(m.cfg.ShowOriginalOnReply), "Show the original email alongside the composer when replying."},
 	}
 
 	return opts
@@ -132,6 +133,10 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				enabled := config.MouseEnabled == nil || !*config.MouseEnabled
 				config.MouseEnabled = &enabled
 				return m, func() tea.Msg { return MouseSupportChosenMsg{Enabled: enabled} }
+			case 14: // Show Original on Reply
+				m.cfg.ShowOriginalOnReply = !m.cfg.ShowOriginalOnReply
+				_ = config.SaveConfig(m.cfg)
+				saved = true
 			}
 			if saved {
 				return m, func() tea.Msg { return ConfigSavedMsg{} }

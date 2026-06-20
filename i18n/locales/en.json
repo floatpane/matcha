@@ -179,6 +179,7 @@
       "signature_configured": "configured",
       "signature_not_configured": "not configured",
       "mouse_support": "Mouse Support",
+      "show_original_on_reply": "Show Original on Reply",
       "on": "ON",
       "off": "OFF",
       "restart_required": "Restart required to apply language change"

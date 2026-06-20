@@ -251,6 +251,18 @@ func (m *mainModel) newSettings() *tui.Settings {
 	return s
 }
 
+// getCurrentComposer extracts the active Composer from the current view,
+// handling both a plain Composer and a ReplySplitView.
+func getCurrentComposer(current tea.Model) *tui.Composer {
+	if c, ok := current.(*tui.Composer); ok {
+		return c
+	}
+	if rs, ok := current.(*tui.ReplySplitView); ok {
+		return rs.Composer()
+	}
+	return nil
+}
+
 // applySpellcheckOptions propagates the current Config's spellcheck
 // preferences onto a freshly-constructed Composer.
 func (m *mainModel) applySpellcheckOptions(c *tui.Composer) {
@@ -433,7 +445,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	// Fire composer_updated hook on key presses when the composer is active
 	if keyMsg, isKey := msg.(tea.KeyPressMsg); isKey {
-		if composer, ok := m.current.(*tui.Composer); ok && m.plugins != nil {
+		if composer := getCurrentComposer(m.current); composer != nil && m.plugins != nil {
 			m.plugins.CallComposerHook(plugin.HookComposerUpdated, composer.GetBody(), composer.GetSubject(), composer.GetTo(), composer.GetCc(), composer.GetBcc())
 			m.syncPluginStatus()
 			m.applyPluginFields(composer)
@@ -472,7 +484,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if msg.String() == "ctrl+c" {
 			// Persist an in-progress draft so quitting the composer
 			// doesn't discard the user's work.
-			if composer, ok := m.current.(*tui.Composer); ok && composer.HasContent() {
+			if composer := getCurrentComposer(m.current); composer != nil && composer.HasContent() {
 				if err := config.SaveDraft(composer.ToDraft()); err != nil {
 					log.Printf("Error saving draft on quit: %v", err)
 				}
@@ -499,6 +511,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}
 
 	case tui.BackToInboxMsg:
+		if _, ok := m.current.(*tui.ReplySplitView); ok {
+			tui.ClearKittyGraphics()
+		}
 		if m.folderInbox != nil {
 			m.current = m.folderInbox
 		} else {
@@ -519,6 +534,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, nil
 
 	case tui.DiscardDraftMsg:
+		if _, ok := m.current.(*tui.ReplySplitView); ok {
+			tui.ClearKittyGraphics()
+		}
 		// Save draft to disk
 		if msg.ComposerState != nil {
 			draft := msg.ComposerState.ToDraft()
@@ -890,7 +908,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	case tui.PluginPromptSubmitMsg:
 		if m.pendingPrompt != nil {
-			if composer, ok := m.current.(*tui.Composer); ok {
+			if composer := getCurrentComposer(m.current); composer != nil {
 				composer.HidePluginPrompt()
 				m.plugins.ResolvePrompt(m.pendingPrompt, msg.Value)
 				m.applyPluginFields(composer)
@@ -901,7 +919,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, nil
 
 	case tui.PluginPromptCancelMsg:
-		if composer, ok := m.current.(*tui.Composer); ok {
+		if composer := getCurrentComposer(m.current); composer != nil {
 			composer.HidePluginPrompt()
 		}
 		m.pendingPrompt = nil
@@ -1810,7 +1828,20 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		composer.SetReplyContext(inReplyTo, references)
 
 		m.applySpellcheckOptions(composer)
-		m.current = composer
+		if m.config != nil && m.config.ShowOriginalOnReply {
+			sz := m.currentWindowSize()
+			replySplit := tui.NewReplySplitView(
+				msg.Email,
+				composer,
+				m.config.GetSplitPaneOrientation(),
+				m.config.DisableImages,
+				sz.Width,
+				sz.Height,
+			)
+			m.current = replySplit
+		} else {
+			m.current = composer
+		}
 		m.current, _ = m.current.Update(m.currentWindowSize())
 		m.syncPluginKeyBindings()
 		return m, m.current.Init()
@@ -1853,8 +1884,8 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, m.current.Init()
 
 	case tui.OpenEditorMsg:
-		composer, ok := m.current.(*tui.Composer)
-		if !ok {
+		composer := getCurrentComposer(m.current)
+		if composer == nil {
 			return m, nil
 		}
 		return m, openExternalEditor(composer.GetBody())
@@ -1864,7 +1895,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			log.Printf("Editor error: %v", msg.Err)
 			return m, nil
 		}
-		if composer, ok := m.current.(*tui.Composer); ok {
+		if composer := getCurrentComposer(m.current); composer != nil {
 			composer.SetBody(msg.Body)
 		}
 		return m, nil
@@ -1903,7 +1934,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 		// Get draft ID before clearing composer (if it's a composer)
 		var draftID string
-		if composer, ok := m.current.(*tui.Composer); ok {
+		if composer := getCurrentComposer(m.current); composer != nil {
 			draftID = composer.GetDraftID()
 		}
 		// Get the account to send from
@@ -1925,6 +1956,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			noticeText = "Touch your YubiKey to sign..."
 		}
 		m.sendNotice = noticeText
+		if _, ok := m.current.(*tui.ReplySplitView); ok {
+			tui.ClearKittyGraphics()
+		}
 		m.current = tui.NewChoice()
 		m.current, _ = m.current.Update(m.currentWindowSize())
 
@@ -2990,6 +3024,8 @@ func (m *mainModel) syncPluginKeyBindings() {
 	switch v := m.current.(type) {
 	case *tui.Composer:
 		v.SetPluginKeyBindings(toPluginKeyBindings(m.plugins.Bindings(plugin.StatusComposer)))
+	case *tui.ReplySplitView:
+		v.Composer().SetPluginKeyBindings(toPluginKeyBindings(m.plugins.Bindings(plugin.StatusComposer)))
 	case *tui.EmailView:
 		v.SetPluginKeyBindings(toPluginKeyBindings(m.plugins.Bindings(plugin.StatusEmailView)))
 	}
