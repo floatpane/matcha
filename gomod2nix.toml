@@ -146,8 +146,8 @@ schema = 3
     hash = 'sha256-hXPLDYyK0YQ2uclQKt4MM607gHblh1t9BQkPkZy1B1Y='
 
   [mod.'github.com/floatpane/go-openpgp-card-hl']
-    version = 'v0.0.1'
-    hash = 'sha256-qssT4qCMoe9dgFISyCLhthlPe36dBJNnGU1bHjbCpK4='
+    version = 'v0.1.2'
+    hash = 'sha256-bn8lKPx7xhHYhZDYb/UShjY3tRMh6DwdDABpvCQyTTg='
 
   [mod.'github.com/floatpane/go-secretbox']
     version = 'v0.1.0'
