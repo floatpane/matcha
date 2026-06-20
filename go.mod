@@ -18,7 +18,7 @@ require (
 	github.com/floatpane/bubble-overlay v0.2.0
 	github.com/floatpane/go-icalendar v0.0.1
 	github.com/floatpane/go-keybind v0.0.1
-	github.com/floatpane/go-openpgp-card-hl v0.0.1
+	github.com/floatpane/go-openpgp-card-hl v0.1.2
 	github.com/floatpane/go-secretbox v0.1.0
 	github.com/floatpane/go-uds-jsonrpc v0.0.1
 	github.com/floatpane/jwz-go v0.0.1
