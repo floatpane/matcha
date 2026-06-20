@@ -673,6 +673,15 @@ func (m *FolderInbox) DecrementUnreadCount(folder string) {
 	}
 }
 
+// IncrementUnreadCount increases the unread counter for a folder. It is used to
+// restore the counter when a delete/archive action is undone.
+func (m *FolderInbox) IncrementUnreadCount(folder string) {
+	if m.unread == nil {
+		m.unread = make(map[string]int)
+	}
+	m.unread[folder]++
+}
+
 // SetEmails updates the inbox emails.
 func (m *FolderInbox) SetEmails(emails []fetcher.Email, accounts []config.Account) {
 	m.accounts = accounts
