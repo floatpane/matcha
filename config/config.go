@@ -159,7 +159,7 @@ type Config struct {
 
 	HasSeenSetupGuide bool `json:"has_seen_setup_guide,omitempty"`
 	// MouseEnabled controls whether mouse events are captured. nil means "not asked yet".
-	MouseEnabled       *bool `json:"mouse_enabled,omitempty"`
+	MouseEnabled        *bool `json:"mouse_enabled,omitempty"`
 	ShowOriginalOnReply bool  `json:"show_original_on_reply,omitempty"`
 }
 
