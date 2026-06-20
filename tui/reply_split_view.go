@@ -78,7 +78,7 @@ func (m *ReplySplitView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_, cmd = m.composer.Update(composerMsg)
 			// Resize email view (bottom half) and update its row offset.
 			emailMsg := tea.WindowSizeMsg{Width: m.width, Height: m.emailHeight()}
-			m.emailView.Update(emailMsg) //nolint:errcheck
+			m.emailView.Update(emailMsg)
 			m.emailView.rowOffset = m.composerHeight() + 1
 			m.emailView.columnOffset = 2
 			return m, cmd
@@ -88,7 +88,7 @@ func (m *ReplySplitView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		_, cmd = m.composer.Update(composerMsg)
 		emailMsg := tea.WindowSizeMsg{Width: m.emailWidth() - 2, Height: msg.Height - 2}
-		m.emailView.Update(emailMsg) //nolint:errcheck
+		m.emailView.Update(emailMsg)
 		m.emailView.columnOffset = m.composerWidth() + 2
 		return m, cmd
 
