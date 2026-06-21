@@ -2,11 +2,11 @@ package pluginbridge
 
 import (
 	tea "charm.land/bubbletea/v2"
-	lua "github.com/yuin/gopher-lua"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/plugin"
 	"github.com/floatpane/matcha/tui"
+	lua "github.com/yuin/gopher-lua"
 )
 
 // Store is the interface required by the plugin bridge for marking read/unread

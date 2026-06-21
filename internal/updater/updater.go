@@ -484,7 +484,7 @@ func replaceExecutable(binPath, execDir string) error {
 	if err != nil {
 		return fmt.Errorf("could not open new binary: %w", err)
 	}
-	defer in.Close() //nolint:errcheck
+	defer in.Close()                                                          //nolint:errcheck
 	out, err := os.OpenFile(tmpNew, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("could not create temp binary in target dir: %w", err)
