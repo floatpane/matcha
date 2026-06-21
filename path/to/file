@@ -1,0 +1,10 @@
+```go
+// Add new config option
+var NotificationSound = true
+
+// ... existing code ...
+
+// Update notification logic to use new config
+if NotificationSound {
+    playNotificationSound()
+}
