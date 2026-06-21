@@ -1,4 +1,4 @@
-package main
+package palette
 
 import (
 	"testing"
@@ -18,26 +18,25 @@ func TestKeyMsgFromBindingRoundTrips(t *testing.T) {
 		"ctrl+e", "ctrl+n", "ctrl+p", "ctrl+k",
 	}
 	for _, b := range bindings {
-		if got := keyMsgFromBinding(b).String(); got != b {
-			t.Errorf("keyMsgFromBinding(%q).String() = %q, want %q", b, got, b)
+		if got := KeyMsgFromBinding(b).String(); got != b {
+			t.Errorf("KeyMsgFromBinding(%q).String() = %q, want %q", b, got, b)
 		}
 	}
 }
 
 func TestKeyActionEmptyBindingIsNil(t *testing.T) {
-	if keyAction("") != nil {
-		t.Error("keyAction(\"\") should return nil")
+	if KeyAction("") != nil {
+		t.Error("KeyAction(\"\") should return nil")
 	}
-	if keyAction("r") == nil {
-		t.Error("keyAction(\"r\") should return a non-nil action")
+	if KeyAction("r") == nil {
+		t.Error("KeyAction(\"r\") should return a non-nil action")
 	}
 }
 
 // TestBuildPaletteCommandsAlwaysHasNav ensures global navigation commands are
 // present regardless of the active view, and that each has a runnable action.
 func TestBuildPaletteCommandsAlwaysHasNav(t *testing.T) {
-	m := &mainModel{}
-	cmds := m.buildPaletteCommands()
+	cmds := BuildCommands(nil, nil)
 
 	want := map[string]bool{
 		"Compose new email": false,
@@ -62,8 +61,7 @@ func TestBuildPaletteCommandsAlwaysHasNav(t *testing.T) {
 }
 
 func TestQuitCommandEmitsQuit(t *testing.T) {
-	m := &mainModel{}
-	for _, c := range m.buildPaletteCommands() {
+	for _, c := range BuildCommands(nil, nil) {
 		if c.Title != "Quit Matcha" {
 			continue
 		}
