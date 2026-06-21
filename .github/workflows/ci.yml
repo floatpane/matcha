@@ -104,7 +104,7 @@ jobs:
         run: npm ci
 
       - name: Build
-        run: npx docusaurus build
+        run: npm run build
 
   snap:
     runs-on: ubuntu-latest

@@ -63,7 +63,7 @@ jobs:
               nix: "Run `nix flake check --no-build` locally.",
               snap: "Validate `snapcraft.yaml` with `snapcraft plugins`.",
               flatpak: "Validate the Flatpak manifest YAML structure.",
-              website: "Run `cd docs && npm ci && npx docusaurus build`.",
+              website: "Run `cd docs && npm ci && npm run build`.",
               'lua-plugins': "Run `luac -p plugins/*.lua` to check Lua syntax.",
               goreleaser: "Run `goreleaser check -f .goreleaser.yml`.",
               build: "Run `go build ./...` and `go test ./...` locally.",
