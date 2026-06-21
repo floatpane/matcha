@@ -13,6 +13,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
+	"net/mail"
 	"net/smtp"
 	"net/textproto"
 	"os"
@@ -104,6 +105,21 @@ func smtpHelloHostname() string {
 		return "localhost"
 	}
 	return hostname
+}
+
+// extractBareEmail extracts just the email address from a formatted address
+// like "Name <email@example.com>" or returns the input if it's already bare.
+// This is needed for SMTP MAIL FROM command which requires only the email address.
+func extractBareEmail(addr string) string {
+	if addr == "" {
+		return ""
+	}
+	parsed, err := mail.ParseAddress(addr)
+	if err != nil {
+		// If parsing fails, return as-is (it might already be bare)
+		return addr
+	}
+	return parsed.Address
 }
 
 // generateMessageID creates a unique Message-ID header.
@@ -742,7 +758,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	}
 
 	// Send Envelope
-	if err = c.Mail(account.GetSendAsEmail()); err != nil {
+	if err = c.Mail(extractBareEmail(account.GetSendAsEmail())); err != nil {
 		return nil, err
 	}
 	for _, r := range allRecipients {
@@ -954,7 +970,7 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 		}
 	}
 
-	if err = c.Mail(account.GetSendAsEmail()); err != nil {
+	if err = c.Mail(extractBareEmail(account.GetSendAsEmail())); err != nil {
 		return nil, err
 	}
 	for _, r := range to {

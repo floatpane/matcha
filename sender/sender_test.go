@@ -130,3 +130,46 @@ func TestGenerateMessageID(t *testing.T) {
 		t.Errorf("Message-ID has an empty random part, got %s", msgID)
 	}
 }
+
+func TestExtractBareEmail(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "bare email",
+			input:    "user@example.com",
+			expected: "user@example.com",
+		},
+		{
+			name:     "formatted with name",
+			input:    "John Doe <user@example.com>",
+			expected: "user@example.com",
+		},
+		{
+			name:     "formatted with quoted name",
+			input:    "\"John Doe\" <user@example.com>",
+			expected: "user@example.com",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "invalid format returns as-is",
+			input:    "not-an-email",
+			expected: "not-an-email",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractBareEmail(tt.input)
+			if got != tt.expected {
+				t.Errorf("extractBareEmail(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
