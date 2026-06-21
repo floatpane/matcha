@@ -56,4 +56,4 @@ The command can be anything that exits `0` and prints the password to stdout.
 
 - **Priority**: `pass_cmd` takes precedence over both the OS keyring and any password stored in a secure (encrypted) config. If `pass_cmd` is set, no other source is consulted.
 - **Errors**: If the command exits non-zero or cannot be found, matcha logs the error and continues with an empty password, which will cause authentication to fail. Check the command works in a shell before adding it to your config.
-- **Encryption compatibility**: `pass_cmd` works alongside [Encryption](/docs/Features/Encryption). The command is stored in the encrypted config, and the resolved password is never written to disk.
+- **Encryption compatibility**: `pass_cmd` works alongside [Encryption](/Features/Encryption). The command is stored in the encrypted config, and the resolved password is never written to disk.

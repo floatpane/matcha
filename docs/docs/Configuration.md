@@ -76,12 +76,12 @@ Configuration and persistent data are stored in `~/.config/matcha/`:
 | File | Description |
 |------|-------------|
 | `config.json` | Account settings, preferences |
-| `keybinds.json` | Custom keyboard shortcuts (see [Keybinds](/docs/Features/Keybinds)) |
+| `keybinds.json` | Custom keyboard shortcuts (see [Keybinds](/Features/Keybinds)) |
 | `signatures/` | Email signatures |
 | `pgp/` | PGP keys |
 | `plugins/` | Installed Lua plugins |
 | `themes/` | Custom theme JSON files |
-| `dicts/` | Hunspell spellcheck dictionaries (see [Spellcheck](/docs/Features/Spellcheck)) |
+| `dicts/` | Hunspell spellcheck dictionaries (see [Spellcheck](/Features/Spellcheck)) |
 | `secure.meta` | Encryption metadata (only when encryption is enabled) |
 
 Cache data is stored in `~/.cache/matcha/`:
@@ -99,10 +99,10 @@ Cache files are automatically refreshed from the server on each app launch and m
 
 ## Encryption
 
-All data files can optionally be encrypted with a password. See [Encryption](/docs/Features/Encryption) for details.
+All data files can optionally be encrypted with a password. See [Encryption](/Features/Encryption) for details.
 
 When encryption is enabled, account passwords are stored inside the encrypted `config.json` instead of the OS keyring.
 
 ## Password Command
 
-Instead of storing a password in the OS keyring, you can set `pass_cmd` on an account to have matcha fetch the password from an external command (e.g. `pass`, `gopass`, or an age script). See [Password Command](/docs/Features/PassCmd) for details.
+Instead of storing a password in the OS keyring, you can set `pass_cmd` on an account to have matcha fetch the password from an external command (e.g. `pass`, `gopass`, or an age script). See [Password Command](/Features/PassCmd) for details.

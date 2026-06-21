@@ -1,12 +1,4 @@
----
-slug: /
-title: Matcha Documentation
-description: A modern, beautiful, and feature-rich email client for the terminal.
-hide_table_of_contents: true
-sidebar_position: 1
----
-
-# 🍵 Welcome to Matcha
+# Welcome to Matcha
 
 **Matcha** is a modern, beautiful, and feature-rich email client for the terminal, designed for speed and efficiency.
 
@@ -16,31 +8,31 @@ sidebar_position: 1
 
 Ready to dive in? Here are a few places to start:
 
-- 🚀 [Installation Guide](.//installation.md) - Get Matcha running on your machine
-- 📖 [Usage & Shortcuts](./usage.md) - Learn how to navigate the interface
-- ⚙️ [Configuration](./Configuration.md) - Set up your accounts and preferences
-- 🌍 [Localization](./localization.md) - Add or edit translations for your language
+- [Installation Guide](/installation) - Get Matcha running on your machine
+- [Usage & Shortcuts](/usage) - Learn how to navigate the interface
+- [Configuration](/Configuration) - Set up your accounts and preferences
+- [Localization](/localization) - Add or edit translations for your language
 
 ## Core Features
 
 Matcha is packed with features to make email management in the terminal a breeze:
 
-- [**Email Management**](./Features/EMAIL_MANAGEMENT.md) - Read, reply, delete, and archive emails.
-- [**Composing**](./Features/COMPOSING.md) - Write emails in Markdown with rich formatting support.
-- [**Account Management**](./Features/ACCOUNTS.md) - Seamlessly manage multiple accounts.
-- [**Contacts**](./Features/CONTACTS.md) - Keep your contacts organized and easily accessible.
-- [**Drafts**](./Features/DRAFTS.md) - Save unfinished emails and pick them up later.
-- [**UI**](./Features/UI.md) - A responsive, tabbed interface with color-coding and clear focus management.
-- [**Advanced**](./Features/ADVANCED.md) - Automatic updates, smart image rendering, and performance optimization.
-- [**CLI**](./Features/CLI.md) - Send emails and manage accounts from the command line.
-- [**AI Agents**](./Features/AI_AGENTS.md) - Let AI coding agents send emails through Matcha.
-- [**AI Rewrite**](./setup-guides/ai-rewrite.md) - Rewrite email drafts using your favorite AI models.
-- [**Plugins**](./Features/Plugins.md) - Extend Matcha with Lua plugins.
+- [Email Management](/Features/EMAIL_MANAGEMENT) - Read, reply, delete, and archive emails.
+- [Composing](/Features/COMPOSING) - Write emails in Markdown with rich formatting support.
+- [Account Management](/Features/ACCOUNTS) - Seamlessly manage multiple accounts.
+- [Contacts](/Features/CONTACTS) - Keep your contacts organized and easily accessible.
+- [Drafts](/Features/DRAFTS) - Save unfinished emails and pick them up later.
+- [UI](/Features/UI) - A responsive, tabbed interface with color-coding and clear focus management.
+- [Advanced](/Features/ADVANCED) - Automatic updates, smart image rendering, and performance optimization.
+- [CLI](/Features/CLI) - Send emails and manage accounts from the command line.
+- [AI Agents](/Features/AI_AGENTS) - Let AI coding agents send emails through Matcha.
+- [AI Rewrite](/setup-guides/ai-rewrite) - Rewrite email drafts using your favorite AI models.
+- [Plugins](/Features/Plugins) - Extend Matcha with Lua plugins.
 
 ### Image & Hyperlink Support
 
-- [Image Protocol Compatibility](./Features/Images.md)
-- [Hyperlink Compatibility](./Features/Hyperlinks.md)
+- [Image Protocol Compatibility](/Features/Images)
+- [Hyperlink Compatibility](/Features/Hyperlinks)
 
 ---
 
