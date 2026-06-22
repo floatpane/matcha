@@ -3192,11 +3192,11 @@ func openHTMLInBrowser(htmlBody string) tea.Cmd {
 		var cmd *exec.Cmd
 		switch runtime.GOOS {
 		case goosDarwin: // macOS
-			cmd = exec.CommandContext(ctx, "open", tmpPath) //nolint:gosec
+			cmd = exec.CommandContext(ctx, "open", tmpPath)
 		case "linux":
-			cmd = exec.CommandContext(ctx, "xdg-open", tmpPath) //nolint:gosec
+			cmd = exec.CommandContext(ctx, "xdg-open", tmpPath)
 		case "windows":
-			cmd = exec.CommandContext(ctx, "cmd", "/c", "start", tmpPath) //nolint:gosec
+			cmd = exec.CommandContext(ctx, "cmd", "/c", "start", tmpPath)
 		default:
 			_ = os.Remove(tmpPath)
 			return nil
