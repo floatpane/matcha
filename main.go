@@ -1707,7 +1707,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, m.current.Init()
 
 	case tui.OpenHTMLEmailMsg:
-			return m, openHTMLInBrowser(msg.Email.Body)
+		return m, openHTMLInBrowser(msg.Email.Body)
 	case tui.OpenEditorMsg:
 		composer, ok := m.current.(*tui.Composer)
 		if !ok {
