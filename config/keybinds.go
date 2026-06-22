@@ -56,6 +56,7 @@ type EmailKeys struct {
 	RsvpDecline      string `json:"rsvp_decline"`
 	RsvpTentative    string `json:"rsvp_tentative"`
 	FocusAttachments string `json:"focus_attachments"`
+	OpenHTMLBrowser  string `json:"open_html_browser"`
 }
 
 type ComposerKeys struct {

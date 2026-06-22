@@ -184,6 +184,10 @@ type ForwardEmailMsg struct {
 	Email fetcher.Email
 }
 
+type OpenHTMLEmailMsg struct {
+	Email fetcher.Email
+}
+
 type SetComposerCursorToStartMsg struct{}
 
 type GoToFilePickerMsg struct{}

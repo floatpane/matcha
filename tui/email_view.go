@@ -194,7 +194,7 @@ func (m *EmailView) Init() tea.Cmd {
 	return nil
 }
 
-func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	var cmd tea.Cmd
 	cmds := make([]tea.Cmd, 0, 1)
 
@@ -312,6 +312,12 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(m.email.Attachments) > 0 {
 					m.focusOnAttachments = true
 				}
+			case kb.Email.OpenHTMLBrowser:
+				if m.email.BodyMIMEType == "text/html" && len(m.email.Body) > 0 {
+					// Clear Kitty graphics before opening browser
+					ClearKittyGraphics()
+					return m, func() tea.Msg { return OpenHTMLEmailMsg{Email: m.email} }
+				}
 			}
 		}
 	case tea.WindowSizeMsg:
@@ -386,8 +392,11 @@ func (m *EmailView) View() tea.View {
 	} else {
 		var shortcuts strings.Builder
 		shortcuts.WriteString("\uf112 r: reply • \uf064 f: forward • \uea81 d: delete • \uea98 a: archive • \uf435 tab: focus attachments • \ueb06 esc: back to inbox")
+		if m.email.BodyMIMEType == "text/html" && len(m.email.Body) > 0 {
+			shortcuts.WriteString(" • \uf303 o: open in browser")
+		}
 		if view.ImageProtocolSupported() {
-			shortcuts.WriteString("• \uf03e i: toggle images")
+			shortcuts.WriteString(" • \uf03e i: toggle images")
 		}
 		for _, pk := range m.pluginKeyBindings {
 			shortcuts.WriteString(" • ")

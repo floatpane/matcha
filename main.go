@@ -1706,6 +1706,8 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		m.syncPluginKeyBindings()
 		return m, m.current.Init()
 
+	case tui.OpenHTMLEmailMsg:
+			return m, openHTMLInBrowser(msg.Email.Body)
 	case tui.OpenEditorMsg:
 		composer, ok := m.current.(*tui.Composer)
 		if !ok {
@@ -3163,6 +3165,57 @@ func openExternalEditor(body string) tea.Cmd {
 		}
 		return tui.EditorFinishedMsg{Body: string(content)}
 	})
+}
+
+// openHTMLInBrowser writes the HTML body to a temp file and opens it in the default browser.
+func openHTMLInBrowser(htmlBody string) tea.Cmd {
+	return func() tea.Msg {
+		tmpFile, err := os.CreateTemp("", "matcha-*.html")
+		if err != nil {
+			return nil
+		}
+		tmpPath := tmpFile.Name()
+
+		if _, err := tmpFile.WriteString(htmlBody); err != nil {
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpPath)
+			return nil
+		}
+		if err := tmpFile.Close(); err != nil {
+			_ = os.Remove(tmpPath)
+			return nil
+		}
+
+		// Determine the command to open the browser based on the OS
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case goosDarwin: // macOS
+			cmd = exec.CommandContext(ctx, "open", tmpPath) //nolint:gosec
+		case "linux":
+			cmd = exec.CommandContext(ctx, "xdg-open", tmpPath) //nolint:gosec
+		case "windows":
+			cmd = exec.CommandContext(ctx, "cmd", "/c", "start", tmpPath) //nolint:gosec
+		default:
+			_ = os.Remove(tmpPath)
+			return nil
+		}
+
+		// Run the command asynchronously without waiting for it to complete
+		// so the temp file isn't deleted before the browser opens it
+		if err := cmd.Start(); err != nil {
+			_ = os.Remove(tmpPath)
+			return nil
+		}
+
+		// Schedule cleanup of the temp file after a delay to allow the browser to read it
+		time.AfterFunc(30*time.Second, func() {
+			_ = os.Remove(tmpPath)
+		})
+
+		return nil
+	}
 }
 
 // --- IDLE command ---
