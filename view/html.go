@@ -836,6 +836,65 @@ func renderCodeBlock(code, lang string) string {
 	return "\n" + codeBoxStyle().Render(content) + "\n"
 }
 
+func collapsedQuoteStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(theme.ActiveTheme.Secondary).
+		Italic(true)
+}
+
+// CollapseQuotedText takes a rendered email body and replaces styled quote
+// boxes (produced by renderQuoteBox / styleQuotedReplies) with a single-line
+// collapsed indicator. Quote boxes are identified by the rounded-border
+// characters (╭/╰) used by quoteBoxStyle. Each contiguous box is replaced
+// with a "▶ quoted text hidden" line.
+func CollapseQuotedText(body string) string {
+	lines := strings.Split(body, "\n")
+	var result []string
+	inQuoteBox := false
+	var from string
+
+	// The rounded border top-left is ╭ and bottom-left is ╰.
+	// quoteBoxStyle uses lipgloss.RoundedBorder() which produces these.
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Detect the top of a quote box
+		if !inQuoteBox && strings.Contains(trimmed, "╭") && strings.Contains(trimmed, "╮") {
+			inQuoteBox = true
+			from = ""
+			continue
+		}
+
+		if inQuoteBox {
+			// Try to extract the "from" header from the first content line
+			if from == "" {
+				// Strip border chars (│) and whitespace to get content
+				content := strings.TrimSpace(strings.Trim(trimmed, "│"))
+				if content != "" && !strings.Contains(trimmed, "╰") {
+					from = content
+				}
+			}
+
+			// Detect the bottom of a quote box
+			if strings.Contains(trimmed, "╰") && strings.Contains(trimmed, "╯") {
+				inQuoteBox = false
+				var label string
+				if from != "" {
+					label = fmt.Sprintf("▶ quoted text from %s (press q to expand)", from)
+				} else {
+					label = "▶ quoted text hidden (press q to expand)"
+				}
+				result = append(result, collapsedQuoteStyle().Render(label))
+			}
+			continue
+		}
+
+		result = append(result, line)
+	}
+
+	return strings.Join(result, "\n")
+}
+
 // styleQuotedReplies detects quoted reply sections and styles them in a box
 func styleQuotedReplies(text string) string {
 	lines := strings.Split(text, "\n")

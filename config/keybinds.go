@@ -54,6 +54,7 @@ type EmailKeys struct {
 	Delete           string `json:"delete"`
 	Archive          string `json:"archive"`
 	ToggleImages     string `json:"toggle_images"`
+	ToggleQuotes     string `json:"toggle_quotes"`
 	RsvpAccept       string `json:"rsvp_accept"`
 	RsvpDecline      string `json:"rsvp_decline"`
 	RsvpTentative    string `json:"rsvp_tentative"`
@@ -135,6 +136,7 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 			keyDelete:           kb.Email.Delete,
 			"archive":           kb.Email.Archive,
 			"toggle_images":     kb.Email.ToggleImages,
+			"toggle_quotes":     kb.Email.ToggleQuotes,
 			"rsvp_accept":       kb.Email.RsvpAccept,
 			"rsvp_decline":      kb.Email.RsvpDecline,
 			"rsvp_tentative":    kb.Email.RsvpTentative,

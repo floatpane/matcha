@@ -61,6 +61,7 @@ type EmailView struct {
 	mailbox            MailboxKind
 	disableImages      bool
 	showImages         bool
+	showQuotedText     bool
 	isSMIME            bool
 	smimeTrusted       bool
 	isEncrypted        bool
@@ -139,6 +140,9 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 	}
 	body = applyBodyTransform(body, email)
 
+	// Collapse quoted text by default to reduce clutter
+	body = view.CollapseQuotedText(body)
+
 	// Create header and compute heights that reduce viewport space.
 	header := fmt.Sprintf("From: %s\nSubject: %s", email.From, email.Subject)
 	headerHeight := lipgloss.Height(header) + 2
@@ -205,6 +209,23 @@ func (m *EmailView) Init() tea.Cmd {
 	return nil
 }
 
+// refreshBody re-renders the email body with current display settings
+// (image visibility, quote collapse state) and updates the viewport content.
+func (m *EmailView) refreshBody() {
+	inlineImages := inlineImagesFromAttachments(m.email.Attachments)
+	body, placements, err := view.ProcessBodyWithInline(m.email.Body, m.email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, !m.showImages)
+	if err != nil {
+		body = fmt.Sprintf("Error rendering body: %v", err)
+	}
+	body = applyBodyTransform(body, m.email)
+	if !m.showQuotedText {
+		body = view.CollapseQuotedText(body)
+	}
+	m.imagePlacements = placements
+	wrapped := wrapBodyToWidth(body, m.viewport.Width())
+	m.viewport.SetContent(wrapped + "\n")
+}
+
 func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	cmds := make([]tea.Cmd, 0, 1)
@@ -260,18 +281,13 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if view.ImageProtocolSupported() {
 					m.showImages = !m.showImages
 					ClearKittyGraphics()
-
-					inlineImages := inlineImagesFromAttachments(m.email.Attachments)
-					body, placements, err := view.ProcessBodyWithInline(m.email.Body, m.email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, !m.showImages)
-					if err != nil {
-						body = fmt.Sprintf("Error rendering body: %v", err)
-					}
-					body = applyBodyTransform(body, m.email)
-					m.imagePlacements = placements
-					wrapped := wrapBodyToWidth(body, m.viewport.Width())
-					m.viewport.SetContent(wrapped + "\n")
+					m.refreshBody()
 					return m, nil
 				}
+			case kb.Email.ToggleQuotes:
+				m.showQuotedText = !m.showQuotedText
+				m.refreshBody()
+				return m, nil
 			case kb.Email.Reply:
 				// Clear Kitty graphics before opening composer
 				ClearKittyGraphics()
@@ -338,15 +354,7 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// When the window size changes, wrap and clear kitty images to keep placement stable
 		ClearKittyGraphics()
-		inlineImages := inlineImagesFromAttachments(m.email.Attachments)
-		body, placements, err := view.ProcessBodyWithInline(m.email.Body, m.email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, !m.showImages)
-		if err != nil {
-			body = fmt.Sprintf("Error rendering body: %v", err)
-		}
-		body = applyBodyTransform(body, m.email)
-		m.imagePlacements = placements
-		wrapped := wrapBodyToWidth(body, m.viewport.Width())
-		m.viewport.SetContent(wrapped + "\n")
+		m.refreshBody()
 	}
 
 	m.viewport, cmd = m.viewport.Update(msg)
@@ -396,7 +404,7 @@ func (m *EmailView) View() tea.View {
 		help = helpStyle.Render(helpText)
 	} else {
 		var shortcuts strings.Builder
-		shortcuts.WriteString("\uf112 r: reply • \uf064 f: forward • \uea81 d: delete • \uea98 a: archive • \uf435 tab: focus attachments • \ueb06 esc: back to inbox")
+		shortcuts.WriteString("\uf112 r: reply • \uf064 f: forward • \uea81 d: delete • \uea98 a: archive • \uf435 tab: focus attachments • \ueb06 esc: back to inbox • q: toggle quotes")
 		if view.ImageProtocolSupported() {
 			shortcuts.WriteString("• \uf03e i: toggle images")
 		}

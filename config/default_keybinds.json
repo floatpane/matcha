@@ -25,6 +25,7 @@
     "delete": "d",
     "archive": "a",
     "toggle_images": "i",
+    "toggle_quotes": "q",
     "rsvp_accept": "1",
     "rsvp_decline": "2",
     "rsvp_tentative": "3",
