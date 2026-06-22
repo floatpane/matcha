@@ -119,7 +119,7 @@ func ensureAllowPresetPassphrase() {
 	content += "allow-preset-passphrase\n"
 	// confPath is derived from GNUPGHOME or the user's home dir, not from
 	// untrusted input, so this is not an attacker-controlled path.
-	if err := os.WriteFile(confPath, []byte(content), 0o600); err != nil { //nolint:gosec // G304: path from env/home, not user input
+	if err := os.WriteFile(confPath, []byte(content), 0o600); err != nil {
 		loglevel.Debugf("pgp: write gpg-agent.conf: %v", err)
 		return
 	}

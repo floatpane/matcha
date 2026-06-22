@@ -50,7 +50,7 @@ func OpenExternalEditor(body string) tea.Cmd {
 
 	parts := strings.Fields(editor)
 	args := append(parts[1:], tmpPath)   //nolint:gocritic
-	c := exec.Command(parts[0], args...) //nolint:gosec,noctx
+	c := exec.Command(parts[0], args...) //nolint:noctx
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		defer func() {
 			_ = os.Remove(tmpPath)

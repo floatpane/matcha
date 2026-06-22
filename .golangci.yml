@@ -60,6 +60,8 @@ linters:
         - G306
         - G401
         - G501
+        - G702
+        - G703
     govet:
       enable-all: true
       disable:

@@ -198,7 +198,7 @@ func SecureReadFile(path string) ([]byte, error) {
 func SecureWriteFile(path string, data []byte, perm os.FileMode) error {
 	v := getVault()
 	if v.Locked() {
-		return os.WriteFile(path, data, perm) //nolint:gosec
+		return os.WriteFile(path, data, perm)
 	}
 	return v.WriteFile(path, data, perm)
 }
@@ -392,7 +392,7 @@ func writeDataFile(path string, data []byte, perm os.FileMode) error {
 	if !isUnder(clean, cfgDir) && !isUnder(clean, cDir) {
 		return fmt.Errorf("config: refusing write outside app directories: %s", clean)
 	}
-	return os.WriteFile(clean, data, perm) //nolint:gosec
+	return os.WriteFile(clean, data, perm)
 }
 
 // isUnder reports whether path is inside (or equal to) base.

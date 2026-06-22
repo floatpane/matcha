@@ -409,14 +409,14 @@ func extractBinaryFromArchive(assetPath, assetName, tmpDir string) (string, erro
 				if err != nil {
 					return "", fmt.Errorf("could not create binary file: %w", err)
 				}
-				if _, err := io.Copy(out, tr); err != nil { //nolint:gosec
+				if _, err := io.Copy(out, tr); err != nil { // #nosec G110 -- archive is our own signed GitHub release
 					_ = out.Close()
 					return "", fmt.Errorf("could not extract binary: %w", err)
 				}
 				if err := out.Close(); err != nil {
 					return "", fmt.Errorf("could not finalize extracted binary: %w", err)
 				}
-				if err := os.Chmod(binPath, 0755); err != nil { //nolint:gosec
+				if err := os.Chmod(binPath, 0o755); err != nil { // #nosec G302 -- downloaded binary must be executable
 					return "", fmt.Errorf("could not make binary executable: %w", err)
 				}
 				break
@@ -441,7 +441,7 @@ func extractBinaryFromArchive(assetPath, assetName, tmpDir string) (string, erro
 					rc.Close() //nolint:errcheck,gosec
 					return "", fmt.Errorf("could not create binary file: %w", err)
 				}
-				if _, err := io.Copy(out, rc); err != nil { //nolint:gosec
+				if _, err := io.Copy(out, rc); err != nil { // #nosec G110 -- archive is our own signed GitHub release
 					_ = out.Close()
 					_ = rc.Close()
 					return "", fmt.Errorf("could not extract binary: %w", err)
@@ -453,7 +453,7 @@ func extractBinaryFromArchive(assetPath, assetName, tmpDir string) (string, erro
 				if err := rc.Close(); err != nil {
 					return "", fmt.Errorf("could not close zip entry: %w", err)
 				}
-				if err := os.Chmod(binPath, 0755); err != nil { //nolint:gosec
+				if err := os.Chmod(binPath, 0o755); err != nil { // #nosec G302 -- downloaded binary must be executable
 					return "", fmt.Errorf("could not make binary executable: %w", err)
 				}
 				break
@@ -461,7 +461,7 @@ func extractBinaryFromArchive(assetPath, assetName, tmpDir string) (string, erro
 		}
 	} else {
 		binPath = assetPath
-		if err := os.Chmod(binPath, 0755); err != nil { //nolint:gosec
+		if err := os.Chmod(binPath, 0o755); err != nil { // #nosec G302 -- downloaded binary must be executable
 			loglevel.Infof("warning: could not chmod downloaded binary: %v", err)
 		}
 	}
@@ -484,8 +484,8 @@ func replaceExecutable(binPath, execDir string) error {
 	if err != nil {
 		return fmt.Errorf("could not open new binary: %w", err)
 	}
-	defer in.Close()                                                          //nolint:errcheck
-	out, err := os.OpenFile(tmpNew, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755) //nolint:gosec
+	defer in.Close()                                                           //nolint:errcheck
+	out, err := os.OpenFile(tmpNew, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755) // #nosec G302 -- replacement binary must be executable
 	if err != nil {
 		return fmt.Errorf("could not create temp binary in target dir: %w", err)
 	}

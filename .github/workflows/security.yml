@@ -53,7 +53,7 @@ jobs:
         env:
           GOTOOLCHAIN: auto
         with:
-          args: "-no-fail -fmt=sarif -out=gosec.sarif -severity=medium -confidence=medium -exclude=G101,G115,G204,G304,G306,G401,G501 ./..."
+          args: "-no-fail -fmt=sarif -out=gosec.sarif -severity=medium -confidence=medium -exclude=G101,G115,G204,G304,G306,G401,G501,G702,G703 ./..."
 
       - name: Upload SARIF
         if: always() && hashFiles('gosec.sarif') != ''

@@ -262,7 +262,7 @@ func debugImageProtocol(format string, args ...interface{}) {
 	msg := fmt.Sprintf("[img-protocol] "+format+"\n", args...)
 	loglevel.Infof("%s", strings.TrimSuffix(msg, "\n"))
 	if path := os.Getenv("DEBUG_IMAGE_PROTOCOL_LOG"); path != "" {
-		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil { //nolint:gosec
+		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
 			if _, err := f.WriteString(msg); err != nil {
 				loglevel.Debugf("image protocol write error: %v", err)
 			}
@@ -271,7 +271,7 @@ func debugImageProtocol(format string, args ...interface{}) {
 			}
 		}
 	} else if path := os.Getenv("DEBUG_KITTY_LOG"); path != "" {
-		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil { //nolint:gosec
+		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
 			if _, err := f.WriteString(msg); err != nil {
 				loglevel.Debugf("image protocol write error: %v", err)
 			}

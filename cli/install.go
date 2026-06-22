@@ -62,7 +62,7 @@ func RunInstall(args []string) error {
 	}
 
 	dest := filepath.Join(pluginsDir, filename)
-	if err := os.WriteFile(dest, data, 0644); err != nil { //nolint:gosec
+	if err := os.WriteFile(dest, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write plugin: %w", err)
 	}
 

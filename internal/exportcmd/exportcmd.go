@@ -112,7 +112,7 @@ func DownloadAttachmentCmd(account *config.Account, uid uint32, msg tui.Download
 		for {
 			filePath = filepath.Join(downloadsPath, candidate)
 
-			f, err := os.OpenFile(filePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644) //nolint:gosec
+			f, err := os.OpenFile(filePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 			if err != nil {
 				if os.IsExist(err) {
 					candidate = fmt.Sprintf("%s (%d)%s", base, i, ext)

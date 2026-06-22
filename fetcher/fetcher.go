@@ -59,7 +59,7 @@ const (
 func getDebugIMAPWriter() io.Writer {
 	debugIMAPOnce.Do(func() {
 		if path := os.Getenv("DEBUG_IMAP"); path != "" {
-			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600) //nolint:gosec
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 			if err == nil {
 				debugIMAPFile = f
 			}
@@ -1236,7 +1236,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 			// Use a closure with defer so a panic between open and
 			// WriteString doesn't leak the file descriptor (#894).
 			func() {
-				f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644) //nolint:gosec
+				f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 				if err != nil {
 					return
 				}
