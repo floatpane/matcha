@@ -1,9 +1,7 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/mail"
@@ -20,10 +18,10 @@ import (
 	"charm.land/lipgloss/v2"
 	overlay "github.com/floatpane/bubble-overlay"
 	"github.com/floatpane/matcha/backend"
-	_ "github.com/floatpane/matcha/backend/imap"
-	_ "github.com/floatpane/matcha/backend/jmap"
-	_ "github.com/floatpane/matcha/backend/maildir"
-	_ "github.com/floatpane/matcha/backend/pop3"
+	_ "github.com/floatpane/matcha/backend/imap"    // register the IMAP backend
+	_ "github.com/floatpane/matcha/backend/jmap"    // register the JMAP backend
+	_ "github.com/floatpane/matcha/backend/maildir" // register the Maildir backend
+	_ "github.com/floatpane/matcha/backend/pop3"    // register the POP3 backend
 	matchaCli "github.com/floatpane/matcha/cli"
 	"github.com/floatpane/matcha/clib/macos"
 	"github.com/floatpane/matcha/config"
@@ -49,6 +47,12 @@ import (
 	"github.com/floatpane/matcha/tui"
 	"github.com/google/uuid"
 )
+
+// goosDarwin is the runtime.GOOS value for macOS.
+const goosDarwin = "darwin"
+
+// goosLinux is the runtime.GOOS value for Linux.
+const goosLinux = "linux"
 
 type logEntryMsg struct {
 	entry logging.Entry
@@ -159,8 +163,8 @@ func parseMailto(u *url.URL) (to, subject, body string) {
 }
 
 func newSetupGuide() *tui.SetupGuide {
-	isMac := runtime.GOOS == "darwin"
-	isLinux := runtime.GOOS == "linux"
+	isMac := runtime.GOOS == goosDarwin
+	isLinux := runtime.GOOS == goosLinux
 
 	var installHelper func() error
 	if isMac {
@@ -373,15 +377,6 @@ func (m *Model) updateSubordinates() {
 	m.pluginBridge.SetFolderInbox(m.folderInbox)
 }
 
-func buildErrorNotification(errors map[string]error) string {
-	parts := make([]string, 0, len(errors))
-	for accID, err := range errors {
-		parts = append(parts, fmt.Sprintf("%s: %v", accID, err))
-	}
-	sort.Strings(parts)
-	return fmt.Sprintf("Folder fetch failed for %d account(s): %s", len(parts), strings.Join(parts, "; "))
-}
-
 func (m *Model) notifyNewMail(accountID, folderName string) {
 	if m.config != nil && !m.config.DisableNotifications {
 		accountName := accountID
@@ -390,24 +385,6 @@ func (m *Model) notifyNewMail(accountID, folderName string) {
 		}
 		go notify.Send("Matcha", fmt.Sprintf("New mail in %s (%s)", folderName, accountName)) //nolint:errcheck
 	}
-}
-
-func (m *Model) folderDaemonUpdate(folderName string) []tea.Cmd {
-	var cmds []tea.Cmd
-	if m.service != nil && m.service.IsDaemon() {
-		for _, acct := range m.config.Accounts {
-			cmds = append(cmds, func(a config.Account) tea.Cmd {
-				return func() tea.Msg { _ = m.service.Subscribe(a.ID, folderName); return nil }
-			}(acct))
-		}
-	} else {
-		for i := range m.config.Accounts {
-			cmds = append(cmds, func(a config.Account) tea.Cmd {
-				return func() tea.Msg { m.idleWatcher.Watch(&a, folderName); return nil }
-			}(m.config.Accounts[i]))
-		}
-	}
-	return cmds
 }
 
 func (m *Model) unsubscribeFolder(accountID, folderName string) {
@@ -427,21 +404,6 @@ func (m *Model) subscribeFolder(accountID, folderName string) {
 			m.idleWatcher.Watch(acc, folderName)
 		}
 	}
-}
-
-func accountName(cfg *config.Config, accountID string) string {
-	if cfg == nil {
-		return accountID
-	}
-	if acc := cfg.GetAccountByID(accountID); acc != nil {
-		if acc.Email != "" {
-			return acc.Email
-		}
-		if acc.Name != "" {
-			return acc.Name
-		}
-	}
-	return accountID
 }
 
 func (m *Model) cachedAttachmentsToFetcher(cached []config.CachedAttachment) []fetcher.Attachment {
@@ -811,13 +773,6 @@ func buildAccount(id string, msg tui.Credentials, fetchEmail string) config.Acco
 	return account
 }
 
-func (m *Model) firstAccount() *config.Account {
-	if m.config != nil && len(m.config.Accounts) > 0 {
-		return m.config.GetFirstAccount()
-	}
-	return nil
-}
-
 func (m *Model) SetPasswordPrompt() {
 	m.current = tui.NewPasswordPrompt()
 }
@@ -845,16 +800,11 @@ func (m *Model) sendEmailDependencies() *send.Dependencies {
 	return &send.Dependencies{Service: m.service, Config: m.config}
 }
 
-func (m *Model) batchActionCmd(pa *emailstore.PendingAction) tea.Cmd {
+func (m *Model) batchActionCmd() tea.Cmd {
 	if m.actionManager.IsPending() {
 		return m.actionManager.FlushPendingAction()
 	}
 	return nil
-}
-
-func (m *Model) updatePluginAfterCompose() {
-	m.syncPluginStatus()
-	m.syncPluginKeyBindings()
 }
 
 func (m *Model) updateCurrentWindowSize() {
@@ -867,12 +817,11 @@ func (m *Model) setChoiceMenu() tea.Cmd {
 	return m.current.Init()
 }
 
-func (m *Model) restoreView() tea.Cmd {
+func (m *Model) restoreView() {
 	if m.previousModel != nil {
 		m.current = m.previousModel
 		m.previousModel = nil
 	}
-	return nil
 }
 
 // Update handles all incoming Bubble Tea messages and orchestrates the TUI.
@@ -1260,7 +1209,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if m.folderInbox != nil {
 			m.folderInbox.GetInbox().RemoveEmail(msg.UID, msg.AccountID)
 		}
-		flushCmd := m.batchActionCmd(nil)
+		flushCmd := m.batchActionCmd()
 		pa, notice := m.actionManager.HandleMoveEmailMsg(msg, folderName)
 		return m, tea.Batch(flushCmd, m.actionManager.StartActionGracePeriod(pa, notice))
 
@@ -1875,7 +1824,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	case tui.FileSelectedMsg, tui.CancelFilePickerMsg:
 		m.pendingExport = nil
-		return m, m.restoreView()
+		m.restoreView()
+		return m, nil
 
 	case tui.GoToSaveFilePickerMsg:
 		if runtime.GOOS == "darwin" {
@@ -1943,13 +1893,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		var draftID string
 		if composer := getCurrentComposer(m.current); composer != nil {
 			draftID = composer.GetDraftID()
-		}
-		var account *config.Account
-		if msg.AccountID != "" && m.config != nil {
-			account = m.config.GetAccountByID(msg.AccountID)
-		}
-		if account == nil && m.config != nil {
-			account = m.config.GetFirstAccount()
 		}
 		if m.service == nil && m.config != nil {
 			m.service = daemonclient.NewService(m.config)
@@ -2056,7 +1999,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.current = m.folderInbox
 			m.folderInbox.GetInbox().RemoveEmail(msg.UID, msg.AccountID)
 		}
-		flushCmd := m.batchActionCmd(nil)
+		flushCmd := m.batchActionCmd()
 		pa, notice := m.actionManager.HandleDeleteEmailMsg(msg, folderName)
 		return m, tea.Batch(flushCmd, m.actionManager.StartActionGracePeriod(pa, notice))
 
@@ -2074,7 +2017,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.current = m.folderInbox
 			m.folderInbox.GetInbox().RemoveEmail(msg.UID, msg.AccountID)
 		}
-		flushCmd := m.batchActionCmd(nil)
+		flushCmd := m.batchActionCmd()
 		pa, notice := m.actionManager.HandleArchiveEmailMsg(msg, folderName)
 		return m, tea.Batch(flushCmd, m.actionManager.StartActionGracePeriod(pa, notice))
 
@@ -2112,7 +2055,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if m.folderInbox != nil {
 			m.folderInbox.GetInbox().RemoveEmails(msg.UIDs, msg.AccountID)
 		}
-		flushCmd := m.batchActionCmd(nil)
+		flushCmd := m.batchActionCmd()
 		pa, notice := m.actionManager.HandleBatchDeleteEmailsMsg(msg, folderName)
 		return m, tea.Batch(flushCmd, m.actionManager.StartActionGracePeriod(pa, notice))
 
@@ -2129,7 +2072,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if m.folderInbox != nil {
 			m.folderInbox.GetInbox().RemoveEmails(msg.UIDs, msg.AccountID)
 		}
-		flushCmd := m.batchActionCmd(nil)
+		flushCmd := m.batchActionCmd()
 		pa, notice := m.actionManager.HandleBatchArchiveEmailsMsg(msg, folderName)
 		return m, tea.Batch(flushCmd, m.actionManager.StartActionGracePeriod(pa, notice))
 
@@ -2145,7 +2088,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if m.folderInbox != nil {
 			m.folderInbox.GetInbox().RemoveEmails(msg.UIDs, msg.AccountID)
 		}
-		flushCmd := m.batchActionCmd(nil)
+		flushCmd := m.batchActionCmd()
 		pa, notice := m.actionManager.HandleBatchMoveEmailsMsg(msg, folderName)
 		return m, tea.Batch(flushCmd, m.actionManager.StartActionGracePeriod(pa, notice))
 
@@ -2198,7 +2141,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return tui.RestoreViewMsg{} })
 
 	case tui.RestoreViewMsg:
-		return m, m.restoreView()
+		m.restoreView()
+		return m, nil
 	}
 
 	if cmd := m.pluginNotifyCmd(); cmd != nil {
@@ -2242,48 +2186,4 @@ func filterUnique(existing, incoming []fetcher.Email) []fetcher.Email {
 		}
 	}
 	return unique
-}
-
-// searchEmailsCmd performs a backend search across configured accounts.
-func (m *Model) searchEmailsCmd(query backend.SearchQuery, folderName, accountID string) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		var accounts []config.Account
-		for _, acc := range m.config.Accounts {
-			if accountID == "" || acc.ID == accountID {
-				accounts = append(accounts, acc)
-			}
-		}
-		var results []fetcher.Email
-		var firstErr error
-		succeeded := false
-		for i := range accounts {
-			acc := &accounts[i]
-			p := m.resolveProvider(acc)
-			if p == nil {
-				if firstErr == nil {
-					firstErr = fmt.Errorf("provider not found for account %s", acc.ID)
-				}
-				continue
-			}
-			emails, err := p.Search(ctx, folderName, query)
-			if err != nil {
-				if errors.Is(err, backend.ErrNotSupported) {
-					continue
-				}
-				if firstErr == nil {
-					firstErr = err
-				}
-				continue
-			}
-			succeeded = true
-			results = append(results, fetchcmd.BackendEmailsToFetcher(emails)...)
-		}
-		if !succeeded && firstErr != nil {
-			return tui.SearchResultsMsg{Query: query, Err: firstErr}
-		}
-		fetchcmd.SortFetcherEmails(results)
-		return tui.SearchResultsMsg{Query: query, Emails: results}
-	}
 }

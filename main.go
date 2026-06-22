@@ -43,89 +43,7 @@ func main() {
 	os.Args = args
 	loglevel.Set(level)
 
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "-v", "--version", "version":
-			printVersion()
-			cliutil.Exit(0)
-		case "update":
-			if err := updater.RunUpdateCLI(); err != nil {
-				fmt.Fprintf(os.Stderr, "update failed: %v\n", err)
-				cliutil.Exit(1)
-			}
-			cliutil.Exit(0)
-		case "daemon":
-			daemoncmd.Run(os.Args[2:])
-			cliutil.Exit(0)
-		case "oauth", "gmail":
-			oauthcmd.Run(os.Args[2:])
-			cliutil.Exit(0)
-		case "send":
-			send.RunSendCLI(os.Args[2:], cliutil.Exit)
-			cliutil.Exit(0)
-		case "apply":
-			if err := matchaCli.RunApply(os.Args[2:]); err != nil {
-				fmt.Fprintf(os.Stderr, "apply failed: %v\n", err)
-				cliutil.Exit(1)
-			}
-			cliutil.Exit(0)
-		case "install":
-			if err := matchaCli.RunInstall(os.Args[2:]); err != nil {
-				fmt.Fprintf(os.Stderr, "install failed: %v\n", err)
-				cliutil.Exit(1)
-			}
-			cliutil.Exit(0)
-		case "config":
-			if err := matchaCli.RunConfig(os.Args[2:]); err != nil {
-				fmt.Fprintf(os.Stderr, "config failed: %v\n", err)
-				cliutil.Exit(1)
-			}
-			cliutil.Exit(0)
-		case "contacts":
-			if len(os.Args) > 2 {
-				switch os.Args[2] {
-				case "export":
-					if err := matchaCli.RunContactsExport(os.Args[3:]); err != nil {
-						fmt.Fprintf(os.Stderr, "contacts export failed: %v\n", err)
-						cliutil.Exit(1)
-					}
-					cliutil.Exit(0)
-				case "sync":
-					if err := matchaCli.RunContactsSync(os.Args[3:]); err != nil {
-						fmt.Fprintf(os.Stderr, "contacts sync failed: %v\n", err)
-						cliutil.Exit(1)
-					}
-					cliutil.Exit(0)
-				}
-			}
-		case "dict":
-			if err := matchaCli.RunDict(os.Args[2:]); err != nil {
-				fmt.Fprintf(os.Stderr, "dict: %v\n", err)
-				cliutil.Exit(1)
-			}
-			cliutil.Exit(0)
-		case "setup-mailto":
-			if err := matchaCli.SetupMailto(); err != nil {
-				fmt.Fprintf(os.Stderr, "setup-mailto failed: %v\n", err)
-				cliutil.Exit(1)
-			}
-			cliutil.Exit(0)
-		case "helper":
-			if err := matchaCli.RunHelper(os.Args[2:]); err != nil {
-				fmt.Fprintf(os.Stderr, "helper: %v\n", err)
-				cliutil.Exit(1)
-			}
-			cliutil.Exit(0)
-		case "marketplace":
-			mp := tui.NewMarketplace(true)
-			p := tea.NewProgram(mp)
-			if _, err := p.Run(); err != nil {
-				fmt.Fprintf(os.Stderr, "marketplace failed: %v\n", err)
-				cliutil.Exit(1)
-			}
-			cliutil.Exit(0)
-		}
-	}
+	runSubcommand(os.Args)
 
 	if err := config.MigrateCacheFiles(); err != nil {
 		log.Printf("warning: cache migration failed: %v", err)
@@ -135,86 +53,21 @@ func main() {
 		log.Printf("Failed to initialize i18n: %v", err)
 	}
 
-	var mailtoURL *url.URL
-	if len(os.Args) > 1 && strings.HasPrefix(strings.ToLower(os.Args[1]), "mailto:") {
-		if u, err := url.Parse(os.Args[1]); err == nil {
-			mailtoURL = u
-		}
-	}
+	mailtoURL := parseMailto(os.Args)
+	cfg := loadConfigAndSetup()
 
-	var cfg *config.Config
-	var err error
-
-	if config.IsSecureModeEnabled() {
-		tui.RebuildStyles()
-	} else {
-		cfg, err = config.LoadConfig()
-		if err == nil {
-			loglevel.Verbosef("matcha: loaded config with %d account(s)", len(cfg.GetAccountIDs()))
-			if migrateErr := config.MigrateContactsCacheUsage(cfg.GetAccountIDs()); migrateErr != nil {
-				log.Printf("warning: contacts migration failed: %v", migrateErr)
-			}
-			if cfg.Theme != "" {
-				theme.SetTheme(cfg.Theme)
-			}
-			lang := i18n.DetectLanguage(cfg)
-			if err := i18n.GetManager().SetLanguage(lang); err != nil {
-				log.Printf("Failed to set language %s: %v", lang, err)
-			}
-		}
-		tui.RebuildStyles()
-		_ = config.EnsurePGPDir()
-	}
-
-	var logger *logging.Buffer
-	var logCh <-chan logging.Entry
-	var logPanel *tui.LogPanel
-
-	if showLogPanel {
-		logger = logging.NewBuffer(logging.DefaultMaxEntries)
-		log.SetOutput(logger)
-		logCh = logger.Subscribe()
-		logPanel = tui.NewLogPanel(logger)
-	}
-
-	plugins := plugin.NewManager()
-	plugins.LoadPlugins()
-	if cfg != nil {
-		plugins.LoadSettingValues(cfg.PluginSettings)
-	}
+	_, logCh, logPanel := setupLogging(showLogPanel)
+	plugins := setupPlugins(cfg)
 
 	initialModel := app.NewModel(cfg, mailtoURL, plugins, showLogPanel, logCh, logPanel)
 	if config.IsSecureModeEnabled() {
 		initialModel.SetPasswordPrompt()
 	}
 
-	tui.BodyTransformer = func(body string, email fetcher.Email) string {
-		folder := "INBOX"
-		if initialModel.FolderInbox() != nil {
-			folder = initialModel.FolderInbox().GetCurrentFolder()
-		}
-		t := plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, folder)
-		return plugins.CallBodyRenderHook(t, body, email.Body)
-	}
+	setupBodyTransformer(initialModel, plugins)
 	plugins.CallHook(plugin.HookStartup)
 
-	if runtime.GOOS == "darwin" {
-		disableNotifications := false
-		if cfg != nil {
-			disableNotifications = cfg.DisableNotifications
-		}
-		if !disableNotifications {
-			go func() {
-				defer func() {
-					if r := recover(); r != nil {
-						log.Printf("panic in macOS sync goroutine: %v", r)
-					}
-				}()
-				_ = config.SyncMacOSContacts()
-				_ = theme.SyncWithMacOS()
-			}()
-		}
-	}
+	startMacOSSync(cfg)
 
 	p := tea.NewProgram(initialModel)
 	if _, err := p.Run(); err != nil {
@@ -226,6 +79,189 @@ func main() {
 	plugins.CallHook(plugin.HookShutdown)
 	plugins.Close()
 	fetcher.CloseDebugFiles()
+}
+
+func runSubcommand(args []string) {
+	if len(args) <= 1 {
+		return
+	}
+
+	switch args[1] {
+	case "-v", "--version", "version":
+		printVersion()
+		cliutil.Exit(0)
+	case "update":
+		if err := updater.RunUpdateCLI(); err != nil {
+			fmt.Fprintf(os.Stderr, "update failed: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
+	case "daemon":
+		daemoncmd.Run(args[2:])
+		cliutil.Exit(0)
+	case "oauth", "gmail":
+		oauthcmd.Run(args[2:])
+		cliutil.Exit(0)
+	case "send":
+		send.RunSendCLI(args[2:], cliutil.Exit)
+		cliutil.Exit(0)
+	case "apply":
+		if err := matchaCli.RunApply(args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "apply failed: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
+	case "install":
+		if err := matchaCli.RunInstall(args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "install failed: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
+	case "config":
+		if err := matchaCli.RunConfig(args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "config failed: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
+	case "contacts":
+		handleContactsSubcommand(args)
+	case "dict":
+		if err := matchaCli.RunDict(args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "dict: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
+	case "setup-mailto":
+		if err := matchaCli.SetupMailto(); err != nil {
+			fmt.Fprintf(os.Stderr, "setup-mailto failed: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
+	case "helper":
+		if err := matchaCli.RunHelper(args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "helper: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
+	case "marketplace":
+		mp := tui.NewMarketplace(true)
+		p := tea.NewProgram(mp)
+		if _, err := p.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "marketplace failed: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
+	}
+}
+
+func handleContactsSubcommand(args []string) {
+	if len(args) > 2 {
+		switch args[2] {
+		case "export":
+			if err := matchaCli.RunContactsExport(args[3:]); err != nil {
+				fmt.Fprintf(os.Stderr, "contacts export failed: %v\n", err)
+				cliutil.Exit(1)
+			}
+			cliutil.Exit(0)
+		case "sync":
+			if err := matchaCli.RunContactsSync(args[3:]); err != nil {
+				fmt.Fprintf(os.Stderr, "contacts sync failed: %v\n", err)
+				cliutil.Exit(1)
+			}
+			cliutil.Exit(0)
+		}
+	}
+}
+
+func parseMailto(args []string) *url.URL {
+	if len(args) > 1 && strings.HasPrefix(strings.ToLower(args[1]), "mailto:") {
+		if u, err := url.Parse(args[1]); err == nil {
+			return u
+		}
+	}
+	return nil
+}
+
+func loadConfigAndSetup() *config.Config {
+	if config.IsSecureModeEnabled() {
+		tui.RebuildStyles()
+		return nil
+	}
+
+	cfg, err := config.LoadConfig()
+	if err == nil {
+		loglevel.Verbosef("matcha: loaded config with %d account(s)", len(cfg.GetAccountIDs()))
+		if migrateErr := config.MigrateContactsCacheUsage(cfg.GetAccountIDs()); migrateErr != nil {
+			log.Printf("warning: contacts migration failed: %v", migrateErr)
+		}
+		if cfg.Theme != "" {
+			theme.SetTheme(cfg.Theme)
+		}
+		lang := i18n.DetectLanguage(cfg)
+		if err := i18n.GetManager().SetLanguage(lang); err != nil {
+			log.Printf("Failed to set language %s: %v", lang, err)
+		}
+	}
+	tui.RebuildStyles()
+	_ = config.EnsurePGPDir()
+
+	return cfg
+}
+
+func setupLogging(showLogPanel bool) (*logging.Buffer, <-chan logging.Entry, *tui.LogPanel) {
+	if !showLogPanel {
+		return nil, nil, nil
+	}
+
+	logger := logging.NewBuffer(logging.DefaultMaxEntries)
+	log.SetOutput(logger)
+	logCh := logger.Subscribe()
+	logPanel := tui.NewLogPanel(logger)
+	return logger, logCh, logPanel
+}
+
+func setupPlugins(cfg *config.Config) *plugin.Manager {
+	plugins := plugin.NewManager()
+	plugins.LoadPlugins()
+	if cfg != nil {
+		plugins.LoadSettingValues(cfg.PluginSettings)
+	}
+	return plugins
+}
+
+func setupBodyTransformer(initialModel *app.Model, plugins *plugin.Manager) {
+	tui.BodyTransformer = func(body string, email fetcher.Email) string {
+		folder := "INBOX"
+		if initialModel.FolderInbox() != nil {
+			folder = initialModel.FolderInbox().GetCurrentFolder()
+		}
+		t := plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, folder)
+		return plugins.CallBodyRenderHook(t, body, email.Body)
+	}
+}
+
+func startMacOSSync(cfg *config.Config) {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+
+	disableNotifications := false
+	if cfg != nil {
+		disableNotifications = cfg.DisableNotifications
+	}
+	if disableNotifications {
+		return
+	}
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("panic in macOS sync goroutine: %v", r)
+			}
+		}()
+		_ = config.SyncMacOSContacts()
+		_ = theme.SyncWithMacOS()
+	}()
 }
 
 func printVersion() {

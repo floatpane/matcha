@@ -2,6 +2,7 @@ package daemoncmd
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 
@@ -14,13 +15,13 @@ import (
 // Run implements the CLI entrypoint for `matcha daemon <start|stop|status|run>`.
 func Run(args []string) {
 	if len(args) == 0 {
-		fmt.Println("Usage: matcha daemon <start|stop|status|run>")
-		fmt.Println()
-		fmt.Println("Commands:")
-		fmt.Println("  start   Start the daemon in the background")
-		fmt.Println("  stop    Stop the running daemon")
-		fmt.Println("  status  Show daemon status")
-		fmt.Println("  run     Run the daemon in the foreground")
+		log.Println("Usage: matcha daemon <start|stop|status|run>")
+		log.Println()
+		log.Println("Commands:")
+		log.Println("  start   Start the daemon in the background")
+		log.Println("  stop    Stop the running daemon")
+		log.Println("  status  Show daemon status")
+		log.Println("  run     Run the daemon in the foreground")
 		os.Exit(1)
 	}
 
@@ -34,22 +35,20 @@ func Run(args []string) {
 	case "run":
 		runRun()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown daemon command: %s\n", args[0])
-		os.Exit(1)
+		log.Fatalf("unknown daemon command: %s", args[0])
 	}
 }
 
 func runStart() {
 	pidPath := daemonrpc.PIDPath()
 	if pid, running := matchaDaemon.IsRunning(pidPath); running {
-		fmt.Printf("Daemon already running (PID %d)\n", pid)
+		log.Printf("Daemon already running (PID %d)\n", pid)
 		return
 	}
 
 	exe, err := os.Executable()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot find executable: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("cannot find executable: %v", err)
 	}
 
 	cmd := exec.Command(exe, "daemon", "run") //nolint:noctx
@@ -60,33 +59,30 @@ func runStart() {
 	cmd.SysProcAttr = daemonclient.DaemonProcAttr()
 
 	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to start daemon: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("failed to start daemon: %v", err)
 	}
 
-	fmt.Printf("Daemon started (PID %d)\n", cmd.Process.Pid)
+	log.Printf("Daemon started (PID %d)\n", cmd.Process.Pid)
 }
 
 func runStop() {
 	pidPath := daemonrpc.PIDPath()
 	pid, running := matchaDaemon.IsRunning(pidPath)
 	if !running {
-		fmt.Println("Daemon is not running")
+		log.Println("Daemon is not running")
 		return
 	}
 
 	process, err := os.FindProcess(pid)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot find process %d: %v\n", pid, err)
-		os.Exit(1)
+		log.Fatalf("cannot find process %d: %v", pid, err)
 	}
 
 	if err := process.Signal(os.Interrupt); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to stop daemon: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("failed to stop daemon: %v", err)
 	}
 
-	fmt.Printf("Daemon stopped (PID %d)\n", pid)
+	log.Printf("Daemon stopped (PID %d)\n", pid)
 }
 
 func runStatus() {
@@ -94,38 +90,35 @@ func runStatus() {
 	if err != nil {
 		pidPath := daemonrpc.PIDPath()
 		if pid, running := matchaDaemon.IsRunning(pidPath); running {
-			fmt.Printf("Daemon running (PID %d) but not responding\n", pid)
+			log.Printf("Daemon running (PID %d) but not responding\n", pid)
 		} else {
-			fmt.Println("Daemon is not running")
+			log.Println("Daemon is not running")
 		}
 		return
 	}
 	status, err := client.Status()
 	client.Close() //nolint:errcheck,gosec
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to get status: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("failed to get status: %v", err)
 	}
 
-	fmt.Printf("Daemon running (PID %d)\n", status.PID)
-	fmt.Printf("Uptime: %s\n", FormatUptime(status.Uptime))
-	fmt.Printf("Accounts: %d\n", len(status.Accounts))
+	log.Printf("Daemon running (PID %d)\n", status.PID)
+	log.Printf("Uptime: %s\n", FormatUptime(status.Uptime))
+	log.Printf("Accounts: %d\n", len(status.Accounts))
 	for _, acct := range status.Accounts {
-		fmt.Printf("  - %s\n", acct)
+		log.Printf("  - %s\n", acct)
 	}
 }
 
 func runRun() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("failed to load config: %v", err)
 	}
 
 	d := matchaDaemon.New(cfg)
 	if err := d.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "daemon error: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("daemon error: %v", err)
 	}
 }
 

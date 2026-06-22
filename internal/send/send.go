@@ -269,17 +269,17 @@ func RunSendCLI(args []string, exitFn func(int)) {
 	fs.Var(&attachments, "attach", "Attachment file path (can be repeated)")
 
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: matcha send [flags]")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Send an email non-interactively using a configured account.")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Flags:")
+		log.Println("Usage: matcha send [flags]")
+		log.Println()
+		log.Println("Send an email non-interactively using a configured account.")
+		log.Println()
+		log.Println("Flags:")
 		fs.PrintDefaults()
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Examples:")
-		fmt.Fprintln(os.Stderr, `  matcha send --to user@example.com --subject "Hello" --body "Hi there"`)
-		fmt.Fprintln(os.Stderr, `  echo "Body text" | matcha send --to user@example.com --subject "Hello" --body -`)
-		fmt.Fprintln(os.Stderr, `  matcha send --to user@example.com --subject "Report" --body "See attached" --attach report.pdf`)
+		log.Println()
+		log.Println("Examples:")
+		log.Println(`  matcha send --to user@example.com --subject "Hello" --body "Hi there"`)
+		log.Println(`  echo "Body text" | matcha send --to user@example.com --subject "Hello" --body -`)
+		log.Println(`  matcha send --to user@example.com --subject "Report" --body "See attached" --attach report.pdf`)
 	}
 
 	if err := fs.Parse(args); err != nil {
@@ -288,7 +288,7 @@ func RunSendCLI(args []string, exitFn func(int)) {
 	}
 
 	if *to == "" || *subject == "" {
-		fmt.Fprintln(os.Stderr, "Error: --to and --subject are required")
+		log.Println("Error: --to and --subject are required")
 		fs.Usage()
 		exitFn(1)
 		return
@@ -298,7 +298,7 @@ func RunSendCLI(args []string, exitFn func(int)) {
 	if emailBody == "-" {
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
+			log.Printf("Error reading stdin: %v", err)
 			exitFn(1)
 			return
 		}
@@ -307,19 +307,19 @@ func RunSendCLI(args []string, exitFn func(int)) {
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		log.Printf("Error loading config: %v", err)
 		exitFn(1)
 		return
 	}
 	if !cfg.HasAccounts() {
-		fmt.Fprintln(os.Stderr, "Error: no accounts configured. Run matcha to set up an account first.")
+		log.Println("Error: no accounts configured. Run matcha to set up an account first.")
 		exitFn(1)
 		return
 	}
 
 	account := ResolveAccount(cfg, *from)
 	if account == nil {
-		fmt.Fprintf(os.Stderr, "Error: no account found matching %q\n", *from)
+		log.Printf("Error: no account found matching %q", *from)
 		exitFn(1)
 		return
 	}
@@ -344,7 +344,7 @@ func RunSendCLI(args []string, exitFn func(int)) {
 	for _, attachPath := range attachments {
 		fileData, err := os.ReadFile(attachPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading attachment %s: %v\n", attachPath, err)
+			log.Printf("Error reading attachment %s: %v", attachPath, err)
 			exitFn(1)
 			return
 		}
@@ -357,7 +357,7 @@ func RunSendCLI(args []string, exitFn func(int)) {
 
 	rawMsg, sendErr := sender.SendEmail(account, recipients, ccList, bccList, *subject, emailBody, string(htmlBody), images, attachMap, "", nil, *signSMIME, *encryptSMIME, *signPGP, false)
 	if sendErr != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", sendErr)
+		log.Printf("Error: %v", sendErr)
 		exitFn(1)
 		return
 	}
@@ -368,5 +368,5 @@ func RunSendCLI(args []string, exitFn func(int)) {
 		}
 	}
 
-	fmt.Println("Email sent successfully.")
+	log.Println("Email sent successfully.")
 }

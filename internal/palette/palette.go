@@ -23,7 +23,7 @@ type Palette struct {
 func (p *Palette) Open(commands []tui.PaletteCommand, width, height int) tea.Cmd {
 	p.CommandPalette = tui.NewCommandPalette(commands, width, height)
 	p.open = true
-	return p.CommandPalette.Init()
+	return p.Init()
 }
 
 func (p *Palette) Close() {
@@ -41,7 +41,7 @@ func (p *Palette) SetOpen(open bool) {
 
 func (p *Palette) UpdateSize(width, height int) {
 	if p.CommandPalette != nil {
-		p.CommandPalette.SetSize(width, height)
+		p.SetSize(width, height)
 	}
 }
 
@@ -58,10 +58,10 @@ func (p *Palette) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	switch msg.String() {
 	case "enter":
-		action := p.CommandPalette.SelectedCmd()
+		action := p.SelectedCmd()
 		return action
 	default:
-		return p.CommandPalette.Update(msg)
+		return p.Update(msg)
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/internal/httpclient"
+	"github.com/floatpane/matcha/internal/loglevel"
 )
 
 const (
@@ -179,12 +179,12 @@ func RunUpdateCLI() (err error) {
 
 	latestTag := strings.TrimPrefix(rel.TagName, "v")
 
-	fmt.Printf("Current version: %s\n", version)
-	fmt.Printf("Latest version: %s\n", latestTag)
+	loglevel.Infof("Current version: %s", version)
+	loglevel.Infof("Latest version: %s", latestTag)
 
 	cur := strings.TrimPrefix(version, "v")
 	if latestTag == "" || cur == latestTag {
-		fmt.Println("Already up to date.")
+		loglevel.Infof("Already up to date.")
 		return nil
 	}
 
@@ -223,23 +223,23 @@ func tryHomebrewUpgrade() bool {
 		return false
 	}
 
-	fmt.Println("Detected Homebrew — updating taps and attempting to upgrade via brew.")
+	loglevel.Infof("Detected Homebrew — updating taps and attempting to upgrade via brew.")
 
 	updateCmd := exec.Command("brew", "update") //nolint:noctx
 	updateCmd.Stdout = os.Stdout
 	updateCmd.Stderr = os.Stderr
 	if err := updateCmd.Run(); err != nil {
-		fmt.Printf("Homebrew update failed: %v\n", err)
+		loglevel.Infof("Homebrew update failed: %v", err)
 	}
 
 	upgradeCmd := exec.Command("brew", "upgrade", "floatpane/matcha/matcha") //nolint:noctx
 	upgradeCmd.Stdout = os.Stdout
 	upgradeCmd.Stderr = os.Stderr
 	if err := upgradeCmd.Run(); err == nil {
-		fmt.Println("Successfully upgraded via Homebrew.")
+		loglevel.Infof("Successfully upgraded via Homebrew.")
 		return true
 	}
-	fmt.Printf("Homebrew upgrade failed\n")
+	loglevel.Infof("Homebrew upgrade failed")
 	return false
 }
 
@@ -253,15 +253,15 @@ func trySnapRefresh() bool {
 		return false
 	}
 
-	fmt.Println("Detected Snap package — attempting to refresh.")
+	loglevel.Infof("Detected Snap package — attempting to refresh.")
 	cmd := exec.Command("snap", "refresh", "matcha") //nolint:noctx
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err == nil {
-		fmt.Println("Successfully refreshed snap.")
+		loglevel.Infof("Successfully refreshed snap.")
 		return true
 	}
-	fmt.Printf("Snap refresh failed\n")
+	loglevel.Infof("Snap refresh failed")
 	return false
 }
 
@@ -275,15 +275,15 @@ func tryFlatpakUpdate() bool {
 		return false
 	}
 
-	fmt.Println("Detected Flatpak package — attempting to update.")
+	loglevel.Infof("Detected Flatpak package — attempting to update.")
 	cmd := exec.Command("flatpak", "update", "-y", "com.floatpane.matcha") //nolint:noctx
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err == nil {
-		fmt.Println("Successfully updated flatpak.")
+		loglevel.Infof("Successfully updated flatpak.")
 		return true
 	}
-	fmt.Printf("Flatpak update failed\n")
+	loglevel.Infof("Flatpak update failed")
 	return false
 }
 
@@ -297,15 +297,15 @@ func tryAURUpdate() bool {
 		return false
 	}
 
-	fmt.Println("Detected AUR package (matcha-client-bin) — attempting to update via yay.")
+	loglevel.Infof("Detected AUR package (matcha-client-bin) — attempting to update via yay.")
 	cmd := exec.Command("yay", "-Syu", "--noconfirm", "matcha-client-bin") //nolint:noctx
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err == nil {
-		fmt.Println("Successfully updated via AUR.")
+		loglevel.Infof("Successfully updated via AUR.")
 		return true
 	}
-	fmt.Printf("AUR update failed\n")
+	loglevel.Infof("AUR update failed")
 	return false
 }
 
@@ -320,15 +320,15 @@ func tryNixUpdate() bool {
 		return false
 	}
 
-	fmt.Println("Detected Nix package — attempting to update via nix profile upgrade.")
+	loglevel.Infof("Detected Nix package — attempting to update via nix profile upgrade.")
 	cmd := exec.Command("nix", "profile", "upgrade", "github:floatpane/matcha") //nolint:noctx
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err == nil {
-		fmt.Println("Successfully updated via Nix.")
+		loglevel.Infof("Successfully updated via Nix.")
 		return true
 	}
-	fmt.Printf("Nix update failed\n")
+	loglevel.Infof("Nix update failed")
 	return false
 }
 
@@ -342,15 +342,15 @@ func tryWinGetUpgrade() bool {
 		return false
 	}
 
-	fmt.Println("Detected WinGet package — attempting to upgrade.")
+	loglevel.Infof("Detected WinGet package — attempting to upgrade.")
 	cmd := exec.Command("winget", "upgrade", "--id", "floatpane.matcha", "--disable-interactivity") //nolint:noctx
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err == nil {
-		fmt.Println("Successfully upgraded via WinGet.")
+		loglevel.Infof("Successfully upgraded via WinGet.")
 		return true
 	}
-	fmt.Printf("WinGet upgrade failed\n")
+	loglevel.Infof("WinGet upgrade failed")
 	return false
 }
 
@@ -364,15 +364,15 @@ func tryScoopUpdate() bool {
 		return false
 	}
 
-	fmt.Println("Detected Scoop package — attempting to update.")
+	loglevel.Infof("Detected Scoop package — attempting to update.")
 	cmd := exec.Command("scoop", "update", "matcha") //nolint:noctx
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err == nil {
-		fmt.Println("Successfully updated via Scoop.")
+		loglevel.Infof("Successfully updated via Scoop.")
 		return true
 	}
-	fmt.Printf("Scoop update failed\n")
+	loglevel.Infof("Scoop update failed")
 	return false
 }
 
@@ -462,7 +462,7 @@ func extractBinaryFromArchive(assetPath, assetName, tmpDir string) (string, erro
 	} else {
 		binPath = assetPath
 		if err := os.Chmod(binPath, 0755); err != nil { //nolint:gosec
-			fmt.Printf("warning: could not chmod downloaded binary: %v\n", err)
+			loglevel.Infof("warning: could not chmod downloaded binary: %v", err)
 		}
 	}
 
@@ -529,9 +529,9 @@ func runUpdateCLIManual(latestTag string, rel githubRelease) error {
 	testFile := filepath.Join(execDir, ".matcha_update_test")
 	if _, err := os.Create(testFile); err != nil {
 		if os.Geteuid() != 0 {
-			fmt.Println("\n⚠️  Permission denied: Cannot write to installation directory.")
-			fmt.Println("   Try running with sudo: sudo matcha update")
-			fmt.Println("   Or reinstall using your package manager.")
+			loglevel.Infof("\n⚠️  Permission denied: Cannot write to installation directory.")
+			loglevel.Infof("   Try running with sudo: sudo matcha update")
+			loglevel.Infof("   Or reinstall using your package manager.")
 			return fmt.Errorf("permission denied: cannot write to %s", execDir)
 		}
 		return fmt.Errorf("cannot write to installation directory %s: %w", execDir, err)
@@ -562,8 +562,8 @@ func runUpdateCLIManual(latestTag string, rel githubRelease) error {
 		return fmt.Errorf("no suitable release artifact found for %s/%s", osName, arch)
 	}
 
-	fmt.Printf("Found release asset: %s\n", assetName)
-	fmt.Println("Downloading...")
+	loglevel.Infof("Found release asset: %s", assetName)
+	loglevel.Infof("Downloading...")
 
 	respAsset, err := httpClient.Get(assetURL)
 	if err != nil {
@@ -600,8 +600,6 @@ func runUpdateCLIManual(latestTag string, rel githubRelease) error {
 		return err
 	}
 
-	fmt.Println("Successfully updated matcha to", latestTag)
+	loglevel.Infof("Successfully updated matcha to %s", latestTag)
 	return nil
 }
-
-var _ = func() *http.Client { return httpClient }
