@@ -79,71 +79,87 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 	case tea.KeyPressMsg:
-		kb := config.Keybinds
-		switch msg.String() {
-		case "up", kb.Global.NavUp:
-			m.cursor = (m.cursor - 1 + len(m.choices)) % len(m.choices)
-		case keyDown, kb.Global.NavDown:
-			m.cursor = (m.cursor + 1) % len(m.choices)
-		case keyEnter:
-			// Use cursor index instead of string comparison
-			idx := m.cursor
-			if idx == 0 { //nolint:gocritic
-				// Inbox
-				return m, func() tea.Msg { return GoToInboxMsg{} }
-			} else if idx == 1 {
-				// Compose
-				return m, func() tea.Msg { return GoToSendMsg{} }
-			} else if m.hasSavedDrafts && idx == 2 {
-				// Drafts
-				return m, func() tea.Msg { return GoToDraftsMsg{} }
-			} else if (m.hasSavedDrafts && idx == 3) || (!m.hasSavedDrafts && idx == 2) {
-				// Marketplace
-				return m, func() tea.Msg { return GoToMarketplaceMsg{} }
-			} else if (m.hasSavedDrafts && idx == 4) || (!m.hasSavedDrafts && idx == 3) {
-				// Settings
-				return m, func() tea.Msg { return GoToSettingsMsg{} }
-			}
-		}
+		return m, m.handleKeyPress(msg)
 	}
 
-	// Handle update notification from other package without importing its type directly.
-	// We look for a struct named 'UpdateAvailableMsg' that contains 'Latest' and 'Current' string fields.
-	rv := reflect.ValueOf(msg)
-	if rv.IsValid() && rv.Kind() == reflect.Struct && rv.Type().Name() == "UpdateAvailableMsg" {
-		f := rv.FieldByName("Latest")
-		c := rv.FieldByName("Current")
-		updated := false
-		if f.IsValid() && f.Kind() == reflect.String {
-			m.LatestVersion = f.String()
-			updated = true
-		}
-		if c.IsValid() && c.Kind() == reflect.String {
-			m.CurrentVersion = c.String()
-			updated = true
-		}
-		if updated {
-			m.UpdateAvailable = true
-			return m, nil
-		}
+	if m.handleUpdateAvailableMsg(msg) {
+		return m, nil
 	}
-
-	// Handle v1 release-candidate notification from other package without importing its type directly.
-	// We look for a struct named 'V1RCAvailableMsg' that contains 'Latest' and 'Current' string fields.
-	rv = reflect.ValueOf(msg)
-	if rv.IsValid() && rv.Kind() == reflect.Struct && rv.Type().Name() == "V1RCAvailableMsg" {
-		f := rv.FieldByName("Latest")
-		if f.IsValid() && f.Kind() == reflect.String && v1RCRegex.MatchString(f.String()) {
-			m.V1RCVersion = f.String()
-			m.V1RCAvailable = true
-			if c := rv.FieldByName("Current"); c.IsValid() && c.Kind() == reflect.String {
-				m.CurrentVersion = c.String()
-			}
-			return m, nil
-		}
+	if m.handleV1RCAvailableMsg(msg) {
+		return m, nil
 	}
 
 	return m, nil
+}
+
+func (m *Choice) handleKeyPress(msg tea.KeyPressMsg) tea.Cmd {
+	kb := config.Keybinds
+	switch msg.String() {
+	case "up", kb.Global.NavUp:
+		m.cursor = (m.cursor - 1 + len(m.choices)) % len(m.choices)
+	case keyDown, kb.Global.NavDown:
+		m.cursor = (m.cursor + 1) % len(m.choices)
+	case keyEnter:
+		return m.navCmd()
+	}
+	return nil
+}
+
+func (m *Choice) navCmd() tea.Cmd {
+	idx := m.cursor
+	if !m.hasSavedDrafts && idx >= 2 {
+		idx++
+	}
+	switch idx {
+	case 0:
+		return func() tea.Msg { return GoToInboxMsg{} }
+	case 1:
+		return func() tea.Msg { return GoToSendMsg{} }
+	case 2:
+		return func() tea.Msg { return GoToDraftsMsg{} }
+	case 3:
+		return func() tea.Msg { return GoToMarketplaceMsg{} }
+	case 4:
+		return func() tea.Msg { return GoToSettingsMsg{} }
+	}
+	return nil
+}
+
+func (m *Choice) handleUpdateAvailableMsg(msg tea.Msg) bool {
+	rv := reflect.ValueOf(msg)
+	if !rv.IsValid() || rv.Kind() != reflect.Struct || rv.Type().Name() != "UpdateAvailableMsg" {
+		return false
+	}
+	updated := false
+	if f := rv.FieldByName("Latest"); f.IsValid() && f.Kind() == reflect.String {
+		m.LatestVersion = f.String()
+		updated = true
+	}
+	if c := rv.FieldByName("Current"); c.IsValid() && c.Kind() == reflect.String {
+		m.CurrentVersion = c.String()
+		updated = true
+	}
+	if updated {
+		m.UpdateAvailable = true
+	}
+	return updated
+}
+
+func (m *Choice) handleV1RCAvailableMsg(msg tea.Msg) bool {
+	rv := reflect.ValueOf(msg)
+	if !rv.IsValid() || rv.Kind() != reflect.Struct || rv.Type().Name() != "V1RCAvailableMsg" {
+		return false
+	}
+	f := rv.FieldByName("Latest")
+	if !f.IsValid() || f.Kind() != reflect.String || !v1RCRegex.MatchString(f.String()) {
+		return false
+	}
+	m.V1RCVersion = f.String()
+	m.V1RCAvailable = true
+	if c := rv.FieldByName("Current"); c.IsValid() && c.Kind() == reflect.String {
+		m.CurrentVersion = c.String()
+	}
+	return true
 }
 
 var (
