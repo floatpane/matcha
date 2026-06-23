@@ -36,15 +36,15 @@ const maxBinarySize = 512 * 1024 * 1024 // 512 MiB
 
 // copyLimited copies at most maxBinarySize bytes from src to dst. It is used to
 // avoid decompression bomb attacks when extracting binaries from archives.
-func copyLimited(dst io.Writer, src io.Reader) (int64, error) {
+func copyLimited(dst io.Writer, src io.Reader) error {
 	n, err := io.CopyN(dst, src, maxBinarySize+1)
 	if err != nil && !errors.Is(err, io.EOF) {
-		return n, err
+		return err
 	}
 	if n > maxBinarySize {
-		return n, fmt.Errorf("extracted binary exceeds maximum size of %d bytes", maxBinarySize)
+		return fmt.Errorf("extracted binary exceeds maximum size of %d bytes", maxBinarySize)
 	}
-	return n, nil
+	return nil
 }
 
 // FindAsset returns the name and download URL for a release asset matching the
@@ -173,14 +173,14 @@ func extractBinaryFromArchive(assetPath, assetName, tmpDir string) (string, erro
 				if err != nil {
 					return "", fmt.Errorf("could not create binary file: %w", err)
 				}
-				if _, err := copyLimited(out, tr); err != nil {
+				if err := copyLimited(out, tr); err != nil {
 					_ = out.Close()
 					return "", fmt.Errorf("could not extract binary: %w", err)
 				}
 				if err := out.Close(); err != nil {
 					return "", fmt.Errorf("could not finalize extracted binary: %w", err)
 				}
-				if err := os.Chmod(binPath, 0755); err != nil { // #nosec G306 -- binary must be executable
+				if err := os.Chmod(binPath, 0755); err != nil { // #nosec G302 -- binary must be executable
 					return "", fmt.Errorf("could not make binary executable: %w", err)
 				}
 				break
@@ -205,7 +205,7 @@ func extractBinaryFromArchive(assetPath, assetName, tmpDir string) (string, erro
 					rc.Close() //nolint:errcheck,gosec
 					return "", fmt.Errorf("could not create binary file: %w", err)
 				}
-				if _, err := copyLimited(out, rc); err != nil {
+				if err := copyLimited(out, rc); err != nil {
 					_ = out.Close()
 					_ = rc.Close()
 					return "", fmt.Errorf("could not extract binary: %w", err)
@@ -217,7 +217,7 @@ func extractBinaryFromArchive(assetPath, assetName, tmpDir string) (string, erro
 				if err := rc.Close(); err != nil {
 					return "", fmt.Errorf("could not close zip entry: %w", err)
 				}
-				if err := os.Chmod(binPath, 0755); err != nil { // #nosec G306 -- binary must be executable
+				if err := os.Chmod(binPath, 0755); err != nil { // #nosec G302 -- binary must be executable
 					return "", fmt.Errorf("could not make binary executable: %w", err)
 				}
 				break
@@ -225,7 +225,7 @@ func extractBinaryFromArchive(assetPath, assetName, tmpDir string) (string, erro
 		}
 	} else {
 		binPath = assetPath
-		if err := os.Chmod(binPath, 0755); err != nil { // #nosec G306 -- binary must be executable
+		if err := os.Chmod(binPath, 0755); err != nil { // #nosec G302 -- binary must be executable
 			fmt.Printf("warning: could not chmod downloaded binary: %v\n", err)
 		}
 	}
@@ -250,7 +250,7 @@ func replaceExecutable(binPath, execDir string) error {
 		return fmt.Errorf("could not open new binary: %w", err)
 	}
 	defer in.Close()                                                          //nolint:errcheck
-	out, err := os.OpenFile(tmpNew, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755) // #nosec G306 -- binary must be executable
+	out, err := os.OpenFile(tmpNew, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755) // #nosec G302 -- binary must be executable
 	if err != nil {
 		return fmt.Errorf("could not create temp binary in target dir: %w", err)
 	}

@@ -68,7 +68,7 @@ func fetchV1Release() (*Release, string, error) {
 			}
 		} else {
 			if err := resp.Body.Close(); err != nil {
-				// Body close error is non-fatal; continue to query releases list.
+				fmt.Printf("warning: non-fatal response body close error: %v\n", err)
 			}
 		}
 	}
