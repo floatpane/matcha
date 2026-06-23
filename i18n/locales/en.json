@@ -79,7 +79,8 @@
       "drafts": "Drafts",
       "help": "Use ↑/↓ to navigate, enter to select, and ctrl+c to quit.",
       "unknown": "unknown",
-      "update_available": "Update available: {latest} (installed: {current}) — run `matcha update` to upgrade"
+      "update_available": "Update available: {latest} (installed: {current}) — run `matcha update` to upgrade",
+      "upgrade_v1_note": "v1.0.0 is in release candidate — run `matcha upgrade-v1` to upgrade to v1."
     },
     "folder_inbox": {
       "folders_title": "Folders",

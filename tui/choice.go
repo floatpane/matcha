@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -37,6 +38,8 @@ type Choice struct {
 	UpdateAvailable bool
 	LatestVersion   string
 	CurrentVersion  string
+	V1RCAvailable   bool
+	V1RCVersion     string
 	width           int
 	height          int
 	keybindWarnings []string
@@ -59,6 +62,8 @@ func NewChoice() Choice {
 		UpdateAvailable: false,
 		LatestVersion:   "",
 		CurrentVersion:  "",
+		V1RCAvailable:   false,
+		V1RCVersion:     "",
 		keybindWarnings: config.ValidateKeybinds(config.Keybinds),
 	}
 }
@@ -123,7 +128,35 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Handle v1 release-candidate notification from other package without importing its type directly.
+	// We look for a struct named 'V1RCAvailableMsg' that contains 'Latest' and 'Current' string fields.
+	rv = reflect.ValueOf(msg)
+	if rv.IsValid() && rv.Kind() == reflect.Struct && rv.Type().Name() == "V1RCAvailableMsg" {
+		f := rv.FieldByName("Latest")
+		if f.IsValid() && f.Kind() == reflect.String && v1RCRegex.MatchString(f.String()) {
+			m.V1RCVersion = f.String()
+			m.V1RCAvailable = true
+			if c := rv.FieldByName("Current"); c.IsValid() && c.Kind() == reflect.String {
+				m.CurrentVersion = c.String()
+			}
+			return m, nil
+		}
+	}
+
 	return m, nil
+}
+
+var (
+	v0Regex   = regexp.MustCompile(`^v?0\.\d+\.\d+$`)
+	v1RCRegex = regexp.MustCompile(`^v?1\.0\.0-rc\d+$`)
+)
+
+func (m Choice) isV0() bool {
+	return v0Regex.MatchString(m.CurrentVersion)
+}
+
+func (m Choice) isV1RCAvailable() bool {
+	return m.V1RCAvailable && m.isV0() && v1RCRegex.MatchString(m.V1RCVersion)
 }
 
 func (m Choice) View() tea.View {
@@ -181,5 +214,11 @@ func (m Choice) View() tea.View {
 		mainContent += "\n\n"
 	}
 
-	return tea.NewView(docStyle.Render(mainContent + helpView))
+	content := mainContent + helpView
+	if m.isV1RCAvailable() {
+		noteStyle := lipgloss.NewStyle().Foreground(theme.ActiveTheme.Warning).Padding(0, 1)
+		content += "\n" + noteStyle.Render(t("choice.upgrade_v1_note"))
+	}
+
+	return tea.NewView(docStyle.Render(content))
 }
