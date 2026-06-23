@@ -651,6 +651,8 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
+	warnUnknownConfigKeys(data)
+
 	secureMode := GetSessionKey() != nil
 
 	var config Config
@@ -956,4 +958,78 @@ func EnsurePGPDir() error {
 	}
 	pgpDir := filepath.Join(dir, "pgp")
 	return os.MkdirAll(pgpDir, 0700)
+}
+
+var knownConfigKeys = map[string]bool{
+	"accounts":                true,
+	"disable_images":          true,
+	"hide_tips":               true,
+	"disable_notifications":   true,
+	"enable_split_pane":       true,
+	"enable_threaded":         true,
+	"enable_detailed_dates":   true,
+	"theme":                   true,
+	"mailing_lists":           true,
+	"date_format":             true,
+	"language":                true,
+	"body_cache_threshold_mb": true,
+	"plugin_settings":         true,
+}
+
+var knownAccountKeys = map[string]bool{
+	"id":                     true,
+	"name":                   true,
+	"email":                  true,
+	"password":               true,
+	"service_provider":       true,
+	"fetch_email":            true,
+	"send_as_email":          true,
+	"imap_server":            true,
+	"imap_port":              true,
+	"smtp_server":            true,
+	"smtp_port":              true,
+	"insecure":               true,
+	"smime_cert":             true,
+	"smime_key":              true,
+	"smime_sign_by_default":  true,
+	"pgp_public_key":         true,
+	"pgp_private_key":        true,
+	"pgp_key_source":         true,
+	"pgp_pin":                true,
+	"pgp_sign_by_default":    true,
+	"auth_method":            true,
+	"protocol":               true,
+	"jmap_endpoint":          true,
+	"pop3_server":            true,
+	"pop3_port":              true,
+	"catch_all":              true,
+}
+
+func warnUnknownConfigKeys(data []byte) {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	for key := range raw {
+		if !knownConfigKeys[key] {
+			log.Printf("matcha: unknown config key %q", key)
+		}
+		if key == "accounts" {
+			accounts, ok := raw["accounts"].([]interface{})
+			if !ok {
+				continue
+			}
+			for i, acc := range accounts {
+				accMap, ok := acc.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				for accKey := range accMap {
+					if !knownAccountKeys[accKey] {
+						log.Printf("matcha: unknown config key in accounts[%d]: %q", i, accKey)
+					}
+				}
+			}
+		}
+	}
 }

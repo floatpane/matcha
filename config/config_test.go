@@ -711,3 +711,20 @@ func TestPassCmd(t *testing.T) {
 		t.Errorf("Password not resolved from pass_cmd: got %q", acc.Password)
 	}
 }
+
+func TestWarnUnknownConfigKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+	}{
+		{"no unknown keys", `{"accounts": [{"name": "test", "email": "a@b.com", "service_provider": "gmail"}], "theme": "dark"}`},
+		{"empty object", `{}`},
+		{"invalid json", `not json`},
+		{"nested with unknown", `{"unknown_top": true, "accounts": [{"name": "test", "email": "a@b.com", "unknown_field": true}]}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			warnUnknownConfigKeys([]byte(tc.json))
+		})
+	}
+}
