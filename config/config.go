@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -587,6 +588,9 @@ func LoadConfig() (*Config, error) {
 
 	secureMode := GetSessionKey() != nil
 
+	// Detect unknown top-level config keys and log warnings.
+	warnUnknownConfigKeys(data)
+
 	var config Config
 	var needsMigration bool
 
@@ -860,6 +864,56 @@ func (c *Config) GetFirstAccount() *Account {
 		return &c.Accounts[0]
 	}
 	return nil
+}
+
+// warnUnknownConfigKeys logs a warning for any unrecognized top-level JSON keys
+// in the config data. Unknown keys are silently ignored by json.Unmarshal, so
+// this gives users a hint when they have a typo or a stale key.
+func warnUnknownConfigKeys(data []byte) {
+	var raw memSaver
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return
+	}
+
+	// Collect known config keys from the raw map.
+	known := knownConfigKeys()
+	for key := range raw {
+		if !known[key] {
+			log.Printf("matcha: unknown config key: %q (check for typos)", key)
+		}
+	}
+}
+
+// memSaver is a minimal type that captures only the top-level config keys
+// without pulling in the full rawAccount definitions. It avoids allocating
+// deeply nested account structs just to check key names.
+type memSaver map[string]json.RawMessage
+
+func (m *memSaver) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, (*map[string]json.RawMessage)(m))
+}
+
+// knownConfigKeys returns a set of all valid top-level config JSON keys.
+func knownConfigKeys() map[string]bool {
+	return map[string]bool{
+		"accounts":                   true,
+		"disable_images":             true,
+		"hide_tips":                  true,
+		"disable_notifications":      true,
+		"disable_daemon":             true,
+		"enable_split_pane":          true,
+		"enable_threaded":            true,
+		"enable_detailed_dates":      true,
+		"disable_spellcheck":         true,
+		"disable_spell_suggestions":  true,
+		"theme":                      true,
+		"mailing_lists":              true,
+		"date_format":                true,
+		"language":                   true,
+		"body_cache_threshold_mb":    true,
+		"undo_delay_seconds":         true,
+		"plugin_settings":            true,
+	}
 }
 
 // EnsurePGPDir creates the PGP keys directory if it doesn't exist.
