@@ -67,7 +67,9 @@ func fetchV1Release() (*Release, string, error) {
 				return &rel, tag, nil
 			}
 		} else {
-			resp.Body.Close() //nolint:errcheck
+			if err := resp.Body.Close(); err != nil {
+				// Body close error is non-fatal; continue to query releases list.
+			}
 		}
 	}
 
