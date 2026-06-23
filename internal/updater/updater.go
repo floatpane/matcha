@@ -105,11 +105,11 @@ func semverLess(a, b string) bool {
 
 	sa := strings.Split(pa, ".")
 	sb := strings.Split(pb, ".")
-	max := len(sa)
-	if len(sb) > max {
-		max = len(sb)
+	limit := len(sa)
+	if len(sb) > limit {
+		limit = len(sb)
 	}
-	for i := 0; i < max; i++ {
+	for i := 0; i < limit; i++ {
 		na, nb := 0, 0
 		if i < len(sa) {
 			na, _ = strconv.Atoi(sa[i])
@@ -146,7 +146,7 @@ func semverLess(a, b string) bool {
 // the pre-release suffix (e.g. "1.0.0-rc1" -> ("1.0.0", "1")).
 func splitPre(v string) (core, pre string) {
 	for i, r := range v {
-		if !(r >= '0' && r <= '9') && r != '.' {
+		if (r < '0' || r > '9') && r != '.' {
 			return v[:i], strings.TrimLeft(v[i:], "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-+")
 		}
 	}
