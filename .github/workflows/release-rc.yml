@@ -172,7 +172,8 @@ jobs:
           args: release --clean --config .goreleaser.rc.yml
         env:
           SDK_PATH: ${{ steps.macos_sdk.outputs.path }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           # Force the changelog base to the last stable tag so rc notes are
           # cumulative across every rc since that release.
           GORELEASER_PREVIOUS_TAG: ${{ needs.tag.outputs.prev_stable }}

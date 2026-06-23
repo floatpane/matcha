@@ -74,4 +74,28 @@ release:
     > [!WARNING]
     > This is a **release candidate** for v1 — not a final release. Expect bugs and report them.
 
+    - **Homebrew:** `brew upgrade floatpane/matcha/matcha`
     - **Snapcraft:** `snap install matcha --candidate`
+
+# Publish the RC to the Homebrew tap as the v1 cask. This intentionally points
+# the main matcha cask at the latest RC so release/v1 users can update via
+# `brew upgrade matcha@v1` during the stabilization period.
+homebrew_casks:
+  - name: matcha@v1
+    binaries: [matcha]
+    repository:
+      owner: floatpane
+      name: homebrew-matcha
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: Floatpane Bot
+      email: us@floatpane.com
+    description: "A beautiful and functional email client for your terminal."
+    homepage: "https://matcha.email"
+    # Strip Apple quarantine xattr so unsigned binary runs without Gatekeeper prompt.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/matcha"]
+          end

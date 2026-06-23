@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,6 +46,111 @@ type githubRelease struct {
 		Name               string `json:"name"`
 		BrowserDownloadURL string `json:"browser_download_url"`
 	} `json:"assets"`
+}
+
+// compareVersions reports whether a is a newer version than b, honoring the
+// special v1.0.0-rcN ordering used by the release/v1 stabilization branch. RC
+// versions are compared by their numeric suffix; otherwise the standard semver
+// ordering is used, falling back to a simple suffix check and string comparison.
+func isNewer(a, b string) bool {
+	a = strings.TrimPrefix(a, "v")
+	b = strings.TrimPrefix(b, "v")
+	if a == b {
+		return false
+	}
+
+	// Compare v1.0.0-rcN versions by suffix number.
+	if isRC(a) && isRC(b) {
+		return rcNumber(a) > rcNumber(b)
+	}
+
+	// If one side is an rc and the other is not, semver handles the
+	// prerelease ordering (rc < stable). We only get here when both sides
+	// have been normalized to the same family.
+	return semverLess(b, a)
+}
+
+// isRC reports whether a version is a v1 release-candidate pre-release,
+// e.g. v1.0.0-rc1 or 1.0.0-rc2.
+func isRC(v string) bool {
+	return strings.Contains(v, "1.0.0-rc")
+}
+
+// rcNumber extracts the numeric suffix from a v1.0.0-rcN version. If the
+// suffix is not present or not numeric, it returns 0.
+func rcNumber(v string) int {
+	v = strings.TrimPrefix(v, "v")
+	if !strings.HasPrefix(v, "1.0.0-rc") {
+		return 0
+	}
+	n := strings.TrimPrefix(v, "1.0.0-rc")
+	if num, err := strconv.Atoi(n); err == nil {
+		return num
+	}
+	return 0
+}
+
+// semverLess reports whether a < b using a lightweight semver parse. It only
+// supports numeric major/minor/patch components and a single optional
+// pre-release suffix (e.g. rc1). It returns false when comparison is ambiguous.
+func semverLess(a, b string) bool {
+	a = strings.TrimPrefix(a, "v")
+	b = strings.TrimPrefix(b, "v")
+	if a == b {
+		return false
+	}
+
+	pa, preA := splitPre(a)
+	pb, preB := splitPre(b)
+
+	sa := strings.Split(pa, ".")
+	sb := strings.Split(pb, ".")
+	max := len(sa)
+	if len(sb) > max {
+		max = len(sb)
+	}
+	for i := 0; i < max; i++ {
+		na, nb := 0, 0
+		if i < len(sa) {
+			na, _ = strconv.Atoi(sa[i])
+		}
+		if i < len(sb) {
+			nb, _ = strconv.Atoi(sb[i])
+		}
+		if na < nb {
+			return true
+		}
+		if na > nb {
+			return false
+		}
+	}
+
+	// Core version equal; decide by pre-release presence and suffix.
+	if preA == "" && preB != "" {
+		return false // a is stable, b is prerelease -> a > b -> a < b is false
+	}
+	if preA != "" && preB == "" {
+		return true // a is prerelease, b is stable -> a < b
+	}
+	if preA == preB {
+		return false
+	}
+	// Both have numeric suffixes; compare them.
+	na, _ := strconv.Atoi(preA)
+	nb, _ := strconv.Atoi(preB)
+	return na < nb
+}
+
+// splitPre separates a version string into core and pre-release suffix. It
+// looks for the first non-numeric, non-dot character and treats the remainder as
+// the pre-release suffix (e.g. "1.0.0-rc1" -> ("1.0.0", "1")).
+func splitPre(v string) (core, pre string) {
+	for i, r := range v {
+		if !(r >= '0' && r <= '9') && r != '.' {
+			return v[:i], strings.TrimLeft(v[i:], "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-+")
+		}
+	}
+	return v, ""
 }
 
 // SetVersion provides the build-injected version value to the updater package.
@@ -154,7 +260,7 @@ func CheckForUpdatesCmd() tea.Cmd {
 
 		latest := strings.TrimPrefix(rel.TagName, "v")
 		installed := strings.TrimPrefix(DetectInstalledVersion(), "v")
-		if latest != "" && installed != "" && latest != installed {
+		if latest != "" && installed != "" && latest != installed && isNewer(latest, installed) {
 			return UpdateAvailableMsg{Latest: latest, Current: installed}
 		}
 		return nil
@@ -183,10 +289,17 @@ func RunUpdateCLI() (err error) {
 	loglevel.Infof("Latest version: %s", latestTag)
 
 	cur := strings.TrimPrefix(version, "v")
-	if latestTag == "" || cur == latestTag {
+	if latestTag == "" || cur == latestTag || !isNewer(latestTag, cur) {
 		loglevel.Infof("Already up to date.")
 		return nil
 	}
+
+	// When running on a v1 release candidate, only allow update paths that are
+	// actually publishing v1 RCs: Homebrew (matcha@v1), Snap (candidate), and the
+	// manual GitHub release binary fallback. All other package managers are
+	// still tied to v0 stable releases and would downgrade or reinstall the
+	// wrong stream, so skip them.
+	isRCInstalled := isRC(cur)
 
 	switch runtime.GOOS {
 	case goosDarwin:
@@ -197,21 +310,25 @@ func RunUpdateCLI() (err error) {
 		if trySnapRefresh() {
 			return nil
 		}
-		if tryFlatpakUpdate() {
-			return nil
-		}
-		if tryAURUpdate() {
-			return nil
-		}
-		if tryNixUpdate() {
-			return nil
+		if !isRCInstalled {
+			if tryFlatpakUpdate() {
+				return nil
+			}
+			if tryAURUpdate() {
+				return nil
+			}
+			if tryNixUpdate() {
+				return nil
+			}
 		}
 	case goosWindows:
-		if tryWinGetUpgrade() {
-			return nil
-		}
-		if tryScoopUpdate() {
-			return nil
+		if !isRCInstalled {
+			if tryWinGetUpgrade() {
+				return nil
+			}
+			if tryScoopUpdate() {
+				return nil
+			}
 		}
 	}
 
@@ -232,7 +349,7 @@ func tryHomebrewUpgrade() bool {
 		loglevel.Infof("Homebrew update failed: %v", err)
 	}
 
-	upgradeCmd := exec.Command("brew", "upgrade", "floatpane/matcha/matcha") //nolint:noctx
+	upgradeCmd := exec.Command("brew", "upgrade", "floatpane/matcha/matcha@v1") //nolint:noctx
 	upgradeCmd.Stdout = os.Stdout
 	upgradeCmd.Stderr = os.Stderr
 	if err := upgradeCmd.Run(); err == nil {
@@ -254,7 +371,7 @@ func trySnapRefresh() bool {
 	}
 
 	loglevel.Infof("Detected Snap package — attempting to refresh.")
-	cmd := exec.Command("snap", "refresh", "matcha") //nolint:noctx
+	cmd := exec.Command("snap", "refresh", "matcha", "--candidate") //nolint:noctx
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err == nil {
