@@ -18,6 +18,7 @@ import (
 	"github.com/floatpane/matcha/internal/loglevel"
 	"github.com/floatpane/matcha/theme"
 	"github.com/floatpane/termimage"
+	"golang.org/x/sys/unix"
 	lru "github.com/hashicorp/golang-lru/v2"
 )
 
@@ -363,9 +364,17 @@ const imageRowPlaceholderSuffix = "]]"
 func prerenderImage(payload string) (string, int) {
 	src := "data:image/png;base64," + payload
 	var buf bytes.Buffer
+
+	// Ask termimage to cap the rendered image so it can never exceed the
+	// terminal viewport. This prevents oversized/tall images from covering the
+	// whole screen or overlapping other content on scroll. We always pass a
+	// maximum in cells and let termimage convert to pixels for the active
+	// protocol.
 	_, rows, err := termimage.DisplayWithSize(&buf, src, termimage.Options{
 		Protocol:  termimage.Auto,
 		Sandboxed: true,
+		MaxWidth:  maxImageCellWidth(),
+		MaxHeight: maxImageCellHeight(),
 	})
 	if err != nil {
 		debugImageProtocol("termimage.DisplayWithSize error: %v", err)
@@ -376,6 +385,82 @@ func prerenderImage(payload string) (string, int) {
 	}
 	debugImageProtocol("termimage: prerendered rows=%d bytes=%d", rows, buf.Len())
 	return buf.String(), rows
+}
+
+// maxImageCellHeight returns the maximum number of terminal rows an inline
+// image is allowed to occupy. It is always capped to a fraction of the viewport
+// so images cannot monopolize the screen during scrolling.
+func maxImageCellHeight() int {
+	const defaultRows = 25
+	_, rows, ok := getTerminalSize()
+	if !ok || rows < 1 {
+		return defaultRows
+	}
+	max := rows * 8 / 10
+	if max < 1 {
+		return 1
+	}
+	if max > defaultRows {
+		return max
+	}
+	return defaultRows
+}
+
+// maxImageCellWidth returns the maximum number of terminal columns an inline
+// image is allowed to occupy.
+func maxImageCellWidth() int {
+	const defaultCols = 80
+	cols, _, ok := getTerminalSize()
+	if !ok || cols < 1 {
+		return defaultCols
+	}
+	if cols > 4 {
+		cols -= 4
+	}
+	if cols < 1 {
+		cols = 1
+	}
+	if cols > defaultCols {
+		return cols
+	}
+	return defaultCols
+}
+
+// terminalSize caches the most recent terminal dimensions to avoid repeated
+// syscalls. It is refreshed on demand if the dimensions are unknown.
+var terminalSize struct {
+	cols, rows int
+	ok         bool
+}
+
+// getTerminalSize returns the current terminal size in columns and rows.
+func getTerminalSize() (cols, rows int, ok bool) {
+	if terminalSize.ok {
+		return terminalSize.cols, terminalSize.rows, true
+	}
+	size, ok := terminalSizeFrom(os.Stdin)
+	if !ok {
+		size, ok = terminalSizeFrom(os.Stdout)
+	}
+	if !ok || size.cols < 1 || size.rows < 1 {
+		return 0, 0, false
+	}
+	terminalSize.cols, terminalSize.rows, terminalSize.ok = size.cols, size.rows, true
+	return size.cols, size.rows, true
+}
+
+type termSize struct {
+	cols, rows int
+}
+
+// terminalSizeFrom attempts to read the terminal dimensions using the tty ioctl.
+func terminalSizeFrom(f *os.File) (termSize, bool) {
+	fd := f.Fd()
+	ws, err := unix.IoctlGetWinsize(int(fd), unix.TIOCGWINSZ)
+	if err != nil || ws.Col == 0 || ws.Row == 0 {
+		return termSize{}, false
+	}
+	return termSize{cols: int(ws.Col), rows: int(ws.Row)}, true
 }
 
 // RenderImageToStdout writes an image directly to stdout at the given screen
