@@ -609,7 +609,7 @@ func (m *FolderInbox) updateMoveOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *FolderInbox) updateJumpOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
 	kb := config.Keybinds
-	
+
 	// If filter input is focused, route all keys to it
 	if m.jumpFilterInput.Focused() {
 		if msg, ok := msg.(tea.KeyPressMsg); ok {
@@ -637,7 +637,7 @@ func (m *FolderInbox) updateJumpOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	
+
 	// Filter input not focused - handle navigation
 	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		switch msg.String() {
@@ -701,7 +701,7 @@ func (m *FolderInbox) applyJumpFilter() {
 		m.jumpFiltered = nil
 		return
 	}
-	
+
 	m.jumpFiltered = m.jumpFiltered[:0]
 	for i, folder := range m.folders {
 		if strings.Contains(strings.ToLower(folder), query) {
@@ -901,7 +901,7 @@ func (m *FolderInbox) renderWithJumpOverlay(content string) string {
 	}
 
 	var b strings.Builder
-	
+
 	// Show filter input if focused, otherwise just the title
 	if m.jumpFilterInput.Focused() {
 		b.WriteString(moveOverlayTitleStyle.Render("Filter folders:"))
@@ -920,7 +920,7 @@ func (m *FolderInbox) renderWithJumpOverlay(content string) string {
 
 	// Get the current list (filtered or all)
 	list := m.getJumpList()
-	
+
 	// Limit visible items to prevent overflow (similar to command palette)
 	maxVisible := 8
 	startIdx := 0
@@ -931,7 +931,7 @@ func (m *FolderInbox) renderWithJumpOverlay(content string) string {
 	if endIdx > len(list) {
 		endIdx = len(list)
 	}
-	
+
 	for i := startIdx; i < endIdx; i++ {
 		var folderIdx int
 		if len(m.jumpFiltered) > 0 {
@@ -939,7 +939,7 @@ func (m *FolderInbox) renderWithJumpOverlay(content string) string {
 		} else {
 			folderIdx = i
 		}
-		
+
 		displayName := m.formatFolderName(m.folders[folderIdx])
 		if i == m.jumpTargetIdx {
 			b.WriteString(moveSelectedItemStyle.Render("> " + displayName))
@@ -950,14 +950,14 @@ func (m *FolderInbox) renderWithJumpOverlay(content string) string {
 			b.WriteString("\n")
 		}
 	}
-	
+
 	// Show message if no matches
 	if len(list) == 0 {
 		b.WriteString(lipgloss.NewStyle().Foreground(theme.ActiveTheme.MutedText).Render("No matching folders"))
 	}
 
 	b.WriteString("\n\n")
-	
+
 	// Update help text based on filter state
 	var helpText string
 	if m.jumpFilterInput.Focused() {
