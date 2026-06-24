@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -960,53 +961,36 @@ func EnsurePGPDir() error {
 	return os.MkdirAll(pgpDir, 0700)
 }
 
-var knownConfigKeys = map[string]bool{
-	"accounts":                true,
-	"disable_images":          true,
-	"hide_tips":               true,
-	"disable_notifications":   true,
-	"enable_split_pane":       true,
-	"enable_threaded":         true,
-	"enable_detailed_dates":   true,
-	"theme":                   true,
-	"mailing_lists":           true,
-	"date_format":             true,
-	"language":                true,
-	"body_cache_threshold_mb": true,
-	"plugin_settings":         true,
+var knownConfigKeys map[string]bool
+var knownAccountKeys map[string]bool
+var knownKeysOnce sync.Once
+
+func initKnownKeys() {
+	knownConfigKeys = structJSONKeys(Config{})
+	knownAccountKeys = structJSONKeys(Account{})
 }
 
-var knownAccountKeys = map[string]bool{
-	"id":                    true,
-	"name":                  true,
-	"email":                 true,
-	"password":              true,
-	"service_provider":      true,
-	"fetch_email":           true,
-	"send_as_email":         true,
-	"imap_server":           true,
-	"imap_port":             true,
-	"smtp_server":           true,
-	"smtp_port":             true,
-	"insecure":              true,
-	"smime_cert":            true,
-	"smime_key":             true,
-	"smime_sign_by_default": true,
-	"pgp_public_key":        true,
-	"pgp_private_key":       true,
-	"pgp_key_source":        true,
-	"pgp_pin":               true,
-	"pgp_sign_by_default":   true,
-	"auth_method":           true,
-	"protocol":              true,
-	"jmap_endpoint":         true,
-	"pop3_server":           true,
-	"pop3_port":             true,
-	"catch_all":             true,
-	"pass_cmd":              true,
+func structJSONKeys(v any) map[string]bool {
+	keys := make(map[string]bool)
+	t := reflect.TypeOf(v)
+	for i := range t.NumField() {
+		f := t.Field(i)
+		tag := f.Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		name, _, _ := strings.Cut(tag, ",")
+		if name == "" {
+			name = strings.ToLower(f.Name)
+		}
+		keys[name] = true
+	}
+	return keys
 }
 
 func warnUnknownConfigKeys(data []byte) {
+	knownKeysOnce.Do(initKnownKeys)
+
 	var raw map[string]interface{}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return
