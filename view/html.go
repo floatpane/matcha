@@ -396,12 +396,12 @@ func maxImageCellHeight() int {
 	if !ok || rows < 1 {
 		return defaultRows
 	}
-	max := rows * 8 / 10
-	if max < 1 {
+	limit := rows * 8 / 10
+	if limit < 1 {
 		return 1
 	}
-	if max > defaultRows {
-		return max
+	if limit > defaultRows {
+		return limit
 	}
 	return defaultRows
 }
