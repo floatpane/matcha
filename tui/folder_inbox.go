@@ -960,11 +960,12 @@ func (m *FolderInbox) renderWithJumpOverlay(content string) string {
 
 	// Update help text based on filter state
 	var helpText string
-	if m.jumpFilterInput.Focused() {
+	switch {
+	case m.jumpFilterInput.Focused():
 		helpText = "enter: apply filter • esc: cancel"
-	} else if m.jumpFilterInput.Value() != "" {
+	case m.jumpFilterInput.Value() != "":
 		helpText = "f: clear filter • j/k: navigate • enter: jump • esc: cancel"
-	} else {
+	default:
 		helpText = "f: filter folders • j/k: navigate • enter: jump • esc: cancel"
 	}
 	b.WriteString(helpStyle.Render(helpText))
