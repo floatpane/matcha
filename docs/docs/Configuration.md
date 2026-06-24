@@ -51,6 +51,7 @@ Configuration is stored in `~/.config/matcha/config.json`.
   "hide_tips": true,
   "disable_spellcheck": false,
   "disable_spell_suggestions": false,
+  "show_cc_bcc_by_default": true,
   "body_cache_threshold_mb": 100,
   "undo_delay_seconds": 5
 }
@@ -67,6 +68,8 @@ Configuration is stored in `~/.config/matcha/config.json`.
 `disable_spellcheck` (default `false`) turns off the composer spellcheck entirely — no underline highlights, no dictionary download, no popup. Toggle via Settings → General → Spellcheck.
 
 `disable_spell_suggestions` (default `false`) keeps the misspelled-word underline but suppresses the inline suggestion popup. Useful if you want a quiet check without an autocomplete-style overlay. Toggle via Settings → General → Spell Suggestions.
+
+`show_cc_bcc_by_default` (default `true`) controls whether CC and BCC fields are visible when composing new emails. When set to `false`, the fields are hidden by default but can be toggled on/off via the command palette (Ctrl+P → "Toggle CC/BCC fields"). Toggle via Settings → General → Show CC/BCC by Default.
 
 `body_cache_threshold_mb` sets the maximum size (in megabytes) for the local email body cache. When this limit is reached, least recently accessed cached emails are evicted across all folders to make room for new ones. Defaults to `100` MB if not specified.
 
