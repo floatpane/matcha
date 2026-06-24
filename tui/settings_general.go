@@ -48,105 +48,110 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.generalCursor = (m.generalCursor + 1) % len(opts)
 	case keyEnter, "space", keyRight, "l":
 		if m.generalCursor < len(opts) {
-			saved := false
-			switch m.generalCursor {
-			case 0: // Image Display
-				m.cfg.DisableImages = !m.cfg.DisableImages
-				_ = config.SaveConfig(m.cfg)
-				saved = true
-			case 1: // Contextual Tips
-				m.cfg.HideTips = !m.cfg.HideTips
-				_ = config.SaveConfig(m.cfg)
-				saved = true
-			case 2: // Desktop Notifications
-				m.cfg.DisableNotifications = !m.cfg.DisableNotifications
-				_ = config.SaveConfig(m.cfg)
-				saved = true
-			case 3: // Background Daemon
-				m.cfg.DisableDaemon = !m.cfg.DisableDaemon
-				_ = config.SaveConfig(m.cfg)
-				saved = true
-			case 4: // Split Pane View
-				m.cfg.EnableSplitPane = !m.cfg.EnableSplitPane
-				_ = config.SaveConfig(m.cfg)
-				saved = true
-			case 5: // Split Pane Orientation
-				if m.cfg.GetSplitPaneOrientation() == config.SplitPaneVertical {
-					m.cfg.SplitPaneOrientation = config.SplitPaneHorizontal
-				} else {
-					m.cfg.SplitPaneOrientation = config.SplitPaneVertical
-				}
-				_ = config.SaveConfig(m.cfg)
-				saved = true
-			case 6: // Threaded Conversation View
-				m.cfg.EnableThreaded = !m.cfg.EnableThreaded
-				_ = config.SaveConfig(m.cfg)
-				saved = true
-			case 7: // Detailed Dates
-				m.cfg.EnableDetailedDates = !m.cfg.EnableDetailedDates
-				_ = config.SaveConfig(m.cfg)
-				saved = true
-			case 8: // Spellcheck
-				m.cfg.DisableSpellcheck = !m.cfg.DisableSpellcheck
-				_ = config.SaveConfig(m.cfg)
-				saved = true
-			case 9: // Spell Suggestions
-				m.cfg.DisableSpellSuggestions = !m.cfg.DisableSpellSuggestions
-				_ = config.SaveConfig(m.cfg)
-				saved = true
-			case 10: // Date Format
-				switch m.cfg.DateFormat {
-				case config.DateFormatEU:
-					m.cfg.DateFormat = config.DateFormatUS
-				case config.DateFormatUS:
-					m.cfg.DateFormat = config.DateFormatISO
-				default: // or ISO
-					m.cfg.DateFormat = config.DateFormatEU
-				}
-				_ = config.SaveConfig(m.cfg)
-				saved = true
-			case 11: // Language
-				// Cycle through available languages
-				langs := i18n.LanguageCodes()
-				currentLang := m.cfg.GetLanguage()
-				currentIdx := -1
-				for i, lang := range langs {
-					if lang == currentLang {
-						currentIdx = i
-						break
-					}
-				}
-				nextIdx := (currentIdx + 1) % len(langs)
-				m.cfg.Language = langs[nextIdx]
-				_ = config.SaveConfig(m.cfg)
-				// Apply language change immediately
-				i18n.GetManager().SetLanguage(m.cfg.Language) //nolint:errcheck,gosec
-				// Trigger full UI rebuild
-				return m, tea.Batch(
-					func() tea.Msg { return ConfigSavedMsg{} },
-					func() tea.Msg { return LanguageChangedMsg{} },
-				)
-			case 12: // Edit Signature
-				if msg.String() == keyEnter || msg.String() == keyRight || msg.String() == "l" {
-					return m, func() tea.Msg { return GoToSignatureEditorMsg{} }
-				}
-			case 13: // Mouse Support
-				enabled := config.MouseEnabled == nil || !*config.MouseEnabled
-				config.MouseEnabled = &enabled
-				return m, func() tea.Msg { return MouseSupportChosenMsg{Enabled: enabled} }
-			case 14: // Show Original on Reply
-				m.cfg.ShowOriginalOnReply = !m.cfg.ShowOriginalOnReply
-				_ = config.SaveConfig(m.cfg)
-				saved = true
-			case 15: // Show CC/BCC by Default
-				m.cfg.ShowCcBccByDefault = !m.cfg.ShowCcBccByDefault
-				_ = config.SaveConfig(m.cfg)
-				saved = true
-			}
-			if saved {
-				return m, func() tea.Msg { return ConfigSavedMsg{} }
+			return m.handleGeneralOption(m.generalCursor, msg.String())
+		}
+	}
+	return m, nil
+}
+
+func (m *Settings) handleGeneralOption(idx int, key string) (*Settings, tea.Cmd) {
+	saved := false
+	switch idx {
+	case 0: // Image Display
+		m.cfg.DisableImages = !m.cfg.DisableImages
+		_ = config.SaveConfig(m.cfg)
+		saved = true
+	case 1: // Contextual Tips
+		m.cfg.HideTips = !m.cfg.HideTips
+		_ = config.SaveConfig(m.cfg)
+		saved = true
+	case 2: // Desktop Notifications
+		m.cfg.DisableNotifications = !m.cfg.DisableNotifications
+		_ = config.SaveConfig(m.cfg)
+		saved = true
+	case 3: // Background Daemon
+		m.cfg.DisableDaemon = !m.cfg.DisableDaemon
+		_ = config.SaveConfig(m.cfg)
+		saved = true
+	case 4: // Split Pane View
+		m.cfg.EnableSplitPane = !m.cfg.EnableSplitPane
+		_ = config.SaveConfig(m.cfg)
+		saved = true
+	case 5: // Split Pane Orientation
+		if m.cfg.GetSplitPaneOrientation() == config.SplitPaneVertical {
+			m.cfg.SplitPaneOrientation = config.SplitPaneHorizontal
+		} else {
+			m.cfg.SplitPaneOrientation = config.SplitPaneVertical
+		}
+		_ = config.SaveConfig(m.cfg)
+		saved = true
+	case 6: // Threaded Conversation View
+		m.cfg.EnableThreaded = !m.cfg.EnableThreaded
+		_ = config.SaveConfig(m.cfg)
+		saved = true
+	case 7: // Detailed Dates
+		m.cfg.EnableDetailedDates = !m.cfg.EnableDetailedDates
+		_ = config.SaveConfig(m.cfg)
+		saved = true
+	case 8: // Spellcheck
+		m.cfg.DisableSpellcheck = !m.cfg.DisableSpellcheck
+		_ = config.SaveConfig(m.cfg)
+		saved = true
+	case 9: // Spell Suggestions
+		m.cfg.DisableSpellSuggestions = !m.cfg.DisableSpellSuggestions
+		_ = config.SaveConfig(m.cfg)
+		saved = true
+	case 10: // Date Format
+		switch m.cfg.DateFormat {
+		case config.DateFormatEU:
+			m.cfg.DateFormat = config.DateFormatUS
+		case config.DateFormatUS:
+			m.cfg.DateFormat = config.DateFormatISO
+		default: // or ISO
+			m.cfg.DateFormat = config.DateFormatEU
+		}
+		_ = config.SaveConfig(m.cfg)
+		saved = true
+	case 11: // Language
+		// Cycle through available languages
+		langs := i18n.LanguageCodes()
+		currentLang := m.cfg.GetLanguage()
+		currentIdx := -1
+		for i, lang := range langs {
+			if lang == currentLang {
+				currentIdx = i
+				break
 			}
 		}
+		nextIdx := (currentIdx + 1) % len(langs)
+		m.cfg.Language = langs[nextIdx]
+		_ = config.SaveConfig(m.cfg)
+		// Apply language change immediately
+		i18n.GetManager().SetLanguage(m.cfg.Language) //nolint:errcheck,gosec
+		// Trigger full UI rebuild
+		return m, tea.Batch(
+			func() tea.Msg { return ConfigSavedMsg{} },
+			func() tea.Msg { return LanguageChangedMsg{} },
+		)
+	case 12: // Edit Signature
+		if key == keyEnter || key == keyRight || key == "l" {
+			return m, func() tea.Msg { return GoToSignatureEditorMsg{} }
+		}
+	case 13: // Mouse Support
+		enabled := config.MouseEnabled == nil || !*config.MouseEnabled
+		config.MouseEnabled = &enabled
+		return m, func() tea.Msg { return MouseSupportChosenMsg{Enabled: enabled} }
+	case 14: // Show Original on Reply
+		m.cfg.ShowOriginalOnReply = !m.cfg.ShowOriginalOnReply
+		_ = config.SaveConfig(m.cfg)
+		saved = true
+	case 15: // Show CC/BCC by Default
+		m.cfg.ShowCcBccByDefault = !m.cfg.ShowCcBccByDefault
+		_ = config.SaveConfig(m.cfg)
+		saved = true
+	}
+	if saved {
+		return m, func() tea.Msg { return ConfigSavedMsg{} }
 	}
 	return m, nil
 }
