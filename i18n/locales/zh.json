@@ -170,6 +170,7 @@
       "signature": "编辑签名",
       "signature_configured": "已配置",
       "signature_not_configured": "未配置",
+      "show_cc_bcc_by_default": "默认显示CC/BCC",
       "on": "开",
       "off": "关",
       "restart_required": "需要重新启动以应用语言更改"

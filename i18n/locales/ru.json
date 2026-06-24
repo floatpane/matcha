@@ -176,6 +176,7 @@
       "signature": "Редактировать Подпись",
       "signature_configured": "настроена",
       "signature_not_configured": "не настроена",
+      "show_cc_bcc_by_default": "Показывать CC/BCC по умолчанию",
       "on": "ВКЛ",
       "off": "ВЫКЛ",
       "restart_required": "Требуется перезапуск для применения изменения языка"

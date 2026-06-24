@@ -174,6 +174,7 @@
       "signature": "Редагувати підпис",
       "signature_configured": "налаштовано",
       "signature_not_configured": "не налаштовано",
+      "show_cc_bcc_by_default": "Показувати CC/BCC за замовчуванням",
       "on": "УВІМК",
       "off": "ВИМК",
       "restart_required": "Для застосування зміни мови потрібен перезапуск"

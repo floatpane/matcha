@@ -161,6 +161,7 @@ type Config struct {
 	// MouseEnabled controls whether mouse events are captured. nil means "not asked yet".
 	MouseEnabled        *bool `json:"mouse_enabled,omitempty"`
 	ShowOriginalOnReply bool  `json:"show_original_on_reply,omitempty"`
+	ShowCcBccByDefault  bool  `json:"show_cc_bcc_by_default,omitempty"`
 }
 
 // GetSplitPaneOrientation returns the configured split pane orientation,
@@ -522,6 +523,7 @@ type secureDiskConfig struct {
 	HasSeenSetupGuide       bool                              `json:"has_seen_setup_guide,omitempty"`
 	MouseEnabled            *bool                             `json:"mouse_enabled,omitempty"`
 	ShowOriginalOnReply     bool                              `json:"show_original_on_reply,omitempty"`
+	ShowCcBccByDefault      bool                              `json:"show_cc_bcc_by_default,omitempty"`
 }
 
 // SaveConfig saves the given configuration to the config file and passwords to the keyring.
@@ -577,9 +579,11 @@ func SaveConfig(config *Config) error {
 			Theme:                   config.Theme,
 			MailingLists:            config.MailingLists,
 			DateFormat:              config.DateFormat,
+			Language:                config.Language,
 			PluginSettings:          config.PluginSettings,
 			HasSeenSetupGuide:       config.HasSeenSetupGuide,
 			ShowOriginalOnReply:     config.ShowOriginalOnReply,
+			ShowCcBccByDefault:      config.ShowCcBccByDefault,
 		}
 		for _, acc := range config.Accounts {
 			var securePassword string
@@ -706,6 +710,7 @@ func LoadConfig() (*Config, error) {
 		HasSeenSetupGuide       bool                              `json:"has_seen_setup_guide,omitempty"`
 		MouseEnabled            *bool                             `json:"mouse_enabled,omitempty"`
 		ShowOriginalOnReply     bool                              `json:"show_original_on_reply,omitempty"`
+		ShowCcBccByDefault      bool                              `json:"show_cc_bcc_by_default,omitempty"`
 	}
 
 	var raw diskConfig
@@ -754,6 +759,7 @@ func LoadConfig() (*Config, error) {
 	config.HasSeenSetupGuide = raw.HasSeenSetupGuide
 	config.MouseEnabled = raw.MouseEnabled
 	config.ShowOriginalOnReply = raw.ShowOriginalOnReply
+	config.ShowCcBccByDefault = raw.ShowCcBccByDefault
 
 	for _, rawAcc := range raw.Accounts {
 		acc := Account{

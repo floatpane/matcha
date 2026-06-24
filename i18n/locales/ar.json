@@ -176,6 +176,7 @@
       "signature": "تعديل التوقيع",
       "signature_configured": "مكوّن",
       "signature_not_configured": "غير مكوّن",
+      "show_cc_bcc_by_default": "إظهار CC/BCC افتراضياً",
       "on": "تشغيل",
       "off": "إيقاف",
       "restart_required": "يتطلب إعادة التشغيل لتطبيق تغيير اللغة"

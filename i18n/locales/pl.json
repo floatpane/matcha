@@ -176,6 +176,7 @@
       "signature": "Edytuj Podpis",
       "signature_configured": "skonfigurowany",
       "signature_not_configured": "nieskonfigurowany",
+      "show_cc_bcc_by_default": "Pokaż CC/BCC domyślnie",
       "on": "WŁ",
       "off": "WYŁ",
       "restart_required": "Wymagane ponowne uruchomienie w celu zastosowania zmiany języka"

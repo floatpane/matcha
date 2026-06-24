@@ -68,9 +68,11 @@ func (p *Palette) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 // Allowed reports whether the command palette may be opened for the active view.
 func Allowed(current tea.Model) bool {
 	switch v := current.(type) {
-	case *tui.Composer, *tui.Login, *tui.SignatureEditor, *tui.MailingListEditor, *tui.ContactEditor,
+	case *tui.Login, *tui.SignatureEditor, *tui.MailingListEditor, *tui.ContactEditor,
 		*tui.PasswordPrompt, *tui.FilePicker, *tui.SaveFilePicker, *tui.Status:
 		return false
+	case *tui.Composer:
+		return true
 	case *tui.Inbox:
 		return !v.IsSearchActive() && !v.IsFilterActive()
 	case *tui.FolderInbox:
@@ -87,6 +89,10 @@ func BuildCommands(current tea.Model, folderInbox *tui.FolderInbox) []tui.Palett
 	var cmds []tui.PaletteCommand
 
 	switch v := current.(type) {
+	case *tui.Composer:
+		cmds = append(cmds,
+			tui.PaletteCommand{Title: "Toggle CC/BCC fields", Keywords: "cc bcc carbon copy blind show hide", Action: func() tea.Msg { return tui.ToggleCcBccMsg{} }},
+		)
 	case *tui.EmailView:
 		cmds = append(cmds,
 			tui.PaletteCommand{Title: "Reply", Hint: kb.Email.Reply, Keywords: "respond answer", Action: KeyAction(kb.Email.Reply)},

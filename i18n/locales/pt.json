@@ -172,6 +172,7 @@
       "signature": "Editar Assinatura",
       "signature_configured": "configurada",
       "signature_not_configured": "não configurada",
+      "show_cc_bcc_by_default": "Mostrar CC/BCC por padrão",
       "on": "ATIVADO",
       "off": "DESATIVADO",
       "restart_required": "Reinicialização necessária para aplicar a mudança de idioma"

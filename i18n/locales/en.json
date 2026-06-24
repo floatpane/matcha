@@ -181,6 +181,7 @@
       "signature_not_configured": "not configured",
       "mouse_support": "Mouse Support",
       "show_original_on_reply": "Show Original on Reply",
+      "show_cc_bcc_by_default": "Show CC/BCC by Default",
       "on": "ON",
       "off": "OFF",
       "restart_required": "Restart required to apply language change"

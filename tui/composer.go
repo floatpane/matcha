@@ -27,6 +27,9 @@ type spellcheckReadyMsg struct {
 	checker *spellcheck.Checker
 }
 
+// ToggleCcBccMsg is sent when the user toggles CC/BCC field visibility.
+type ToggleCcBccMsg struct{}
+
 var (
 	suggestionStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	selectedSuggestionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
@@ -100,6 +103,9 @@ type Composer struct {
 	// Draft persistence
 	draftID string
 
+	// CC/BCC visibility
+	showCcBcc bool
+
 	// Reply context
 	inReplyTo  string
 	references []string
@@ -154,6 +160,7 @@ func NewComposer(from, to, subject, body string, hideTips bool) *Composer {
 		hideTips:         hideTips,
 		attachmentNames:  make(map[string]string),
 		pgpKeysAvailable: make(map[string]bool),
+		showCcBcc:        true, // Default to showing CC/BCC for backward compatibility
 	}
 
 	tiStyles := ThemedTextInputStyles()
@@ -464,8 +471,11 @@ func (m *Composer) orderedFocusIndices() []int {
 	indices = append(indices,
 		focusFrom,
 		focusTo,
-		focusCc,
-		focusBcc,
+	)
+	if m.showCcBcc {
+		indices = append(indices, focusCc, focusBcc)
+	}
+	indices = append(indices,
 		focusSubject,
 		focusBody,
 		focusSignature,
@@ -518,6 +528,7 @@ func (m *Composer) cycleFocus(focusList []int, delta int) {
 func NewComposerWithAccounts(accounts []config.Account, selectedAccountID string, to, subject, body string, hideTips bool) *Composer {
 	m := NewComposer("", to, subject, body, hideTips)
 	m.accounts = accounts
+	m.showCcBcc = true // Will be updated by caller if needed
 
 	// Find the selected account index
 	for i, acc := range accounts {
@@ -970,25 +981,33 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case ToggleCcBccMsg:
+		m.ToggleCcBcc()
+		return m, nil
+
 	case tea.MouseClickMsg:
 		if msg.Button == tea.MouseLeft && !m.confirmingExit && !m.showAccountPicker && !m.showPluginPrompt {
 			bodyH := m.bodyInput.Height()
 			sigH := m.signatureInput.Height()
 			var newFocus int
+			ccBccOffset := 0
+			if m.showCcBcc {
+				ccBccOffset = 2
+			}
 			switch {
 			case msg.Y == 1:
 				newFocus = focusFrom
 			case msg.Y == 2:
 				newFocus = focusTo
-			case msg.Y == 3:
+			case msg.Y == 3 && m.showCcBcc:
 				newFocus = focusCc
-			case msg.Y == 4:
+			case msg.Y == 4 && m.showCcBcc:
 				newFocus = focusBcc
-			case msg.Y == 5:
+			case msg.Y == 3+ccBccOffset:
 				newFocus = focusSubject
-			case msg.Y >= 6 && msg.Y < 6+bodyH:
+			case msg.Y >= 4+ccBccOffset && msg.Y < 4+ccBccOffset+bodyH:
 				newFocus = focusBody
-			case msg.Y >= 6+bodyH+1 && msg.Y < 6+bodyH+1+sigH:
+			case msg.Y >= 4+ccBccOffset+bodyH+1 && msg.Y < 4+ccBccOffset+bodyH+1+sigH:
 				newFocus = focusSignature
 			default:
 				return m, tea.Batch(cmds...)
@@ -1689,14 +1708,18 @@ func (m *Composer) View() tea.View { //nolint:gocyclo
 		t("composer.title"),
 		fromField,
 		toFieldView,
-		ccFieldView,
-		bccFieldView,
+	}
+	if m.showCcBcc {
+		composerViewElements = append(composerViewElements, ccFieldView)
+		composerViewElements = append(composerViewElements, bccFieldView)
+	}
+	composerViewElements = append(composerViewElements,
 		m.subjectInput.View(),
 		bodyView,
 		signatureLabel,
 		m.signatureInput.View(),
 		attachmentStyle.Render(attachmentField),
-	}
+	)
 	if len(m.attachmentPaths) > 0 {
 		composerViewElements = append(composerViewElements, "")
 	}
@@ -2039,6 +2062,21 @@ func (m *Composer) GetBcc() string {
 // SetBcc updates the Bcc field with new content.
 func (m *Composer) SetBcc(bcc string) {
 	m.bccInput.SetValue(bcc)
+}
+
+// ToggleCcBcc toggles the visibility of CC/BCC fields.
+func (m *Composer) ToggleCcBcc() {
+	m.showCcBcc = !m.showCcBcc
+}
+
+// SetShowCcBcc sets the visibility of CC/BCC fields.
+func (m *Composer) SetShowCcBcc(show bool) {
+	m.showCcBcc = show
+}
+
+// GetShowCcBcc returns whether CC/BCC fields are visible.
+func (m *Composer) GetShowCcBcc() bool {
+	return m.showCcBcc
 }
 
 // GetSubject returns the current Subject field value.

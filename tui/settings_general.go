@@ -32,6 +32,7 @@ func (m *Settings) buildGeneralOptions() []generalOption {
 		{"settings_general.signature", getSignatureStatus(), "Configure the global signature appended to your outgoing emails."},
 		{"settings_general.mouse_support", onOff(config.MouseEnabled != nil && *config.MouseEnabled), "Enable mouse clicks and scroll wheel in the TUI. Takes effect immediately."},
 		{"settings_general.show_original_on_reply", onOff(m.cfg.ShowOriginalOnReply), "Show the original email alongside the composer when replying."},
+		{"settings_general.show_cc_bcc_by_default", onOff(m.cfg.ShowCcBccByDefault), "Show CC/BCC fields by default when composing new emails."},
 	}
 
 	return opts
@@ -135,6 +136,10 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg { return MouseSupportChosenMsg{Enabled: enabled} }
 			case 14: // Show Original on Reply
 				m.cfg.ShowOriginalOnReply = !m.cfg.ShowOriginalOnReply
+				_ = config.SaveConfig(m.cfg)
+				saved = true
+			case 15: // Show CC/BCC by Default
+				m.cfg.ShowCcBccByDefault = !m.cfg.ShowCcBccByDefault
 				_ = config.SaveConfig(m.cfg)
 				saved = true
 			}

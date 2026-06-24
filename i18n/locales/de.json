@@ -172,6 +172,7 @@
       "signature": "Signatur Bearbeiten",
       "signature_configured": "konfiguriert",
       "signature_not_configured": "nicht konfiguriert",
+      "show_cc_bcc_by_default": "CC/BCC standardmäßig anzeigen",
       "on": "AN",
       "off": "AUS",
       "restart_required": "Neustart erforderlich, um die Sprachänderung anzuwenden"

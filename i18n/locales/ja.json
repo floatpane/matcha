@@ -170,6 +170,7 @@
       "signature": "署名を編集",
       "signature_configured": "設定済み",
       "signature_not_configured": "未設定",
+      "show_cc_bcc_by_default": "デフォルトでCC/BCCを表示",
       "on": "オン",
       "off": "オフ",
       "restart_required": "言語変更を適用するには再起動が必要です"

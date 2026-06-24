@@ -1379,6 +1379,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		} else {
 			composer = tui.NewComposer("", msg.To, msg.Subject, msg.Body, hideTips)
 		}
+		if m.config != nil {
+			composer.SetShowCcBcc(m.config.ShowCcBccByDefault)
+		}
 		m.applySpellcheckOptions(composer)
 		m.current = composer
 		m.updateCurrentWindowSize()
@@ -1399,6 +1402,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			hideTips = m.config.HideTips
 		}
 		composer := tui.NewComposerFromDraft(msg.Draft, accounts, hideTips)
+		if m.config != nil {
+			composer.SetShowCcBcc(m.config.ShowCcBccByDefault)
+		}
 		m.applySpellcheckOptions(composer)
 		m.current = composer
 		m.updateCurrentWindowSize()
@@ -1733,6 +1739,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		} else {
 			composer = tui.NewComposer("", to, subject, "", hideTips)
 		}
+		if m.config != nil {
+			composer.SetShowCcBcc(m.config.ShowCcBccByDefault)
+		}
 		composer.SetQuotedText(quotedText)
 		inReplyTo := msg.Email.MessageID
 		references := append(msg.Email.References, msg.Email.MessageID) //nolint:gocritic
@@ -1781,6 +1790,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			composer = tui.NewComposerWithAccounts(m.config.Accounts, accountID, "", subject, body, hideTips)
 		} else {
 			composer = tui.NewComposer("", "", subject, body, hideTips)
+		}
+		if m.config != nil {
+			composer.SetShowCcBcc(m.config.ShowCcBccByDefault)
 		}
 		m.applySpellcheckOptions(composer)
 		m.current = composer
