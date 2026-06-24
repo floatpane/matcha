@@ -14,6 +14,7 @@ import (
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/daemonrpc"
 	"github.com/floatpane/matcha/fetcher"
+	"github.com/floatpane/matcha/internal/loglevel"
 	"github.com/floatpane/matcha/sender"
 )
 
@@ -55,9 +56,9 @@ func NewService(cfg *config.Config) Service {
 	}
 
 	// Daemon not running — auto-start it.
-	log.Println("service: daemon not running, auto-starting")
+	loglevel.Debugf("service: daemon not running, auto-starting")
 	if err := autoStartDaemon(); err != nil {
-		log.Printf("service: auto-start failed: %v, using direct mode", err)
+		loglevel.Debugf("service: auto-start failed: %v, using direct mode", err)
 		return newDirectService(cfg)
 	}
 
@@ -65,7 +66,7 @@ func NewService(cfg *config.Config) Service {
 	for i := 0; i < 20; i++ {
 		time.Sleep(100 * time.Millisecond)
 		if svc := tryConnect(); svc != nil {
-			log.Println("service: connected to auto-started daemon")
+			loglevel.Debugf("service: connected to auto-started daemon")
 			return svc
 		}
 	}
