@@ -82,6 +82,7 @@
     "folder_inbox": {
       "folders_title": "Dossiers",
       "move_to_folder": "Déplacer vers le dossier :",
+      "jump_to_folder": "Déplacer vers le dossier :",
       "move_single": "Déplacer l'e-mail vers le dossier :",
       "move_multiple": {
         "one": "Déplacer {count} e-mail vers le dossier :",

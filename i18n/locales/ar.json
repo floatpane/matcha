@@ -82,6 +82,7 @@
     "folder_inbox": {
       "folders_title": "المجلدات",
       "move_to_folder": "نقل إلى المجلد:",
+      "jump_to_folder": "نقل إلى المجلد:",
       "move_single": "نقل البريد الإلكتروني إلى المجلد:",
       "move_multiple": {
         "one": "نقل بريد إلكتروني {count} إلى المجلد:",

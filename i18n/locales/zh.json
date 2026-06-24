@@ -82,6 +82,7 @@
     "folder_inbox": {
       "folders_title": "文件夹",
       "move_to_folder": "移动到文件夹:",
+      "jump_to_folder": "移动到文件夹:",
       "move_single": "将邮件移动到文件夹:",
       "move_multiple": {
         "other": "将 {count} 封邮件移动到文件夹:"

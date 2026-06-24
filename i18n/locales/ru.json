@@ -82,6 +82,7 @@
     "folder_inbox": {
       "folders_title": "Папки",
       "move_to_folder": "Переместить в папку:",
+      "jump_to_folder": "Переместить в папку:",
       "move_single": "Переместить письмо в папку:",
       "move_multiple": {
         "one": "Переместить {count} письмо в папку:",

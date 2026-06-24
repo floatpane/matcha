@@ -82,6 +82,7 @@
     "folder_inbox": {
       "folders_title": "Ordner",
       "move_to_folder": "In Ordner verschieben:",
+      "jump_to_folder": "In Ordner verschieben:",
       "move_single": "E-Mail in Ordner verschieben:",
       "move_multiple": {
         "one": "{count} E-Mail in Ordner verschieben:",

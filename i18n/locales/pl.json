@@ -82,6 +82,7 @@
     "folder_inbox": {
       "folders_title": "Foldery",
       "move_to_folder": "Przenieś do folderu:",
+      "jump_to_folder": "Przenieś do folderu:",
       "move_single": "Przenieś wiadomość do folderu:",
       "move_multiple": {
         "one": "Przenieś {count} wiadomość do folderu:",

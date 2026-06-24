@@ -89,6 +89,7 @@
     "folder_inbox": {
       "folders_title": "Folders",
       "move_to_folder": "Move to folder:",
+      "jump_to_folder": "Jump to folder:",
       "move_single": "Move email to folder:",
       "move_multiple": {
         "one": "Move {count} email to folder:",

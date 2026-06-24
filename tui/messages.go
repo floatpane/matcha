@@ -537,6 +537,9 @@ type SwitchFolderMsg struct {
 	AccountID      string
 }
 
+// JumpToFolderMsg signals opening the jump-to-folder picker from command palette.
+type JumpToFolderMsg struct{}
+
 // FolderEmailsFetchedMsg signals that emails from a folder have been fetched.
 type FolderEmailsFetchedMsg struct {
 	Emails     []fetcher.Email

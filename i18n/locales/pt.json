@@ -82,6 +82,7 @@
     "folder_inbox": {
       "folders_title": "Pastas",
       "move_to_folder": "Mover para pasta:",
+      "jump_to_folder": "Mover para pasta:",
       "move_single": "Mover e-mail para pasta:",
       "move_multiple": {
         "one": "Mover {count} e-mail para pasta:",

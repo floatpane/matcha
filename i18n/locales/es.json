@@ -82,6 +82,7 @@
     "folder_inbox": {
       "folders_title": "Carpetas",
       "move_to_folder": "Mover a carpeta:",
+      "jump_to_folder": "Mover a carpeta:",
       "move_single": "Mover correo a carpeta:",
       "move_multiple": {
         "one": "Mover {count} correo a carpeta:",

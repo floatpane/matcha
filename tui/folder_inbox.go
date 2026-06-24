@@ -8,11 +8,13 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	overlay "github.com/floatpane/bubble-overlay"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
+	"github.com/floatpane/matcha/theme"
 )
 
 const sidebarWidth = 25
@@ -107,6 +109,12 @@ type FolderInbox struct {
 	moveUIDs         []uint32 // Batch: multiple UIDs
 	moveAccountID    string
 	moveSourceFolder string
+
+	// Jump-to-folder overlay state (from command palette)
+	jumpingToFolder bool
+	jumpTargetIdx   int
+	jumpFilterInput textinput.Model
+	jumpFiltered    []int // indices into folders when filtering
 
 	// Image rendering preference, propagated from config.
 	disableImages bool
@@ -224,6 +232,11 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 	// If move overlay is active, handle its input
 	if m.movingEmail {
 		return m.updateMoveOverlay(msg)
+	}
+
+	// If jump-to-folder overlay is active, handle its input
+	if m.jumpingToFolder {
+		return m.updateJumpOverlay(msg)
 	}
 
 	switch msg := msg.(type) {
@@ -359,6 +372,19 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 				return m, nil
 			}
 		}
+
+	case JumpToFolderMsg:
+		// Start jump-to-folder flow from command palette
+		m.jumpingToFolder = true
+		m.jumpTargetIdx = 0
+		// Initialize filter input
+		ti := textinput.New()
+		ti.Placeholder = "Filter folders..."
+		ti.Prompt = "> "
+		ti.CharLimit = 64
+		ti.SetStyles(ThemedTextInputStyles())
+		m.jumpFilterInput = ti
+		return m, nil
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -581,6 +607,122 @@ func (m *FolderInbox) updateMoveOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *FolderInbox) updateJumpOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
+	kb := config.Keybinds
+	
+	// If filter input is focused, route all keys to it
+	if m.jumpFilterInput.Focused() {
+		if msg, ok := msg.(tea.KeyPressMsg); ok {
+			switch msg.String() {
+			case keyEnter:
+				// Enter exits filter mode and focuses back on list
+				m.jumpFilterInput.Blur()
+				return m, nil
+			case kb.Global.Cancel:
+				// Esc cancels the entire jump overlay
+				m.jumpingToFolder = false
+				m.jumpFilterInput.Blur()
+				m.jumpFilterInput.SetValue("")
+				m.jumpFiltered = nil
+				return m, nil
+			default:
+				// All other keys go to the filter input
+				var cmd tea.Cmd
+				m.jumpFilterInput, cmd = m.jumpFilterInput.Update(msg)
+				// Apply filter after each keystroke
+				m.applyJumpFilter()
+				m.jumpTargetIdx = 0
+				return m, cmd
+			}
+		}
+		return m, nil
+	}
+	
+	// Filter input not focused - handle navigation
+	if msg, ok := msg.(tea.KeyPressMsg); ok {
+		switch msg.String() {
+		case kb.Global.Cancel:
+			m.jumpingToFolder = false
+			m.jumpFilterInput.SetValue("")
+			m.jumpFiltered = nil
+			return m, nil
+		case kb.Inbox.Filter:
+			// Start filtering - focus the input
+			m.jumpFilterInput.Focus()
+			return m, textinput.Blink
+		case "up", kb.Global.NavUp:
+			list := m.getJumpList()
+			if len(list) > 0 {
+				m.jumpTargetIdx--
+				if m.jumpTargetIdx < 0 {
+					m.jumpTargetIdx = len(list) - 1
+				}
+			}
+			return m, nil
+		case keyDown, kb.Global.NavDown:
+			list := m.getJumpList()
+			if len(list) > 0 {
+				m.jumpTargetIdx++
+				if m.jumpTargetIdx >= len(list) {
+					m.jumpTargetIdx = 0
+				}
+			}
+			return m, nil
+		case keyEnter:
+			list := m.getJumpList()
+			if len(list) > 0 && m.jumpTargetIdx < len(list) {
+				var targetFolder string
+				if len(m.jumpFiltered) > 0 {
+					targetFolder = m.folders[m.jumpFiltered[m.jumpTargetIdx]]
+				} else {
+					targetFolder = m.folders[m.jumpTargetIdx]
+				}
+				m.jumpingToFolder = false
+				m.jumpFilterInput.SetValue("")
+				m.jumpFiltered = nil
+				// Find the index of the target folder
+				for i, f := range m.folders {
+					if f == targetFolder {
+						m.activeFolderIdx = i
+						break
+					}
+				}
+				return m, m.switchFolder()
+			}
+		}
+	}
+	return m, nil
+}
+
+// applyJumpFilter filters the folder list based on the current filter string
+func (m *FolderInbox) applyJumpFilter() {
+	query := strings.ToLower(m.jumpFilterInput.Value())
+	if query == "" {
+		m.jumpFiltered = nil
+		return
+	}
+	
+	m.jumpFiltered = m.jumpFiltered[:0]
+	for i, folder := range m.folders {
+		if strings.Contains(strings.ToLower(folder), query) {
+			m.jumpFiltered = append(m.jumpFiltered, i)
+		}
+	}
+}
+
+// getJumpList returns the current list of folders (filtered or all)
+func (m *FolderInbox) getJumpList() []int {
+	if len(m.jumpFiltered) > 0 {
+		return m.jumpFiltered
+	}
+	// Return indices for all folders
+	all := make([]int, len(m.folders))
+	for i := range m.folders {
+		all[i] = i
+	}
+	return all
+}
+
 // moveFolderChoices returns all folders except the current one.
 func (m *FolderInbox) moveFolderChoices() []string {
 	var choices []string
@@ -647,6 +789,11 @@ func (m *FolderInbox) View() tea.View {
 	// If move overlay is active, render it on top
 	if m.movingEmail {
 		content = m.renderWithMoveOverlay(content)
+	}
+
+	// If jump-to-folder overlay is active, render it on top
+	if m.jumpingToFolder {
+		content = m.renderWithJumpOverlay(content)
 	}
 
 	v := tea.NewView(content)
@@ -745,6 +892,86 @@ func (m *FolderInbox) renderWithMoveOverlay(content string) string {
 	// Composite the box as a floating layer centered over the content, the same
 	// way the command palette does. The background is preserved on all sides;
 	// only the box's own cells are replaced.
+	return overlay.Center(content, box, m.width, m.height)
+}
+
+func (m *FolderInbox) renderWithJumpOverlay(content string) string {
+	if len(m.folders) == 0 {
+		return content
+	}
+
+	var b strings.Builder
+	
+	// Show filter input if focused, otherwise just the title
+	if m.jumpFilterInput.Focused() {
+		b.WriteString(moveOverlayTitleStyle.Render("Filter folders:"))
+		b.WriteString("\n")
+		m.jumpFilterInput.SetWidth(40)
+		b.WriteString(m.jumpFilterInput.View())
+		b.WriteString("\n\n")
+	} else {
+		title := t("folder_inbox.jump_to_folder")
+		if m.jumpFilterInput.Value() != "" {
+			title = title + " [" + m.jumpFilterInput.Value() + "]"
+		}
+		b.WriteString(moveOverlayTitleStyle.Render(title))
+		b.WriteString("\n")
+	}
+
+	// Get the current list (filtered or all)
+	list := m.getJumpList()
+	
+	// Limit visible items to prevent overflow (similar to command palette)
+	maxVisible := 8
+	startIdx := 0
+	if m.jumpTargetIdx >= maxVisible {
+		startIdx = m.jumpTargetIdx - maxVisible + 1
+	}
+	endIdx := startIdx + maxVisible
+	if endIdx > len(list) {
+		endIdx = len(list)
+	}
+	
+	for i := startIdx; i < endIdx; i++ {
+		var folderIdx int
+		if len(m.jumpFiltered) > 0 {
+			folderIdx = m.jumpFiltered[i]
+		} else {
+			folderIdx = i
+		}
+		
+		displayName := m.formatFolderName(m.folders[folderIdx])
+		if i == m.jumpTargetIdx {
+			b.WriteString(moveSelectedItemStyle.Render("> " + displayName))
+		} else {
+			b.WriteString(moveItemStyle.Render("  " + displayName))
+		}
+		if i < endIdx-1 {
+			b.WriteString("\n")
+		}
+	}
+	
+	// Show message if no matches
+	if len(list) == 0 {
+		b.WriteString(lipgloss.NewStyle().Foreground(theme.ActiveTheme.MutedText).Render("No matching folders"))
+	}
+
+	b.WriteString("\n\n")
+	
+	// Update help text based on filter state
+	var helpText string
+	if m.jumpFilterInput.Focused() {
+		helpText = "enter: apply filter • esc: cancel"
+	} else if m.jumpFilterInput.Value() != "" {
+		helpText = "f: clear filter • j/k: navigate • enter: jump • esc: cancel"
+	} else {
+		helpText = "f: filter folders • j/k: navigate • enter: jump • esc: cancel"
+	}
+	b.WriteString(helpStyle.Render(helpText))
+
+	box := moveOverlayStyle.Render(b.String())
+
+	// Composite the box as a floating layer centered over the content
 	return overlay.Center(content, box, m.width, m.height)
 }
 

@@ -82,6 +82,7 @@
     "folder_inbox": {
       "folders_title": "フォルダ",
       "move_to_folder": "フォルダに移動:",
+      "jump_to_folder": "フォルダに移動:",
       "move_single": "メールをフォルダに移動:",
       "move_multiple": {
         "other": "{count}件のメールをフォルダに移動:"

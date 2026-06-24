@@ -106,6 +106,7 @@ func BuildCommands(current tea.Model, folderInbox *tui.FolderInbox) []tui.Palett
 			tui.PaletteCommand{Title: "Archive selected", Hint: kb.Inbox.Archive, Keywords: "file store", Action: KeyAction(kb.Inbox.Archive)},
 			tui.PaletteCommand{Title: "Delete selected", Hint: kb.Inbox.Delete, Keywords: "trash remove", Action: KeyAction(kb.Inbox.Delete)},
 			tui.PaletteCommand{Title: "Move to folder", Hint: kb.Folder.Move, Keywords: "file relocate", Action: KeyAction(kb.Folder.Move)},
+			tui.PaletteCommand{Title: "Jump to folder", Keywords: "navigate switch folder go", Action: func() tea.Msg { return tui.JumpToFolderMsg{} }},
 		)
 		if fi, ok := current.(*tui.FolderInbox); ok && fi.HasSplitPreview() {
 			if ev := fi.GetPreviewPane(); ev != nil {

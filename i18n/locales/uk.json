@@ -82,6 +82,7 @@
     "folder_inbox": {
       "folders_title": "Теки",
       "move_to_folder": "Перемістити до теки:",
+      "jump_to_folder": "Перемістити до теки:",
       "move_single": "Перемістити лист до теки:",
       "move_multiple": {
         "one": "Перемістити {count} лист до теки:",
