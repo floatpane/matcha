@@ -2,6 +2,7 @@ package view
 
 import (
 	"os"
+	"runtime"
 	"testing"
 )
 
@@ -51,6 +52,9 @@ func TestMaxImageCellDefaultsWhenNoTerminal(t *testing.T) {
 }
 
 func TestTerminalSizeFrom(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("TIOCGWINSZ is unavailable on Windows")
+	}
 	// The current process stdin/stdout may or may not be a terminal. We just
 	// verify the helper doesn't panic and returns sensible values when given a
 	// valid file.

@@ -18,8 +18,8 @@ import (
 	"github.com/floatpane/matcha/internal/loglevel"
 	"github.com/floatpane/matcha/theme"
 	"github.com/floatpane/termimage"
+	"golang.org/x/term"
 	lru "github.com/hashicorp/golang-lru/v2"
-	"golang.org/x/sys/unix"
 )
 
 var htmlSanitizer htmlsanitizer.Sanitizer = htmlsanitizer.NewLibSanitizer()
@@ -455,12 +455,11 @@ type termSize struct {
 
 // terminalSizeFrom attempts to read the terminal dimensions using the tty ioctl.
 func terminalSizeFrom(f *os.File) (termSize, bool) {
-	fd := f.Fd()
-	ws, err := unix.IoctlGetWinsize(int(fd), unix.TIOCGWINSZ)
-	if err != nil || ws.Col == 0 || ws.Row == 0 {
+	cols, rows, err := term.GetSize(int(f.Fd()))
+	if err != nil || cols < 1 || rows < 1 {
 		return termSize{}, false
 	}
-	return termSize{cols: int(ws.Col), rows: int(ws.Row)}, true
+	return termSize{cols: cols, rows: rows}, true
 }
 
 // RenderImageToStdout writes an image directly to stdout at the given screen
