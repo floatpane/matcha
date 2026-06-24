@@ -18,8 +18,8 @@ import (
 	"github.com/floatpane/matcha/internal/loglevel"
 	"github.com/floatpane/matcha/theme"
 	"github.com/floatpane/termimage"
-	"golang.org/x/sys/unix"
 	lru "github.com/hashicorp/golang-lru/v2"
+	"golang.org/x/sys/unix"
 )
 
 var htmlSanitizer htmlsanitizer.Sanitizer = htmlsanitizer.NewLibSanitizer()
