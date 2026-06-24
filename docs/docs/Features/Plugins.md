@@ -2,6 +2,42 @@
 
 Matcha supports Lua plugins for extending functionality. Plugins can react to events like receiving emails, sending messages, switching folders, and more.
 
+## Architecture
+
+```mermaid
+flowchart TD
+    subgraph PM["Plugin Manager"]
+        L["gopher-lua VM"]
+        API["matcha.* API bindings"]
+        REG["registeredHook registry"]
+    end
+
+    subgraph PLUGS["~/.config/matcha/plugins/"]
+        P1["hello.lua"]
+        P2["notify_github.lua"]
+        P3["my_plugin/init.lua"]
+    end
+
+    subgraph TUI["Matcha Core"]
+        E["Event Bus"]
+        C["Composer"]
+        I["Inbox"]
+        S["Storage"]
+    end
+
+    P1 -->|"loaded on startup"| L
+    P2 -->|"loaded on startup"| L
+    P3 -->|"loaded on startup"| L
+    L --> API
+    API --> REG
+    REG --> E
+    E -->|"startup / shutdown"| L
+    E -->|"email_received / email_viewed"| I
+    E -->|"composer_updated"| C
+    API --> S
+    S -->|"per-plugin data.json"| PLUGS
+```
+
 ## Getting Started
 
 ### Plugin Location

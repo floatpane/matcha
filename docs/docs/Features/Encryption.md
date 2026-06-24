@@ -2,6 +2,37 @@
 
 Matcha supports optional full-disk encryption of all local data using a password you choose. The password is never stored anywhere — not on disk, not in the OS keyring, not in environment variables. You enter it each time you open matcha.
 
+## Architecture
+
+```mermaid
+flowchart TD
+    subgraph LOCK["Startup"]
+        UI["Lock Screen UI"]
+    end
+
+    subgraph VAULT["go-secretbox Vault"]
+        PWD["User Password"]
+        ARG["Argon2id KDF"]
+        KEY["AES-256-GCM Key"]
+        META["secure.meta"]
+    end
+
+    subgraph DATA["Protected Local Data"]
+        CFG["~/.config/matcha/config.json"]
+        CACHE["Per-folder email cache"]
+        FCACHE["folder_cache.json"]
+    end
+
+    UI -->|"Enter password"| PWD
+    PWD --> ARG
+    ARG --> KEY
+    KEY -->|"decrypt"| META
+    META -->|"derive file keys"| CFG
+    META -->|"derive file keys"| CACHE
+    META -->|"derive file keys"| FCACHE
+    CFG -->|"account passwords"| KR[(OS Keyring)]
+```
+
 Encryption is powered by [**go-secretbox**](https://github.com/floatpane/go-secretbox). Full specification and technical details are at [secretbox.floatpane.com](https://secretbox.floatpane.com).
 
 ## Enabling Encryption

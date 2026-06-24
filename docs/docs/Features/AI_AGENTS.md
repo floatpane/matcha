@@ -9,6 +9,36 @@ Matcha can be used by AI coding agents (like Claude Code) to send emails on your
 
 ## How It Works
 
+```mermaid
+sequenceDiagram
+    participant A as AI Agent / Skill
+    participant M as matcha send CLI
+    participant C as Config
+    participant S as Sender
+    participant I as SMTP/IMAP Server
+
+    A->>M: Construct matcha send command with --to, --subject, --body, etc.
+    M->>C: Load accounts from ~/.config/matcha/config.json
+    alt --from is provided
+        M->>C: Get account by email address
+    else no --from
+        M->>C: Use first configured account
+    end
+    M->>M: Resolve credentials (keyring / PassCmd / OAuth2)
+    opt Signing/Encryption requested
+        M->>M: Sign with PGP/S-MIME or encrypt with S-MIME
+    end
+    M->>M: Convert Markdown body to HTML, inline images to CID
+    M->>S: Build MIME message and send via SMTP
+    S->>I: Transmit email
+    I-->>S: Accept / bounce
+    opt Account supports sent folder
+        M->>I: Append copy to Sent mailbox (IMAP)
+    end
+    S-->>M: Result
+    M-->>A: Return success / error
+```
+
 The `matcha send` command provides a non-interactive interface for sending emails. AI agents can construct and execute this command to send emails without launching the TUI.
 
 ```bash

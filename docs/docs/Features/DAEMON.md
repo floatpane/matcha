@@ -112,6 +112,38 @@ launchctl load ~/Library/LaunchAgents/com.matcha.daemon.plist
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    subgraph TUI["TUI Process (matcha)"]
+        T["Bubble Tea UI"]
+        DC["daemonclient.Service"]
+    end
+
+    subgraph DAE["Daemon Process (matcha daemon)"]
+        RPC["RPC Handler"]
+        IDLE["IMAP IDLE Watchers"]
+        SYNC["Periodic Sync"]
+        NOTIFY["Desktop Notifications"]
+    end
+
+    subgraph MAIL["Email Providers"]
+        IMAP["IMAP Server"]
+        JMAP["JMAP Server"]
+        POP3["POP3 Server"]
+    end
+
+    T <-->|"JSON-RPC over Unix Socket"| DC
+    DC <-->|"auto-connect / auto-start"| RPC
+    RPC --> IDLE
+    RPC --> SYNC
+    IDLE -->|"new mail events"| NOTIFY
+    IDLE --> IMAP
+    SYNC --> IMAP
+    SYNC --> JMAP
+    SYNC --> POP3
+    NOTIFY -->|"only when no TUI connected"| OS[OS Notification Service]
+```
+
 The daemon is split across three packages:
 
 - **`daemonrpc/`** — Shared protocol definitions (request/response types, event types, transport layer). Used by both daemon and client.

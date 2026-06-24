@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "mermaid": "^11.15.0",
     "vitepress": "^1.6.0",
+    "vitepress-plugin-mermaid": "^2.0.17",
     "vue": "^3.5.0"
   },
   "engines": {

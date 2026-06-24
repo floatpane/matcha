@@ -1,6 +1,8 @@
 import { defineConfig } from "vitepress";
+import { withMermaid } from "vitepress-plugin-mermaid";
 
-export default defineConfig({
+export default withMermaid(
+  defineConfig({
   title: "Matcha",
   description:
     "A modern, beautiful, and feature-rich email client for the terminal.",
@@ -128,4 +130,8 @@ export default defineConfig({
       text: "Edit this page on GitHub",
     },
   },
-});
+  mermaid: {
+    theme: "dark",
+  },
+})
+);

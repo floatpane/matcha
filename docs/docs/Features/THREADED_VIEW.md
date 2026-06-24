@@ -69,6 +69,30 @@ Matcha threads emails entirely on the client. Threading uses:
 Threading is recomputed whenever the email cache changes for a folder, so new
 mail slots into existing conversations without a manual refresh.
 
+## Algorithm
+
+```mermaid
+flowchart TD
+    A["Fetch new email cache"] --> B{"Extract Message-ID"}
+    B --> C["Build message table by ID"]
+    C --> D["Parse In-Reply-To"]
+    C --> E["Parse References list"]
+    D --> F{"Parent exists?"}
+    E --> F
+    F -->|Yes| G["Attach under parent thread"]
+    F -->|No| H{"Subject matches Re:/Fwd: stripped subject?"}
+    H -->|Yes| I["Subject-based fallback grouping"]
+    H -->|No| J["Start new root thread"]
+    G --> K["Collapse under root message"]
+    I --> K
+    J --> K
+    K --> L{"Folder has per-folder override?"}
+    L -->|Yes| M["Use override value"]
+    L -->|No| N["Use global Config.EnableThreaded"]
+    M --> O["Render threaded or flat inbox"]
+    N --> O
+```
+
 ## Per-folder overrides
 
 The setting is split into two layers:
