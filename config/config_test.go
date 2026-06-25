@@ -2,9 +2,11 @@ package config
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -714,17 +716,57 @@ func TestPassCmd(t *testing.T) {
 
 func TestWarnUnknownConfigKeys(t *testing.T) {
 	tests := []struct {
-		name string
-		json string
+		name     string
+		json     string
+		wantsLog []string // substrings we expect in log output
 	}{
-		{"no unknown keys", `{"accounts": [{"name": "test", "email": "a@b.com", "service_provider": "gmail"}], "theme": "dark"}`},
-		{"empty object", `{}`},
-		{"invalid json", `not json`},
-		{"nested with unknown", `{"unknown_top": true, "accounts": [{"name": "test", "email": "a@b.com", "unknown_field": true}]}`},
+		{
+			"no unknown keys",
+			`{"accounts": [{"name": "test", "email": "a@b.com", "service_provider": "gmail"}], "theme": "dark"}`,
+			nil,
+		},
+		{
+			"empty object",
+			`{}`,
+			nil,
+		},
+		{
+			"invalid json",
+			`not json`,
+			nil,
+		},
+		{
+			"unknown top-level key",
+			`{"unknown_top": true}`,
+			[]string{"unknown config key"},
+		},
+		{
+			"unknown account key",
+			`{"accounts": [{"name": "test", "email": "a@b.com", "service_provider": "gmail", "unknown_field": true}]}`,
+			[]string{"unknown config key", "accounts[0]"},
+		},
+		{
+			"known keys produce no warnings",
+			`{"accounts": [{"name": "test", "email": "a@b.com", "service_provider": "gmail", "password": "s3cret"}], "theme": "dark"}`,
+			nil,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			var buf strings.Builder
+			log.SetOutput(&buf)
 			warnUnknownConfigKeys([]byte(tc.json))
+			log.SetOutput(os.Stderr)
+
+			got := buf.String()
+			for _, want := range tc.wantsLog {
+				if !strings.Contains(got, want) {
+					t.Errorf("expected log to contain %q, got: %s", want, got)
+				}
+			}
+			if len(tc.wantsLog) == 0 && got != "" {
+				t.Errorf("expected no log output, got: %s", got)
+			}
 		})
 	}
 }
