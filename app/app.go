@@ -1928,7 +1928,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		m.updateCurrentWindowSize()
 		return m, m.current.Init()
 
-	case tui.FileSelectedMsg, tui.CancelFilePickerMsg:
+	case tui.FileSelectedMsg:
+		m.pendingExport = nil
+		m.restoreView()
+		// Forward the selected paths to the restored composer so its
+		// FileSelectedMsg handler can append them to attachmentPaths.
+		// Without this, attachments selected in the picker are dropped.
+		if m.current != nil {
+			newModel, cmd := m.current.Update(msg)
+			m.current = newModel
+			return m, cmd
+		}
+		return m, nil
+
+	case tui.CancelFilePickerMsg:
 		m.pendingExport = nil
 		m.restoreView()
 		return m, nil
