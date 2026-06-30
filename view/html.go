@@ -8,6 +8,7 @@ import (
 	"mime/quotedprintable"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,92 @@ const termGhostty = "ghostty"
 
 func linkStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(theme.ActiveTheme.Link)
+}
+
+func h3Style() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(theme.ActiveTheme.Accent).
+		Bold(true)
+}
+
+func h4Style() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(theme.ActiveTheme.Accent).
+		Bold(false)
+}
+
+func h5Style() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(theme.ActiveTheme.Secondary).
+		Bold(true)
+}
+
+func h6Style() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(theme.ActiveTheme.Secondary).
+		Bold(false).
+		Italic(true)
+}
+
+func hrStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(theme.ActiveTheme.Secondary)
+}
+
+func renderStyledText(s string, style int) string {
+	if style == 0 || strings.TrimSpace(s) == "" {
+		return s
+	}
+	st := lipgloss.NewStyle()
+	if style&clib.HTMLStyleBold != 0 {
+		st = st.Bold(true)
+	}
+	if style&clib.HTMLStyleItalic != 0 {
+		st = st.Italic(true)
+	}
+	if style&clib.HTMLStyleUnderline != 0 {
+		st = st.Underline(true)
+	}
+	if style&clib.HTMLStyleStrikethrough != 0 {
+		st = st.Strikethrough(true)
+	}
+	return st.Render(s)
+}
+
+func renderListItem(itemText, depthStr, indexStr string) string {
+	depth := 0
+	if d, err := strconv.Atoi(depthStr); err == nil {
+		depth = d
+	}
+	if depth < 0 {
+		depth = 0
+	}
+	indent := strings.Repeat("  ", depth)
+	var marker string
+	if indexStr != "" {
+		marker = indexStr + ". "
+	} else {
+		marker = "• "
+	}
+	lines := strings.Split(strings.TrimSpace(itemText), "\n")
+	for i, line := range lines {
+		if i == 0 {
+			lines[i] = indent + marker + line
+		} else {
+			lines[i] = indent + strings.Repeat(" ", len(marker)) + line
+		}
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func renderHR() string {
+	width := 40
+	if cols, _, ok := getTerminalSize(); ok && cols > 0 {
+		width = cols
+	}
+	if width > 60 {
+		width = 60
+	}
+	return "\n" + hrStyle().Render(strings.Repeat("─", width)) + "\n"
 }
 
 // hyperlinkSupported checks if the terminal supports OSC 8 hyperlinks.
@@ -614,7 +701,7 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 	for _, elem := range elements {
 		switch elem.Type {
 		case clib.HElemText:
-			text.WriteString(elem.Text)
+			text.WriteString(renderStyledText(elem.Text, elem.Style))
 
 		case clib.HElemH1:
 			text.WriteString(h1Style.Render(elem.Text))
@@ -622,6 +709,22 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 
 		case clib.HElemH2:
 			text.WriteString(h2Style.Render(elem.Text))
+			text.WriteString("\n\n")
+
+		case clib.HElemH3:
+			text.WriteString(h3Style().Render(elem.Text))
+			text.WriteString("\n\n")
+
+		case clib.HElemH4:
+			text.WriteString(h4Style().Render(elem.Text))
+			text.WriteString("\n\n")
+
+		case clib.HElemH5:
+			text.WriteString(h5Style().Render(elem.Text))
+			text.WriteString("\n\n")
+
+		case clib.HElemH6:
+			text.WriteString(h6Style().Render(elem.Text))
 			text.WriteString("\n\n")
 
 		case clib.HElemLink:
@@ -695,6 +798,12 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 
 		case clib.HElemCode:
 			text.WriteString(renderCodeBlock(elem.Text, elem.Attr1))
+
+		case clib.HElemListItem:
+			text.WriteString(renderListItem(elem.Text, elem.Attr1, elem.Attr2))
+
+		case clib.HElemHR:
+			text.WriteString(renderHR())
 		}
 	}
 

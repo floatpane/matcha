@@ -38,7 +38,8 @@ func HTMLToElements(html string) ([]HTMLElement, bool) {
 	for i := 0; i < count; i++ {
 		ce := &cElems[i]
 		elements[i] = HTMLElement{
-			Type: int(ce._type),
+			Type:  int(ce._type),
+			Style: int(ce.style),
 		}
 		if ce.text != nil {
 			elements[i].Text = C.GoString(ce.text)
