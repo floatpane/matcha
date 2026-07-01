@@ -34,7 +34,10 @@ func ClearKittyGraphics() {
 }
 
 var (
-	emailHeaderStyle   = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).Padding(0, 1)
+	emailHeaderStyle   = lipgloss.NewStyle().Padding(1, 2).BorderStyle(lipgloss.NormalBorder()).BorderBottom(true)
+	emailSubjectStyle  = lipgloss.NewStyle().Bold(true)
+	emailSenderStyle   = lipgloss.NewStyle()
+	emailMetaStyle     = lipgloss.NewStyle()
 	attachmentBoxStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), false, false, false, true).PaddingLeft(2).MarginTop(1)
 )
 
@@ -384,8 +387,33 @@ func (m *EmailView) View() tea.View {
 		}
 	}
 
-	header := fmt.Sprintf("To: %s | From: %s | Subject: %s%s", strings.Join(m.email.To, ", "), m.email.From, m.email.Subject, cryptoStatus.String())
-	styledHeader := emailHeaderStyle.Width(m.viewport.Width()).Render(header)
+	senderName := parseSenderName(m.email.From)
+	emailAddr := ""
+	if idx := strings.Index(m.email.From, "<"); idx > 0 {
+		endIdx := strings.Index(m.email.From, ">")
+		if endIdx > idx {
+			emailAddr = "(" + m.email.From[idx+1:endIdx] + ")"
+		}
+	}
+	dateStr := m.email.Date.Local().Format("Jan 02, 2006 3:04 PM")
+
+	headerContent := lipgloss.JoinVertical(
+		lipgloss.Left,
+		lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			emailSubjectStyle.Render(m.email.Subject+cryptoStatus.String()),
+			lipgloss.NewStyle().Width(m.viewport.Width()-lipgloss.Width(emailSubjectStyle.Render(m.email.Subject+cryptoStatus.String()))-lipgloss.Width(emailMetaStyle.Render(dateStr))-4).Render(""),
+			emailMetaStyle.Render(dateStr),
+		),
+		lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			emailSenderStyle.Render(senderName),
+			lipgloss.NewStyle().Padding(0, 1).Render(emailAddr),
+		),
+		emailMetaStyle.Width(m.viewport.Width()).Render(strings.Join(m.email.To, ", ")),
+	)
+
+	styledHeader := emailHeaderStyle.Width(m.viewport.Width()).Render(headerContent)
 
 	var help string
 	if m.focusOnAttachments {
