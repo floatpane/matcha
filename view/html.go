@@ -680,6 +680,12 @@ func processBody(rawBody, mimeType string, inline map[string]string, h1Style, h2
 	return bodyStyle.Render(result), placements, nil
 }
 
+type pendingImage struct {
+	index   int
+	encoded string
+	rows    int
+}
+
 func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Style lipgloss.Style, disableImages bool) (string, []ImagePlacement, error) {
 	// Parse HTML into structured elements using C parser.
 	elements, ok := clib.HTMLToElements(string(htmlBody))
@@ -690,11 +696,7 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 	// Process elements: apply styles and collect image placements.
 	var text strings.Builder
 	var imgIndex int
-	var pendingImages []struct {
-		index   int
-		encoded string
-		rows    int
-	}
+	var pendingImages []pendingImage
 
 	onWroteRegex := regexp.MustCompile(`On\s+(.+?),\s+(.+?)\s+wrote:`)
 
@@ -735,42 +737,7 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 			}
 
 		case clib.HElemImage:
-			src := strings.TrimSpace(elem.Attr1)
-			alt := stripTerminalControls(elem.Attr2)
-			if hasTerminalControls(src) {
-				continue
-			}
-
-			if !disableImages && imageProtocolSupported() {
-				payload := resolveImagePayload(src, inline)
-
-				if payload != "" {
-					encoded, rows := prerenderImage(payload)
-					if encoded == "" {
-						debugImageProtocol("prerender failed for src=%s", src)
-					} else {
-						debugImageProtocol("collected image placement src=%s rows=%d", src, rows)
-
-						idx := imgIndex
-						imgIndex++
-						pendingImages = append(pendingImages, struct {
-							index   int
-							encoded string
-							rows    int
-						}{idx, encoded, rows})
-
-						fmt.Fprintf(&text, "\n[[MATCHA_IMG:%d]]", idx)
-						fmt.Fprintf(&text, "\n%s%d%s\n", imageRowPlaceholderPrefix, rows, imageRowPlaceholderSuffix)
-						continue
-					}
-				}
-				debugImageProtocol("no payload for src=%s", src)
-			}
-			if isRemoteImageURL(src) && hyperlinkSupported() {
-				fmt.Fprintf(&text, "\n %s \n", hyperlink(src, fmt.Sprintf("[Click here to view image: %s]", alt)))
-			} else {
-				fmt.Fprintf(&text, "\n %s \n", linkStyle().Render(fmt.Sprintf("[Image: %s, %s]", alt, src)))
-			}
+			renderImageElement(&text, &imgIndex, &pendingImages, elem, inline, disableImages)
 
 		case clib.HElemTable:
 			headerRows := 0
@@ -816,33 +783,75 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 	// Now expand the image row placeholders to actual newlines
 	result = expandImageRowPlaceholders(result)
 
-	// Build image placements by finding the line numbers of image markers.
+	placements, result := buildImagePlacements(result, pendingImages)
+
+	return result, placements, nil
+}
+
+func renderImageElement(text *strings.Builder, imgIndex *int, pendingImages *[]pendingImage, elem clib.HTMLElement, inline map[string]string, disableImages bool) {
+	src := strings.TrimSpace(elem.Attr1)
+	alt := stripTerminalControls(elem.Attr2)
+	if hasTerminalControls(src) {
+		return
+	}
+
+	if !disableImages && imageProtocolSupported() {
+		payload := resolveImagePayload(src, inline)
+
+		if payload != "" {
+			encoded, rows := prerenderImage(payload)
+			if encoded == "" {
+				debugImageProtocol("prerender failed for src=%s", src)
+			} else {
+				debugImageProtocol("collected image placement src=%s rows=%d", src, rows)
+
+				idx := *imgIndex
+				*imgIndex++
+				*pendingImages = append(*pendingImages, pendingImage{idx, encoded, rows})
+
+				fmt.Fprintf(text, "\n[[MATCHA_IMG:%d]]", idx)
+				fmt.Fprintf(text, "\n%s%d%s\n", imageRowPlaceholderPrefix, rows, imageRowPlaceholderSuffix)
+				return
+			}
+		}
+		debugImageProtocol("no payload for src=%s", src)
+	}
+	if isRemoteImageURL(src) && hyperlinkSupported() {
+		fmt.Fprintf(text, "\n %s \n", hyperlink(src, fmt.Sprintf("[Click here to view image: %s]", alt)))
+	} else {
+		fmt.Fprintf(text, "\n %s \n", linkStyle().Render(fmt.Sprintf("[Image: %s, %s]", alt, src)))
+	}
+}
+
+func buildImagePlacements(result string, pendingImages []pendingImage) ([]ImagePlacement, string) {
+	if len(pendingImages) == 0 {
+		return nil, result
+	}
+
 	var placements []ImagePlacement
-	if len(pendingImages) > 0 {
-		lines := strings.Split(result, "\n")
-		imgMarkerRegex := regexp.MustCompile(`\[\[MATCHA_IMG:(\d+)\]\]`)
-		for lineNum, line := range lines {
-			if matches := imgMarkerRegex.FindStringSubmatch(line); matches != nil {
-				var idx int
-				fmt.Sscanf(matches[1], "%d", &idx) //nolint:errcheck,gosec
-				for _, pi := range pendingImages {
-					if pi.index == idx {
-						placements = append(placements, ImagePlacement{
-							Line:    lineNum,
-							Encoded: pi.encoded,
-							Rows:    pi.rows,
-						})
-						break
-					}
+	lines := strings.Split(result, "\n")
+	imgMarkerRegex := regexp.MustCompile(`\[\[MATCHA_IMG:(\d+)\]\]`)
+	for lineNum, line := range lines {
+		if matches := imgMarkerRegex.FindStringSubmatch(line); matches != nil {
+			var idx int
+			fmt.Sscanf(matches[1], "%d", &idx) //nolint:errcheck,gosec
+			for _, pi := range pendingImages {
+				if pi.index == idx {
+					placements = append(placements, ImagePlacement{
+						Line:    lineNum,
+						Encoded: pi.encoded,
+						Rows:    pi.rows,
+					})
+					break
 				}
 			}
 		}
-
-		// Remove the image markers from the text (leave the spacing)
-		result = imgMarkerRegex.ReplaceAllString(result, "")
 	}
 
-	return result, placements, nil
+	// Remove the image markers from the text (leave the spacing)
+	result = imgMarkerRegex.ReplaceAllString(result, "")
+
+	return placements, result
 }
 
 func resolveImagePayload(src string, inline map[string]string) string {
