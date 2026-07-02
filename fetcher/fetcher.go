@@ -538,7 +538,13 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 	if fetchEmail == "" {
 		fetchEmail = strings.ToLower(strings.TrimSpace(account.Email))
 	}
-	isSentMailbox := mailbox == getSentMailbox(account)
+	// Resolve the sent mailbox name dynamically so localized names (e.g.
+	// "Verzonden items" on Dutch Exchange) are recognized as the Sent folder.
+	sentMailbox, err := getMailboxByAttr(c, imap.MailboxAttrSent)
+	if err != nil {
+		sentMailbox = getSentMailbox(account)
+	}
+	isSentMailbox := mailbox == sentMailbox
 
 	// Delivery header section for matching auto-forwarded emails
 	deliveryHeaderSection := &imap.FetchItemBodySection{
@@ -1567,7 +1573,18 @@ func FetchEmails(account *config.Account, limit, offset uint32) ([]Email, error)
 }
 
 func FetchSentEmails(account *config.Account, limit, offset uint32) ([]Email, error) {
-	return FetchMailboxEmails(account, getSentMailbox(account), limit, offset)
+	c, err := connect(account)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close() //nolint:errcheck
+
+	sentMailbox, err := getMailboxByAttr(c, imap.MailboxAttrSent)
+	if err != nil {
+		sentMailbox = getSentMailbox(account)
+	}
+
+	return FetchMailboxEmails(account, sentMailbox, limit, offset)
 }
 
 func FetchEmailBody(account *config.Account, uid uint32) (string, string, []Attachment, error) {
@@ -1575,7 +1592,18 @@ func FetchEmailBody(account *config.Account, uid uint32) (string, string, []Atta
 }
 
 func FetchSentEmailBody(account *config.Account, uid uint32) (string, string, []Attachment, error) {
-	return FetchEmailBodyFromMailbox(account, getSentMailbox(account), uid)
+	c, err := connect(account)
+	if err != nil {
+		return "", "", nil, err
+	}
+	defer c.Close() //nolint:errcheck
+
+	sentMailbox, err := getMailboxByAttr(c, imap.MailboxAttrSent)
+	if err != nil {
+		sentMailbox = getSentMailbox(account)
+	}
+
+	return FetchEmailBodyFromMailbox(account, sentMailbox, uid)
 }
 
 func FetchAttachment(account *config.Account, uid uint32, partID string, encoding string) ([]byte, error) {
@@ -1583,7 +1611,18 @@ func FetchAttachment(account *config.Account, uid uint32, partID string, encodin
 }
 
 func FetchSentAttachment(account *config.Account, uid uint32, partID string, encoding string) ([]byte, error) {
-	return FetchAttachmentFromMailbox(account, getSentMailbox(account), uid, partID, encoding)
+	c, err := connect(account)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close() //nolint:errcheck
+
+	sentMailbox, err := getMailboxByAttr(c, imap.MailboxAttrSent)
+	if err != nil {
+		sentMailbox = getSentMailbox(account)
+	}
+
+	return FetchAttachmentFromMailbox(account, sentMailbox, uid, partID, encoding)
 }
 
 func DeleteEmail(account *config.Account, uid uint32) error {
@@ -1591,7 +1630,18 @@ func DeleteEmail(account *config.Account, uid uint32) error {
 }
 
 func DeleteSentEmail(account *config.Account, uid uint32) error {
-	return DeleteEmailFromMailbox(account, getSentMailbox(account), uid)
+	c, err := connect(account)
+	if err != nil {
+		return err
+	}
+	defer c.Close() //nolint:errcheck
+
+	sentMailbox, err := getMailboxByAttr(c, imap.MailboxAttrSent)
+	if err != nil {
+		sentMailbox = getSentMailbox(account)
+	}
+
+	return DeleteEmailFromMailbox(account, sentMailbox, uid)
 }
 
 func ArchiveEmail(account *config.Account, uid uint32) error {
@@ -1599,7 +1649,18 @@ func ArchiveEmail(account *config.Account, uid uint32) error {
 }
 
 func ArchiveSentEmail(account *config.Account, uid uint32) error {
-	return ArchiveEmailFromMailbox(account, getSentMailbox(account), uid)
+	c, err := connect(account)
+	if err != nil {
+		return err
+	}
+	defer c.Close() //nolint:errcheck
+
+	sentMailbox, err := getMailboxByAttr(c, imap.MailboxAttrSent)
+	if err != nil {
+		sentMailbox = getSentMailbox(account)
+	}
+
+	return ArchiveEmailFromMailbox(account, sentMailbox, uid)
 }
 
 // AppendToSentMailbox appends a raw RFC822 message to the Sent mailbox via IMAP APPEND.
@@ -1610,7 +1671,10 @@ func AppendToSentMailbox(account *config.Account, rawMsg []byte) error {
 	}
 	defer c.Close() //nolint:errcheck
 
-	sentMailbox := getSentMailbox(account)
+	sentMailbox, err := getMailboxByAttr(c, imap.MailboxAttrSent)
+	if err != nil {
+		sentMailbox = getSentMailbox(account)
+	}
 	appendCmd := c.Append(sentMailbox, int64(len(rawMsg)), &imap.AppendOptions{
 		Flags: []imap.Flag{imap.FlagSeen},
 		Time:  time.Now(),
