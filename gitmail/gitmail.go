@@ -105,3 +105,43 @@ func IsPatch(raw []byte) bool {
 	p, err := mailpatch.ParseBytes(raw)
 	return err == nil && p.HasDiff()
 }
+
+// SendOptions describes how to generate and send a patch email from a local repo.
+type SendOptions struct {
+	// To is the primary recipient address list, comma-separated (required).
+	To string
+	// Cc is the carbon-copy recipient list, comma-separated.
+	Cc string
+	// Subject overrides the patch subject. If empty, the commit subject is used.
+	Subject string
+	// Version is the series revision (1 default, 2 for v2, etc.).
+	Version int
+	// InReplyTo is the Message-ID this patch replies to (for threading).
+	InReplyTo string
+	// References is the full References header value (space-separated Message-IDs).
+	References string
+}
+
+// GeneratePatch generates a format-patch email from a local git repository.
+// It runs `git format-patch --stdout` for the given commit range and returns
+// the raw email bytes.
+func GeneratePatch(repoDir, commitRange string) ([]byte, error) {
+	return patchapply.GeneratePatch(repoDir, commitRange)
+}
+
+// GeneratePatchSeries generates a multi-patch mbox from a local git repository.
+func GeneratePatchSeries(repoDir, commitRange string) ([]byte, error) {
+	return patchapply.GeneratePatchSeries(repoDir, commitRange)
+}
+
+// FormatPatch constructs a format-patch email from structured data using
+// the go-mailpatch Format function. This is useful when you have the diff
+// already and want to construct a proper email without running git.
+func FormatPatch(opts mailpatch.FormatOptions) ([]byte, error) {
+	return mailpatch.Format(opts)
+}
+
+// ParsePatch parses raw format-patch email bytes and returns the structured Patch.
+func ParsePatch(raw []byte) (*mailpatch.Patch, error) {
+	return mailpatch.ParseBytes(raw)
+}

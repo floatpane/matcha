@@ -76,6 +76,8 @@ type EmailView struct {
 	isPreviewMode      bool
 	columnOffset       int // horizontal offset for image rendering in split pane
 	rowOffset          int // vertical offset for image rendering in split pane (vertical layout)
+	isPatch            bool
+	patchInfo          *view.PatchInfo
 }
 
 func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox MailboxKind, disableImages bool) *EmailView {
@@ -133,11 +135,26 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 	// Initial state for showImages matches config unless overridden later
 	showImages := !disableImages
 
+	// Detect git patches and render with diff syntax highlighting.
+	patchInfo := view.DetectPatch(email.Body, email.BodyMIMEType, email.Subject, email.From)
+	isPatch := patchInfo != nil
+
 	body, placements, err := view.ProcessBodyWithInline(email.Body, email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, !showImages)
 	if err != nil {
 		body = fmt.Sprintf("Error rendering body: %v", err)
 	}
 	body = applyBodyTransform(body, email)
+
+	// If a patch was detected, replace the body with the patch-rendered version
+	// (commit message + highlighted diff + metadata banner).
+	if isPatch {
+		// The viewport will be created below with this width; pass it in so the
+		// diff code box can be sized to fit.
+		patchBody, ok := view.RenderPatchBody(email.Body, email.BodyMIMEType, email.Subject, email.From, width)
+		if ok {
+			body = applyBodyTransform(patchBody, email)
+		}
+	}
 
 	// Create header and compute heights that reduce viewport space.
 	header := fmt.Sprintf("From: %s\nSubject: %s", email.From, email.Subject)
@@ -180,6 +197,8 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 		calendarEvent:     calendarEvent,
 		originalICSData:   originalICSData,
 		isPreviewMode:     false,
+		isPatch:           isPatch,
+		patchInfo:         patchInfo,
 	}
 }
 
@@ -319,6 +338,19 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 				}
+			case kb.Email.ApplyPatch:
+				if m.isPatch && m.patchInfo != nil && m.patchInfo.HasDiff {
+					return m, func() tea.Msg {
+						return ApplyPatchMsg{
+							RawEmail:  m.email.Body,
+							Subject:   m.email.Subject,
+							From:      m.email.From,
+							AccountID: m.accountID,
+						}
+					}
+				}
+			case kb.Email.SendPatch:
+				return m, func() tea.Msg { return GoToSendPatchMsg{} }
 			case kb.Email.FocusAttachments:
 				if len(m.email.Attachments) > 0 {
 					m.focusOnAttachments = true
@@ -344,6 +376,12 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			body = fmt.Sprintf("Error rendering body: %v", err)
 		}
 		body = applyBodyTransform(body, m.email)
+		// Re-render patch body on resize if applicable
+		if m.isPatch {
+			if patchBody, ok := view.RenderPatchBody(m.email.Body, m.email.BodyMIMEType, m.email.Subject, m.email.From, m.viewport.Width()); ok {
+				body = applyBodyTransform(patchBody, m.email)
+			}
+		}
 		m.imagePlacements = placements
 		wrapped := wrapBodyToWidth(body, m.viewport.Width())
 		m.viewport.SetContent(wrapped + "\n")
@@ -384,6 +422,10 @@ func (m *EmailView) View() tea.View {
 		}
 	}
 
+	if m.isPatch {
+		cryptoStatus.WriteString(lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [📮 Patch]"))
+	}
+
 	header := fmt.Sprintf("To: %s | From: %s | Subject: %s%s", strings.Join(m.email.To, ", "), m.email.From, m.email.Subject, cryptoStatus.String())
 	styledHeader := emailHeaderStyle.Width(m.viewport.Width()).Render(header)
 
@@ -397,6 +439,10 @@ func (m *EmailView) View() tea.View {
 	} else {
 		var shortcuts strings.Builder
 		shortcuts.WriteString("\uf112 r: reply • \uf064 f: forward • \uea81 d: delete • \uea98 a: archive • \uf435 tab: focus attachments • \ueb06 esc: back to inbox")
+		if m.isPatch && m.patchInfo != nil && m.patchInfo.HasDiff {
+			shortcuts.WriteString(" • \uf126 p: apply patch")
+		}
+		shortcuts.WriteString(" • \uf1d3 P: send patch")
 		if view.ImageProtocolSupported() {
 			shortcuts.WriteString("• \uf03e i: toggle images")
 		}
@@ -485,6 +531,16 @@ func (m *EmailView) GetAccountID() string {
 // GetMailbox returns the mailbox kind for this email view
 func (m *EmailView) GetMailbox() MailboxKind {
 	return m.mailbox
+}
+
+// IsPatch returns true if the currently viewed email is a git patch.
+func (m *EmailView) IsPatch() bool {
+	return m.isPatch
+}
+
+// GetPatchInfo returns the parsed patch metadata, or nil if not a patch.
+func (m *EmailView) GetPatchInfo() *view.PatchInfo {
+	return m.patchInfo
 }
 
 // SetPluginStatus sets a persistent status string from plugins, shown in the help bar.

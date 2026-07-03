@@ -28,7 +28,9 @@
     "rsvp_accept": "1",
     "rsvp_decline": "2",
     "rsvp_tentative": "3",
-    "focus_attachments": "tab"
+    "focus_attachments": "tab",
+    "apply_patch": "p",
+    "send_patch": "P"
   },
   "composer": {
     "external_editor": "ctrl+e",

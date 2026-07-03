@@ -113,6 +113,56 @@ type EmailResultMsg struct {
 	Err error
 }
 
+// ApplyPatchMsg requests applying the currently viewed patch to a local repo.
+type ApplyPatchMsg struct {
+	RawEmail  string
+	Subject   string
+	From      string
+	AccountID string
+}
+
+// PatchStagedMsg signals that a patch has been applied to disk and changes
+// staged via git add, and a commit should now be created (which may require
+// handing the terminal to pinentry for GPG signing).
+type PatchStagedMsg struct {
+	Subject       string
+	From          string
+	CommitMsg     string
+	Files         []string
+	NothingStaged bool
+	Err           error
+}
+
+// PatchApplyResultMsg signals the result of a patch apply operation.
+type PatchApplyResultMsg struct {
+	Subject  string
+	Files    []string
+	Err      error
+	DryRun   bool
+	Warnings []string
+}
+
+// GoToSendPatchMsg signals navigation to the patch-send flow.
+type GoToSendPatchMsg struct{}
+
+// SendPatchMsg requests sending a patch email generated from a local repo.
+type SendPatchMsg struct {
+	To           string
+	Cc           string
+	Subject      string
+	RepoDir      string
+	CommitRange  string
+	AccountID    string
+	FromOverride string
+	Version      int
+}
+
+// PatchGeneratedMsg signals that a patch was generated and is ready to send.
+type PatchGeneratedMsg struct {
+	RawPatch []byte
+	Err      error
+}
+
 type ClearStatusMsg struct{}
 
 type EmailsFetchedMsg struct {

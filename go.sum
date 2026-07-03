@@ -86,12 +86,12 @@ github.com/floatpane/go-icalendar v0.0.1 h1:lF9NhEI4TobX8valDakAFfCnBhM2GDITWMVy
 github.com/floatpane/go-icalendar v0.0.1/go.mod h1:LSy9G+LwUZtfNIAjLlEVRXkuc2A+hq6+pVCIFOiEAyE=
 github.com/floatpane/go-keybind v0.0.1 h1:UrzPQ4ldR9sKQt/efpUfcs6gH8Mwy2NO5vwFTVf0dy0=
 github.com/floatpane/go-keybind v0.0.1/go.mod h1:B8l43ypYOcjknyaHgU0EXUAbrUvfnV2HOzYSzyqcPJI=
-github.com/floatpane/go-mailpatch v0.0.2 h1:ZkV44HiK+8Qx+7TIGdtoetfVuURKZcFWIBmmcrJTwTk=
-github.com/floatpane/go-mailpatch v0.0.2/go.mod h1:mbnMyEWq+x+AH49ysRnSjKN8ZgbbxfYRX2mCQw3n82c=
+github.com/floatpane/go-mailpatch v0.1.0 h1:3b91Z3ib27W3zu+EzZDzl4v2bibRx6VMchCGiXqrxR4=
+github.com/floatpane/go-mailpatch v0.1.0/go.mod h1:mbnMyEWq+x+AH49ysRnSjKN8ZgbbxfYRX2mCQw3n82c=
 github.com/floatpane/go-openpgp-card-hl v0.1.2 h1:wLQU/juvq+gbmNgEdUqP6ukSGeXDLP4riI2s+lpzrjg=
 github.com/floatpane/go-openpgp-card-hl v0.1.2/go.mod h1:Mrx+ukCnpEpMAxyB0p8Ch2gu78Q3Ir40BxBybb2jirw=
-github.com/floatpane/go-patchapply v0.0.1 h1:VtCBe1HfG645axYzHqIGTLZgmmM9Tkoyd7XRJ74y6Ek=
-github.com/floatpane/go-patchapply v0.0.1/go.mod h1:YekZ5hy6gosCoYujvbKuB+cOvy1+lPPC0S/nTpThGQ4=
+github.com/floatpane/go-patchapply v0.1.0 h1:EjbbIqoMiU9gB9fvzym9ql+bL+1qOh4SUTDePwuEOYI=
+github.com/floatpane/go-patchapply v0.1.0/go.mod h1:YekZ5hy6gosCoYujvbKuB+cOvy1+lPPC0S/nTpThGQ4=
 github.com/floatpane/go-secretbox v0.1.0 h1:xNryazmCP0oR/yVxIkHRc5bcV56YrbisY+bMl8BBfwU=
 github.com/floatpane/go-secretbox v0.1.0/go.mod h1:uNVTLb1jty9ZT5HIp3zdFIB3K4V3r2V38QaI+bWMVao=
 github.com/floatpane/go-uds-jsonrpc v0.0.1 h1:/sBlCXVAP9SyLWLj0wlFI07dX/SfXeUM67B4tRwK2QA=

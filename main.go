@@ -129,6 +129,12 @@ func runSubcommand(args []string) {
 			cliutil.Exit(1)
 		}
 		cliutil.Exit(0)
+	case "send-patch":
+		if err := matchaCli.RunSendPatch(args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "send-patch failed: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
 	case "install":
 		if err := matchaCli.RunInstall(args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "install failed: %v\n", err)
