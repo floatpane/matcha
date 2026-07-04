@@ -104,7 +104,8 @@ func (m *PatchSend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "ctrl+p":
-			return m, m.previewPatch()
+			m.previewPatch()
+			return m, nil
 
 		default:
 			m.errMsg = ""
@@ -156,18 +157,18 @@ func (m *PatchSend) updateFocus() {
 	}
 }
 
-func (m *PatchSend) previewPatch() tea.Cmd {
+func (m *PatchSend) previewPatch() {
 	repoDir := strings.TrimSpace(m.repoInput.Value())
 	commitRange := strings.TrimSpace(m.commitInput.Value())
 	if repoDir == "" || commitRange == "" {
 		m.errMsg = "Repository and commit range are required"
-		return nil
+		return
 	}
 
 	raw, err := gitmail.GeneratePatch(repoDir, commitRange)
 	if err != nil {
 		m.errMsg = fmt.Sprintf("Error generating patch: %v", err)
-		return nil
+		return
 	}
 
 	// Truncate preview for display
@@ -178,7 +179,6 @@ func (m *PatchSend) previewPatch() tea.Cmd {
 	m.preview = preview
 	m.showPreview = true
 	m.errMsg = ""
-	return nil
 }
 
 func (m *PatchSend) sendPatch() tea.Cmd {

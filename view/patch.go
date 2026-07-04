@@ -38,18 +38,6 @@ type PatchInfo struct {
 	Stat mailpatch.DiffStat
 }
 
-// diffStartLine searches body lines for the first "diff --git" line and
-// returns its index. Returns -1 if not found.
-func diffStartLine(body string) int {
-	lines := strings.Split(body, "\n")
-	for i, line := range lines {
-		if strings.HasPrefix(line, "diff --git") {
-			return i
-		}
-	}
-	return -1
-}
-
 // parseSubjectPrefix extracts the [PATCH ...] prefix info from a subject line.
 func parseSubjectPrefix(subject string) (cleanSubject string, idx, total, version int) {
 	cleanSubject = subject

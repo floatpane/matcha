@@ -1,6 +1,7 @@
 package send
 
 import (
+	"context"
 	"encoding/base64"
 	"flag"
 	"fmt"
@@ -407,7 +408,7 @@ func ApplyPatchCmd(repoDir string, msg tui.ApplyPatchMsg) tea.Cmd {
 		}
 
 		// Stage all changes (new, modified, deleted files).
-		add := exec.Command("git", "-C", repoDir, "add", "-A")
+		add := exec.CommandContext(context.Background(), "git", "-C", repoDir, "add", "-A")
 		if err := add.Run(); err != nil {
 			return tui.PatchApplyResultMsg{
 				Subject:  msg.Subject,
@@ -417,7 +418,7 @@ func ApplyPatchCmd(repoDir string, msg tui.ApplyPatchMsg) tea.Cmd {
 		}
 
 		// Check whether there is anything staged to commit.
-		status := exec.Command("git", "-C", repoDir, "status", "--porcelain", "--untracked-files=no")
+		status := exec.CommandContext(context.Background(), "git", "-C", repoDir, "status", "--porcelain", "--untracked-files=no")
 		statusOut, err := status.Output()
 		if err != nil {
 			return tui.PatchApplyResultMsg{
@@ -446,7 +447,7 @@ func CommitPatchCmd(repoDir string, msg tui.PatchStagedMsg) tea.Cmd {
 	authorName, authorEmail := parseAuthor(msg.From)
 	message := buildCommitMessage(msg.Subject, msg.CommitMsg)
 
-	commit := exec.Command("git", "-C", repoDir, "commit", "-m", message)
+	commit := exec.CommandContext(context.Background(), "git", "-C", repoDir, "commit", "-m", message)
 	if authorName != "" {
 		commit.Env = appendEnv(commit.Env, "GIT_AUTHOR_NAME", authorName)
 		commit.Env = appendEnv(commit.Env, "GIT_COMMITTER_NAME", authorName)
@@ -587,9 +588,11 @@ func SendRawPatchCmd(deps *Dependencies, msg tui.SendPatchMsg, rawPatch []byte) 
 		}
 
 		// Collect all recipients from the To and Cc headers.
-		var recipients []string
-		recipients = append(recipients, SplitEmails(p.Header.Get("To"))...)
-		recipients = append(recipients, SplitEmails(p.Header.Get("Cc"))...)
+		toAddrs := SplitEmails(p.Header.Get("To"))
+		ccAddrs := SplitEmails(p.Header.Get("Cc"))
+		recipients := make([]string, 0, len(toAddrs)+len(ccAddrs))
+		recipients = append(recipients, toAddrs...)
+		recipients = append(recipients, ccAddrs...)
 		if len(recipients) == 0 {
 			return tui.EmailResultMsg{Err: fmt.Errorf("no recipients found in patch email")}
 		}

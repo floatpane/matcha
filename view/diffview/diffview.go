@@ -36,12 +36,17 @@ type Styles struct {
 	Missing  Style
 }
 
+const (
+	defaultForeground = "#c9d1d9"
+	langYAML          = "yaml"
+)
+
 // DefaultStyles returns a dark-theme style that matches crush's diffview.
 func DefaultStyles() Styles {
 	return Styles{
 		Filename: Style{
 			Background: "#30363d",
-			Foreground: "#c9d1d9",
+			Foreground: defaultForeground,
 			IsBold:     true,
 		},
 		Divider: Style{
@@ -51,15 +56,15 @@ func DefaultStyles() Styles {
 		},
 		Context: Style{
 			Background: "#161b22",
-			Foreground: "#c9d1d9",
+			Foreground: defaultForeground,
 		},
 		Add: Style{
 			Background: "#303a30",
-			Foreground: "#c9d1d9",
+			Foreground: defaultForeground,
 		},
 		Delete: Style{
 			Background: "#3a3030",
-			Foreground: "#c9d1d9",
+			Foreground: defaultForeground,
 		},
 		Missing: Style{
 			Background: "#21262d",
@@ -384,7 +389,7 @@ func normalizeLang(lang string) string {
 	case "sh", "zsh":
 		return "bash"
 	case "yml":
-		return "yaml"
+		return langYAML
 	case "c++", "cc", "cxx", "hpp":
 		return "cpp"
 	case "kt":
@@ -474,9 +479,9 @@ func langFromPath(path string) string {
 	case "sh":
 		return "bash"
 	case "yml":
-		return "yaml"
+		return langYAML
 	case "yaml":
-		return "yaml"
+		return langYAML
 	case "c":
 		return "c"
 	case "h":
@@ -558,7 +563,9 @@ func outerSGR(s Style) string {
 // hexToRGB parses a #RRGGBB hex color string into its RGB components.
 func hexToRGB(hex string) (r, g, b int) {
 	hex = strings.TrimPrefix(hex, "#")
-	fmt.Sscanf(hex, "%02x%02x%02x", &r, &g, &b)
+	if _, err := fmt.Sscanf(hex, "%02x%02x%02x", &r, &g, &b); err != nil {
+		return 0, 0, 0
+	}
 	return
 }
 
@@ -591,7 +598,7 @@ func (dv *DiffView) String() string {
 		}
 	}
 	dv.beforeDigits, dv.afterDigits = dv.lineNumberDigits()
-	// Format: " NNN  NNN " (each column: leading space, digits, trailing space)
+	// Format: " {before}  {after} " (each column: leading space, digits, trailing space)
 	dv.numWidth = (dv.beforeDigits + 2) + (dv.afterDigits + 2)
 	dv.contentWidth = totalWidth - dv.numWidth
 	if dv.contentWidth < 20 {
@@ -681,7 +688,7 @@ func (dv *DiffView) advanceLineNums(line mailpatch.Line, before, after int) (int
 	return before, after
 }
 
-// lineNumbersStr returns the formatted " NNN  NNN " line number column.
+// lineNumbersStr returns the formatted " {before}  {after} " line number column.
 func (dv *DiffView) lineNumbersStr(before, after int) string {
 	beforeStr := strings.Repeat(" ", dv.beforeDigits)
 	if before > 0 {
@@ -714,6 +721,8 @@ func (dv *DiffView) fullLine(s Style, before, after int, prefix, text string) st
 func (dv *DiffView) renderFileHeader(fc mailpatch.FileChange) string {
 	var label string
 	switch fc.Type {
+	case mailpatch.Modified:
+		label = fc.NewPath
 	case mailpatch.Added:
 		label = "+++ " + fc.NewPath
 	case mailpatch.Deleted:
