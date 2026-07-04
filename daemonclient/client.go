@@ -18,6 +18,7 @@ type Client struct {
 	mu      sync.Mutex
 	events  chan *daemonrpc.Event
 	done    chan struct{}
+	closeMu sync.Mutex // serializes close(done) between Close and readLoop
 }
 
 // Dial connects to the daemon socket.
@@ -97,12 +98,13 @@ func (c *Client) Events() <-chan *daemonrpc.Event {
 
 // Close closes the connection to the daemon.
 func (c *Client) Close() error {
+	c.closeMu.Lock()
 	select {
 	case <-c.done:
-		return nil
 	default:
 		close(c.done)
 	}
+	c.closeMu.Unlock()
 	return c.conn.Close()
 }
 
@@ -113,11 +115,13 @@ func (c *Client) readLoop() {
 	for {
 		msg, err := c.conn.ReceiveMessage()
 		if err != nil {
+			c.closeMu.Lock()
 			select {
 			case <-c.done:
 			default:
 				close(c.done)
 			}
+			c.closeMu.Unlock()
 			return
 		}
 

@@ -1337,6 +1337,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	case tui.DaemonEventMsg:
 		if msg.Event == nil {
+			// Events channel closed — daemon may have reconnected with a
+			// fresh channel. Re-subscribe if still in daemon mode.
+			if m.service != nil && m.service.IsDaemon() {
+				return m, idledaemon.ListenForDaemonEvents(m.service.Events())
+			}
 			return m, nil
 		}
 		var daemonCmds []tea.Cmd
