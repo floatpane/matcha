@@ -146,8 +146,8 @@ jobs:
           zig cc -c -target aarch64-linux-musl -o "$RUNNER_TEMP/pcsclite_stub_arm64.o" "$RUNNER_TEMP/pcsclite_stub.c"
 
           mkdir -p "$PCSC_DIR/lib/amd64" "$PCSC_DIR/lib/arm64"
-          ar rcs "$PCSC_DIR/lib/amd64/libpcsclite.a" "$RUNNER_TEMP/pcsclite_stub_amd64.o"
-          ar rcs "$PCSC_DIR/lib/arm64/libpcsclite.a" "$RUNNER_TEMP/pcsclite_stub_arm64.o"
+          zig ar rcs "$PCSC_DIR/lib/amd64/libpcsclite.a" "$RUNNER_TEMP/pcsclite_stub_amd64.o"
+          zig ar rcs "$PCSC_DIR/lib/arm64/libpcsclite.a" "$RUNNER_TEMP/pcsclite_stub_arm64.o"
 
           # Create pkg-config file — Libs will be overridden per-arch via CGO_LDFLAGS in goreleaser
           cat > "$PCSC_DIR/lib/pkgconfig/libpcsclite.pc" << EOF
