@@ -108,6 +108,7 @@ export default withMermaid(
         text: "For Developers",
         items: [
           { text: "Code Blocks", link: "/for-developers/code-blocks" },
+          { text: "Patch Email Support", link: "/for-developers/patch-email" },
         ],
       },
       {

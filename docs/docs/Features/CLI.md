@@ -174,6 +174,92 @@ only edits files. Commit the result yourself once you are happy with it.
 | `0` | Patch applied (or, with `--check`, would apply) cleanly |
 | `1` | Error (parse failure, hunk conflict, unsafe path, missing/existing file) |
 
+## matcha send-patch
+
+Generate a patch from a local git repository and send it via email —
+matcha's replacement for `git send-email`. It runs `git format-patch --stdout`
+to produce the patch, then sends the resulting RFC 5322 message through your
+configured SMTP account.
+
+```bash
+matcha send-patch [flags]
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--to` | Recipient email address **(required)** |
+| `--repo` | Path to the git repository (default: current directory) |
+| `--range` | Git commit range (default: `HEAD~1..HEAD`; e.g. `origin/main..HEAD`) |
+| `--cc` | CC recipient(s), comma-separated |
+| `--subject` | Override the patch subject. Defaults to the commit subject |
+| `--version` | Patch series version (e.g. `2` for `[PATCH v2]`) |
+| `--from` | Sender account email. Defaults to first configured account |
+| `-h` | Show help |
+
+### Examples
+
+**Send the latest commit as a patch:**
+
+```bash
+matcha send-patch --to reviewer@example.com
+```
+
+**Send a range of commits from a specific repo:**
+
+```bash
+matcha send-patch --to reviewer@example.com --repo ~/src/myproject \
+  --range origin/main..HEAD
+```
+
+**Send a v2 patch series with CC:**
+
+```bash
+matcha send-patch --to list@example.org --cc maintainer@example.org \
+  --version 2 --range HEAD~3..HEAD
+```
+
+**Override the subject:**
+
+```bash
+matcha send-patch --to reviewer@example.com --subject "Fix critical bug" \
+  --range HEAD~1..HEAD
+```
+
+**Send from a specific account:**
+
+```bash
+matcha send-patch --from work@company.com --to reviewer@example.com
+```
+
+### How it behaves
+
+- **Patch generation.** Matcha runs `git format-patch --stdout` on the
+  specified `--range` inside `--repo`. The output is a standard RFC 5322 email
+  containing the commit message and unified diff.
+- **From rewriting.** The `From:` header is rewritten to your configured
+  account's sending identity so the SMTP server accepts it. The original git
+  author is preserved in the patch body's `From:` line, as `git format-patch`
+  always includes it.
+- **Recipient collection.** Recipients are merged from the patch's own `To:`
+  and `Cc:` headers, the `--cc` flag, and the `--to` flag (deduplicated).
+- **Sent folder.** The sent message is appended to your Sent folder
+  automatically, except for Gmail (which auto-appends sent messages).
+
+> Under the hood, `matcha send-patch` uses the standalone
+> [`go-patchapply`](https://github.com/floatpane/go-patchapply) library to
+> generate the patch and matcha's built-in SMTP sender to deliver it. See the
+> [patch email guide](../for-developers/patch-email.md) for the full
+> architecture.
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Patch sent successfully |
+| `1` | Error (missing flags, git failure, config error, send failure) |
+
 ## matcha marketplace
 
 Open the interactive plugin marketplace in the terminal. Fetches the plugin registry from GitHub and displays a browsable list of available plugins.

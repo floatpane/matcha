@@ -2119,6 +2119,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.updateCurrentWindowSize()
 			return m, tea.Batch(m.current.Init(), m.showErrorCmd(msg.Err.Error()))
 		}
+		if msg.Warning != "" {
+			log.Printf("Email send warning: %s", msg.Warning)
+			m.current = tui.NewChoice()
+			m.updateCurrentWindowSize()
+			return m, tea.Batch(m.current.Init(), m.showInfoCmd(msg.Warning))
+		}
 		if m.plugins != nil {
 			m.plugins.CallHook(plugin.HookEmailSendAfter)
 		}
@@ -2184,7 +2190,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			return m, tea.Batch(m.current.Init(), m.showErrorCmd(errMsg))
 		}
 		// Patch generated — now send the raw patch email via SMTP.
-		return m, send.SendRawPatchCmd(m.sendEmailDependencies(), msg.RawPatch)
+		// We need the original SendPatchMsg (with To/Cc) to inject the
+		// recipients into the raw RFC 5322 message. The patch-send form
+		// stores it in the PatchGeneratedMsg.
+		return m, send.SendRawPatchCmd(m.sendEmailDependencies(), msg.SendPatchMsg, msg.RawPatch)
 
 	case tui.DeleteEmailMsg:
 		tui.ClearKittyGraphics()

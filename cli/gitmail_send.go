@@ -90,6 +90,12 @@ func RunSendPatch(args []string) error {
 	}
 	rawPatch = rewriteFromHeader(rawPatch, account.Name, fromAddr)
 
+	// Inject the To and Cc headers from the CLI into the raw message so the
+	// delivered and sent copies actually contain the recipients. git
+	// format-patch --stdout does not emit To or Cc headers by default.
+	rawPatch = rewriteToHeader(rawPatch, *to)
+	rawPatch = rewriteCcHeader(rawPatch, *cc)
+
 	// Parse the patch to extract recipients
 	p, err := gitmail.ParsePatch(rawPatch)
 	if err != nil {
@@ -124,10 +130,11 @@ func RunSendPatch(args []string) error {
 		return fmt.Errorf("failed to send patch: %w", err)
 	}
 
-	// Append to sent folder
+	// Append to sent folder. For Gmail this is skipped because Gmail
+	// automatically saves a copy of messages sent through its SMTP servers.
 	if account.ServiceProvider != "gmail" {
 		if err := fetcher.AppendToSentMailbox(account, rawPatch); err != nil {
-			log.Printf("Failed to append sent message to Sent folder: %v", err)
+			log.Printf("Warning: patch sent, but could not copy to Sent folder: %v", err)
 		}
 	}
 
@@ -186,4 +193,53 @@ func rewriteFromHeader(raw []byte, name, email string) []byte {
 		}
 	}
 	return raw
+}
+
+// rewriteToHeader replaces or inserts a To header in a raw RFC 5322 message.
+func rewriteToHeader(raw []byte, to string) []byte {
+	if to == "" {
+		return raw
+	}
+	return rewriteHeader(raw, "To", "To: "+to)
+}
+
+// rewriteCcHeader replaces or inserts a Cc header in a raw RFC 5322 message.
+func rewriteCcHeader(raw []byte, cc string) []byte {
+	if cc == "" {
+		return raw
+	}
+	return rewriteHeader(raw, "Cc", "Cc: "+cc)
+}
+
+// rewriteHeader replaces the first header matching name (case-insensitive) in
+// raw, or inserts it after the From header if it does not exist. Preserves the
+// line ending style (\r\n or \n) used in the input.
+func rewriteHeader(raw []byte, name, value string) []byte {
+	lowerName := strings.ToLower(name)
+	s := string(raw)
+	sep := "\n"
+	if strings.Contains(s, "\r\n") {
+		sep = "\r\n"
+	}
+	lines := strings.Split(s, sep)
+
+	found := false
+	for i, line := range lines {
+		if strings.HasPrefix(strings.ToLower(line), lowerName+":") {
+			lines[i] = value
+			found = true
+			break
+		}
+	}
+	if !found {
+		// Insert after the From header so the new header stays in the
+		// message header block.
+		for i, line := range lines {
+			if strings.HasPrefix(strings.ToLower(line), "from:") {
+				lines = append(lines[:i+1], append([]string{value}, lines[i+1:]...)...)
+				break
+			}
+		}
+	}
+	return []byte(strings.Join(lines, sep))
 }

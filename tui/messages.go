@@ -110,7 +110,8 @@ type ChooseServiceMsg struct {
 }
 
 type EmailResultMsg struct {
-	Err error
+	Err     error
+	Warning string
 }
 
 // ApplyPatchMsg requests applying the currently viewed patch to a local repo.
@@ -159,6 +160,7 @@ type SendPatchMsg struct {
 
 // PatchGeneratedMsg signals that a patch was generated and is ready to send.
 type PatchGeneratedMsg struct {
+	SendPatchMsg
 	RawPatch []byte
 	Err      error
 }
