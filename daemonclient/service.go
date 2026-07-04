@@ -141,12 +141,12 @@ func (s *daemonService) call(fn func(*Client) error) error {
 		s.mu.Lock()
 		client = s.client
 		s.mu.Unlock()
-		if err2 := fn(client); err2 == nil {
+		err2 := fn(client)
+		if err2 == nil {
 			loglevel.Debugf("service: reconnected to daemon successfully")
 			return nil
-		} else {
-			return err2
 		}
+		return err2
 	}
 
 	return err
