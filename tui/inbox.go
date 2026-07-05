@@ -690,15 +690,15 @@ func (m *Inbox) itemsForEmails(displayEmails []fetcher.Email, showAccountLabel b
 			// When expanded, insert a thread header row for collapsing,
 			// then render the root email as a clickable item, then children.
 			headerItem := item{
-				title:       firstNonEmpty(root.Subject, thread.Subject),
-				desc:        latest.Sender,
-				date:        thread.LatestAt,
-				isRead:      threadRead(displayEmails, emailIndex, thread.Root),
-				threadKey:   key,
-				threadCount: thread.Count,
-				threadRoot:  true,
+				title:        firstNonEmpty(root.Subject, thread.Subject),
+				desc:         latest.Sender,
+				date:         thread.LatestAt,
+				isRead:       threadRead(displayEmails, emailIndex, thread.Root),
+				threadKey:    key,
+				threadCount:  thread.Count,
+				threadRoot:   true,
 				threadHeader: true,
-				expanded:    true,
+				expanded:     true,
 			}
 			items = append(items, headerItem)
 
