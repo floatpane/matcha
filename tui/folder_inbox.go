@@ -275,7 +275,7 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 			}
 			// Single move
 			selectedItem, ok := m.inbox.list.SelectedItem().(item)
-			if ok {
+			if ok && selectedItem.uid != 0 {
 				m.movingEmail = true
 				m.moveTargetIdx = 0
 				m.moveUID = selectedItem.uid

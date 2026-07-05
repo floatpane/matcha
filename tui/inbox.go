@@ -42,6 +42,7 @@ type item struct {
 	threadKey     string
 	threadCount   int
 	threadRoot    bool
+	threadHeader  bool
 	threadChild   bool
 	threadDepth   int
 	expanded      bool
@@ -92,6 +93,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		} else {
 			statusIcon = "▸"
 		}
+	}
+	if i.threadHeader {
+		statusIcon = "▴"
 	}
 	styledIcon := statusStyle.Render(statusIcon)
 	styledSender := statusStyle.Render(sender)
@@ -156,6 +160,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	subject := i.title
 	if i.threadChild {
 		subject = strings.Repeat("  ", i.threadDepth) + "↳ " + subject
+	}
+	if i.threadHeader {
+		subject = fmt.Sprintf("Close thread (%d)", i.threadCount)
 	}
 	if i.threadRoot && i.threadCount > 1 {
 		subject = fmt.Sprintf("%s (%d)", subject, i.threadCount)
@@ -310,6 +317,7 @@ type Inbox struct {
 	isFetching         bool
 	isRefreshing       bool
 	emailsCount        int
+	totalEmailCount    int // actual number of emails (not threads) for status bar
 	accounts           []config.Account
 	emailsByAccount    map[string][]fetcher.Email
 	allEmails          []fetcher.Email
@@ -432,6 +440,7 @@ func (m *Inbox) updateList() {
 
 	displayEmails := m.displayEmails()
 	m.emailsCount = len(displayEmails)
+	m.totalEmailCount = len(displayEmails)
 
 	var showAccountLabel bool
 	if m.searchActive {
@@ -448,7 +457,9 @@ func (m *Inbox) updateList() {
 
 	l := list.New(items, itemDelegate{inbox: m}, 20, 14)
 	l.Title = m.getTitle()
-	l.SetShowStatusBar(true)
+	// When threaded, hide the built-in status bar (which counts list items =
+	// threads) and render our own that counts actual emails.
+	l.SetShowStatusBar(!m.isThreaded())
 	l.SetFilteringEnabled(true)
 	l.Styles.Title = lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Bold(true)
 	l.Styles.PaginationStyle = paginationStyle
@@ -674,10 +685,34 @@ func (m *Inbox) itemsForEmails(displayEmails []fetcher.Email, showAccountLabel b
 		rootItem.threadCount = thread.Count
 		rootItem.threadRoot = true
 		rootItem.expanded = m.expanded[key]
-		items = append(items, rootItem)
 
 		if m.expanded[key] {
-			items = appendThreadChildren(items, m, displayEmails, emailIndex, showAccountLabel, thread.Root.Children, 1)
+			// When expanded, insert a thread header row for collapsing,
+			// then render the root email as a clickable item, then children.
+			headerItem := item{
+				title:       firstNonEmpty(root.Subject, thread.Subject),
+				desc:        latest.Sender,
+				date:        thread.LatestAt,
+				isRead:      threadRead(displayEmails, emailIndex, thread.Root),
+				threadKey:   key,
+				threadCount: thread.Count,
+				threadRoot:  true,
+				threadHeader: true,
+				expanded:    true,
+			}
+			items = append(items, headerItem)
+
+			// Root email as a clickable item
+			clickableRoot := m.itemForEmail(rootEmail, idx, showAccountLabel)
+			clickableRoot.threadKey = key
+			clickableRoot.threadCount = thread.Count
+			clickableRoot.threadChild = true
+			clickableRoot.threadDepth = 1
+			items = append(items, clickableRoot)
+
+			items = appendThreadChildren(items, m, displayEmails, emailIndex, showAccountLabel, thread.Root.Children, 2)
+		} else {
+			items = append(items, rootItem)
 		}
 	}
 	return items
@@ -999,8 +1034,15 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		case kb.Inbox.Open:
 			selectedItem, ok := m.list.SelectedItem().(item)
 			if ok {
-				if selectedItem.threadRoot && selectedItem.threadCount > 1 {
-					m.expanded[selectedItem.threadKey] = !m.expanded[selectedItem.threadKey]
+				// Thread header row: collapse the thread
+				if selectedItem.threadHeader {
+					m.expanded[selectedItem.threadKey] = false
+					m.updateList()
+					return m, nil
+				}
+				// Collapsed thread root: expand it
+				if selectedItem.threadRoot && selectedItem.threadCount > 1 && !selectedItem.expanded {
+					m.expanded[selectedItem.threadKey] = true
 					m.updateList()
 					return m, nil
 				}
@@ -1209,6 +1251,12 @@ func (m *Inbox) View() tea.View {
 
 	b.WriteString(m.list.View())
 
+	// When threaded, the built-in status bar is hidden because it counts
+	// list items (threads) instead of actual emails. Render our own.
+	if m.isThreaded() {
+		b.WriteString(m.threadedStatusBar())
+	}
+
 	if m.searchOverlay != nil {
 		b.WriteString("\n")
 		b.WriteString(m.searchOverlay.View())
@@ -1236,6 +1284,29 @@ func (m *Inbox) View() tea.View {
 	b.WriteString(helpView)
 
 	return tea.NewView(b.String())
+}
+
+// threadedStatusBar renders a custom status bar for threaded view that shows
+// the actual number of emails (not the number of threads/list-items).
+func (m *Inbox) threadedStatusBar() string {
+	total := m.totalEmailCount
+	visible := total
+	itemName := "emails"
+	if visible == 1 {
+		itemName = "email"
+	}
+	status := fmt.Sprintf("%d %s", visible, itemName)
+
+	// When a filter is applied, show filtered count too
+	if m.list.FilterState() == list.FilterApplied {
+		filteredCount := len(m.list.VisibleItems())
+		numFiltered := total - filteredCount
+		if numFiltered > 0 {
+			status += fmt.Sprintf(" • %d filtered", numFiltered)
+		}
+	}
+
+	return m.list.Styles.StatusBar.Render(status)
 }
 
 // GetCurrentAccountID returns the currently selected account ID

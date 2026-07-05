@@ -518,3 +518,99 @@ func TestTruncateEmailKeepsDomain(t *testing.T) {
 		})
 	}
 }
+
+// TestThreadedExpandShowsHeaderAndClickableEmails verifies that when a thread
+// is expanded, the list contains a thread header row (for closing) followed by
+// all individual emails as clickable items.
+func TestThreadedExpandShowsHeaderAndClickableEmails(t *testing.T) {
+	accounts := []config.Account{
+		{ID: "account-1", Email: "test1@example.com", Name: "Test User 1"},
+	}
+
+	// Three emails in a thread: root, reply, reply-to-reply
+	base := time.Now()
+	emails := []fetcher.Email{
+		{UID: 1, From: "a@example.com", Subject: "Thread topic", Date: base.Add(-2 * time.Hour), AccountID: "account-1", MessageID: "<m1@example.com>"},
+		{UID: 2, From: "b@example.com", Subject: "Re: Thread topic", Date: base.Add(-1 * time.Hour), AccountID: "account-1", MessageID: "<m2@example.com>", InReplyTo: "<m1@example.com>"},
+		{UID: 3, From: "c@example.com", Subject: "Re: Thread topic", Date: base, AccountID: "account-1", MessageID: "<m3@example.com>", InReplyTo: "<m2@example.com>"},
+	}
+
+	inbox := NewInbox(emails, accounts)
+	inbox.SetDefaultThreaded(true)
+	inbox.updateList()
+
+	// Collapsed: should have 1 item (the thread root)
+	items := inbox.list.Items()
+	if len(items) != 1 {
+		t.Fatalf("expected 1 collapsed thread item, got %d", len(items))
+	}
+	rootItem := items[0].(item)
+	if !rootItem.threadRoot || rootItem.threadCount != 3 {
+		t.Fatalf("expected thread root with count 3, got root=%v count=%d", rootItem.threadRoot, rootItem.threadCount)
+	}
+
+	// Expand the thread
+	inbox.expanded[rootItem.threadKey] = true
+	inbox.updateList()
+
+	// Expanded: should have 4 items: header + 3 clickable emails
+	items = inbox.list.Items()
+	if len(items) != 4 {
+		t.Fatalf("expected 4 items (header + 3 emails) when expanded, got %d", len(items))
+	}
+
+	// First item should be the thread header (not clickable)
+	header := items[0].(item)
+	if !header.threadHeader {
+		t.Fatalf("expected first expanded item to be thread header, got threadHeader=%v", header.threadHeader)
+	}
+	if header.uid != 0 {
+		t.Fatalf("thread header should have uid 0, got %d", header.uid)
+	}
+
+	// Remaining 3 items should be clickable emails with non-zero UIDs
+	for i := 1; i < 4; i++ {
+		emailItem := items[i].(item)
+		if emailItem.uid == 0 {
+			t.Fatalf("expanded email item %d should have non-zero uid", i)
+		}
+		if emailItem.threadHeader {
+			t.Fatalf("expanded email item %d should not be a thread header", i)
+		}
+	}
+}
+
+// TestThreadedStatusBarCountsActualEmails verifies that totalEmailCount tracks
+// the actual number of emails, not the number of thread items.
+func TestThreadedStatusBarCountsActualEmails(t *testing.T) {
+	accounts := []config.Account{
+		{ID: "account-1", Email: "test1@example.com", Name: "Test User 1"},
+	}
+
+	base := time.Now()
+	emails := []fetcher.Email{
+		{UID: 1, From: "a@example.com", Subject: "Thread topic", Date: base.Add(-2 * time.Hour), AccountID: "account-1", MessageID: "<m1@example.com>"},
+		{UID: 2, From: "b@example.com", Subject: "Re: Thread topic", Date: base.Add(-1 * time.Hour), AccountID: "account-1", MessageID: "<m2@example.com>", InReplyTo: "<m1@example.com>"},
+		{UID: 3, From: "c@example.com", Subject: "Re: Thread topic", Date: base, AccountID: "account-1", MessageID: "<m3@example.com>", InReplyTo: "<m2@example.com>"},
+		{UID: 4, From: "d@example.com", Subject: "Standalone email", Date: base, AccountID: "account-1", MessageID: "<m4@example.com>"},
+	}
+
+	inbox := NewInbox(emails, accounts)
+	inbox.SetDefaultThreaded(true)
+	inbox.updateList()
+
+	// 4 actual emails, but only 2 list items (1 thread + 1 standalone)
+	if inbox.totalEmailCount != 4 {
+		t.Fatalf("expected totalEmailCount=4, got %d", inbox.totalEmailCount)
+	}
+	if len(inbox.list.Items()) != 2 {
+		t.Fatalf("expected 2 list items (thread + standalone), got %d", len(inbox.list.Items()))
+	}
+
+	// Expand the thread — still 4 emails, but now 5 list items (header + 3 + 1)
+	inbox.expanded["<m1@example.com>"] = true
+	inbox.updateList()
+	if inbox.totalEmailCount != 4 {
+		t.Fatalf("expected totalEmailCount=4 after expand, got %d", inbox.totalEmailCount)
+	}
+}
