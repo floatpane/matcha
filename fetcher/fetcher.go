@@ -134,7 +134,7 @@ type Folder struct {
 func formatAddress(addr imap.Address) string {
 	email := addr.Addr()
 	if addr.Name != "" {
-		return addr.Name + " <" + email + ">"
+		return decodeHeader(addr.Name) + " <" + email + ">"
 	}
 	return email
 }
