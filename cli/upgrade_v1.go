@@ -119,7 +119,7 @@ func tryHomebrewV1Upgrade(cask bool) bool {
 
 	cmd := exec.Command("brew", installArgs...) //nolint:noctx
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = ErrOut
 	if err := cmd.Run(); err == nil {
 		fmt.Println("Successfully upgraded via Homebrew.")
 		return true
@@ -127,7 +127,7 @@ func tryHomebrewV1Upgrade(cask bool) bool {
 
 	cmd = exec.Command("brew", upgradeArgs...) //nolint:noctx
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = ErrOut
 	if err := cmd.Run(); err == nil {
 		fmt.Println("Successfully upgraded via Homebrew.")
 		return true
@@ -150,7 +150,7 @@ func trySnapV1Refresh() bool {
 	fmt.Println("Detected Snap package — attempting to refresh to candidate v1.")
 	cmd := exec.Command("snap", "refresh", "matcha", "--candidate") //nolint:noctx
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = ErrOut
 	if err := cmd.Run(); err == nil {
 		fmt.Println("Successfully refreshed snap to candidate v1.")
 		return true

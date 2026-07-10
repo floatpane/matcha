@@ -15,29 +15,29 @@ import (
 
 func RunContactsExport(args []string) error {
 	fs := flag.NewFlagSet("contacts export", flag.ExitOnError)
+	fs.SetOutput(ErrOut)
 	format := fs.String("f", "json", "output format: json or csv")
 	output := fs.String("o", "", "output file path (default: stdout)")
 	noHeader := fs.Bool("no-header", false, "omit CSV header row")
-	help := fs.Bool("h", false, "show help")
+
+	fs.Usage = func() {
+		fmt.Fprintln(Out, "Usage: matcha contacts export [flags]")
+		fmt.Fprintln(Out, "")
+		fmt.Fprintln(Out, "Export contacts from cache to JSON or CSV format.")
+		fmt.Fprintln(Out, "")
+		fmt.Fprintln(Out, "Flags:")
+		fs.SetOutput(Out)
+		fs.PrintDefaults()
+		fmt.Fprintln(Out, "")
+		fmt.Fprintln(Out, "Examples:")
+		fmt.Fprintln(Out, "  matcha contacts export              # JSON to stdout")
+		fmt.Fprintln(Out, "  matcha contacts export -f csv       # CSV to stdout")
+		fmt.Fprintln(Out, "  matcha contacts export -o out.json  # JSON to file")
+		fmt.Fprintln(Out, "  matcha contacts export -f csv --no-header  # CSV without headers")
+	}
 
 	if err := fs.Parse(args); err != nil {
 		return err
-	}
-
-	if *help {
-		fmt.Println("Usage: matcha contacts export [flags]")
-		fmt.Println("")
-		fmt.Println("Export contacts from cache to JSON or CSV format.")
-		fmt.Println("")
-		fmt.Println("Flags:")
-		fs.PrintDefaults()
-		fmt.Println("")
-		fmt.Println("Examples:")
-		fmt.Println("  matcha contacts export              # JSON to stdout")
-		fmt.Println("  matcha contacts export -f csv       # CSV to stdout")
-		fmt.Println("  matcha contacts export -o out.json  # JSON to file")
-		fmt.Println("  matcha contacts export -f csv --no-header  # CSV without headers")
-		return nil
 	}
 
 	formatStr := strings.ToLower(*format)
@@ -78,7 +78,7 @@ func runExportContacts(format, outputPath string, noHeader bool) error {
 	contacts = contactsCache.Contacts
 
 	if len(contacts) == 0 {
-		fmt.Fprintln(os.Stderr, "No contacts found in cache")
+		fmt.Fprintln(ErrOut, "No contacts found in cache")
 		return nil
 	}
 
@@ -108,9 +108,9 @@ func runExportContacts(format, outputPath string, noHeader bool) error {
 		if err := os.WriteFile(outputPath, outputData, 0644); err != nil {
 			return fmt.Errorf("failed to write output file: %w", err)
 		}
-		fmt.Fprintf(os.Stderr, "Exported %d contacts to %s\n", len(contacts), outputPath)
+		fmt.Fprintf(ErrOut, "Exported %d contacts to %s\n", len(contacts), outputPath)
 	} else {
-		fmt.Println(string(outputData))
+		fmt.Fprintln(Out, string(outputData))
 	}
 
 	return nil

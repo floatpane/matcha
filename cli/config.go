@@ -38,6 +38,6 @@ func RunConfig(args []string) error {
 	cmd := exec.Command(editor, target) //nolint:gosec,noctx
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = ErrOut
 	return cmd.Run()
 }
