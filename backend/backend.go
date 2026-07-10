@@ -91,19 +91,19 @@ type Email struct {
 
 // Attachment holds data for an email attachment.
 type Attachment struct {
-	Filename         string
-	PartID           string
-	Data             []byte
-	Encoding         string
-	MIMEType         string
-	ContentID        string
-	Inline           bool
-	IsSMIMESignature bool
-	SMIMEVerified    bool
-	IsSMIMEEncrypted bool
-	IsPGPSignature   bool
-	PGPVerified      bool
-	IsPGPEncrypted   bool
+	Filename         string `json:"filename"`
+	PartID           string `json:"part_id"`
+	Data             []byte `json:"-"` // Don't include raw data in JSON by default
+	Encoding         string `json:"encoding"`
+	MIMEType         string `json:"mime_type"`
+	ContentID        string `json:"content_id"`
+	Inline           bool   `json:"inline"`
+	IsSMIMESignature bool   `json:"is_smime_signature"`
+	SMIMEVerified    bool   `json:"smime_verified"`
+	IsSMIMEEncrypted bool   `json:"is_smime_encrypted"`
+	IsPGPSignature   bool   `json:"is_pgp_signature"`
+	PGPVerified      bool   `json:"pgp_verified"`
+	IsPGPEncrypted   bool   `json:"is_pgp_encrypted"`
 }
 
 // SearchQuery is the parsed form of a user query string.
