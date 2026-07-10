@@ -4480,6 +4480,44 @@ func main() { //nolint:gocyclo
 		exit(0)
 	}
 
+	// --- New CLI Subcommands ---
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "folders":
+			if err := matchaCli.RunFolders(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				exit(1)
+			}
+			exit(0)
+		case "list":
+			if err := matchaCli.RunList(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				exit(1)
+			}
+			exit(0)
+		case "read":
+			if err := matchaCli.RunRead(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				exit(1)
+			}
+			exit(0)
+		case "search":
+			if err := matchaCli.RunSearch(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				exit(1)
+			}
+			exit(0)
+		case "archive", "delete", "mark-read", "mark-unread", "move":
+			// RunManage expects the subcommand as the first argument
+			if err := matchaCli.RunManage(os.Args[1:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				exit(1)
+			}
+			exit(0)
+		}
+	}
+	// --- End New CLI Subcommands ---
+
 	// Marketplace TUI subcommand: matcha marketplace
 	if len(os.Args) > 1 && os.Args[1] == "marketplace" {
 		mp := tui.NewMarketplace(true)
