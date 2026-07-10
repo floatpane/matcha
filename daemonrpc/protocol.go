@@ -50,6 +50,7 @@ const (
 	MethodExportContacts  = "ExportContacts"
 	MethodQueueEmail      = "QueueEmail"
 	MethodCancelEmail     = "CancelEmail"
+	MethodSearch          = "Search"
 )
 
 // Event type names.
@@ -206,6 +207,12 @@ type GetCachedBodyParams struct {
 
 type ExportContactsParams struct {
 	Format string `json:"format"` // "json" or "csv"
+}
+
+type SearchParams struct {
+	AccountID string `json:"account_id"`
+	Folder    string `json:"folder"`
+	Query     string `json:"query"`
 }
 
 // Event data types.
