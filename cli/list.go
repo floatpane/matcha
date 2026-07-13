@@ -22,7 +22,7 @@ func RunList(args []string) error {
 	from := fs.String("from", "", "Email address of the account to use")
 	jsonOutput := fs.Bool("json", false, "Output in JSON format")
 	fs.Usage = func() {
-		fmt.Fprintln(ErrOut, "Usage: matcha list [folder] [--from <email>] [--json]")
+		fprintln(ErrOut, "Usage: matcha list [folder] [--from <email>] [--json]")
 		fs.PrintDefaults()
 	}
 	positionals, err := parseInterspersed(fs, args)
@@ -35,7 +35,7 @@ func RunList(args []string) error {
 		return err
 	}
 
-	folder := "INBOX"
+	folder := inboxFolder
 	if len(positionals) > 0 {
 		folder = positionals[0]
 	}
@@ -43,7 +43,7 @@ func RunList(args []string) error {
 
 	// Per design constraints, autoStart is always false for CLI commands.
 	svc := NewServiceFunc(cfg, false)
-	defer svc.Close()
+	defer func() { _ = svc.Close() }()
 
 	// Using a hardcoded limit of 50 as per the spec.
 	emails, err := svc.FetchEmails(account.ID, folder, 50, 0)

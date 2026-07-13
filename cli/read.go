@@ -23,7 +23,7 @@ func RunRead(args []string) error {
 	from := fs.String("from", "", "Email address of the account to use")
 	jsonOutput := fs.Bool("json", false, "Output in JSON format")
 	fs.Usage = func() {
-		fmt.Fprintln(ErrOut, "Usage: matcha read [--from <email>] [--json] <folder> <uid>")
+		fprintln(ErrOut, "Usage: matcha read [--from <email>] [--json] <folder> <uid>")
 		fs.PrintDefaults()
 	}
 	positionals, err := parseInterspersed(fs, args)
@@ -39,7 +39,7 @@ func RunRead(args []string) error {
 		// A single positional is treated as a UID in INBOX, but only if it
 		// parses as a number; otherwise the folder was given without a UID.
 		if _, err := strconv.ParseUint(positionals[0], 10, 32); err == nil {
-			folder = "INBOX"
+			folder = inboxFolder
 			uidStr = positionals[0]
 		} else {
 			return fmt.Errorf("folder and uid are required")
@@ -64,7 +64,7 @@ func RunRead(args []string) error {
 	folder = NormalizeFolder(folder)
 
 	svc := NewServiceFunc(cfg, false)
-	defer svc.Close()
+	defer func() { _ = svc.Close() }()
 
 	body, mime, attachments, err := svc.FetchEmailBody(account.ID, folder, uid)
 	if err != nil {
@@ -82,6 +82,6 @@ func RunRead(args []string) error {
 		return encoder.Encode(output)
 	}
 
-	fmt.Fprint(Out, body)
+	fprint(Out, body)
 	return nil
 }

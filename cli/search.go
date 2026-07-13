@@ -15,7 +15,7 @@ func RunSearch(args []string) error {
 	from := fs.String("from", "", "Email address of the account to use")
 	jsonOutput := fs.Bool("json", false, "Output in JSON format")
 	fs.Usage = func() {
-		fmt.Fprintln(ErrOut, "Usage: matcha search [--from <email>] [--json] <folder> <query>")
+		fprintln(ErrOut, "Usage: matcha search [--from <email>] [--json] <folder> <query>")
 		fs.PrintDefaults()
 	}
 	positionals, err := parseInterspersed(fs, args)
@@ -39,7 +39,7 @@ func RunSearch(args []string) error {
 	folder = NormalizeFolder(folder)
 
 	svc := NewServiceFunc(cfg, false)
-	defer svc.Close()
+	defer func() { _ = svc.Close() }()
 
 	query := backend.ParseSearchQuery(queryString)
 	emails, err := svc.Search(account.ID, folder, query)

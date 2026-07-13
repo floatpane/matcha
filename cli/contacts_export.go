@@ -21,19 +21,19 @@ func RunContactsExport(args []string) error {
 	noHeader := fs.Bool("no-header", false, "omit CSV header row")
 
 	fs.Usage = func() {
-		fmt.Fprintln(Out, "Usage: matcha contacts export [flags]")
-		fmt.Fprintln(Out, "")
-		fmt.Fprintln(Out, "Export contacts from cache to JSON or CSV format.")
-		fmt.Fprintln(Out, "")
-		fmt.Fprintln(Out, "Flags:")
+		fprintln(Out, "Usage: matcha contacts export [flags]")
+		fprintln(Out, "")
+		fprintln(Out, "Export contacts from cache to JSON or CSV format.")
+		fprintln(Out, "")
+		fprintln(Out, "Flags:")
 		fs.SetOutput(Out)
 		fs.PrintDefaults()
-		fmt.Fprintln(Out, "")
-		fmt.Fprintln(Out, "Examples:")
-		fmt.Fprintln(Out, "  matcha contacts export              # JSON to stdout")
-		fmt.Fprintln(Out, "  matcha contacts export -f csv       # CSV to stdout")
-		fmt.Fprintln(Out, "  matcha contacts export -o out.json  # JSON to file")
-		fmt.Fprintln(Out, "  matcha contacts export -f csv --no-header  # CSV without headers")
+		fprintln(Out, "")
+		fprintln(Out, "Examples:")
+		fprintln(Out, "  matcha contacts export              # JSON to stdout")
+		fprintln(Out, "  matcha contacts export -f csv       # CSV to stdout")
+		fprintln(Out, "  matcha contacts export -o out.json  # JSON to file")
+		fprintln(Out, "  matcha contacts export -f csv --no-header  # CSV without headers")
 	}
 
 	if err := fs.Parse(args); err != nil {
@@ -78,7 +78,7 @@ func runExportContacts(format, outputPath string, noHeader bool) error {
 	contacts = contactsCache.Contacts
 
 	if len(contacts) == 0 {
-		fmt.Fprintln(ErrOut, "No contacts found in cache")
+		fprintln(ErrOut, "No contacts found in cache")
 		return nil
 	}
 
@@ -108,9 +108,9 @@ func runExportContacts(format, outputPath string, noHeader bool) error {
 		if err := os.WriteFile(outputPath, outputData, 0644); err != nil {
 			return fmt.Errorf("failed to write output file: %w", err)
 		}
-		fmt.Fprintf(ErrOut, "Exported %d contacts to %s\n", len(contacts), outputPath)
+		fprintf(ErrOut, "Exported %d contacts to %s\n", len(contacts), outputPath)
 	} else {
-		fmt.Fprintln(Out, string(outputData))
+		fprintln(Out, string(outputData))
 	}
 
 	return nil

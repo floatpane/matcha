@@ -20,15 +20,17 @@ func RunFolders(args []string) error {
 	jsonOut := fs.Bool("json", false, "Output in JSON format")
 
 	fs.Usage = func() {
-		fmt.Fprintln(ErrOut, "Usage: matcha folders [flags]")
-		fmt.Fprintln(ErrOut, "")
-		fmt.Fprintln(ErrOut, "List all folders for a configured email account.")
-		fmt.Fprintln(ErrOut, "")
-		fmt.Fprintln(ErrOut, "Flags:")
+		fprintln(ErrOut, "Usage: matcha folders [flags]")
+		fprintln(ErrOut, "")
+		fprintln(ErrOut, "List all folders for a configured email account.")
+		fprintln(ErrOut, "")
+		fprintln(ErrOut, "Flags:")
 		fs.PrintDefaults()
 	}
 
-	fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	cfg, account, err := resolveAccount(*from)
 	if err != nil {
@@ -37,7 +39,7 @@ func RunFolders(args []string) error {
 
 	// Instantiate the client with autoStart = false
 	svc := NewServiceFunc(cfg, false)
-	defer svc.Close()
+	defer func() { _ = svc.Close() }()
 
 	folders, err := svc.FetchFolders(account.ID)
 	if err != nil {
@@ -53,10 +55,10 @@ func RunFolders(args []string) error {
 		if err != nil {
 			return fmt.Errorf("json marshal: %w", err)
 		}
-		fmt.Fprintln(Out, string(data))
+		fprintln(Out, string(data))
 	} else {
 		for _, f := range folders {
-			fmt.Fprintln(Out, f.Name)
+			fprintln(Out, f.Name)
 		}
 	}
 

@@ -7,6 +7,15 @@ import (
 	"strings"
 )
 
+// Management subcommand names.
+const (
+	cmdArchive    = "archive"
+	cmdDelete     = "delete"
+	cmdMarkRead   = "mark-read"
+	cmdMarkUnread = "mark-unread"
+	cmdMove       = "move"
+)
+
 func parseUIDs(s string) ([]uint32, error) {
 	s = strings.ReplaceAll(s, ",", " ")
 	parts := strings.Fields(s)
@@ -42,14 +51,14 @@ func RunManage(args []string) error {
 	fs.SetOutput(ErrOut)
 	from := fs.String("from", "", "Email address of the account to use")
 	fs.Usage = func() {
-		fmt.Fprintln(ErrOut, "Usage:")
-		fmt.Fprintln(ErrOut, "  matcha archive     [--from <email>] <folder> <uids>")
-		fmt.Fprintln(ErrOut, "  matcha delete      [--from <email>] <folder> <uids>")
-		fmt.Fprintln(ErrOut, "  matcha mark-read   [--from <email>] <folder> <uids>")
-		fmt.Fprintln(ErrOut, "  matcha mark-unread [--from <email>] <folder> <uids>")
-		fmt.Fprintln(ErrOut, "  matcha move        [--from <email>] <src_folder> <dst_folder> <uids>")
-		fmt.Fprintln(ErrOut, "")
-		fmt.Fprintln(ErrOut, "<uids> is a comma- or space-separated list of UIDs (e.g. 1,2,3).")
+		fprintln(ErrOut, "Usage:")
+		fprintln(ErrOut, "  matcha archive     [--from <email>] <folder> <uids>")
+		fprintln(ErrOut, "  matcha delete      [--from <email>] <folder> <uids>")
+		fprintln(ErrOut, "  matcha mark-read   [--from <email>] <folder> <uids>")
+		fprintln(ErrOut, "  matcha mark-unread [--from <email>] <folder> <uids>")
+		fprintln(ErrOut, "  matcha move        [--from <email>] <src_folder> <dst_folder> <uids>")
+		fprintln(ErrOut, "")
+		fprintln(ErrOut, "<uids> is a comma- or space-separated list of UIDs (e.g. 1,2,3).")
 		fs.PrintDefaults()
 	}
 	positionals, err := parseInterspersed(fs, rest)
@@ -63,10 +72,10 @@ func RunManage(args []string) error {
 	}
 
 	svc := NewServiceFunc(cfg, false)
-	defer svc.Close()
+	defer func() { _ = svc.Close() }()
 
 	switch subcommand {
-	case "archive", "delete", "mark-read", "mark-unread":
+	case cmdArchive, cmdDelete, cmdMarkRead, cmdMarkUnread:
 		if len(positionals) < 2 {
 			return fmt.Errorf("folder and uids are required")
 		}
@@ -80,30 +89,30 @@ func RunManage(args []string) error {
 		}
 
 		switch subcommand {
-		case "archive":
+		case cmdArchive:
 			err = svc.ArchiveEmails(account.ID, folder, uids)
 			if err == nil {
-				fmt.Fprintf(Out, "Success: Archived %s.\n", pluralizeEmails(len(uids)))
+				fprintf(Out, "Success: Archived %s.\n", pluralizeEmails(len(uids)))
 			}
-		case "delete":
+		case cmdDelete:
 			err = svc.DeleteEmails(account.ID, folder, uids)
 			if err == nil {
-				fmt.Fprintf(Out, "Success: Deleted %s.\n", pluralizeEmails(len(uids)))
+				fprintf(Out, "Success: Deleted %s.\n", pluralizeEmails(len(uids)))
 			}
-		case "mark-read":
+		case cmdMarkRead:
 			err = svc.MarkRead(account.ID, folder, uids)
 			if err == nil {
-				fmt.Fprintf(Out, "Success: Marked %s as read.\n", pluralizeEmails(len(uids)))
+				fprintf(Out, "Success: Marked %s as read.\n", pluralizeEmails(len(uids)))
 			}
-		case "mark-unread":
+		case cmdMarkUnread:
 			err = svc.MarkUnread(account.ID, folder, uids)
 			if err == nil {
-				fmt.Fprintf(Out, "Success: Marked %s as unread.\n", pluralizeEmails(len(uids)))
+				fprintf(Out, "Success: Marked %s as unread.\n", pluralizeEmails(len(uids)))
 			}
 		}
 		return err
 
-	case "move":
+	case cmdMove:
 		if len(positionals) < 3 {
 			return fmt.Errorf("source_folder, destination_folder, and uids are required")
 		}
@@ -118,7 +127,7 @@ func RunManage(args []string) error {
 		}
 		err = svc.MoveEmails(account.ID, uids, srcFolder, dstFolder)
 		if err == nil {
-			fmt.Fprintf(Out, "Success: Moved %s to %s.\n", pluralizeEmails(len(uids)), dstFolder)
+			fprintf(Out, "Success: Moved %s to %s.\n", pluralizeEmails(len(uids)), dstFolder)
 		}
 		return err
 

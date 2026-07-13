@@ -10,10 +10,8 @@ import (
 
 // Package-level hookable variables for unit testing
 var (
-	configLoadConfig = config.LoadConfig
-	NewServiceFunc   = func(cfg *config.Config, autoStart bool) daemonclient.Service {
-		return daemonclient.NewCLIClient(cfg, autoStart)
-	}
-	Out    io.Writer = os.Stdout
-	ErrOut io.Writer = os.Stderr
+	configLoadConfig           = config.LoadConfig
+	NewServiceFunc             = daemonclient.NewCLIClient
+	Out              io.Writer = os.Stdout
+	ErrOut           io.Writer = os.Stderr
 )

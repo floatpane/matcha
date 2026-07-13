@@ -4,14 +4,36 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/floatpane/matcha/backend"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/i18n"
+
+	// Register the bundled i18n translation catalogs via their init functions.
 	_ "github.com/floatpane/matcha/i18n/languages"
 )
+
+// inboxFolder is the canonical name of the default mailbox.
+const inboxFolder = "INBOX"
+
+// fprintln writes a line to w. Failed writes to the CLI's stdout/stderr are
+// not actionable, so the error is intentionally discarded.
+func fprintln(w io.Writer, a ...any) {
+	_, _ = fmt.Fprintln(w, a...)
+}
+
+// fprintf is the fmt.Fprintf counterpart of fprintln; see its note on errors.
+func fprintf(w io.Writer, format string, a ...any) {
+	_, _ = fmt.Fprintf(w, format, a...)
+}
+
+// fprint is the fmt.Fprint counterpart of fprintln; see its note on errors.
+func fprint(w io.Writer, a ...any) {
+	_, _ = fmt.Fprint(w, a...)
+}
 
 // resolveAccount centralizes the logic for loading the config and selecting an account.
 // It returns the loaded config and the selected account, or an error.
@@ -25,14 +47,14 @@ func resolveAccount(fromEmail string) (*config.Config, *config.Account, error) {
 	// GetManager() auto-initializes with English if not already initialized
 	if i18n.GetManager() == nil {
 		if err := i18n.Init("en"); err != nil {
-			fmt.Fprintf(ErrOut, "warning: failed to initialize i18n: %v\n", err)
+			fprintf(ErrOut, "warning: failed to initialize i18n: %v\n", err)
 		}
 	}
 
 	if manager := i18n.GetManager(); manager != nil {
 		lang := i18n.DetectLanguage(cfg)
 		if err := manager.SetLanguage(lang); err != nil {
-			fmt.Fprintf(ErrOut, "warning: failed to set i18n language: %v\n", err)
+			fprintf(ErrOut, "warning: failed to set i18n language: %v\n", err)
 		}
 	}
 
@@ -88,13 +110,13 @@ func printEmails(emails []backend.Email, jsonOutput bool) error {
 
 	// Text output
 	w := tabwriter.NewWriter(Out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "UID\tFROM\tSUBJECT\tDATE\tREAD")
+	fprintln(w, "UID\tFROM\tSUBJECT\tDATE\tREAD")
 	for _, email := range emails {
 		readStatus := " "
 		if email.IsRead {
 			readStatus = "✔"
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n",
+		fprintf(w, "%d\t%s\t%s\t%s\t%s\n",
 			email.UID,
 			sanitizeTextForTable(email.From),
 			sanitizeTextForTable(email.Subject),
@@ -108,7 +130,7 @@ func printEmails(emails []backend.Email, jsonOutput bool) error {
 // NormalizeFolder normalizes a folder name, mapping empty or case-insensitive "inbox" to "INBOX".
 func NormalizeFolder(folder string) string {
 	if folder == "" || strings.EqualFold(folder, "inbox") {
-		return "INBOX"
+		return inboxFolder
 	}
 	return folder
 }
