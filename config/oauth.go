@@ -1,12 +1,15 @@
 package config
 
 import (
+	"bytes"
+	"context"
 	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 //go:embed oauth_script.py
@@ -42,17 +45,26 @@ func OAuthScriptPath() (string, error) {
 
 // GetOAuth2Token retrieves a fresh OAuth2 access token for the account by
 // invoking the Python helper script. The script handles token refresh
-// automatically.
+// automatically. The subprocess is killed after 30 seconds to prevent hangs.
 func GetOAuth2Token(email string) (string, error) {
 	script, err := OAuthScriptPath()
 	if err != nil {
 		return "", err
 	}
 
-	cmd := exec.Command("python3", script, "token", email) //nolint:noctx
-	cmd.Stderr = os.Stderr
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "python3", script, "token", email)
+
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+
 	out, err := cmd.Output()
 	if err != nil {
+		if stderrBuf.Len() > 0 {
+			return "", fmt.Errorf("oauth2 token retrieval failed: %w: %s", err, strings.TrimSpace(stderrBuf.String()))
+		}
 		return "", fmt.Errorf("oauth2 token retrieval failed: %w", err)
 	}
 
@@ -68,6 +80,7 @@ func GetOAuth2Token(email string) (string, error) {
 // helper script. It opens the user's browser for authorization.
 // provider should be "gmail" or "outlook". If empty, the script auto-detects from the email.
 // clientID and clientSecret are optional — if empty, the script uses stored credentials.
+// The subprocess is killed after 5 minutes to prevent indefinite hangs.
 func RunOAuth2Flow(email, provider, clientID, clientSecret string) error {
 	script, err := OAuthScriptPath()
 	if err != nil {
@@ -82,8 +95,21 @@ func RunOAuth2Flow(email, provider, clientID, clientSecret string) error {
 		args = append(args, "--client-id", clientID, "--client-secret", clientSecret)
 	}
 
-	cmd := exec.Command("python3", args...) //nolint:noctx
+	// 5-minute timeout: the user needs time to complete the browser-based
+	// OAuth consent flow, but the process must not hang forever.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "python3", args...)
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+	if err := cmd.Run(); err != nil {
+		if stderrBuf.Len() > 0 {
+			return fmt.Errorf("oauth2 flow failed: %w: %s", err, strings.TrimSpace(stderrBuf.String()))
+		}
+		return fmt.Errorf("oauth2 flow failed: %w", err)
+	}
+	return nil
 }
