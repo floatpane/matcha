@@ -3,6 +3,7 @@ package config
 import (
 	_ "embed"
 	"encoding/json"
+	"log"
 
 	keybind "github.com/floatpane/go-keybind"
 )
@@ -87,7 +88,9 @@ type DraftsKeys struct {
 func defaultKeybinds() KeybindsConfig {
 	var kb KeybindsConfig
 	if err := json.Unmarshal(defaultKeybindsJSON, &kb); err != nil {
-		panic("matcha: malformed default_keybinds.json: " + err.Error())
+		// This should never happen — the embedded JSON is compiled into the
+		// binary. If it does, return empty keybinds rather than panicking.
+		log.Printf("matcha: malformed default_keybinds.json (using empty keybinds): %v", err)
 	}
 	return kb
 }

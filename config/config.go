@@ -663,7 +663,7 @@ func LoadConfig() (*Config, error) {
 			}
 			return &config, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("could not parse config file %s: %w", path, err)
 	}
 
 	config.DisableImages = raw.DisableImages
