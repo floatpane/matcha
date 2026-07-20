@@ -2,10 +2,13 @@ package view
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"mime/quotedprintable"
+	"net"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -284,6 +287,11 @@ func debugImageProtocol(format string, args ...interface{}) {
 }
 
 const remoteImageCacheSize = 20
+const maxRemoteImageRedirects = 5
+
+// remoteImageClient is a shared HTTP client for remote image fetches with a
+// hard redirect cap to prevent SSRF redirect chains.
+var remoteImageClient = httpclient.NewWithRedirectCap(httpclient.RemoteImageTimeout, maxRemoteImageRedirects)
 
 // remoteImageCache caches fetched remote images (URL -> base64 PNG string).
 var remoteImageCache *lru.Cache[string, string]
@@ -296,26 +304,86 @@ func init() {
 	remoteImageCache = c
 }
 
-func fetchRemoteBase64(url string) string {
-	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+// isPrivateHost returns true if hostname resolves to a loopback,
+// link-local, or RFC 1918/4193 address. This prevents SSRF attacks where
+// a malicious HTML email embeds images pointing at internal services
+// (e.g. cloud metadata endpoints, local databases).
+func isPrivateHost(hostname string) bool {
+	resolver := &net.Resolver{}
+	addrs, err := resolver.LookupIPAddr(context.Background(), hostname)
+	if err != nil {
+		// If DNS fails, reject to be safe
+		return true
+	}
+	for _, a := range addrs {
+		addr := a.IP
+		if ip4 := addr.To4(); ip4 != nil {
+			// 127.0.0.0/8 — loopback
+			if ip4[0] == 127 {
+				return true
+			}
+			// 10.0.0.0/8 — private
+			if ip4[0] == 10 {
+				return true
+			}
+			// 172.16.0.0/12 — private
+			if ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31 {
+				return true
+			}
+			// 192.168.0.0/16 — private
+			if ip4[0] == 192 && ip4[1] == 168 {
+				return true
+			}
+			// 169.254.0.0/16 — link-local (cloud metadata)
+			if ip4[0] == 169 && ip4[1] == 254 {
+				return true
+			}
+			// 0.0.0.0/8
+			if ip4[0] == 0 {
+				return true
+			}
+		} else {
+			// IPv6 loopback ::1
+			if addr.IsLoopback() {
+				return true
+			}
+			// IPv6 link-local fe80::/10
+			if addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func fetchRemoteBase64(rawURL string) string {
+	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
+		return ""
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	if isPrivateHost(parsed.Hostname()) {
+		debugImageProtocol("remote fetch blocked (private host) url=%s", rawURL)
 		return ""
 	}
 
 	// Check cache first
-	if cached, ok := remoteImageCache.Get(url); ok {
-		debugImageProtocol("remote cache hit url=%s", url)
+	if cached, ok := remoteImageCache.Get(rawURL); ok {
+		debugImageProtocol("remote cache hit url=%s", rawURL)
 		return cached
 	}
 
-	client := httpclient.New(httpclient.RemoteImageTimeout)
-	resp, err := client.Get(url)
+	resp, err := remoteImageClient.Get(rawURL)
 	if err != nil {
-		debugImageProtocol("remote fetch failed url=%s err=%v", url, err)
+		debugImageProtocol("remote fetch failed url=%s err=%v", rawURL, err)
 		return ""
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		debugImageProtocol("remote fetch non-200 url=%s status=%d", url, resp.StatusCode)
+		debugImageProtocol("remote fetch non-200 url=%s status=%d", rawURL, resp.StatusCode)
 		return ""
 	}
 	// Limit response body to 10 MB to prevent memory exhaustion from
@@ -323,19 +391,19 @@ func fetchRemoteBase64(url string) string {
 	const maxImageSize = 10 << 20 // 10 MB
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxImageSize))
 	if err != nil {
-		debugImageProtocol("remote fetch read error url=%s err=%v", url, err)
+		debugImageProtocol("remote fetch read error url=%s err=%v", rawURL, err)
 		return ""
 	}
 
 	result, ok := clib.DecodeToPNG(data)
 	if !ok {
-		debugImageProtocol("remote decode failed url=%s", url)
+		debugImageProtocol("remote decode failed url=%s", rawURL)
 		return ""
 	}
 
 	encoded := base64.StdEncoding.EncodeToString(result.PNGData)
-	debugImageProtocol("remote fetch ok url=%s len=%d", url, len(encoded))
-	remoteImageCache.Add(url, encoded)
+	debugImageProtocol("remote fetch ok url=%s len=%d", rawURL, len(encoded))
+	remoteImageCache.Add(rawURL, encoded)
 	return encoded
 }
 
