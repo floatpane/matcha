@@ -416,17 +416,24 @@ func connectWithOptions(account *config.Account, extraOpts *imapclient.Options) 
 	var c *imapclient.Client
 	var err error
 
-	// If using standard non-implicit ports (1143 or 143), use DialStartTLS
-	if imapPort == 1143 || imapPort == 143 {
-		c, err = imapclient.DialStartTLS(addr, options)
+	// Port 993 always uses implicit TLS. For all other ports, try STARTTLS
+	// first to support local bridges (e.g. Proton Mail Bridge) that serve
+	// IMAP on non-standard ports. If STARTTLS fails, fall back to implicit
+	// TLS for servers that use non-standard ports for implicit TLS
+	// (e.g. GreenMail on port 3993).
+	if imapPort == 993 {
+		c, err = imapclient.DialTLS(addr, options)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		// Otherwise default to implicit TLS (port 993)
-		c, err = imapclient.DialTLS(addr, options)
+		c, err = imapclient.DialStartTLS(addr, options)
 		if err != nil {
-			return nil, err
+			// STARTTLS failed; try implicit TLS.
+			c, err = imapclient.DialTLS(addr, options)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
