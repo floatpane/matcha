@@ -361,8 +361,8 @@ Commands:
   oauth, gmail     Manage OAuth / Gmail authentication
   setup-mailto     Register matcha as the mailto: handler
   setup-protocol   Register the matcha: URL scheme handler
-  update           Update matcha to the latest version
-  version          Print the version
+  update           Update matcha to the latest release
+  version          Print version information
   help             Show this help
 
 Flags:
@@ -370,7 +370,7 @@ Flags:
   --verbose, -V    Enable verbose logging
   --logs           Show the in-app log panel
   -h, --help       Show this help
-  -v, --version    Print the version
+  -v, --version    Print version information
 
 Run 'matcha <command> --help' for more information on a command.
 `)
