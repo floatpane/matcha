@@ -2337,6 +2337,13 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				break
 			}
 		}
+		// Resolve the actual folder name the same way the body fetch does,
+		// so attachments in custom folders (Starred, All Mail, ...) are
+		// fetched from the folder the email was opened in, not INBOX.
+		folderName := folderInbox
+		if m.folderInbox != nil {
+			folderName = m.folderInbox.GetCurrentFolder()
+		}
 		newMsg := tui.DownloadAttachmentMsg{
 			Index:     msg.Index,
 			Filename:  msg.Filename,
@@ -2345,6 +2352,7 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			AccountID: msg.AccountID,
 			Encoding:  encoding,
 			Mailbox:   msg.Mailbox,
+			Folder:    folderName,
 		}
 		return m, tea.Batch(m.current.Init(), downloadAttachmentCmd(account, email.UID, newMsg))
 
@@ -3616,7 +3624,13 @@ func downloadAttachmentCmd(account *config.Account, uid uint32, msg tui.Download
 		case tui.MailboxArchive:
 			data, err = fetcher.FetchArchiveAttachment(account, uid, msg.PartID, msg.Encoding)
 		case tui.MailboxInbox:
-			data, err = fetcher.FetchAttachment(account, uid, msg.PartID, msg.Encoding)
+			// Use the folder the email was opened in; custom folders
+			// (Starred, All Mail, ...) share the inbox mailbox kind.
+			folder := msg.Folder
+			if folder == "" {
+				folder = folderInbox
+			}
+			data, err = fetcher.FetchAttachmentFromMailbox(account, folder, uid, msg.PartID, msg.Encoding)
 		}
 
 		if err != nil {

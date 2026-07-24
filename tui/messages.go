@@ -256,6 +256,7 @@ type DownloadAttachmentMsg struct {
 	AccountID string
 	Encoding  string
 	Mailbox   MailboxKind
+	Folder    string // actual mailbox folder name, used when Mailbox is MailboxInbox
 }
 
 type AttachmentDownloadedMsg struct {
