@@ -105,6 +105,9 @@ func runSubcommand(args []string) {
 	}
 
 	switch args[1] {
+	case "-h", "--help", "help":
+		printHelp()
+		cliutil.Exit(0)
 	case "-v", "--version", "version":
 		printVersion()
 		cliutil.Exit(0)
@@ -336,6 +339,41 @@ func ensureProtocolHandler() {
 		}
 		_ = os.WriteFile(sentinel, []byte("1"), 0644)
 	}()
+}
+
+func printHelp() {
+	fmt.Print(`matcha - a terminal email client
+
+Usage:
+  matcha [flags]            Launch the TUI (default)
+  matcha <command> [args]
+
+Commands:
+  send             Send an email from the command line
+  apply            Apply a patch from a git-format-patch email
+  send-patch       Send a git-format-patch email
+  contacts         Manage contacts (export, sync)
+  config           View or edit configuration
+  dict             Manage the spellcheck dictionary
+  install          Install a plugin
+  marketplace      Browse the plugin marketplace
+  daemon           Run the background sync daemon
+  oauth, gmail     Manage OAuth / Gmail authentication
+  setup-mailto     Register matcha as the mailto: handler
+  setup-protocol   Register the matcha: URL scheme handler
+  update           Update matcha to the latest release
+  version          Print version information
+  help             Show this help
+
+Flags:
+  --debug          Enable debug logging
+  --verbose, -V    Enable verbose logging
+  --logs           Show the in-app log panel
+  -h, --help       Show this help
+  -v, --version    Print version information
+
+Run 'matcha <command> --help' for more information on a command.
+`)
 }
 
 func printVersion() {
