@@ -57,8 +57,8 @@ PROVIDERS = {
         "token_endpoint": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
         "revoke_endpoint": None,  # Microsoft does not support token revocation via endpoint
         "scopes": [
-            "https://outlook.office365.com/IMAP.AccessAsUser.All",
-            "https://outlook.office365.com/SMTP.Send",
+            "https://outlook.office.com/IMAP.AccessAsUser.All",
+            "https://outlook.office.com/SMTP.Send",
             "offline_access",
         ],
         "extra_auth_params": {
@@ -171,8 +171,14 @@ def exchange_code(code, client_id, client_secret, provider):
     req = urllib.request.Request(cfg["token_endpoint"], data=data, method="POST")
     req.add_header("Content-Type", "application/x-www-form-urlencoded")
 
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read().decode())
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print(f"Token exchange failed (HTTP {e.code}):", file=sys.stderr)
+        print(body, file=sys.stderr)
+        sys.exit(1)
 
 
 def refresh_access_token(refresh_token, client_id, client_secret, provider):
