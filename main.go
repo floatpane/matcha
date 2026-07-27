@@ -2346,7 +2346,15 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			Encoding:  encoding,
 			Mailbox:   msg.Mailbox,
 		}
-		return m, tea.Batch(m.current.Init(), downloadAttachmentCmd(account, email.UID, newMsg))
+		// Resolve the actual IMAP folder the email lives in, mirroring the body
+		// fetch path. Custom folders (Starred, All Mail, Important) report
+		// Mailbox == MailboxInbox but carry the real name via folderInbox, so
+		// without this the attachment is fetched from INBOX and fails.
+		folderName := folderInbox
+		if m.folderInbox != nil {
+			folderName = m.folderInbox.GetCurrentFolder()
+		}
+		return m, tea.Batch(m.current.Init(), downloadAttachmentCmd(account, email.UID, folderName, newMsg))
 
 	case tui.AttachmentDownloadedMsg:
 		var statusMsg string
@@ -3603,7 +3611,7 @@ func truncateUTF8(s string, maxBytes int) string {
 	return s
 }
 
-func downloadAttachmentCmd(account *config.Account, uid uint32, msg tui.DownloadAttachmentMsg) tea.Cmd {
+func downloadAttachmentCmd(account *config.Account, uid uint32, folderName string, msg tui.DownloadAttachmentMsg) tea.Cmd {
 	return func() tea.Msg {
 		// Download and decode the attachment using encoding provided in msg.Encoding.
 		var data []byte
@@ -3616,7 +3624,15 @@ func downloadAttachmentCmd(account *config.Account, uid uint32, msg tui.Download
 		case tui.MailboxArchive:
 			data, err = fetcher.FetchArchiveAttachment(account, uid, msg.PartID, msg.Encoding)
 		case tui.MailboxInbox:
-			data, err = fetcher.FetchAttachment(account, uid, msg.PartID, msg.Encoding)
+			fallthrough
+		default:
+			// MailboxInbox and any custom folder (Starred, All Mail, Important, ...).
+			// Select the exact folder the email lives in rather than assuming INBOX.
+			if folderName != "" {
+				data, err = fetcher.FetchAttachmentFromMailbox(account, folderName, uid, msg.PartID, msg.Encoding)
+			} else {
+				data, err = fetcher.FetchAttachment(account, uid, msg.PartID, msg.Encoding)
+			}
 		}
 
 		if err != nil {
