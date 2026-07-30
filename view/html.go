@@ -172,6 +172,10 @@ func hyperlinkSupported() bool {
 
 // hyperlink formats a string as either a terminal-clickable hyperlink or plain text with URL.
 func hyperlink(url, text string) string {
+	return Hyperlink(url, text)
+}
+
+func Hyperlink(url, text string) string {
 	url = strings.TrimSpace(url)
 	text = stripTerminalControls(text)
 	if text == "" {

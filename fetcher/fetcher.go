@@ -1257,6 +1257,34 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 		textPartEncoding = plainPartEncoding
 		bodyMIMEType = mimeTextPlain
 	}
+	if textPartID == "" && extractedBody == "" {
+		if data, err := fetchWholeMessage(); err == nil {
+			reader, readErr := mail.CreateReader(bytes.NewReader(data))
+			if readErr == nil && reader != nil {
+				for {
+					p, err := reader.NextPart()
+					if err != nil {
+						break
+					}
+					cType, _, _ := mime.ParseMediaType(p.Header.Get("Content-Type"))
+					if cType == mimeTextHTML && body == "" {
+						b, readErr := io.ReadAll(p.Body)
+						if readErr == nil {
+							body = string(b)
+							bodyMIMEType = mimeTextHTML
+							break
+						}
+					} else if cType == mimeTextPlain && body == "" {
+						b, readErr := io.ReadAll(p.Body)
+						if readErr == nil {
+							body = string(b)
+							bodyMIMEType = mimeTextPlain
+						}
+					}
+				}
+			}
+		}
+	}
 	if os.Getenv("DEBUG_KITTY_IMAGES") != "" {
 		msg := fmt.Sprintf("[kitty-img] body selection html=%s plain=%s chosen=%s\n", htmlPartID, plainPartID, textPartID)
 		log.Print(msg)

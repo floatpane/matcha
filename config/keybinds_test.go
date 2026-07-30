@@ -73,7 +73,7 @@ func TestLoadKeybindsFromDir_ParsesCustom(t *testing.T) {
 	}
 
 	// Override inbox delete key
-	custom := `{"inbox":{"delete":"x","archive":"a","refresh":"r","open":"enter","next_tab":"l","prev_tab":"h","visual_mode":"v"},"global":{"quit":"ctrl+c","cancel":"esc","nav_up":"k","nav_down":"j"},"email":{"reply":"r","forward":"f","delete":"d","archive":"a","toggle_images":"i","rsvp_accept":"1","rsvp_decline":"2","rsvp_tentative":"3","focus_attachments":"tab"},"composer":{"external_editor":"ctrl+e","next_field":"tab","prev_field":"shift+tab","undo_send":"u"},"folder":{"next_folder":"tab","prev_folder":"shift+tab","move":"m","focus_preview":"]","focus_inbox":"["},"drafts":{"open":"enter","delete":"d"}}`
+	custom := `{"inbox":{"delete":"x","archive":"a","refresh":"r","open":"enter","next_tab":"l","prev_tab":"h","visual_mode":"v"},"global":{"quit":"ctrl+c","cancel":"esc","nav_up":"k","nav_down":"j"},"email":{"reply":"r","forward":"f","delete":"d","archive":"a","toggle_images":"i","rsvp_accept":"1","rsvp_decline":"2","rsvp_tentative":"3","focus_attachments":"tab","approve_pr":"ctrl+a","request_changes":"ctrl+r","leave_comment":"ctrl+d"},"composer":{"external_editor":"ctrl+e","next_field":"tab","prev_field":"shift+tab","undo_send":"u"},"folder":{"next_folder":"tab","prev_folder":"shift+tab","move":"m","focus_preview":"]","focus_inbox":"["},"drafts":{"open":"enter","delete":"d"}}`
 	if err := os.WriteFile(filepath.Join(dir, "keybinds.json"), []byte(custom), 0600); err != nil {
 		t.Fatalf("write custom: %v", err)
 	}

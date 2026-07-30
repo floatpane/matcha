@@ -12,6 +12,7 @@ import (
 	"github.com/floatpane/matcha/backend"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
+	"github.com/floatpane/matcha/internal/github"
 	"github.com/floatpane/matcha/internal/httpclient"
 	"github.com/floatpane/matcha/tui"
 )
@@ -284,6 +285,44 @@ func FetchPreviewBodyCmd(cfg *config.Config, uid uint32, accountID string, folde
 			BodyMIMEType: bodyMIMEType,
 			Attachments:  attachments,
 			AccountID:    accountID,
+		}
+	}
+}
+
+// FetchGitHubGroupBodiesCmd fetches bodies for all emails in a GitHub notification group.
+func FetchGitHubGroupBodiesCmd(cfg *config.Config, key github.EventKey, folderName string, mailbox tui.MailboxKind) tea.Cmd {
+	return func() tea.Msg {
+		uids := github.GetGroupEmailUIDs(key)
+		bodies := make(map[string]tui.GitHubBodyData)
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+
+		for _, uid := range uids {
+			wg.Add(1)
+			go func(u github.EmailUID) {
+				defer wg.Done()
+				account := cfg.GetAccountByID(u.AccountID)
+				if account == nil {
+					return
+				}
+				body, bodyMIMEType, _, err := fetcher.FetchFolderEmailBody(account, folderName, u.UID)
+				if err != nil {
+					return
+				}
+				mu.Lock()
+				bodies[fmt.Sprintf("%d:%s", u.UID, u.AccountID)] = tui.GitHubBodyData{
+					Body:         body,
+					BodyMIMEType: bodyMIMEType,
+					AccountID:    u.AccountID,
+				}
+				mu.Unlock()
+			}(uid)
+		}
+		wg.Wait()
+
+		return tui.GitHubGroupBodiesFetchedMsg{
+			Key:    key,
+			Bodies: bodies,
 		}
 	}
 }

@@ -14,6 +14,7 @@ import (
 	overlay "github.com/floatpane/bubble-overlay"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
+	"github.com/floatpane/matcha/internal/github"
 	"github.com/floatpane/matcha/theme"
 )
 
@@ -131,6 +132,10 @@ type FolderInbox struct {
 	// splitOrientation controls the split-pane layout direction.
 	// Either config.SplitPaneHorizontal (default) or config.SplitPaneVertical.
 	splitOrientation string
+
+	// pendingGitHubGroupKey holds the group key when group bodies arrive
+	// before the preview pane is ready.
+	pendingGitHubGroupKey *github.EventKey
 }
 
 // SetSplitOrientation sets the split pane orientation. When the preview is
@@ -517,21 +522,29 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 		email.Body = msg.Body
 		email.BodyMIMEType = msg.BodyMIMEType
 		email.Attachments = msg.Attachments
-		// Create preview pane with column/row offsets for image rendering.
 		if m.isVerticalSplit() {
 			previewWidth := m.calculateInboxWidthVertical()
 			previewHeight := m.calculatePreviewHeight()
 			colOffset := sidebarWidth + 2
-			// In vertical split the preview starts below the inbox pane, so
-			// images must be pushed down by the inbox pane height + border row.
 			rowOffset := m.calculateInboxHeight() + 1
 			m.previewPane = NewEmailViewPreview(*email, previewWidth, previewHeight, colOffset, rowOffset, m.disableImages)
 		} else {
 			previewWidth := m.calculatePreviewWidth()
 			inboxWidth := m.calculateInboxWidth()
-			colOffset := sidebarWidth + 2 + inboxWidth + 2 // borders + padding
+			colOffset := sidebarWidth + 2 + inboxWidth + 2
 			m.previewPane = NewEmailViewPreview(*email, previewWidth, m.height, colOffset, 0, m.disableImages)
 		}
+		if m.pendingGitHubGroupKey != nil && m.previewPane != nil && m.previewPane.isGitHub {
+			m.previewPane.regenerateBody()
+			m.pendingGitHubGroupKey = nil
+		}
+		return m, nil
+
+	case GitHubGroupBodiesFetchedMsg:
+		if m.previewPane != nil && m.previewPane.isGitHub {
+			m.previewPane.regenerateBody()
+		}
+		m.pendingGitHubGroupKey = &msg.Key
 		return m, nil
 	}
 

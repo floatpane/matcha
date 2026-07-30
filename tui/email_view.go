@@ -11,8 +11,10 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	calendar "github.com/floatpane/go-icalendar"
+	"github.com/floatpane/matcha/backend/repoapi"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
+	"github.com/floatpane/matcha/internal/github"
 	"github.com/floatpane/matcha/theme"
 	"github.com/floatpane/matcha/view"
 	"github.com/floatpane/termimage"
@@ -51,6 +53,32 @@ func applyBodyTransform(body string, email fetcher.Email) string {
 	return BodyTransformer(body, email)
 }
 
+func renderEmailBody(email fetcher.Email, width int, showImages bool) (string, []view.ImagePlacement, bool) {
+	githubNotification := view.ParseGitHubNotification(email)
+	if githubNotification != nil {
+		ghView := NewGitHubConversationView(githubNotification, email, width, 0, MailboxInbox)
+		content := ghView.RenderContent()
+		return content, nil, true
+	}
+
+	patchInfo := view.DetectPatch(email.Body, email.BodyMIMEType, email.Subject, email.From)
+	if patchInfo != nil {
+		patchBody, ok := view.RenderPatchBody(email.Body, email.BodyMIMEType, email.Subject, email.From, width)
+		if ok {
+			return applyBodyTransform(patchBody, email), nil, false
+		}
+	}
+
+	inlineImages := inlineImagesFromAttachments(email.Attachments)
+	body, placements, err := view.ProcessBodyWithInline(email.Body, email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, !showImages)
+	if err != nil {
+		body = fmt.Sprintf("Error rendering body: %v", err)
+		placements = nil
+	}
+	body = applyBodyTransform(body, email)
+	return body, placements, false
+}
+
 type EmailView struct {
 	viewport           viewport.Model
 	email              fetcher.Email
@@ -78,6 +106,8 @@ type EmailView struct {
 	rowOffset          int // vertical offset for image rendering in split pane (vertical layout)
 	isPatch            bool
 	patchInfo          *view.PatchInfo
+	isGitHub           bool
+	githubBody         string
 }
 
 func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox MailboxKind, disableImages bool) *EmailView {
@@ -129,32 +159,10 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 	}
 	email.Attachments = filteredAtts
 
-	// Pass the styles from the tui package to the view package
-	inlineImages := inlineImagesFromAttachments(email.Attachments)
-
 	// Initial state for showImages matches config unless overridden later
 	showImages := !disableImages
 
-	// Detect git patches and render with diff syntax highlighting.
-	patchInfo := view.DetectPatch(email.Body, email.BodyMIMEType, email.Subject, email.From)
-	isPatch := patchInfo != nil
-
-	body, placements, err := view.ProcessBodyWithInline(email.Body, email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, !showImages)
-	if err != nil {
-		body = fmt.Sprintf("Error rendering body: %v", err)
-	}
-	body = applyBodyTransform(body, email)
-
-	// If a patch was detected, replace the body with the patch-rendered version
-	// (commit message + highlighted diff + metadata banner).
-	if isPatch {
-		// The viewport will be created below with this width; pass it in so the
-		// diff code box can be sized to fit.
-		patchBody, ok := view.RenderPatchBody(email.Body, email.BodyMIMEType, email.Subject, email.From, width)
-		if ok {
-			body = applyBodyTransform(patchBody, email)
-		}
-	}
+	body, placements, isGitHub := renderEmailBody(email, width, showImages)
 
 	// Create header and compute heights that reduce viewport space.
 	header := fmt.Sprintf("From: %s\nSubject: %s", email.From, email.Subject)
@@ -197,8 +205,8 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 		calendarEvent:     calendarEvent,
 		originalICSData:   originalICSData,
 		isPreviewMode:     false,
-		isPatch:           isPatch,
-		patchInfo:         patchInfo,
+		isGitHub:          isGitHub,
+		githubBody:        body,
 	}
 }
 
@@ -260,6 +268,10 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		m.handleWindowSize(msg)
+	case GitHubGroupBodiesFetchedMsg:
+		if m.isGitHub {
+			m.regenerateBody()
+		}
 	}
 
 	m.viewport, cmd = m.viewport.Update(msg)
@@ -405,12 +417,58 @@ func (m *EmailView) handleEmailBodyKey(msg tea.KeyPressMsg) (bool, func() (tea.M
 		return true, func() (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg { return GoToSendPatchMsg{} }
 		}
+	case kb.Email.ApprovePR, kb.Email.RequestChanges, kb.Email.LeaveComment:
+		if m.isGitHub {
+			return m.handlePRActionKey(msg)
+		}
 	case kb.Email.FocusAttachments:
 		if len(m.email.Attachments) > 0 {
 			m.focusOnAttachments = true
 		}
 	}
 	return false, nil
+}
+
+// handlePRActionKey dispatches a GitHub PR direct-action keypress (approve,
+// request changes, comment) from the standard email viewer. It emits a
+// PREditorOpenMsg so the app layer can open the editor and submit the review.
+func (m *EmailView) handlePRActionKey(msg tea.KeyPressMsg) (bool, func() (tea.Model, tea.Cmd)) {
+	kb := config.Keybinds
+	var action repoapi.ReviewEvent
+	switch msg.String() {
+	case kb.Email.ApprovePR:
+		action = repoapi.ReviewApprove
+	case kb.Email.RequestChanges:
+		action = repoapi.ReviewRequestChanges
+	case kb.Email.LeaveComment:
+		action = repoapi.ReviewComment
+	default:
+		return false, nil
+	}
+
+	key, ok := view.ExtractGitHubKey(m.email)
+	if !ok || !key.IsPR {
+		return false, nil
+	}
+
+	host := repoapi.ParseHostFromEmailSender(m.email.From)
+	commitSHA := ""
+	if group := github.GetGroup(key); group != nil && group.PRDetails != nil {
+		commitSHA = group.PRDetails.Head.Sha
+	}
+
+	return true, func() (tea.Model, tea.Cmd) {
+		return m, func() tea.Msg {
+			return PREditorOpenMsg{
+				Action:    action,
+				Owner:     key.OrgName,
+				Repo:      key.RepoName,
+				PRNumber:  key.IssueNumber,
+				Host:      host,
+				CommitSHA: commitSHA,
+			}
+		}
+	}
 }
 
 // rsvpResponseFromKey maps an RSVP key to its calendar response string.
@@ -429,12 +487,7 @@ func rsvpResponseFromKey(key string, kb config.KeybindsConfig) string {
 // regenerateBody re-renders the email body after a state change such as
 // toggling image display.
 func (m *EmailView) regenerateBody() {
-	inlineImages := inlineImagesFromAttachments(m.email.Attachments)
-	body, placements, err := view.ProcessBodyWithInline(m.email.Body, m.email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, !m.showImages)
-	if err != nil {
-		body = fmt.Sprintf("Error rendering body: %v", err)
-	}
-	body = applyBodyTransform(body, m.email)
+	body, placements, _ := renderEmailBody(m.email, m.viewport.Width(), m.showImages)
 	m.imagePlacements = placements
 	wrapped := wrapBodyToWidth(body, m.viewport.Width())
 	m.viewport.SetContent(wrapped + "\n")
@@ -453,17 +506,7 @@ func (m *EmailView) handleWindowSize(msg tea.WindowSizeMsg) {
 	m.viewport.SetHeight(msg.Height - headerHeight - attachmentHeight)
 
 	ClearKittyGraphics()
-	inlineImages := inlineImagesFromAttachments(m.email.Attachments)
-	body, placements, err := view.ProcessBodyWithInline(m.email.Body, m.email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, !m.showImages)
-	if err != nil {
-		body = fmt.Sprintf("Error rendering body: %v", err)
-	}
-	body = applyBodyTransform(body, m.email)
-	if m.isPatch {
-		if patchBody, ok := view.RenderPatchBody(m.email.Body, m.email.BodyMIMEType, m.email.Subject, m.email.From, m.viewport.Width()); ok {
-			body = applyBodyTransform(patchBody, m.email)
-		}
-	}
+	body, placements, _ := renderEmailBody(m.email, m.viewport.Width(), m.showImages)
 	m.imagePlacements = placements
 	wrapped := wrapBodyToWidth(body, m.viewport.Width())
 	m.viewport.SetContent(wrapped + "\n")
@@ -487,7 +530,9 @@ func (m *EmailView) View() tea.View {
 	}
 
 	var v tea.View
-	if calendarView != "" {
+	if m.isGitHub {
+		v = tea.NewView(fmt.Sprintf("%s\n%s", m.viewport.View(), help))
+	} else if calendarView != "" {
 		v = tea.NewView(fmt.Sprintf("%s\n%s\n%s\n%s\n%s", styledHeader, calendarView, m.viewport.View(), attachmentView, help))
 	} else {
 		v = tea.NewView(fmt.Sprintf("%s\n%s\n%s\n%s", styledHeader, m.viewport.View(), attachmentView, help))

@@ -31,7 +31,10 @@
     "rsvp_tentative": "3",
     "focus_attachments": "tab",
     "apply_patch": "p",
-    "send_patch": "P"
+    "send_patch": "P",
+    "approve_pr": "ctrl+a",
+    "request_changes": "ctrl+r",
+    "leave_comment": "ctrl+d"
   },
   "composer": {
     "external_editor": "ctrl+e",

@@ -14,6 +14,7 @@ import (
 	threading "github.com/floatpane/jwz-go"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
+	"github.com/floatpane/matcha/internal/github"
 	"github.com/floatpane/matcha/theme"
 )
 
@@ -32,20 +33,24 @@ var visualSelectedStyle lipgloss.Style
 var selectedDateStyle lipgloss.Style
 
 type item struct {
-	title, desc   string
-	originalIndex int
-	uid           uint32
-	accountID     string
-	accountEmail  string
-	date          time.Time
-	isRead        bool
-	threadKey     string
-	threadCount   int
-	threadRoot    bool
-	threadHeader  bool
-	threadChild   bool
-	threadDepth   int
-	expanded      bool
+	title, desc      string
+	originalIndex    int
+	uid              uint32
+	accountID        string
+	accountEmail     string
+	date             time.Time
+	isRead           bool
+	threadKey        string
+	threadCount      int
+	threadRoot       bool
+	threadHeader     bool
+	threadChild      bool
+	threadDepth      int
+	expanded         bool
+	isGitHubGroup    bool
+	githubGroupKey   github.EventKey
+	githubGroupCount int
+	githubGroupPR    bool
 }
 
 func (i item) Title() string       { return i.title }
@@ -90,6 +95,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if i.isRead {
 		statusStyle = readEmailStyle
 		statusIcon = "\uf2b6"
+	}
+	if i.isGitHubGroup {
+		statusIcon = "\uf09b"
 	}
 	if i.threadRoot && i.threadCount > 1 {
 		if i.expanded {
@@ -170,6 +178,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 	if i.threadRoot && i.threadCount > 1 {
 		subject = fmt.Sprintf("%s (%d)", subject, i.threadCount)
+	}
+	if i.isGitHubGroup {
+		subject = fmt.Sprintf("%s [%d]", subject, i.githubGroupCount)
 	}
 	if subjectBudget < 4 {
 		subjectBudget = 4
@@ -646,81 +657,37 @@ func extractEmailAddress(value string) string {
 
 func (m *Inbox) itemsForEmails(displayEmails []fetcher.Email, showAccountLabel bool) []list.Item {
 	if !m.isThreaded() {
-		items := make([]list.Item, len(displayEmails))
-		for i, email := range displayEmails {
-			items[i] = m.itemForEmail(email, i, showAccountLabel)
+		grouped := groupGitHubEmails(displayEmails)
+		items := make([]list.Item, 0, len(grouped))
+		for _, entry := range grouped {
+			if entry.IsGroup {
+				items = append(items, m.itemForGitHubGroup(entry, showAccountLabel))
+			} else {
+				items = append(items, m.itemForEmail(entry.Email, entry.Index, showAccountLabel))
+			}
 		}
 		return items
 	}
 
-	emailIndex := make(map[string]int, len(displayEmails))
-	headers := make([]threading.EmailHeader, 0, len(displayEmails))
-	for i, email := range displayEmails {
-		id := inboxEmailID(email)
-		emailIndex[id] = i
-		headers = append(headers, threading.EmailHeader{
-			ID:         email.MessageID,
-			InReplyTo:  email.InReplyTo,
-			References: email.References,
-			Subject:    email.Subject,
-			Date:       email.Date,
-			EmailID:    id,
-			Sender:     email.From,
-		})
+	// In threaded mode, group GitHub emails separately and thread the rest.
+	githubEmails, regularEmails, githubIndices := partitionGitHubEmails(displayEmails)
+	var items []list.Item
+
+	if len(githubEmails) > 0 {
+		grouped := groupGitHubEmails(githubEmails)
+		for _, entry := range grouped {
+			if entry.IsGroup {
+				items = append(items, m.itemForGitHubGroup(entry, showAccountLabel))
+			} else {
+				originalIndex := githubIndices[entry.Index]
+				items = append(items, m.itemForEmail(entry.Email, originalIndex, showAccountLabel))
+			}
+		}
 	}
 
-	var items []list.Item
-	for _, thread := range threading.Build(headers) {
-		key := threadItemKey(thread.Root)
-		root := firstEmailNode(thread.Root)
-		if root == nil {
-			continue
-		}
-		idx := emailIndex[root.EmailID]
-		rootEmail := displayEmails[idx]
-		latest := latestEmailNode(thread.Root)
-		if latest == nil {
-			latest = root
-		}
-
-		rootItem := m.itemForEmail(rootEmail, idx, showAccountLabel)
-		rootItem.title = firstNonEmpty(root.Subject, thread.Subject)
-		rootItem.desc = latest.Sender
-		rootItem.date = thread.LatestAt
-		rootItem.isRead = threadRead(displayEmails, emailIndex, thread.Root)
-		rootItem.threadKey = key
-		rootItem.threadCount = thread.Count
-		rootItem.threadRoot = true
-		rootItem.expanded = m.expanded[key]
-
-		if m.expanded[key] {
-			// When expanded, insert a thread header row for collapsing,
-			// then render the root email as a clickable item, then children.
-			headerItem := item{
-				title:        firstNonEmpty(root.Subject, thread.Subject),
-				desc:         latest.Sender,
-				date:         thread.LatestAt,
-				isRead:       threadRead(displayEmails, emailIndex, thread.Root),
-				threadKey:    key,
-				threadCount:  thread.Count,
-				threadRoot:   true,
-				threadHeader: true,
-				expanded:     true,
-			}
-			items = append(items, headerItem)
-
-			// Root email as a clickable item
-			clickableRoot := m.itemForEmail(rootEmail, idx, showAccountLabel)
-			clickableRoot.threadKey = key
-			clickableRoot.threadCount = thread.Count
-			clickableRoot.threadChild = true
-			clickableRoot.threadDepth = 1
-			items = append(items, clickableRoot)
-
-			items = appendThreadChildren(items, m, displayEmails, emailIndex, showAccountLabel, thread.Root.Children, 2)
-		} else {
-			items = append(items, rootItem)
-		}
+	if len(regularEmails) > 0 {
+		regularItems := m.itemsForEmailsThreaded(regularEmails, showAccountLabel)
+		items = append(items, regularItems...)
 	}
 	return items
 }
@@ -898,13 +865,24 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				m.lastClickTime = now
 				m.lastClickY = msg.Y
 				if isDoubleClick {
-					if selectedItem, ok := m.list.SelectedItem().(item); ok && selectedItem.uid != 0 {
+					if selectedItem, ok := m.list.SelectedItem().(item); ok && (selectedItem.uid != 0 || selectedItem.isGitHubGroup) {
 						i := selectedItem.originalIndex
 						uid := selectedItem.uid
 						accountID := selectedItem.accountID
 						var email *fetcher.Email
 						if m.searchActive {
 							email = m.GetEmailAtIndex(i)
+						}
+						if selectedItem.isGitHubGroup {
+							return m, func() tea.Msg {
+								return ViewGitHubGroupMsg{
+									Key:       selectedItem.githubGroupKey,
+									UID:       uid,
+									AccountID: accountID,
+									Mailbox:   m.mailbox,
+									Email:     email,
+								}
+							}
 						}
 						return m, func() tea.Msg {
 							return ViewEmailMsg{Index: i, UID: uid, AccountID: accountID, Mailbox: m.mailbox, Email: email}
@@ -1109,6 +1087,17 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				var email *fetcher.Email
 				if m.searchActive {
 					email = m.GetEmailAtIndex(idx)
+				}
+				if selectedItem.isGitHubGroup {
+					return m, func() tea.Msg {
+						return ViewGitHubGroupMsg{
+							Key:       selectedItem.githubGroupKey,
+							UID:       uid,
+							AccountID: accountID,
+							Mailbox:   m.mailbox,
+							Email:     email,
+						}
+					}
 				}
 				return m, func() tea.Msg {
 					return ViewEmailMsg{Index: idx, UID: uid, AccountID: accountID, Mailbox: m.mailbox, Email: email}
