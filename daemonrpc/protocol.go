@@ -29,27 +29,29 @@ const (
 
 // RPC method names.
 const (
-	MethodPing            = "Ping"
-	MethodGetStatus       = "GetStatus"
-	MethodGetAccounts     = "GetAccounts"
-	MethodReloadConfig    = "ReloadConfig"
-	MethodFetchEmails     = "FetchEmails"
-	MethodFetchEmailBody  = "FetchEmailBody"
-	MethodSendEmail       = "SendEmail"
-	MethodDeleteEmails    = "DeleteEmails"
-	MethodArchiveEmails   = "ArchiveEmails"
-	MethodMoveEmails      = "MoveEmails"
-	MethodMarkRead        = "MarkRead"
-	MethodFetchFolders    = "FetchFolders"
-	MethodRefreshFolder   = "RefreshFolder"
-	MethodSubscribe       = "Subscribe"
-	MethodUnsubscribe     = "Unsubscribe"
-	MethodSendRSVP        = "SendRSVP"
-	MethodGetCachedEmails = "GetCachedEmails"
-	MethodGetCachedBody   = "GetCachedBody"
-	MethodExportContacts  = "ExportContacts"
-	MethodQueueEmail      = "QueueEmail"
-	MethodCancelEmail     = "CancelEmail"
+	MethodPing             = "Ping"
+	MethodGetStatus        = "GetStatus"
+	MethodGetAccounts      = "GetAccounts"
+	MethodReloadConfig     = "ReloadConfig"
+	MethodFetchEmails      = "FetchEmails"
+	MethodFetchEmailBody   = "FetchEmailBody"
+	MethodSendEmail        = "SendEmail"
+	MethodDeleteEmails     = "DeleteEmails"
+	MethodArchiveEmails    = "ArchiveEmails"
+	MethodMoveEmails       = "MoveEmails"
+	MethodMarkRead         = "MarkRead"
+	MethodFetchFolders     = "FetchFolders"
+	MethodRefreshFolder    = "RefreshFolder"
+	MethodSubscribe        = "Subscribe"
+	MethodUnsubscribe      = "Unsubscribe"
+	MethodSendRSVP         = "SendRSVP"
+	MethodGetCachedEmails  = "GetCachedEmails"
+	MethodGetCachedBody    = "GetCachedBody"
+	MethodExportContacts   = "ExportContacts"
+	MethodQueueEmail       = "QueueEmail"
+	MethodCancelEmail      = "CancelEmail"
+	MethodAddGmailLabel    = "AddGmailLabel"
+	MethodRemoveGmailLabel = "RemoveGmailLabel"
 )
 
 // Event type names.
@@ -207,6 +209,20 @@ type GetCachedBodyParams struct {
 
 type ExportContactsParams struct {
 	Format string `json:"format"` // "json" or "csv"
+}
+
+type AddGmailLabelParams struct {
+	AccountID string `json:"account_id"`
+	Folder    string `json:"folder"`
+	UID       uint32 `json:"uid"`
+	Label     string `json:"label"`
+}
+
+type RemoveGmailLabelParams struct {
+	AccountID string `json:"account_id"`
+	Folder    string `json:"folder"`
+	UID       uint32 `json:"uid"`
+	Label     string `json:"label"`
 }
 
 // Event data types.

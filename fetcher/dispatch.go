@@ -50,6 +50,7 @@ func backendEmailsToFetcher(in []backend.Email) []Email {
 			References:  e.References,
 			Attachments: backendAttachmentsToFetcher(e.Attachments),
 			AccountID:   e.AccountID,
+			Labels:      e.Labels,
 		}
 	}
 	return out

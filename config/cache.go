@@ -22,6 +22,7 @@ type CachedEmail struct {
 	References []string  `json:"references,omitempty"`
 	AccountID  string    `json:"account_id"`
 	IsRead     bool      `json:"is_read"`
+	Labels     []string  `json:"labels,omitempty"`
 }
 
 // EmailCache stores cached emails for all accounts.

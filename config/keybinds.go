@@ -47,6 +47,7 @@ type InboxKeys struct {
 	Open           string `json:"open"`
 	NextTab        string `json:"next_tab"`
 	PrevTab        string `json:"prev_tab"`
+	EditLabels     string `json:"edit_labels"`
 }
 
 type EmailKeys struct {
@@ -62,6 +63,7 @@ type EmailKeys struct {
 	FocusAttachments string `json:"focus_attachments"`
 	ApplyPatch       string `json:"apply_patch"`
 	SendPatch        string `json:"send_patch"`
+	EditLabels       string `json:"edit_labels"`
 }
 
 type ComposerKeys struct {
@@ -134,6 +136,7 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 			"open":            kb.Inbox.Open,
 			"next_tab":        kb.Inbox.NextTab,
 			"prev_tab":        kb.Inbox.PrevTab,
+			"edit_labels":     kb.Inbox.EditLabels,
 		},
 		"email": {
 			"reply":             kb.Email.Reply,
@@ -148,6 +151,7 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 			"focus_attachments": kb.Email.FocusAttachments,
 			"apply_patch":       kb.Email.ApplyPatch,
 			"send_patch":        kb.Email.SendPatch,
+			"edit_labels":       kb.Email.EditLabels,
 		},
 		"composer": {
 			"undo_send":       kb.Composer.UndoSend,

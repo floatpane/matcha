@@ -158,6 +158,10 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 
 	// Create header and compute heights that reduce viewport space.
 	header := fmt.Sprintf("From: %s\nSubject: %s", email.From, email.Subject)
+	labelStr := renderLabelTags(email.Labels)
+	if labelStr != "" {
+		header += "\n" + labelStr
+	}
 	headerHeight := lipgloss.Height(header) + 2
 
 	attachmentHeight := 0
@@ -409,6 +413,15 @@ func (m *EmailView) handleEmailBodyKey(msg tea.KeyPressMsg) (bool, func() (tea.M
 		if len(m.email.Attachments) > 0 {
 			m.focusOnAttachments = true
 		}
+	case kb.Email.EditLabels:
+		// Only activate for Gmail accounts
+		if m.accountID != "" {
+			return true, func() (tea.Model, tea.Cmd) {
+				return m, func() tea.Msg {
+					return EditLabelsMsg{Email: m.email, AccountID: m.accountID, Folder: string(m.mailbox)}
+				}
+			}
+		}
 	}
 	return false, nil
 }
@@ -444,6 +457,10 @@ func (m *EmailView) regenerateBody() {
 // terminal is resized.
 func (m *EmailView) handleWindowSize(msg tea.WindowSizeMsg) {
 	header := fmt.Sprintf("To: %s\nFrom: %s\nSubject: %s ", strings.Join(m.email.To, ", "), m.email.From, m.email.Subject)
+	labelStr := renderLabelTags(m.email.Labels)
+	if labelStr != "" {
+		header += "\n" + labelStr
+	}
 	headerHeight := lipgloss.Height(header) + 2
 	attachmentHeight := 0
 	if len(m.email.Attachments) > 0 {
@@ -525,6 +542,13 @@ func (m *EmailView) renderHeader() string {
 	}
 
 	header := fmt.Sprintf("To: %s | From: %s | Subject: %s%s", strings.Join(m.email.To, ", "), m.email.From, m.email.Subject, cryptoStatus.String())
+
+	// Render Gmail labels in the header if present
+	labelStr := renderLabelTags(m.email.Labels)
+	if labelStr != "" {
+		header += "\n" + labelStr
+	}
+
 	return emailHeaderStyle.Width(m.viewport.Width()).Render(header)
 }
 
@@ -543,7 +567,11 @@ func (m *EmailView) renderHelp() string {
 	if m.isPatch && m.patchInfo != nil && m.patchInfo.HasDiff {
 		shortcuts.WriteString(" • \uf126 p: apply patch")
 	}
-	shortcuts.WriteString(" • \uf1d3 P: send patch")
+	shortcuts.WriteString("\uf1d3 P: send patch")
+	kb := config.Keybinds
+	if kb.Email.EditLabels != "" {
+		shortcuts.WriteString(" • \uf02b " + kb.Email.EditLabels + ": labels")
+	}
 	if view.ImageProtocolSupported() {
 		shortcuts.WriteString("• \uf03e i: toggle images")
 	}

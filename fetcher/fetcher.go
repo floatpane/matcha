@@ -116,7 +116,8 @@ type Email struct {
 	InReplyTo    string
 	References   []string
 	Attachments  []Attachment
-	AccountID    string // ID of the account this email belongs to
+	AccountID    string   // ID of the account this email belongs to
+	Labels       []string // Gmail X-GM-LABELS (empty for non-Gmail providers)
 }
 
 var headerMessageIDRE = regexp.MustCompile(`<[^>]+>`)
@@ -585,6 +586,20 @@ func fetchIMAPEmails(account *config.Account, mailbox string, limit, offset uint
 		}
 
 		batchEmails := filterAndBuildBatchEmails(batchMsgs, fetchEmail, account, isSentMailbox, deliveryHeaderSection)
+
+		// For Gmail accounts, fetch X-GM-LABELS for the UIDs in this batch.
+		if isGmailAccount(account) {
+			labelMap, err := fetchGmailLabelsForBatch(account, mailbox, batchEmails)
+			if err != nil {
+				loglevel.Debugf("gmail labels: fetch failed for batch: %v", err)
+			} else if labelMap != nil {
+				for i := range batchEmails {
+					if labels, ok := labelMap[batchEmails[i].UID]; ok {
+						batchEmails[i].Labels = labels
+					}
+				}
+			}
+		}
 
 		// Sort batch Newest -> Oldest by UID desc
 		sort.Slice(batchEmails, func(i, j int) bool {

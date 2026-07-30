@@ -105,6 +105,8 @@ func (d *Daemon) registerHandlers() {
 	d.server.Handle(daemonrpc.MethodUnsubscribe, d.handleUnsubscribe)
 	d.server.Handle(daemonrpc.MethodQueueEmail, d.handleQueueEmail)
 	d.server.Handle(daemonrpc.MethodCancelEmail, d.handleCancelEmail)
+	d.server.Handle(daemonrpc.MethodAddGmailLabel, d.handleAddGmailLabel)
+	d.server.Handle(daemonrpc.MethodRemoveGmailLabel, d.handleRemoveGmailLabel)
 }
 
 // Run starts the daemon: creates providers, starts the socket listener,

@@ -90,6 +90,7 @@ type Email struct {
 	References  []string
 	Attachments []Attachment
 	AccountID   string
+	Labels      []string // Gmail X-GM-LABELS (empty for non-Gmail providers)
 }
 
 // Attachment holds data for an email attachment.

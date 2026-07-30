@@ -17,7 +17,8 @@
     "filter": "f",
     "open": "enter",
     "next_tab": "l",
-    "prev_tab": "h"
+    "prev_tab": "h",
+    "edit_labels": "L"
   },
   "email": {
     "reply": "r",
@@ -31,7 +32,8 @@
     "rsvp_tentative": "3",
     "focus_attachments": "tab",
     "apply_patch": "p",
-    "send_patch": "P"
+    "send_patch": "P",
+    "edit_labels": "L"
   },
   "composer": {
     "external_editor": "ctrl+e",

@@ -156,6 +156,7 @@ func toBackendEmails(emails []fetcher.Email) []backend.Email {
 			References:  e.References,
 			Attachments: toBackendAttachments(e.Attachments),
 			AccountID:   e.AccountID,
+			Labels:      e.Labels,
 		}
 	}
 	return result

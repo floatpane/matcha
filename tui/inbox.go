@@ -46,6 +46,7 @@ type item struct {
 	threadChild   bool
 	threadDepth   int
 	expanded      bool
+	labels        []string
 }
 
 func (i item) Title() string       { return i.title }
@@ -183,7 +184,13 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 	styledSubject := statusStyle.Render(subject)
 
+	// Render Gmail labels as styled tags after the subject
+	labelStr := renderLabelTags(i.labels)
+
 	str := prefix + styledIcon + " " + styledSender + separator + styledSubject
+	if labelStr != "" {
+		str += " " + labelStr
+	}
 
 	// Pad to push date to the right
 	padding := listWidth - lipgloss.Width(str) - dateWidth - cursorWidth
@@ -754,6 +761,7 @@ func (m *Inbox) itemForEmail(email fetcher.Email, index int, showAccountLabel bo
 		accountEmail:  accountEmail,
 		date:          email.Date,
 		isRead:        email.IsRead,
+		labels:        email.Labels,
 	}
 }
 
@@ -1112,6 +1120,30 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				}
 				return m, func() tea.Msg {
 					return ViewEmailMsg{Index: idx, UID: uid, AccountID: accountID, Mailbox: m.mailbox, Email: email}
+				}
+			}
+		case kb.Inbox.EditLabels:
+			// Only activate for Gmail accounts — validation done in app.go
+			selectedItem, ok := m.list.SelectedItem().(item)
+			if ok && selectedItem.uid != 0 {
+				// Find the email to get labels
+				var email fetcher.Email
+				displayEmails := m.displayEmails()
+				if selectedItem.originalIndex >= 0 && selectedItem.originalIndex < len(displayEmails) {
+					email = displayEmails[selectedItem.originalIndex]
+				} else {
+					email = fetcher.Email{
+						UID:       selectedItem.uid,
+						AccountID: selectedItem.accountID,
+						Labels:    selectedItem.labels,
+					}
+				}
+				return m, func() tea.Msg {
+					return EditLabelsMsg{
+						Email:     email,
+						AccountID: selectedItem.accountID,
+						Folder:    m.folderName,
+					}
 				}
 			}
 		}

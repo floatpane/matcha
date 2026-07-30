@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/floatpane/matcha/config"
@@ -258,6 +259,60 @@ func (s *Store) RemoveEmailFromStores(uid uint32, accountID string) {
 	}
 }
 
+// AddGmailLabel adds a Gmail label to the email with the given UID and account,
+// updating all in-memory stores. No-op if the label already exists.
+func (s *Store) AddGmailLabel(uid uint32, accountID, label string) {
+	s.updateEmailLabels(uid, accountID, func(labels []string) []string {
+		for _, l := range labels {
+			if strings.EqualFold(l, label) {
+				return labels
+			}
+		}
+		return append(labels, label)
+	})
+}
+
+// RemoveGmailLabel removes a Gmail label from the email with the given UID and
+// account, updating all in-memory stores. No-op if the label doesn't exist.
+func (s *Store) RemoveGmailLabel(uid uint32, accountID, label string) {
+	s.updateEmailLabels(uid, accountID, func(labels []string) []string {
+		var filtered []string
+		for _, l := range labels {
+			if !strings.EqualFold(l, label) {
+				filtered = append(filtered, l)
+			}
+		}
+		return filtered
+	})
+}
+
+func (s *Store) updateEmailLabels(uid uint32, accountID string, fn func([]string) []string) {
+	for i := range s.Emails {
+		if s.Emails[i].UID == uid && s.Emails[i].AccountID == accountID {
+			s.Emails[i].Labels = fn(s.Emails[i].Labels)
+			break
+		}
+	}
+	if emails, ok := s.EmailsByAcct[accountID]; ok {
+		for i := range emails {
+			if emails[i].UID == uid {
+				emails[i].Labels = fn(emails[i].Labels)
+				break
+			}
+		}
+	}
+	for folderName, folderEmails := range s.FolderEmails {
+		for i := range folderEmails {
+			if folderEmails[i].UID == uid && folderEmails[i].AccountID == accountID {
+				folderEmails[i].Labels = fn(folderEmails[i].Labels)
+				s.FolderEmails[folderName] = folderEmails
+				go SaveFolderEmailsToCache(folderName, folderEmails)
+				break
+			}
+		}
+	}
+}
+
 func (s *Store) RemoveFolderEmail(folderName string, uid uint32, accountID string) []fetcher.Email {
 	emails, ok := s.FolderEmails[folderName]
 	if !ok {
@@ -333,6 +388,7 @@ func EmailsToCache(emails []fetcher.Email) []config.CachedEmail {
 			References: email.References,
 			AccountID:  email.AccountID,
 			IsRead:     email.IsRead,
+			Labels:     email.Labels,
 		})
 	}
 	return cached
@@ -352,6 +408,7 @@ func CacheToEmails(cached []config.CachedEmail) []fetcher.Email {
 			References: c.References,
 			AccountID:  c.AccountID,
 			IsRead:     c.IsRead,
+			Labels:     c.Labels,
 		})
 	}
 	return emails

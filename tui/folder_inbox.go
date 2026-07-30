@@ -116,6 +116,9 @@ type FolderInbox struct {
 	jumpFilterInput textinput.Model
 	jumpFiltered    []int // indices into folders when filtering
 
+	// Gmail label overlay state
+	labelOverlay *LabelOverlayState
+
 	// Image rendering preference, propagated from config.
 	disableImages bool
 
@@ -259,6 +262,11 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 	// If jump-to-folder overlay is active, handle its input
 	if m.jumpingToFolder {
 		return m.updateJumpOverlay(msg)
+	}
+
+	// If Gmail label overlay is active, handle its input
+	if m.labelOverlay != nil && m.labelOverlay.active {
+		return m.updateLabelOverlay(msg)
 	}
 
 	switch msg := msg.(type) {
@@ -407,6 +415,26 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 		ti.SetStyles(ThemedTextInputStyles())
 		m.jumpFilterInput = ti
 		return m, nil
+
+	case EditLabelsMsg:
+		// Start label overlay — only for Gmail accounts
+		var account *config.Account
+		for i := range m.accounts {
+			if m.accounts[i].ID == msg.AccountID {
+				account = &m.accounts[i]
+				break
+			}
+		}
+		if account == nil || !IsGmailAccount(account) {
+			return m, nil
+		}
+		folder := msg.Folder
+		if folder == "" {
+			folder = m.currentFolder
+		}
+		state := NewLabelOverlayState(msg.Email, *account, folder)
+		m.labelOverlay = &state
+		return m, textinput.Blink
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -569,6 +597,15 @@ func (m *FolderInbox) wrapInboxCmd(cmd tea.Cmd) tea.Cmd {
 		}
 		return msg
 	}
+}
+
+func (m *FolderInbox) updateLabelOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
+	state, cmd, dismissed := m.labelOverlay.UpdateLabelOverlay(msg)
+	m.labelOverlay = &state
+	if dismissed {
+		m.labelOverlay = nil
+	}
+	return m, cmd
 }
 
 func (m *FolderInbox) updateMoveOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -846,6 +883,11 @@ func (m *FolderInbox) View() tea.View {
 	// If jump-to-folder overlay is active, render it on top
 	if m.jumpingToFolder {
 		content = m.renderWithJumpOverlay(content)
+	}
+
+	// If Gmail label overlay is active, render it on top
+	if m.labelOverlay != nil && m.labelOverlay.active {
+		content = m.labelOverlay.RenderLabelOverlay(content, m.width, m.height)
 	}
 
 	// Composite plugin-injected custom components (floating overlays and

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/floatpane/matcha/daemonrpc"
+	"github.com/floatpane/matcha/fetcher"
 	"github.com/google/uuid"
 )
 
@@ -380,5 +381,53 @@ func (d *Daemon) handleCancelEmail(_ context.Context, _ *daemonrpc.Conn, params 
 	}
 
 	log.Printf("daemon: cancelled email %s", args.JobID)
+	return true, nil
+}
+
+func (d *Daemon) handleAddGmailLabel(ctx context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.AddGmailLabelParams](params)
+	if err != nil {
+		return nil, parseError(err)
+	}
+
+	d.mu.RLock()
+	account := d.config.GetAccountByID(args.AccountID)
+	d.mu.RUnlock()
+
+	if account == nil {
+		return nil, fmt.Errorf("no account for %s", args.AccountID)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, mutateTimeout)
+	defer cancel()
+	_ = ctx
+
+	if err := fetcher.AddGmailLabel(account, args.Folder, args.UID, args.Label); err != nil {
+		return nil, err
+	}
+	return true, nil
+}
+
+func (d *Daemon) handleRemoveGmailLabel(ctx context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.RemoveGmailLabelParams](params)
+	if err != nil {
+		return nil, parseError(err)
+	}
+
+	d.mu.RLock()
+	account := d.config.GetAccountByID(args.AccountID)
+	d.mu.RUnlock()
+
+	if account == nil {
+		return nil, fmt.Errorf("no account for %s", args.AccountID)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, mutateTimeout)
+	defer cancel()
+	_ = ctx
+
+	if err := fetcher.RemoveGmailLabel(account, args.Folder, args.UID, args.Label); err != nil {
+		return nil, err
+	}
 	return true, nil
 }

@@ -2488,6 +2488,87 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}
 		return m, nil
 
+	case tui.EditLabelsMsg:
+		// Provider validation: only allow for Gmail accounts
+		account := m.config.GetAccountByID(msg.AccountID)
+		if account == nil || !tui.IsGmailAccount(account) {
+			return m, m.showErrorCmd("Gmail labels are only available for Gmail accounts")
+		}
+		// Recipient validation: the account's email must be in To/Cc/Bcc
+		fetchEmail := account.FetchEmail
+		if fetchEmail == "" {
+			fetchEmail = account.Email
+		}
+		if !tui.IsRecipientOfEmail(msg.Email, fetchEmail, account) && !account.CatchAll {
+			return m, m.showErrorCmd("Cannot modify labels: your email address is not a recipient of this message")
+		}
+		// Switch back to folder inbox and forward the message to activate the overlay
+		tui.ClearKittyGraphics()
+		if m.folderInbox != nil {
+			m.current = m.folderInbox
+			return m.folderInbox.Update(msg)
+		}
+		return m, nil
+
+	case tui.GmailLabelModifiedMsg:
+		account := m.config.GetAccountByID(msg.AccountID)
+		if account == nil {
+			return m, m.showErrorCmd("Account not found")
+		}
+		if !tui.IsGmailAccount(account) {
+			return m, m.showErrorCmd("Gmail labels are only available for Gmail accounts")
+		}
+		folder := msg.Folder
+		if folder == "" {
+			folder = m.folderName()
+		}
+		// Update the in-memory store immediately for instant UI feedback
+		if msg.Add {
+			m.store.AddGmailLabel(msg.UID, msg.AccountID, msg.Label)
+		} else {
+			m.store.RemoveGmailLabel(msg.UID, msg.AccountID, msg.Label)
+		}
+		// Refresh the inbox display
+		if m.folderInbox != nil {
+			m.folderInbox.GetInbox().SetEmails(m.store.CloneFolder(folder), m.config.Accounts)
+		}
+		// Send the command to the server
+		return m, func() tea.Msg {
+			var err error
+			if msg.Add {
+				err = m.service.AddGmailLabel(msg.AccountID, folder, msg.UID, msg.Label)
+			} else {
+				err = m.service.RemoveGmailLabel(msg.AccountID, folder, msg.UID, msg.Label)
+			}
+			return tui.GmailLabelResultMsg{
+				UID:       msg.UID,
+				AccountID: msg.AccountID,
+				Label:     msg.Label,
+				Add:       msg.Add,
+				Err:       err,
+			}
+		}
+
+	case tui.GmailLabelResultMsg:
+		if msg.Err != nil {
+			// Revert the local store on failure
+			account := m.config.GetAccountByID(msg.AccountID)
+			if account != nil {
+				if msg.Add {
+					m.store.RemoveGmailLabel(msg.UID, msg.AccountID, msg.Label)
+				} else {
+					m.store.AddGmailLabel(msg.UID, msg.AccountID, msg.Label)
+				}
+				folder := m.folderName()
+				if m.folderInbox != nil {
+					m.folderInbox.GetInbox().SetEmails(m.store.CloneFolder(folder), m.config.Accounts)
+				}
+			}
+			log.Printf("Gmail label %s failed: %v", map[bool]string{true: "add", false: "remove"}[msg.Add], msg.Err)
+			return m, m.showErrorCmd(msg.Err.Error())
+		}
+		return m, nil
+
 	case tui.DownloadAttachmentMsg:
 		m.previousModel = m.current
 		m.current = tui.NewStatus(fmt.Sprintf("Downloading %s...", msg.Filename))

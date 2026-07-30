@@ -380,6 +380,31 @@ type EmailOpenedInBrowserMsg struct {
 	Err error
 }
 
+// GmailLabelModifiedMsg requests adding or removing a Gmail label on an email.
+type GmailLabelModifiedMsg struct {
+	UID       uint32
+	AccountID string
+	Folder    string
+	Label     string
+	Add       bool // true = add label, false = remove label
+}
+
+// GmailLabelResultMsg signals the result of a Gmail label modification.
+type GmailLabelResultMsg struct {
+	UID       uint32
+	AccountID string
+	Label     string
+	Add       bool
+	Err       error
+}
+
+// EditLabelsMsg requests opening the label editing overlay for an email.
+type EditLabelsMsg struct {
+	Email     fetcher.Email
+	AccountID string
+	Folder    string
+}
+
 // GoToSaveFilePickerMsg signals navigation to the save file picker for
 // email export.
 type GoToSaveFilePickerMsg struct {

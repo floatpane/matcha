@@ -34,6 +34,8 @@ type Service interface {
 	MoveEmails(accountID string, uids []uint32, src, dst string) error
 	MarkRead(accountID, folder string, uids []uint32) error
 	MarkUnread(accountID, folder string, uids []uint32) error
+	AddGmailLabel(accountID, folder string, uid uint32, label string) error
+	RemoveGmailLabel(accountID, folder string, uid uint32, label string) error
 	QueueEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, images map[string][]byte, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool, delaySeconds int, prebuiltRaw []byte) (string, error)
 	CancelEmail(jobID string) error
 	FetchFolders(accountID string) ([]backend.Folder, error)
@@ -289,6 +291,28 @@ func (s *daemonService) MarkUnread(accountID, folder string, uids []uint32) erro
 	})
 }
 
+func (s *daemonService) AddGmailLabel(accountID, folder string, uid uint32, label string) error {
+	return s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodAddGmailLabel, daemonrpc.AddGmailLabelParams{
+			AccountID: accountID,
+			Folder:    folder,
+			UID:       uid,
+			Label:     label,
+		}, nil)
+	})
+}
+
+func (s *daemonService) RemoveGmailLabel(accountID, folder string, uid uint32, label string) error {
+	return s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodRemoveGmailLabel, daemonrpc.RemoveGmailLabelParams{
+			AccountID: accountID,
+			Folder:    folder,
+			UID:       uid,
+			Label:     label,
+		}, nil)
+	})
+}
+
 func (s *daemonService) QueueEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, images map[string][]byte, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool, delaySeconds int, prebuiltRaw []byte) (string, error) {
 	var result daemonrpc.QueueEmailResult
 	err := s.call(func(c *Client) error {
@@ -495,6 +519,22 @@ func (s *directService) MarkUnread(accountID, folder string, uids []uint32) erro
 		}
 	}
 	return nil
+}
+
+func (s *directService) AddGmailLabel(accountID, folder string, uid uint32, label string) error {
+	acct := s.cfg.GetAccountByID(accountID)
+	if acct == nil {
+		return fmt.Errorf("no account for %s", accountID)
+	}
+	return fetcher.AddGmailLabel(acct, folder, uid, label)
+}
+
+func (s *directService) RemoveGmailLabel(accountID, folder string, uid uint32, label string) error {
+	acct := s.cfg.GetAccountByID(accountID)
+	if acct == nil {
+		return fmt.Errorf("no account for %s", accountID)
+	}
+	return fetcher.RemoveGmailLabel(acct, folder, uid, label)
 }
 
 func (s *directService) FetchFolders(accountID string) ([]backend.Folder, error) {
