@@ -678,3 +678,50 @@ func TestPassCmd(t *testing.T) {
 		t.Errorf("Password not resolved from pass_cmd: got %q", acc.Password)
 	}
 }
+
+// TestResolvePassword covers the lazy password retry from #1674: a pass_cmd or
+// keyring lookup that failed at load time (no gpg-agent, keyring daemon not up)
+// left Password empty and every subsequent login failed with the server's
+// "Empty username or password". ResolvePassword retries at connect time.
+func TestResolvePassword(t *testing.T) {
+	keyring.MockInit()
+	t.Setenv("HOME", t.TempDir())
+
+	t.Run("cached password wins", func(t *testing.T) {
+		acc := &Account{Email: "a@example.com", Password: "cached", PassCmd: "echo fromcmd"}
+		if got := acc.ResolvePassword(); got != "cached" {
+			t.Errorf("ResolvePassword() = %q, want %q", got, "cached")
+		}
+	})
+
+	t.Run("re-runs pass_cmd when empty", func(t *testing.T) {
+		acc := &Account{Email: "b@example.com", PassCmd: "echo fromcmd"}
+		if got := acc.ResolvePassword(); got != "fromcmd" {
+			t.Errorf("ResolvePassword() = %q, want %q", got, "fromcmd")
+		}
+	})
+
+	t.Run("failing pass_cmd yields empty", func(t *testing.T) {
+		acc := &Account{Email: "c@example.com", PassCmd: "exit 1"}
+		if got := acc.ResolvePassword(); got != "" {
+			t.Errorf("ResolvePassword() = %q, want empty", got)
+		}
+	})
+
+	t.Run("falls back to keyring", func(t *testing.T) {
+		if err := keyring.Set(keyringServiceName, "d@example.com", "fromkeyring"); err != nil {
+			t.Fatalf("keyring.Set() failed: %v", err)
+		}
+		acc := &Account{Email: "d@example.com"}
+		if got := acc.ResolvePassword(); got != "fromkeyring" {
+			t.Errorf("ResolvePassword() = %q, want %q", got, "fromkeyring")
+		}
+	})
+
+	t.Run("oauth2 accounts resolve to empty", func(t *testing.T) {
+		acc := &Account{Email: "e@example.com", AuthMethod: "oauth2", PassCmd: "echo fromcmd"}
+		if got := acc.ResolvePassword(); got != "" {
+			t.Errorf("ResolvePassword() = %q, want empty", got)
+		}
+	})
+}

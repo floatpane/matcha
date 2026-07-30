@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/floatpane/matcha/backend/imap" // register imap backend for provider tests
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/daemonrpc"
 )
@@ -204,5 +205,42 @@ func TestDaemon_BroadcastEvent(t *testing.T) {
 	}
 	if msg.Event.Type != daemonrpc.EventNewMail {
 		t.Errorf("type = %q, want NewMail", msg.Event.Type)
+	}
+}
+
+// TestDaemon_GetProviderCreatesOnDemand covers the "no provider for account"
+// regression (#1674): an account present in the config but missing from the
+// provider map must get a provider built on demand instead of failing every
+// delete/archive for the rest of the daemon's lifetime.
+func TestDaemon_GetProviderCreatesOnDemand(t *testing.T) {
+	d := New(&config.Config{
+		Accounts: []config.Account{{
+			ID:              "acc1",
+			Email:           "user@example.com",
+			ServiceProvider: "gmail",
+			Protocol:        "imap",
+		}},
+	})
+
+	// Simulates a provider that failed to build when Run() called initProviders.
+	if len(d.providers) != 0 {
+		t.Fatalf("expected empty provider map, got %d", len(d.providers))
+	}
+
+	p, err := d.getProvider("acc1")
+	if err != nil {
+		t.Fatalf("getProvider: %v", err)
+	}
+	if p == nil {
+		t.Fatal("expected a provider")
+	}
+
+	// Second call must reuse the cached provider.
+	p2, err := d.getProvider("acc1")
+	if err != nil {
+		t.Fatalf("getProvider (cached): %v", err)
+	}
+	if p2 != p {
+		t.Error("expected the cached provider to be reused")
 	}
 }

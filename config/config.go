@@ -340,6 +340,53 @@ func (a *Account) GetPOP3Port() int {
 	return 995 // Default POP3 SSL port
 }
 
+// ResolvePassword returns the account password, re-resolving it on demand when
+// the value cached at config-load time is empty.
+//
+// Resolution at load time can fail for reasons that are temporary or
+// process-specific: a pass_cmd whose gpg-agent is not reachable yet (common for
+// the auto-started daemon, which has no controlling terminal), or a Secret
+// Service keyring that was not up when Matcha launched. Without a retry, a
+// single failed lookup leaves Password empty for the whole process lifetime and
+// every login fails with a server-side error such as Gmail's
+// "NO Empty username or password".
+//
+// Returns "" for OAuth2 accounts (they authenticate via XOAUTH2) and when no
+// source yields a password.
+func (a *Account) ResolvePassword() string {
+	if a == nil {
+		return ""
+	}
+	if a.Password != "" {
+		return a.Password
+	}
+	if a.IsOAuth2() {
+		return ""
+	}
+
+	if a.PassCmd != "" {
+		pwd, err := resolvePassCmd(a.PassCmd)
+		if err != nil {
+			log.Printf("matcha: pass_cmd for %s failed: %v", a.Email, err)
+			return ""
+		}
+		return pwd
+	}
+
+	// In secure mode the password lives in the encrypted config, never the
+	// keyring, so there is nothing else to try.
+	if GetSessionKey() != nil {
+		return ""
+	}
+
+	pwd, err := keyring.Get(keyringServiceName, a.Email)
+	if err != nil {
+		log.Printf("matcha: keyring lookup for %s failed: %v", a.Email, err)
+		return ""
+	}
+	return pwd
+}
+
 // GetConfigDir returns the path to the configuration directory (exported).
 func GetConfigDir() (string, error) {
 	return configDir()

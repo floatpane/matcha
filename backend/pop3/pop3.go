@@ -78,7 +78,7 @@ func (p *Provider) connect() (*pop3client.Conn, error) {
 		return nil, fmt.Errorf("pop3 connect: %w", err)
 	}
 
-	if err := conn.Auth(p.account.Email, p.account.Password); err != nil {
+	if err := conn.Auth(p.account.Email, p.account.ResolvePassword()); err != nil {
 		_ = conn.Quit()
 		return nil, fmt.Errorf("pop3 auth: %w", err)
 	}

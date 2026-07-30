@@ -6,11 +6,14 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/floatpane/matcha/backend"
+	_ "github.com/floatpane/matcha/backend/imap"    // register imap backend for directService
 	_ "github.com/floatpane/matcha/backend/jmap"    // register jmap backend for directService
 	_ "github.com/floatpane/matcha/backend/maildir" // register maildir backend for directService
+	_ "github.com/floatpane/matcha/backend/pop3"    // register pop3 backend for directService
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/daemonrpc"
 	"github.com/floatpane/matcha/fetcher"
@@ -264,6 +267,7 @@ type directService struct {
 	cfg       *config.Config
 	providers map[string]backend.Provider
 	events    chan *daemonrpc.Event
+	mu        sync.RWMutex
 }
 
 func newDirectService(cfg *config.Config) *directService {
@@ -277,6 +281,9 @@ func newDirectService(cfg *config.Config) *directService {
 }
 
 func (s *directService) initProviders() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	for i := range s.cfg.Accounts {
 		acct := &s.cfg.Accounts[i]
 		if _, ok := s.providers[acct.ID]; ok {
@@ -291,11 +298,47 @@ func (s *directService) initProviders() {
 	}
 }
 
+// getProvider returns the provider for an account, creating it on demand.
+// A provider missing from the map (account added after the service was built,
+// or a constructor that failed once at startup) used to fail every later
+// operation with "no provider for account <id>".
 func (s *directService) getProvider(accountID string) (backend.Provider, error) {
+	s.mu.RLock()
 	p, ok := s.providers[accountID]
-	if !ok {
-		return nil, &daemonrpc.Error{Code: daemonrpc.ErrCodeInternal, Message: "no provider for account " + accountID}
+	acct := s.cfg.GetAccountByID(accountID)
+	s.mu.RUnlock()
+	if ok {
+		return p, nil
 	}
+
+	if acct == nil {
+		// Config in memory may be stale — reload from disk before giving up.
+		if err := s.ReloadConfig(); err != nil {
+			return nil, &daemonrpc.Error{Code: daemonrpc.ErrCodeInternal, Message: "no provider for account " + accountID + ": " + err.Error()}
+		}
+		s.mu.RLock()
+		p, ok = s.providers[accountID]
+		s.mu.RUnlock()
+		if ok {
+			return p, nil
+		}
+		return nil, &daemonrpc.Error{Code: daemonrpc.ErrCodeInternal, Message: "no provider for account " + accountID + ": account not found in config"}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p, ok := s.providers[accountID]; ok {
+		return p, nil
+	}
+	acct = s.cfg.GetAccountByID(accountID)
+	if acct == nil {
+		return nil, &daemonrpc.Error{Code: daemonrpc.ErrCodeInternal, Message: "no provider for account " + accountID + ": account not found in config"}
+	}
+	p, err := backend.New(acct)
+	if err != nil {
+		return nil, &daemonrpc.Error{Code: daemonrpc.ErrCodeInternal, Message: "create provider for " + acct.Email + ": " + err.Error()}
+	}
+	s.providers[accountID] = p
 	return p, nil
 }
 
@@ -392,7 +435,19 @@ func (s *directService) ReloadConfig() error {
 	if err != nil {
 		return err
 	}
+
+	// Providers point into the old Accounts slice; drop them so the reloaded
+	// credentials (keyring / pass_cmd) actually take effect.
+	s.mu.Lock()
 	s.cfg = cfg
+	old := s.providers
+	s.providers = make(map[string]backend.Provider, len(cfg.Accounts))
+	s.mu.Unlock()
+
+	for _, p := range old {
+		p.Close() //nolint:errcheck,gosec
+	}
+
 	s.initProviders()
 	return nil
 }
@@ -404,6 +459,8 @@ func (s *directService) Events() <-chan *daemonrpc.Event {
 func (s *directService) IsDaemon() bool { return false }
 
 func (s *directService) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, p := range s.providers {
 		p.Close() //nolint:errcheck,gosec
 	}
@@ -412,7 +469,9 @@ func (s *directService) Close() error {
 }
 
 func (s *directService) QueueEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, images map[string][]byte, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool, _ int) (string, error) {
+	s.mu.RLock()
 	acct := s.cfg.GetAccountByID(accountID)
+	s.mu.RUnlock()
 	if acct == nil {
 		return "", fmt.Errorf("no account for %s", accountID)
 	}
