@@ -1,22 +1,28 @@
 package send
 
 import (
+	"context"
 	"encoding/base64"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"net/mail"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	calendar "github.com/floatpane/go-icalendar"
+	mailpatch "github.com/floatpane/go-mailpatch"
+	patchapply "github.com/floatpane/go-patchapply"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/daemonclient"
 	"github.com/floatpane/matcha/fetcher"
+	"github.com/floatpane/matcha/gitmail"
 	"github.com/floatpane/matcha/sender"
 	"github.com/floatpane/matcha/tui"
 	"github.com/google/uuid"
@@ -369,4 +375,313 @@ func RunSendCLI(args []string, exitFn func(int)) {
 	}
 
 	log.Println("Email sent successfully.")
+}
+
+// ApplyPatchCmd returns a tea.Cmd that applies a patch email to a local repo.
+func ApplyPatchCmd(repoDir string, msg tui.ApplyPatchMsg) tea.Cmd {
+	return func() tea.Msg {
+		// Strip \r from \r\n line endings before splitting. The mailpatch
+		// parser's "---" separator detection fails on \r\n, causing the
+		// diffstat block to leak into the commit message.
+		cleanBody := strings.ReplaceAll(msg.RawEmail, "\r", "")
+		commitMsg, diff := mailpatch.SplitBodyDiff(cleanBody)
+		if diff == "" {
+			return tui.PatchApplyResultMsg{Subject: msg.Subject, Err: fmt.Errorf("no diff found in patch email")}
+		}
+
+		files, err := mailpatch.ParseDiff(diff)
+		if err != nil {
+			return tui.PatchApplyResultMsg{Subject: msg.Subject, Err: fmt.Errorf("parse diff: %w", err)}
+		}
+
+		fsys := patchapply.NewDirFS(repoDir)
+		result, err := patchapply.Apply(fsys, files, nil)
+		if err != nil {
+			return tui.PatchApplyResultMsg{Subject: msg.Subject, Err: fmt.Errorf("apply: %w", err)}
+		}
+
+		var fileNames []string
+		if result != nil {
+			for _, f := range result.Files {
+				fileNames = append(fileNames, f.Path)
+			}
+		}
+
+		// Stage all changes (new, modified, deleted files).
+		add := exec.CommandContext(context.Background(), "git", "-C", repoDir, "add", "-A")
+		if err := add.Run(); err != nil {
+			return tui.PatchApplyResultMsg{
+				Subject:  msg.Subject,
+				Files:    fileNames,
+				Warnings: []string{fmt.Sprintf("patch applied but git add failed: %v", err)},
+			}
+		}
+
+		// Check whether there is anything staged to commit.
+		status := exec.CommandContext(context.Background(), "git", "-C", repoDir, "status", "--porcelain", "--untracked-files=no")
+		statusOut, err := status.Output()
+		if err != nil {
+			return tui.PatchApplyResultMsg{
+				Subject:  msg.Subject,
+				Files:    fileNames,
+				Warnings: []string{fmt.Sprintf("patch applied but git status failed: %v", err)},
+			}
+		}
+		if len(strings.TrimSpace(string(statusOut))) == 0 {
+			return tui.PatchApplyResultMsg{Subject: msg.Subject, Files: fileNames}
+		}
+
+		return tui.PatchStagedMsg{
+			Subject:   msg.Subject,
+			From:      msg.From,
+			CommitMsg: commitMsg,
+			Files:     fileNames,
+		}
+	}
+}
+
+// CommitPatchCmd returns a tea.Cmd that runs git commit via tea.ExecProcess.
+// This releases the terminal so that GPG pinentry (curses or GUI) can run
+// cleanly, then restores the TUI when the commit finishes.
+func CommitPatchCmd(repoDir string, msg tui.PatchStagedMsg) tea.Cmd {
+	authorName, authorEmail := parseAuthor(msg.From)
+	message := buildCommitMessage(msg.Subject, msg.CommitMsg)
+
+	commit := exec.CommandContext(context.Background(), "git", "-C", repoDir, "commit", "-m", message)
+	if authorName != "" {
+		commit.Env = appendEnv(commit.Env, "GIT_AUTHOR_NAME", authorName)
+		commit.Env = appendEnv(commit.Env, "GIT_COMMITTER_NAME", authorName)
+	}
+	if authorEmail != "" {
+		commit.Env = appendEnv(commit.Env, "GIT_AUTHOR_EMAIL", authorEmail)
+		commit.Env = appendEnv(commit.Env, "GIT_COMMITTER_EMAIL", authorEmail)
+	}
+
+	return tea.ExecProcess(commit, func(err error) tea.Msg {
+		if err != nil {
+			return tui.PatchApplyResultMsg{
+				Subject:  msg.Subject,
+				Files:    msg.Files,
+				Warnings: []string{fmt.Sprintf("patch applied but git commit failed: %v", err)},
+			}
+		}
+		return tui.PatchApplyResultMsg{Subject: msg.Subject, Files: msg.Files}
+	})
+}
+
+// appendEnv sets key=value in the environment list, replacing any existing
+// entry. If env is nil, os.Environ() is used as the base.
+func appendEnv(env []string, key, value string) []string {
+	if env == nil {
+		env = os.Environ()
+	}
+	prefix := key + "="
+	for i, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			env[i] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
+}
+
+// stripPatchPrefix removes the [PATCH ...] or [RFC PATCH ...] prefix from a
+// subject line, returning the clean subject.
+func stripPatchPrefix(subject string) string {
+	subject = strings.TrimSpace(subject)
+	if !strings.HasPrefix(subject, "[") {
+		return subject
+	}
+	end := strings.Index(subject, "]")
+	if end < 0 {
+		return subject
+	}
+	inner := subject[1:end]
+	for _, t := range strings.Fields(inner) {
+		if t == "PATCH" || t == "RFC" {
+			return strings.TrimSpace(subject[end+1:])
+		}
+	}
+	return subject
+}
+
+// buildCommitMessage constructs the full git commit message from the patch
+// email. The first line is the clean subject (without [PATCH...] prefix),
+// followed by a blank line and the original commit message body (which
+// includes the description and trailers such as Signed-off-by,
+// Co-developed-by, etc.).
+func buildCommitMessage(subject, commitMsg string) string {
+	cleanSubject := stripPatchPrefix(subject)
+	commitMsg = strings.TrimSpace(commitMsg)
+	if commitMsg == "" {
+		return cleanSubject
+	}
+	return cleanSubject + "\n\n" + commitMsg
+}
+
+// parseAuthor extracts a name and email from a "From" header value.
+// e.g. "John Doe <john@example.com>" -> ("John Doe", "john@example.com")
+func parseAuthor(from string) (name, email string) {
+	from = strings.TrimSpace(from)
+	if from == "" {
+		return "", ""
+	}
+	// Try standard RFC 5322 format: Name <email>
+	if addr, err := mail.ParseAddress(from); err == nil {
+		return addr.Name, addr.Address
+	}
+	// Fallback: bare email address
+	if strings.Contains(from, "@") && !strings.ContainsAny(from, "<>") {
+		return "", from
+	}
+	return from, ""
+}
+
+// SendPatchCmd returns a tea.Cmd that generates a patch from a local repo
+// and sends it via email.
+func SendPatchCmd(deps *Dependencies, msg tui.SendPatchMsg) tea.Cmd {
+	return func() tea.Msg {
+		rawPatch, err := gitmail.GeneratePatch(msg.RepoDir, msg.CommitRange)
+		if err != nil {
+			return tui.PatchGeneratedMsg{SendPatchMsg: msg, Err: err}
+		}
+		return tui.PatchGeneratedMsg{SendPatchMsg: msg, RawPatch: rawPatch}
+	}
+}
+
+// SendRawPatchCmd returns a tea.Cmd that sends a raw format-patch email
+// (already generated by git format-patch) via the configured SMTP account.
+func SendRawPatchCmd(deps *Dependencies, msg tui.SendPatchMsg, rawPatch []byte) tea.Cmd {
+	return func() tea.Msg {
+		if deps == nil || deps.Config == nil {
+			return tui.EmailResultMsg{Err: fmt.Errorf("no config available")}
+		}
+		account := deps.Config.GetFirstAccount()
+		if account == nil {
+			return tui.EmailResultMsg{Err: fmt.Errorf("no account configured")}
+		}
+
+		// Rewrite the From header to use the configured account's sending
+		// identity. SMTP servers reject messages whose From address doesn't
+		// match the authenticated account. The original author is preserved
+		// in the patch body by git format-patch's "From: " line.
+		fromAddr := account.SendAsEmail
+		if fromAddr == "" {
+			fromAddr = account.FetchEmail
+		}
+		if fromAddr == "" {
+			fromAddr = account.Email
+		}
+		fromName := account.Name
+		rawPatch = rewriteFromHeader(rawPatch, fromName, fromAddr)
+
+		// Inject the To and Cc headers from the TUI form into the raw message so
+		// the delivered and sent copies actually contain the recipients. git
+		// format-patch --stdout does not emit To or Cc headers by default.
+		rawPatch = rewriteToHeader(rawPatch, msg.To)
+		rawPatch = rewriteCcHeader(rawPatch, msg.Cc)
+
+		// Parse the patch email to extract recipients for the SMTP envelope.
+		p, err := gitmail.ParsePatch(rawPatch)
+		if err != nil {
+			return tui.EmailResultMsg{Err: fmt.Errorf("failed to parse generated patch: %w", err)}
+		}
+
+		// Collect all recipients from the To and Cc headers.
+		toAddrs := SplitEmails(p.Header.Get("To"))
+		ccAddrs := SplitEmails(p.Header.Get("Cc"))
+		recipients := make([]string, 0, len(toAddrs)+len(ccAddrs))
+		recipients = append(recipients, toAddrs...)
+		recipients = append(recipients, ccAddrs...)
+		if len(recipients) == 0 {
+			return tui.EmailResultMsg{Err: fmt.Errorf("no recipients found in patch email")}
+		}
+
+		// Deliver the pre-built raw patch email via SMTP.
+		if err := sender.DeliverRaw(account, recipients, rawPatch); err != nil {
+			return tui.EmailResultMsg{Err: fmt.Errorf("failed to send patch: %w", err)}
+		}
+
+		// Append to sent folder. For Gmail this is skipped because Gmail
+		// automatically saves a copy of messages sent through its SMTP servers.
+		if account.ServiceProvider != "gmail" {
+			if err := fetcher.AppendToSentMailbox(account, rawPatch); err != nil {
+				return tui.EmailResultMsg{Warning: fmt.Sprintf("Sent, but could not copy to Sent folder: %v", err)}
+			}
+		}
+
+		return tui.EmailResultMsg{}
+	}
+}
+
+// rewriteFromHeader replaces the From header in a raw RFC 5322 message with
+// the given name and email address. It handles both \r\n and \n line endings.
+func rewriteFromHeader(raw []byte, name, email string) []byte {
+	var newFrom string
+	if name != "" {
+		newFrom = "From: " + name + " <" + email + ">"
+	} else {
+		newFrom = "From: " + email
+	}
+
+	// Try \r\n first (standard RFC 5322), then fall back to \n.
+	for _, sep := range []string{"\r\n", "\n"} {
+		lines := strings.Split(string(raw), sep)
+		for i, line := range lines {
+			if strings.HasPrefix(strings.ToLower(line), "from:") {
+				lines[i] = newFrom
+				return []byte(strings.Join(lines, sep))
+			}
+		}
+	}
+	return raw
+}
+
+// rewriteToHeader replaces or inserts a To header in a raw RFC 5322 message.
+func rewriteToHeader(raw []byte, to string) []byte {
+	if to == "" {
+		return raw
+	}
+	return rewriteHeader(raw, "To", "To: "+to)
+}
+
+// rewriteCcHeader replaces or inserts a Cc header in a raw RFC 5322 message.
+func rewriteCcHeader(raw []byte, cc string) []byte {
+	if cc == "" {
+		return raw
+	}
+	return rewriteHeader(raw, "Cc", "Cc: "+cc)
+}
+
+// rewriteHeader replaces the first header matching name (case-insensitive) in
+// raw, or inserts it after the From header if it does not exist. Preserves the
+// line ending style (\r\n or \n) used in the input.
+func rewriteHeader(raw []byte, name, value string) []byte {
+	lowerName := strings.ToLower(name)
+	s := string(raw)
+	sep := "\n"
+	if strings.Contains(s, "\r\n") {
+		sep = "\r\n"
+	}
+	lines := strings.Split(s, sep)
+
+	found := false
+	for i, line := range lines {
+		if strings.HasPrefix(strings.ToLower(line), lowerName+":") {
+			lines[i] = value
+			found = true
+			break
+		}
+	}
+	if !found {
+		// Insert after the From header so the new header stays in the
+		// message header block.
+		for i, line := range lines {
+			if strings.HasPrefix(strings.ToLower(line), "from:") {
+				lines = append(lines[:i+1], append([]string{value}, lines[i+1:]...)...)
+				break
+			}
+		}
+	}
+	return []byte(strings.Join(lines, sep))
 }

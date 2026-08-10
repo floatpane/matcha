@@ -114,7 +114,7 @@ func (p *Provider) FetchEmails(_ context.Context, _ string, limit, offset uint32
 	}
 
 	end := start - int(limit)
-	if end < 0 {
+	if end < 0 || limit == 0 {
 		end = 0
 	}
 

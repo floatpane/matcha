@@ -3,6 +3,7 @@ package config
 import (
 	_ "embed"
 	"encoding/json"
+	"log"
 
 	keybind "github.com/floatpane/go-keybind"
 )
@@ -50,6 +51,7 @@ type InboxKeys struct {
 
 type EmailKeys struct {
 	Reply            string `json:"reply"`
+	ReplyAll         string `json:"reply_all"`
 	Forward          string `json:"forward"`
 	Delete           string `json:"delete"`
 	Archive          string `json:"archive"`
@@ -58,6 +60,8 @@ type EmailKeys struct {
 	RsvpDecline      string `json:"rsvp_decline"`
 	RsvpTentative    string `json:"rsvp_tentative"`
 	FocusAttachments string `json:"focus_attachments"`
+	ApplyPatch       string `json:"apply_patch"`
+	SendPatch        string `json:"send_patch"`
 }
 
 type ComposerKeys struct {
@@ -88,7 +92,9 @@ type DraftsKeys struct {
 func defaultKeybinds() KeybindsConfig {
 	var kb KeybindsConfig
 	if err := json.Unmarshal(defaultKeybindsJSON, &kb); err != nil {
-		panic("matcha: malformed default_keybinds.json: " + err.Error())
+		// This should never happen — the embedded JSON is compiled into the
+		// binary. If it does, return empty keybinds rather than panicking.
+		log.Printf("matcha: malformed default_keybinds.json (using empty keybinds): %v", err)
 	}
 	return kb
 }
@@ -131,6 +137,7 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 		},
 		"email": {
 			"reply":             kb.Email.Reply,
+			"reply_all":         kb.Email.ReplyAll,
 			"forward":           kb.Email.Forward,
 			keyDelete:           kb.Email.Delete,
 			"archive":           kb.Email.Archive,
@@ -139,6 +146,8 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 			"rsvp_decline":      kb.Email.RsvpDecline,
 			"rsvp_tentative":    kb.Email.RsvpTentative,
 			"focus_attachments": kb.Email.FocusAttachments,
+			"apply_patch":       kb.Email.ApplyPatch,
+			"send_patch":        kb.Email.SendPatch,
 		},
 		"composer": {
 			"undo_send":       kb.Composer.UndoSend,

@@ -1,7 +1,10 @@
 package tui
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +13,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
+	"github.com/floatpane/matcha/internal/httpclient"
+	"github.com/floatpane/matcha/internal/marketplace"
 	"github.com/floatpane/matcha/plugins"
 )
 
@@ -23,6 +28,8 @@ var (
 	mpStatusStyle    lipgloss.Style
 	mpErrorStyle     lipgloss.Style
 	mpFooterStyle    lipgloss.Style
+	mpAuthorStyle    lipgloss.Style
+	mpVerifiedStyle  lipgloss.Style
 )
 
 type marketplaceState int
@@ -39,6 +46,12 @@ type RegistryFetchedMsg struct {
 	Err     error
 }
 
+// MarketplacePlugin wraps marketplace.PluginInfo for TUI display
+type MarketplacePlugin struct {
+	Info marketplace.PluginInfo
+	File string // derived filename
+}
+
 // PluginInstalledMsg signals that a plugin was installed from the marketplace.
 type PluginInstalledMsg struct {
 	Name string
@@ -52,19 +65,21 @@ type PluginDeletedMsg struct {
 }
 
 type Marketplace struct {
-	entries          []plugins.PluginEntry
-	installed        map[string]bool
-	cursor           int
-	offset           int // scroll offset
-	width            int
-	height           int
-	state            marketplaceState
-	status           string // transient status message
-	standalone       bool   // true when launched via `matcha marketplace` (not from main menu)
-	lastClickTime    time.Time
-	lastClickY       int
-	confirmingDelete bool   // true when prompting the user to confirm plugin removal
-	deleteTarget     string // name of the plugin pending deletion
+	entries           []plugins.PluginEntry
+	installed         map[string]bool
+	cursor            int
+	offset            int // scroll offset
+	width             int
+	height            int
+	state             marketplaceState
+	status            string // transient status message
+	standalone        bool   // true when launched via `matcha marketplace` (not from main menu)
+	lastClickTime     time.Time
+	lastClickY        int
+	confirmingInstall bool // true when prompting the user to confirm plugin installation
+	installTarget     plugins.PluginEntry
+	confirmingDelete  bool   // true when prompting the user to confirm plugin removal
+	deleteTarget      string // name of the plugin pending deletion
 }
 
 func NewMarketplace(standalone bool) Marketplace {
@@ -75,13 +90,51 @@ func NewMarketplace(standalone bool) Marketplace {
 }
 
 func (m Marketplace) Init() tea.Cmd {
-	return fetchRegistry
+	// Try new marketplace API first, fallback to old registry
+	return fetchFromNewMarketplace
 }
 
 func (m Marketplace) itemsStartY() int {
 	// docStyle top margin (1) + choiceLogo blank+5 lines (6) + explicit \n (1) = 8
 	// mpTitleStyle title (1) + \n\n (2) = 3
 	return 8 + 3
+}
+
+func fetchFromNewMarketplace() tea.Msg {
+	plugins, err := marketplace.ListPlugins()
+	if err != nil {
+		// Fallback to old registry
+		return fetchRegistry()
+	}
+
+	marketplacePlugins := make([]MarketplacePlugin, len(plugins))
+	for i, p := range plugins {
+		marketplacePlugins[i] = MarketplacePlugin{
+			Info: p,
+			File: p.Name + ".lua",
+		}
+	}
+
+	return RegistryFetchedMsg{
+		Entries: convertToPluginEntries(marketplacePlugins),
+		Err:     nil,
+	}
+}
+
+func convertToPluginEntries(mpPlugins []MarketplacePlugin) []plugins.PluginEntry {
+	entries := make([]plugins.PluginEntry, len(mpPlugins))
+	for i, mp := range mpPlugins {
+		entries[i] = plugins.PluginEntry{
+			Name:              mp.Info.Name,
+			Title:             mp.Info.Title,
+			Description:       mp.Info.Description,
+			File:              mp.File,
+			URL:               mp.Info.RepositoryURL,
+			AuthorDisplayName: mp.Info.Author.DisplayName,
+			AuthorVerified:    mp.Info.IsTrustedAuthor(),
+		}
+	}
+	return entries
 }
 
 func fetchRegistry() tea.Msg {
@@ -133,8 +186,9 @@ func (m Marketplace) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.status = fmt.Sprintf("%s is already installed", entry.Name)
 						return m, nil
 					}
-					m.status = fmt.Sprintf("Installing %s...", entry.Name)
-					return m, installPlugin(entry)
+					m.confirmingInstall = true
+					m.installTarget = entry
+					return m, nil
 				}
 			}
 		}
@@ -200,6 +254,26 @@ func (m Marketplace) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.confirmingInstall {
+		switch msg.String() {
+		case "y", "Y":
+			entry := m.installTarget
+			m.confirmingInstall = false
+			m.installTarget = plugins.PluginEntry{}
+			if entry.AuthorVerified {
+				m.status = fmt.Sprintf("Installing %s...", entry.Name)
+			} else {
+				m.status = fmt.Sprintf("Installing %s (unverified author)...", entry.Name)
+			}
+			return m, installPlugin(entry)
+		case "n", "N", kb.Global.Cancel:
+			m.confirmingInstall = false
+			m.installTarget = plugins.PluginEntry{}
+			return m, nil
+		}
+		return m, nil
+	}
+
 	if m.state != marketplaceReady {
 		if msg.String() == "q" || msg.String() == kb.Global.Cancel || msg.String() == kb.Global.Quit {
 			if m.standalone {
@@ -240,8 +314,9 @@ func (m Marketplace) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.status = fmt.Sprintf("%s is already installed", entry.Name)
 				return m, nil
 			}
-			m.status = fmt.Sprintf("Installing %s...", entry.Name)
-			return m, installPlugin(entry)
+			m.confirmingInstall = true
+			m.installTarget = entry
+			return m, nil
 		}
 	case kb.Inbox.Delete:
 		if m.cursor < len(m.entries) {
@@ -257,8 +332,8 @@ func (m Marketplace) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Marketplace) headerHeight() int {
-	// logoStyle.Render(choiceLogo) + \n + mpTitleStyle(1) + \n\n
-	return lipgloss.Height(logoStyle.Render(choiceLogo)) + 1 + 1 + 1
+	// renderLogo(choiceLogo) + \n + mpTitleStyle(1) + \n\n
+	return lipgloss.Height(renderLogo(choiceLogo)) + 1 + 1 + 1
 }
 
 func (m Marketplace) footerHeight() int {
@@ -287,9 +362,30 @@ func (m Marketplace) visibleRows() int {
 	return available / 2
 }
 
+func getPluginInfo(name string) *marketplace.PluginInfo {
+	info, err := marketplace.FetchPluginInfo(name)
+	if err != nil {
+		return nil
+	}
+	return info
+}
+
 func installPlugin(entry plugins.PluginEntry) tea.Cmd {
 	return func() tea.Msg {
-		data, err := plugins.FetchPlugin(entry)
+		// Try to get plugin info from new marketplace
+		pluginInfo := getPluginInfo(entry.Name)
+
+		var data []byte
+		var err error
+
+		if pluginInfo != nil {
+			// Download from marketplace URL
+			data, err = downloadFromURL(pluginInfo.FileURL)
+		} else {
+			// Fallback to old registry
+			data, err = plugins.FetchPlugin(entry)
+		}
+
 		if err != nil {
 			return PluginInstalledMsg{Name: entry.Name, Err: err}
 		}
@@ -311,6 +407,30 @@ func installPlugin(entry plugins.PluginEntry) tea.Cmd {
 
 		return PluginInstalledMsg{Name: entry.Name}
 	}
+}
+
+func downloadFromURL(url string) ([]byte, error) {
+	client := httpclient.New(httpclient.RegistryFetchTimeout)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build download request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
 }
 
 func deletePlugin(name string) tea.Cmd {
@@ -352,7 +472,7 @@ func installedPlugins() map[string]bool {
 func (m Marketplace) View() tea.View {
 	var body strings.Builder
 
-	body.WriteString(logoStyle.Render(choiceLogo))
+	body.WriteString(renderLogo(choiceLogo))
 	body.WriteString("\n")
 	body.WriteString(mpTitleStyle.Render(" " + t("marketplace.title") + " "))
 	body.WriteString("\n\n")
@@ -383,6 +503,13 @@ func (m Marketplace) View() tea.View {
 			name := nameStyle.Render(entry.Title)
 			if m.installed[entry.Name] {
 				name += " " + mpInstalledStyle.Render(" "+t("marketplace.installed")+" ")
+			}
+			if entry.AuthorDisplayName != "" {
+				author := mpAuthorStyle.Render(" by " + entry.AuthorDisplayName)
+				if entry.AuthorVerified {
+					author += " " + mpVerifiedStyle.Render("✓")
+				}
+				name += author
 			}
 
 			fmt.Fprintf(&body, "%s%s\n", cursor, name)
@@ -429,6 +556,36 @@ func (m Marketplace) View() tea.View {
 				accountEmailStyle.Render(m.deleteTarget),
 				helpStyle.Render("(y/n)"),
 			),
+		)
+		if m.width > 0 && m.height > 0 {
+			rendered = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog, lipgloss.WithWhitespaceChars(" "))
+		} else {
+			rendered = "\n\n" + dialog
+		}
+	}
+
+	// Confirmation overlay: prompt the user before installing a plugin.
+	if m.confirmingInstall {
+		entry := m.installTarget
+		var lines []string
+		if entry.AuthorVerified {
+			lines = append(lines, mpSelectedStyle.Render(tpl("marketplace.install_confirm", map[string]interface{}{
+				"title": entry.Title,
+			})))
+		} else {
+			lines = append(lines, dangerStyle.Render(tpl("marketplace.install_confirm", map[string]interface{}{
+				"title": entry.Title,
+			})))
+			lines = append(lines, dangerStyle.Render(t("marketplace.unverified_warning")))
+		}
+		if entry.AuthorDisplayName != "" {
+			lines = append(lines, accountEmailStyle.Render(tpl("marketplace.install_author", map[string]interface{}{
+				"author": entry.AuthorDisplayName,
+			})))
+		}
+		lines = append(lines, helpStyle.Render("(y/n)"))
+		dialog := DialogBoxStyle.Render(
+			lipgloss.JoinVertical(lipgloss.Center, lines...),
 		)
 		if m.width > 0 && m.height > 0 {
 			rendered = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog, lipgloss.WithWhitespaceChars(" "))

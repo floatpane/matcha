@@ -36,15 +36,6 @@ matcha config <plugin_name>       # configure an installed plugin
 
 Anyone can submit their own plugin — just add an entry to `plugins/registry.json` and open a PR. [Learn more](https://docs.matcha.email/Features/Plugins#submit-your-plugin)
 
-### AI Integration
-
-**AI Agent Support:** Matcha can be used by autonomous AI agents to send emails on your behalf. The `matcha send` CLI command provides a non-interactive interface for composing and sending emails.
-
-```bash
-matcha send --to alice@example.com --subject "Hello" --body "Sent by my AI agent"
-```
-
-[Learn more](https://docs.matcha.email/Features/AI_AGENTS)
 
 ### Logging
 
@@ -58,9 +49,6 @@ matcha --debug daemon status  # enable debug logging
 
 The existing `-v` and `--version` flags continue to print the Matcha version.
 
-**AI Rewrite Plugin:** Matcha includes an AI rewrite plugin that allows you to rewrite your email drafts using OpenAI, Ollama, Gemini, or Claude.
-
-[Setup Guide](https://docs.matcha.email/setup-guides/ai-rewrite)
 
 ### macOS Menu Bar Helper
 

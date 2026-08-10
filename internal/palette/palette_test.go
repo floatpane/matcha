@@ -36,7 +36,7 @@ func TestKeyActionEmptyBindingIsNil(t *testing.T) {
 // TestBuildPaletteCommandsAlwaysHasNav ensures global navigation commands are
 // present regardless of the active view, and that each has a runnable action.
 func TestBuildPaletteCommandsAlwaysHasNav(t *testing.T) {
-	cmds := BuildCommands(nil, nil)
+	cmds := BuildCommands(nil, nil, nil)
 
 	want := map[string]bool{
 		"Compose new email": false,
@@ -61,7 +61,7 @@ func TestBuildPaletteCommandsAlwaysHasNav(t *testing.T) {
 }
 
 func TestQuitCommandEmitsQuit(t *testing.T) {
-	for _, c := range BuildCommands(nil, nil) {
+	for _, c := range BuildCommands(nil, nil, nil) {
 		if c.Title != "Quit Matcha" {
 			continue
 		}

@@ -239,6 +239,9 @@
       "install": "Installieren",
       "error": "Installation fehlgeschlagen",
       "delete_confirm": "Plugin löschen?",
+      "install_confirm": "{title} installieren?",
+      "install_author": "von {author}",
+      "unverified_warning": "Ungeprüfter Autor. Installation auf eigenes Risiko.",
       "help": "j/k: navigieren • enter: installieren • d: löschen • esc: zurück"
     },
     "time": {

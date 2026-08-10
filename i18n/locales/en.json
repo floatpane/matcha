@@ -248,6 +248,9 @@
       "install": "Install",
       "error": "Installation failed",
       "delete_confirm": "Delete plugin?",
+      "install_confirm": "Install {title}?",
+      "install_author": "by {author}",
+      "unverified_warning": "Unverified author. Install at your own risk.",
       "help": "j/k: navigate • enter: install • d: delete • esc: back"
     },
     "time": {

@@ -110,7 +110,13 @@ func (m *Manager) NotifyCmd() tea.Cmd {
 	}
 	if n, ok := m.plugins.TakePendingNotification(); ok {
 		return func() tea.Msg {
-			return tui.PluginNotifyMsg{Message: n.Message, Duration: n.Duration}
+			return tui.PluginNotifyMsg{
+				Message:  n.Message,
+				Title:    n.Title,
+				Duration: n.Duration,
+				Kind:     string(n.Kind),
+				Closable: n.Closable,
+			}
 		}
 	}
 	return nil

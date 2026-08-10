@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	InitialEmailLimit = 50
+	InitialEmailLimit = 0
 	PaginationLimit   = 50
 )
 

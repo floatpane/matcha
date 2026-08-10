@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -43,6 +44,15 @@ func main() {
 	os.Args = args
 	loglevel.Set(level)
 
+	// Handle matcha: URL scheme (e.g. matcha:install:my-plugin)
+	if installSlug := parseMatchaInstallURL(os.Args); installSlug != "" {
+		if err := matchaCli.RunInstall([]string{installSlug}); err != nil {
+			fmt.Fprintf(os.Stderr, "install failed: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
+	}
+
 	runSubcommand(os.Args)
 
 	if err := config.MigrateCacheFiles(); err != nil {
@@ -59,6 +69,13 @@ func main() {
 	_, logCh, logPanel := setupLogging(showLogPanel)
 	plugins := setupPlugins(cfg)
 
+	// Wire the plugin manager into the TUI layer so that text overrides,
+	// visibility toggles, custom components, and banner overrides are
+	// consulted during rendering. Must happen before HookStartup so that
+	// plugins calling matcha.ui.set_banner() in their startup hook take
+	// effect before the first frame.
+	tui.SetUIProvider(plugins)
+
 	initialModel := app.NewModel(cfg, mailtoURL, plugins, showLogPanel, logCh, logPanel)
 	if config.IsSecureModeEnabled() {
 		initialModel.SetPasswordPrompt()
@@ -68,6 +85,7 @@ func main() {
 	plugins.CallHook(plugin.HookStartup)
 
 	startMacOSSync(cfg)
+	ensureProtocolHandler()
 
 	p := tea.NewProgram(initialModel)
 	if _, err := p.Run(); err != nil {
@@ -87,6 +105,9 @@ func runSubcommand(args []string) {
 	}
 
 	switch args[1] {
+	case "-h", "--help", "help":
+		printHelp()
+		cliutil.Exit(0)
 	case "-v", "--version", "version":
 		printVersion()
 		cliutil.Exit(0)
@@ -108,6 +129,12 @@ func runSubcommand(args []string) {
 	case "apply":
 		if err := matchaCli.RunApply(args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "apply failed: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
+	case "send-patch":
+		if err := matchaCli.RunSendPatch(args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "send-patch failed: %v\n", err)
 			cliutil.Exit(1)
 		}
 		cliutil.Exit(0)
@@ -134,6 +161,12 @@ func runSubcommand(args []string) {
 	case "setup-mailto":
 		if err := matchaCli.SetupMailto(); err != nil {
 			fmt.Fprintf(os.Stderr, "setup-mailto failed: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
+	case "setup-protocol":
+		if err := matchaCli.SetupProtocolHandler(); err != nil {
+			fmt.Fprintf(os.Stderr, "setup-protocol failed: %v\n", err)
 			cliutil.Exit(1)
 		}
 		cliutil.Exit(0)
@@ -180,6 +213,23 @@ func parseMailto(args []string) *url.URL {
 		}
 	}
 	return nil
+}
+
+// parseMatchaInstallURL checks whether the first argument is a
+// matcha:install:<slug> URL and returns the slug.
+func parseMatchaInstallURL(args []string) string {
+	if len(args) <= 1 {
+		return ""
+	}
+	arg := strings.ToLower(args[1])
+	if !strings.HasPrefix(arg, "matcha:install:") {
+		return ""
+	}
+	slug := strings.TrimSpace(args[1][len("matcha:install:"):])
+	if slug == "" {
+		return ""
+	}
+	return slug
 }
 
 func loadConfigAndSetup() *config.Config {
@@ -262,6 +312,68 @@ func startMacOSSync(cfg *config.Config) {
 		_ = config.SyncMacOSContacts()
 		_ = theme.SyncWithMacOS()
 	}()
+}
+
+// ensureProtocolHandler registers the matcha: URL scheme handler once.
+// A sentinel file (~/.config/matcha/.protocol_registered) prevents
+// re-running on every launch. Failures are logged but never fatal.
+func ensureProtocolHandler() {
+	dir, err := config.GetConfigDir()
+	if err != nil {
+		return
+	}
+	sentinel := filepath.Join(dir, ".protocol_registered")
+	if _, err := os.Stat(sentinel); err == nil {
+		return // already registered
+	}
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("panic in protocol handler setup: %v", r)
+			}
+		}()
+		if err := matchaCli.SetupProtocolHandler(); err != nil {
+			log.Printf("warning: could not register matcha: protocol: %v", err)
+			return
+		}
+		_ = os.WriteFile(sentinel, []byte("1"), 0644)
+	}()
+}
+
+func printHelp() {
+	fmt.Print(`matcha - a terminal email client
+
+Usage:
+  matcha [flags]            Launch the TUI (default)
+  matcha <command> [args]
+
+Commands:
+  send             Send an email from the command line
+  apply            Apply a patch from a git-format-patch email
+  send-patch       Send a git-format-patch email
+  contacts         Manage contacts (export, sync)
+  config           View or edit configuration
+  dict             Manage the spellcheck dictionary
+  install          Install a plugin
+  marketplace      Browse the plugin marketplace
+  daemon           Run the background sync daemon
+  oauth, gmail     Manage OAuth / Gmail authentication
+  setup-mailto     Register matcha as the mailto: handler
+  setup-protocol   Register the matcha: URL scheme handler
+  update           Update matcha to the latest release
+  version          Print version information
+  help             Show this help
+
+Flags:
+  --debug          Enable debug logging
+  --verbose, -V    Enable verbose logging
+  --logs           Show the in-app log panel
+  -h, --help       Show this help
+  -v, --version    Print version information
+
+Run 'matcha <command> --help' for more information on a command.
+`)
 }
 
 func printVersion() {

@@ -338,3 +338,67 @@ func highlightCode(code, lang string) string {
 	}
 	return b.String()
 }
+
+// HighlightDiff applies ANSI color to a unified diff string: green for
+// added lines, red for deleted lines, cyan for diff headers and hunk
+// markers, and yellow for file path lines. Context lines are left plain.
+func HighlightDiff(diff string) string {
+	lines := strings.Split(diff, "\n")
+	addFg := lipgloss.Color("#98C379")
+	delFg := lipgloss.Color("#E06C75")
+	addBg := lipgloss.Color("#1a3a1a")
+	delBg := lipgloss.Color("#3a1a1a")
+	hunkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#56B6C2")).Bold(true)
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#61AFEF")).Bold(true)
+	pathStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#E5C07B"))
+	markerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#C678DD")).Bold(true)
+	noNewlineStyle := lipgloss.NewStyle().Foreground(theme.ActiveTheme.Secondary).Italic(true)
+	addStyle := lipgloss.NewStyle().Foreground(addFg).Background(addBg)
+	delStyle := lipgloss.NewStyle().Foreground(delFg).Background(delBg)
+	addSymStyle := lipgloss.NewStyle().Foreground(addFg).Bold(true)
+	delSymStyle := lipgloss.NewStyle().Foreground(delFg).Bold(true)
+
+	var b strings.Builder
+	for i, line := range lines {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		switch {
+		case strings.HasPrefix(line, "diff --git"):
+			b.WriteString(headerStyle.Render(line))
+		case strings.HasPrefix(line, "index "):
+			b.WriteString(hunkStyle.Render(line))
+		case strings.HasPrefix(line, "new file mode"),
+			strings.HasPrefix(line, "deleted file mode"),
+			strings.HasPrefix(line, "old mode"),
+			strings.HasPrefix(line, "new mode"):
+			b.WriteString(markerStyle.Render(line))
+		case strings.HasPrefix(line, "rename from"),
+			strings.HasPrefix(line, "rename to"),
+			strings.HasPrefix(line, "copy from"),
+			strings.HasPrefix(line, "copy to"):
+			b.WriteString(markerStyle.Render(line))
+		case strings.HasPrefix(line, "similarity index"),
+			strings.HasPrefix(line, "dissimilarity index"):
+			b.WriteString(hunkStyle.Render(line))
+		case strings.HasPrefix(line, "Binary files"):
+			b.WriteString(pathStyle.Render(line))
+		case strings.HasPrefix(line, "GIT binary patch"):
+			b.WriteString(markerStyle.Render(line))
+		case strings.HasPrefix(line, "--- "),
+			strings.HasPrefix(line, "+++ "):
+			b.WriteString(pathStyle.Render(line))
+		case strings.HasPrefix(line, "@@"):
+			b.WriteString(hunkStyle.Render(line))
+		case strings.HasPrefix(line, "+"):
+			b.WriteString(addSymStyle.Render("+") + addStyle.Render(line[1:]))
+		case strings.HasPrefix(line, "-"):
+			b.WriteString(delSymStyle.Render("-") + delStyle.Render(line[1:]))
+		case strings.HasPrefix(line, "\\"):
+			b.WriteString(noNewlineStyle.Render(line))
+		default:
+			b.WriteString(line)
+		}
+	}
+	return b.String()
+}

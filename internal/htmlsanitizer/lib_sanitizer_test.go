@@ -307,3 +307,20 @@ func TestLibSanitizerRejectsInvalidDataImages(t *testing.T) {
 		t.Fatalf("sanitized HTML should keep valid unpadded png data URI:\n%s", got)
 	}
 }
+
+func TestLibSanitizerKeepsNewElements(t *testing.T) {
+	sanitizer := NewLibSanitizer()
+	input := []byte(`<h3>H3</h3><h4>H4</h4><h5>H5</h5><h6>H6</h6><hr><ul><li>item</li></ul><ol><li>one</li></ol><b>b</b><strong>s</strong><i>i</i><em>e</em><u>u</u><s>st</s><del>d</del>`)
+
+	got := string(sanitizer.SanitizeBytes(input))
+
+	for _, want := range []string{
+		"<h3>", "<h4>", "<h5>", "<h6>", "<hr",
+		"<ul>", "<ol>", "<li>",
+		"<b>", "<strong>", "<i>", "<em>", "<u>", "<s>", "<del>",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("sanitizer stripped %q\nGot: %s", want, got)
+		}
+	}
+}

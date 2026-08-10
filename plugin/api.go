@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"log"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	lua "github.com/yuin/gopher-lua"
@@ -30,9 +31,21 @@ func (m *Manager) registerAPI() {
 		"mark_read":          m.luaMarkRead,
 		"mark_unread":        m.luaMarkUnread,
 		"suppress_auto_read": m.luaSuppressAutoRead,
+		"time":               m.luaTime,
 	})
 
 	L.SetField(mod, "_VERSION", lua.LString("0.1.0"))
+
+	// Register the matcha.ui submodule for deep UI customization.
+	// Plugins access these as matcha.ui.set_text(...), matcha.ui.set_visible(...),
+	// matcha.ui.add_component(...), and matcha.ui.set_banner(...).
+	uiMod := L.RegisterModule("matcha.ui", map[string]lua.LGFunction{
+		"set_text":      m.luaUISetText,
+		"set_visible":   m.luaUISetVisible,
+		"add_component": m.luaUIAddComponent,
+		"set_banner":    m.luaUISetBanner,
+	})
+	L.SetField(mod, "ui", uiMod)
 }
 
 // matcha.on(event, callback) — register a hook callback.
@@ -59,11 +72,63 @@ func (m *Manager) luaSetStatus(L *lua.LState) int { //nolint:gocritic
 	return 0
 }
 
-// matcha.notify(msg [, seconds]) — show a temporary notification in the TUI.
-// The optional second argument sets the display duration in seconds (default 2).
+// matcha.notify(msg [, seconds]) or matcha.notify(msg, opts) — show a
+// non-blocking toast notification overlaid on the current view.
+//
+// Backward-compatible form:
+//
+//	matcha.notify("Hello")           -- default 2s, info kind, closable
+//	matcha.notify("Hello", 5)        -- 5s, info kind, closable
+//
+// Options table form (all fields optional):
+//
+//	matcha.notify("Disk full", {
+//	    duration = 10,           -- seconds before auto-close (default 2)
+//	    kind = "error",          -- "info", "warning", or "error" (default "info")
+//	    title = "Storage Alert", -- optional header above the message
+//	    closable = false,        -- if false, auto-close only; no key dismiss
+//	})
 func (m *Manager) luaNotify(L *lua.LState) int { //nolint:gocritic
-	m.pendingNotification = L.CheckString(1)
-	m.pendingDuration = float64(L.OptNumber(2, 2))
+	msg := L.CheckString(1)
+
+	n := &PendingNotification{
+		Message:  msg,
+		Duration: 2,
+		Kind:     NotifyKindInfo,
+		Closable: true,
+	}
+
+	// The second argument can be a number (backward compat) or a table (opts).
+	if L.GetTop() >= 2 {
+		switch v := L.Get(2).(type) {
+		case lua.LNumber:
+			n.Duration = float64(v)
+		case *lua.LTable:
+			if d, ok := v.RawGetString("duration").(lua.LNumber); ok {
+				n.Duration = float64(d)
+			}
+			if t, ok := v.RawGetString("title").(lua.LString); ok && t != "" {
+				n.Title = string(t)
+			}
+			if k, ok := v.RawGetString("kind").(lua.LString); ok && k != "" {
+				switch NotifyKind(k) {
+				case NotifyKindInfo, NotifyKindWarning, NotifyKindError:
+					n.Kind = NotifyKind(k)
+				default:
+					L.ArgError(2, "invalid kind: must be \"info\", \"warning\", or \"error\"")
+					return 0
+				}
+			}
+			if v.RawGetString("closable") != lua.LNil {
+				n.Closable = lua.LVAsBool(v.RawGetString("closable"))
+			}
+		default:
+			L.ArgError(2, "expected number or table")
+			return 0
+		}
+	}
+
+	m.pendingNotification = n
 	return 0
 }
 
@@ -196,4 +261,22 @@ func (m *Manager) luaSetComposeField(L *lua.LState) int { //nolint:gocritic
 		L.ArgError(1, "invalid field: must be \"to\", \"cc\", \"bcc\", \"subject\", or \"body\"")
 	}
 	return 0
+}
+
+// matcha.time([format]) — returns the current time formatted as a string.
+// The optional format argument follows Go's time.Format layout (reference
+// time: Mon Jan 2 15:04:05 MST 2006). If no format is given, returns RFC3339.
+//
+// This exists because the Lua sandbox does not expose the os library, so
+// plugins cannot call os.date() directly.
+//
+// Examples:
+//
+//	matcha.time("15:04")           -> "14:32"
+//	matcha.time("Mon Jan 2")       -> "Fri Jun 28"
+//	matcha.time()                  -> "2026-06-28T14:32:00Z"
+func (m *Manager) luaTime(L *lua.LState) int { //nolint:gocritic
+	layout := L.OptString(1, time.RFC3339)
+	L.Push(lua.LString(time.Now().Format(layout)))
+	return 1
 }

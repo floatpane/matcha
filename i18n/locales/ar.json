@@ -243,6 +243,9 @@
       "install": "تثبيت",
       "error": "فشل التثبيت",
       "delete_confirm": "حذف الإضافة؟",
+      "install_confirm": "تثبيت {title}؟",
+      "install_author": "بواسطة {author}",
+      "unverified_warning": "مؤلف غير موثق. التثبيت على مسؤوليتك الخاصة.",
       "help": "j/k: التنقل • enter: تثبيت • d: حذف • esc: رجوع"
     },
     "time": {

@@ -83,6 +83,7 @@ static HTMLElement* result_add(HTMLConvertResult* r) {
     }
     HTMLElement* e = &r->elements[r->count++];
     e->type = HELEM_TEXT;
+    e->style = 0;
     e->text = NULL;
     e->attr1 = NULL;
     e->attr2 = NULL;
@@ -90,10 +91,11 @@ static HTMLElement* result_add(HTMLConvertResult* r) {
 }
 
 // Flush accumulated text buffer as a TEXT element.
-static void flush_text(HTMLConvertResult* r, Buffer* buf) {
+static void flush_text(HTMLConvertResult* r, Buffer* buf, int style) {
     if (buf->len == 0) return;
     HTMLElement* e = result_add(r);
     e->type = HELEM_TEXT;
+    e->style = style;
     e->text = buf_finish(buf);
     buf_init(buf);
 }
@@ -319,6 +321,7 @@ static void extract_language(const char* klass, char* out, size_t out_size) {
 
 // Tag stack for nesting tracking.
 #define MAX_STACK 128
+#define MAX_LIST_DEPTH 16
 
 typedef struct {
     int in_style;      // Inside <style>
@@ -332,6 +335,7 @@ typedef struct {
     Buffer a_text;     // Current link text accumulator
     int in_h1;
     int in_h2;
+    int h_level;       // Active heading level (0 = none, 1-6)
     Buffer h_text;     // Current header text accumulator
     int bq_depth;      // Blockquote nesting depth
     Buffer bq_text;    // Current blockquote text accumulator
@@ -349,6 +353,17 @@ typedef struct {
     int header_rows;    // Number of header rows (rows inside <thead>)
     Buffer cell_text;   // Current cell text accumulator
     Buffer table_data;  // Accumulated table data (cells tab-separated, rows newline-separated)
+    // List state
+    int list_depth;                       // Current nesting depth (0 = not in a list)
+    int list_ordered[MAX_LIST_DEPTH];     // 1 if <ol>, 0 if <ul>, at each depth
+    int list_index[MAX_LIST_DEPTH];       // 1-based item index per depth
+    int in_li;                            // Currently inside a <li>
+    Buffer li_buf;                        // Current list item text accumulator
+    int pending_space;                    // Keep next leading space after a span flush
+    // Inline text style stack (bitmask of HTML_STYLE_*)
+    int style_stack[MAX_STACK];
+    int style_depth;
+    int cur_style;                        // Current combined style mask
 } ParseState;
 
 HTMLConvertResult html_to_elements(const char* html, size_t len) {
@@ -370,6 +385,7 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
     buf_init(&state.cell_text);
     buf_init(&state.table_data);
     buf_init(&state.pre_buf);
+    buf_init(&state.li_buf);
 
     Buffer text_buf;
     buf_init(&text_buf);
@@ -379,6 +395,7 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
 
     while (p < end) {
         if (*p == '<') {
+            state.pending_space = 0;
             // Check for comment
             if (p + 3 < end && p[1] == '!' && p[2] == '-' && p[3] == '-') {
                 const char* ce = strstr(p + 4, "-->");
@@ -425,10 +442,12 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
                     buf_append_char(&state.cell_text, ' ');
                 } else if (state.in_a) {
                     buf_append_char(&state.a_text, '\n');
-                } else if (state.in_h1 || state.in_h2) {
+                } else if (state.h_level > 0) {
                     buf_append_char(&state.h_text, ' ');
                 } else if (state.bq_depth > 0) {
                     buf_append_char(&state.bq_text, '\n');
+                } else if (state.in_li) {
+                    buf_append_char(&state.li_buf, '\n');
                 } else {
                     buf_append_char(&text_buf, '\n');
                 }
@@ -440,7 +459,7 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
             if (tag_eq(tag.name, tag.name_len, "pre")) {
                 if (!tag.is_closing) {
                     if (state.pre_depth == 0) {
-                        flush_text(&result, &text_buf);
+                        flush_text(&result, &text_buf, state.cur_style);
                         buf_free(&state.pre_buf);
                         buf_init(&state.pre_buf);
                         state.pre_lang[0] = '\0';
@@ -454,7 +473,7 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
                     state.pre_depth--;
                     if (state.pre_depth == 0) {
                         state.in_pre = 0;
-                        flush_text(&result, &text_buf);
+                        flush_text(&result, &text_buf, state.cur_style);
                         HTMLElement* e = result_add(&result);
                         e->type = HELEM_CODE;
                         e->text = buf_finish(&state.pre_buf);
@@ -483,43 +502,34 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
                 continue;
             }
 
-            // <h1>
-            if (tag_eq(tag.name, tag.name_len, "h1")) {
-                if (tag.is_closing && state.in_h1) {
-                    state.in_h1 = 0;
-                    flush_text(&result, &text_buf);
+            // <h1> - <h6>
+            if (tag.name_len == 2 && (tag.name[0] == 'h' || tag.name[0] == 'H') &&
+                tag.name[1] >= '1' && tag.name[1] <= '6') {
+                int level = tag.name[1] - '0';
+                if (tag.is_closing && state.h_level == level) {
+                    state.h_level = 0;
+                    if (level == 1) state.in_h1 = 0;
+                    if (level == 2) state.in_h2 = 0;
+                    flush_text(&result, &text_buf, state.cur_style);
                     HTMLElement* e = result_add(&result);
-                    e->type = HELEM_H1;
-                    e->text = buf_finish(&state.h_text);
-                    buf_init(&state.h_text);
-                    // Add block spacing
-                    HTMLElement* sp = result_add(&result);
-                    sp->type = HELEM_TEXT;
-                    sp->text = strdup("\n\n");
-                } else if (!tag.is_closing) {
-                    flush_text(&result, &text_buf);
-                    state.in_h1 = 1;
-                    buf_init(&state.h_text);
-                }
-                p = after;
-                continue;
-            }
-
-            // <h2>
-            if (tag_eq(tag.name, tag.name_len, "h2")) {
-                if (tag.is_closing && state.in_h2) {
-                    state.in_h2 = 0;
-                    flush_text(&result, &text_buf);
-                    HTMLElement* e = result_add(&result);
-                    e->type = HELEM_H2;
+                    switch (level) {
+                        case 1: e->type = HELEM_H1; break;
+                        case 2: e->type = HELEM_H2; break;
+                        case 3: e->type = HELEM_H3; break;
+                        case 4: e->type = HELEM_H4; break;
+                        case 5: e->type = HELEM_H5; break;
+                        case 6: e->type = HELEM_H6; break;
+                    }
                     e->text = buf_finish(&state.h_text);
                     buf_init(&state.h_text);
                     HTMLElement* sp = result_add(&result);
                     sp->type = HELEM_TEXT;
                     sp->text = strdup("\n\n");
                 } else if (!tag.is_closing) {
-                    flush_text(&result, &text_buf);
-                    state.in_h2 = 1;
+                    flush_text(&result, &text_buf, state.cur_style);
+                    state.h_level = level;
+                    if (level == 1) state.in_h1 = 1;
+                    if (level == 2) state.in_h2 = 1;
                     buf_init(&state.h_text);
                 }
                 p = after;
@@ -530,14 +540,19 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
             if (tag_eq(tag.name, tag.name_len, "a")) {
                 if (tag.is_closing && state.in_a) {
                     state.in_a = 0;
-                    // If inside blockquote, emit link text inline
+                    // If inside blockquote or list item, emit link text inline
                     if (state.bq_depth > 0) {
                         if (state.a_text.len > 0) {
                             buf_append(&state.bq_text, state.a_text.data, state.a_text.len);
                         }
                         buf_free(&state.a_text);
+                    } else if (state.in_li) {
+                        if (state.a_text.len > 0) {
+                            buf_append(&state.li_buf, state.a_text.data, state.a_text.len);
+                        }
+                        buf_free(&state.a_text);
                     } else {
-                        flush_text(&result, &text_buf);
+                        flush_text(&result, &text_buf, state.cur_style);
                         HTMLElement* e = result_add(&result);
                         e->type = HELEM_LINK;
                         e->text = buf_finish(&state.a_text);
@@ -545,7 +560,7 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
                         buf_init(&state.a_text);
                     }
                 } else if (!tag.is_closing && tag.href[0]) {
-                    if (state.bq_depth == 0) flush_text(&result, &text_buf);
+                    if (state.bq_depth == 0 && !state.in_li) flush_text(&result, &text_buf, state.cur_style);
                     state.in_a = 1;
                     strncpy(state.a_href, tag.href, sizeof(state.a_href) - 1);
                     state.a_href[sizeof(state.a_href) - 1] = '\0';
@@ -558,7 +573,7 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
             // <img>
             if (tag_eq(tag.name, tag.name_len, "img")) {
                 if (tag.src[0]) {
-                    flush_text(&result, &text_buf);
+                    flush_text(&result, &text_buf, state.cur_style);
                     HTMLElement* e = result_add(&result);
                     e->type = HELEM_IMAGE;
                     e->attr1 = strdup(tag.src);
@@ -573,7 +588,7 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
                 if (tag.is_closing && state.bq_depth > 0) {
                     state.bq_depth--;
                     if (state.bq_depth == 0) {
-                        flush_text(&result, &text_buf);
+                        flush_text(&result, &text_buf, state.cur_style);
                         HTMLElement* e = result_add(&result);
                         e->type = HELEM_BLOCKQUOTE;
                         e->text = buf_finish(&state.bq_text);
@@ -603,7 +618,7 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
                                 buf_append(&state.bq_prev, text_buf.data + line_start, line_len);
                             }
                         }
-                        flush_text(&result, &text_buf);
+                        flush_text(&result, &text_buf, state.cur_style);
                         buf_init(&state.bq_text);
                     }
                     if (tag.cite[0]) {
@@ -623,7 +638,7 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
                     if (state.table_depth == state.capture_depth) {
                         // Closing the data table we're capturing
                         if (state.table_data.len > 0) {
-                            flush_text(&result, &text_buf);
+                            flush_text(&result, &text_buf, state.cur_style);
                             HTMLElement* e = result_add(&result);
                             e->type = HELEM_TABLE;
                             e->text = buf_finish(&state.table_data);
@@ -739,15 +754,149 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
                 continue;
             }
 
+            // <hr> — emit a horizontal rule element
+            if (tag_eq(tag.name, tag.name_len, "hr")) {
+                flush_text(&result, &text_buf, state.cur_style);
+                HTMLElement* e = result_add(&result);
+                e->type = HELEM_HR;
+                e->text = strdup("");
+                HTMLElement* sp = result_add(&result);
+                sp->type = HELEM_TEXT;
+                sp->text = strdup("\n\n");
+                p = after;
+                continue;
+            }
+
+            // <ul>, <ol>
+            if (tag_eq(tag.name, tag.name_len, "ul") ||
+                tag_eq(tag.name, tag.name_len, "ol")) {
+                if (!tag.is_closing) {
+                    if (state.in_li && state.li_buf.len > 0) {
+                        flush_text(&result, &text_buf, state.cur_style);
+                        HTMLElement* e = result_add(&result);
+                        e->type = HELEM_LIST_ITEM;
+                        e->text = buf_finish(&state.li_buf);
+                        buf_init(&state.li_buf);
+                        char depth_buf[16];
+                        int outer_depth = state.list_depth - 1;
+                        if (outer_depth < 0) outer_depth = 0;
+                        snprintf(depth_buf, sizeof(depth_buf), "%d", outer_depth);
+                        e->attr1 = strdup(depth_buf);
+                        if (state.list_depth > 0 &&
+                            state.list_ordered[state.list_depth - 1]) {
+                            char idx_buf[16];
+                            snprintf(idx_buf, sizeof(idx_buf), "%d",
+                                     state.list_index[state.list_depth - 1]);
+                            e->attr2 = strdup(idx_buf);
+                            state.list_index[state.list_depth - 1]++;
+                        }
+                    }
+                    if (state.list_depth < MAX_LIST_DEPTH) {
+                        state.list_depth++;
+                        state.list_ordered[state.list_depth - 1] =
+                            tag_eq(tag.name, tag.name_len, "ol") ? 1 : 0;
+                        state.list_index[state.list_depth - 1] = 1;
+                    }
+                    if (state.bq_depth == 0 && !state.in_li) flush_text(&result, &text_buf, state.cur_style);
+                } else if (state.list_depth > 0) {
+                    state.list_depth--;
+                    if (state.list_depth == 0) {
+                        HTMLElement* sp = result_add(&result);
+                        sp->type = HELEM_TEXT;
+                        sp->text = strdup("\n\n");
+                    }
+                }
+                p = after;
+                continue;
+            }
+
+            // <li>
+            if (tag_eq(tag.name, tag.name_len, "li")) {
+                if (!tag.is_closing) {
+                    if (state.list_depth > 0) {
+                        flush_text(&result, &text_buf, state.cur_style);
+                        buf_free(&state.li_buf);
+                        buf_init(&state.li_buf);
+                        state.in_li = 1;
+                    } else {
+                        flush_text(&result, &text_buf, state.cur_style);
+                    }
+                } else if (state.in_li) {
+                    state.in_li = 0;
+                    flush_text(&result, &text_buf, state.cur_style);
+                    HTMLElement* e = result_add(&result);
+                    e->type = HELEM_LIST_ITEM;
+                    e->text = buf_finish(&state.li_buf);
+                    buf_init(&state.li_buf);
+                    char depth_buf[16];
+                    snprintf(depth_buf, sizeof(depth_buf), "%d", state.list_depth - 1);
+                    e->attr1 = strdup(depth_buf);
+                    if (state.list_depth > 0 &&
+                        state.list_ordered[state.list_depth - 1]) {
+                        char idx_buf[16];
+                        snprintf(idx_buf, sizeof(idx_buf), "%d",
+                                 state.list_index[state.list_depth - 1]);
+                        e->attr2 = strdup(idx_buf);
+                        state.list_index[state.list_depth - 1]++;
+                    }
+                }
+                p = after;
+                continue;
+            }
+
+            // Inline text formatting: <b>, <strong>, <i>, <em>, <u>, <s>, <del>
+            if (tag_eq(tag.name, tag.name_len, "b") ||
+                tag_eq(tag.name, tag.name_len, "strong") ||
+                tag_eq(tag.name, tag.name_len, "i") ||
+                tag_eq(tag.name, tag.name_len, "em") ||
+                tag_eq(tag.name, tag.name_len, "u") ||
+                tag_eq(tag.name, tag.name_len, "s") ||
+                tag_eq(tag.name, tag.name_len, "del")) {
+                int mask = 0;
+                if (tag_eq(tag.name, tag.name_len, "b") ||
+                    tag_eq(tag.name, tag.name_len, "strong"))
+                    mask = HTML_STYLE_BOLD;
+                else if (tag_eq(tag.name, tag.name_len, "i") ||
+                         tag_eq(tag.name, tag.name_len, "em"))
+                    mask = HTML_STYLE_ITALIC;
+                else if (tag_eq(tag.name, tag.name_len, "u"))
+                    mask = HTML_STYLE_UNDERLINE;
+                else
+                    mask = HTML_STYLE_STRIKETHROUGH;
+                // Flush pending text with the current style before it changes,
+                // so each styled span is emitted as its own TEXT element.
+                // Only when the main text_buf is the active target.
+                if (state.pre_depth == 0 && !state.in_td && !state.in_a &&
+                    state.h_level == 0 && state.bq_depth == 0 && !state.in_li) {
+                    if (text_buf.len > 0) {
+                        char last = text_buf.data[text_buf.len - 1];
+                        if (last != ' ' && last != '\n')
+                            state.pending_space = 1;
+                    }
+                    flush_text(&result, &text_buf, state.cur_style);
+                }
+                if (!tag.is_closing) {
+                    if (state.style_depth < MAX_STACK) {
+                        state.style_stack[state.style_depth++] = mask;
+                        state.cur_style |= mask;
+                    }
+                } else if (state.style_depth > 0) {
+                    state.style_depth--;
+                    int old = state.style_stack[state.style_depth];
+                    state.cur_style &= ~old;
+                }
+                p = after;
+                continue;
+            }
+
             // Block elements: add spacing
             if (tag_eq(tag.name, tag.name_len, "p") ||
-                tag_eq(tag.name, tag.name_len, "div") ||
-                tag_eq(tag.name, tag.name_len, "li") ||
-                tag_eq(tag.name, tag.name_len, "hr")) {
-                if (tag.is_closing || tag_eq(tag.name, tag.name_len, "hr")) {
+                tag_eq(tag.name, tag.name_len, "div")) {
+                if (tag.is_closing) {
                     if (state.pre_depth > 0) {
-                        // Preserve whitespace inside <pre>
                         buf_append_char(&state.pre_buf, '\n');
+                    } else if (state.in_li) {
+                        buf_append_char(&state.li_buf, '\n');
                     } else if (state.bq_depth > 0) {
                         buf_append(&state.bq_text, "\n\n", 2);
                     } else if (state.in_td) {
@@ -761,7 +910,7 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
                 continue;
             }
 
-            // <ul>, <ol>, <dl>, etc. - skip tag but process children
+            // <dl>, etc. - skip tag but process children
             p = after;
             continue;
         }
@@ -778,7 +927,8 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
             if (state.pre_depth > 0) target = &state.pre_buf;
             else if (state.in_td) target = &state.cell_text;
             else if (state.in_a) target = &state.a_text;
-            else if (state.in_h1 || state.in_h2) target = &state.h_text;
+            else if (state.h_level > 0) target = &state.h_text;
+            else if (state.in_li) target = &state.li_buf;
             else if (state.bq_depth > 0) target = &state.bq_text;
             else target = &text_buf;
 
@@ -789,15 +939,29 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
 
         // Regular character — collapse whitespace like HTML (unless in <pre>)
         char c = *p++;
+        // Preserve a single leading space that followed a styled span flush.
+        if (state.pending_space) {
+            state.pending_space = 0;
+            if ((c == ' ' || c == '\n' || c == '\r' || c == '\t') &&
+                state.pre_depth == 0 && !state.in_td && !state.in_a &&
+                state.h_level == 0 && state.bq_depth == 0 && !state.in_li &&
+                text_buf.len == 0) {
+                buf_append_char(&text_buf, ' ');
+                if (c == ' ' || c == '\n' || c == '\r' || c == '\t') {
+                    continue;
+                }
+            }
+        }
         if (state.pre_depth > 0) {
-            // Inside <pre>: preserve whitespace exactly.
             buf_append_char(&state.pre_buf, c);
         } else if (state.in_td) {
             buf_append_html_char(&state.cell_text, c, state.in_pre);
         } else if (state.in_a) {
             buf_append_html_char(&state.a_text, c, state.in_pre);
-        } else if (state.in_h1 || state.in_h2) {
+        } else if (state.h_level > 0) {
             buf_append_html_char(&state.h_text, c, state.in_pre);
+        } else if (state.in_li) {
+            buf_append_html_char(&state.li_buf, c, state.in_pre);
         } else if (state.bq_depth > 0) {
             buf_append_html_char(&state.bq_text, c, state.in_pre);
         } else {
@@ -806,15 +970,42 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
     }
 
     // Flush remaining text
-    flush_text(&result, &text_buf);
+    flush_text(&result, &text_buf, state.cur_style);
 
     // Flush any unclosed elements
-    if (state.in_h1 || state.in_h2) {
+    if (state.h_level > 0) {
         HTMLElement* e = result_add(&result);
-        e->type = state.in_h1 ? HELEM_H1 : HELEM_H2;
+        switch (state.h_level) {
+            case 1: e->type = HELEM_H1; break;
+            case 2: e->type = HELEM_H2; break;
+            case 3: e->type = HELEM_H3; break;
+            case 4: e->type = HELEM_H4; break;
+            case 5: e->type = HELEM_H5; break;
+            case 6: e->type = HELEM_H6; break;
+            default: e->type = HELEM_H6; break;
+        }
         e->text = buf_finish(&state.h_text);
     } else {
         buf_free(&state.h_text);
+    }
+
+    if (state.in_li) {
+        state.in_li = 0;
+        HTMLElement* e = result_add(&result);
+        e->type = HELEM_LIST_ITEM;
+        e->text = buf_finish(&state.li_buf);
+        char depth_buf[16];
+        snprintf(depth_buf, sizeof(depth_buf), "%d", state.list_depth - 1);
+        e->attr1 = strdup(depth_buf);
+        if (state.list_depth > 0 &&
+            state.list_ordered[state.list_depth - 1]) {
+            char idx_buf[16];
+            snprintf(idx_buf, sizeof(idx_buf), "%d",
+                     state.list_index[state.list_depth - 1]);
+            e->attr2 = strdup(idx_buf);
+        }
+    } else {
+        buf_free(&state.li_buf);
     }
 
     if (state.in_a) {

@@ -243,6 +243,9 @@
       "install": "Установить",
       "error": "Не удалось установить",
       "delete_confirm": "Удалить плагин?",
+      "install_confirm": "Установить {title}?",
+      "install_author": "автор: {author}",
+      "unverified_warning": "Непроверенный автор. Устанавливайте на свой риск.",
       "help": "j/k: навигация • enter: установить • d: удалить • esc: назад"
     },
     "time": {

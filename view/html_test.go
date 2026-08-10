@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/floatpane/matcha/clib"
 )
 
 // clearAllTerminalEnv clears all environment variables that could indicate terminal capabilities
@@ -1117,5 +1118,315 @@ func TestRemoteImageCache_EvictsOldestWhenFull(t *testing.T) {
 		if _, ok := remoteImageCache.Get(keptURL); !ok {
 			t.Errorf("expected %q to still be in cache", keptURL)
 		}
+	}
+}
+
+func TestProcessBodyListsAndHR(t *testing.T) {
+	origTerm := os.Getenv("TERM")
+	origTermProgram := os.Getenv("TERM_PROGRAM")
+	defer func() {
+		os.Setenv("TERM", origTerm)
+		os.Setenv("TERM_PROGRAM", origTermProgram)
+	}()
+	os.Setenv("TERM", "xterm")
+	os.Setenv("TERM_PROGRAM", "")
+
+	h1Style := lipgloss.NewStyle()
+	h2Style := lipgloss.NewStyle()
+	bodyStyle := lipgloss.NewStyle()
+
+	ansiEscapeRegex := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+	tests := []struct {
+		name           string
+		input          string
+		wantContains   []string
+		wantNotContain []string
+	}{
+		{
+			name:  "unordered list with bullets",
+			input: `<ul><li>Apple</li><li>Banana</li></ul>`,
+			wantContains: []string{
+				"• Apple",
+				"• Banana",
+			},
+		},
+		{
+			name:  "ordered list with numeric indices",
+			input: `<ol><li>First</li><li>Second</li><li>Third</li></ol>`,
+			wantContains: []string{
+				"1. First",
+				"2. Second",
+				"3. Third",
+			},
+		},
+		{
+			name:  "nested list indentation",
+			input: `<ul><li>Outer<ul><li>Inner</li></ul></li></ul>`,
+			wantContains: []string{
+				"• Outer",
+				"  • Inner",
+			},
+		},
+		{
+			name:         "horizontal rule renders divider",
+			input:        `<p>Before</p><hr><p>After</p>`,
+			wantContains: []string{"Before", "After", "─"},
+		},
+		{
+			name:           "li content is preserved",
+			input:          `<ul><li>Item with text</li></ul>`,
+			wantContains:   []string{"Item with text"},
+			wantNotContain: []string{"<li>"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			processed, _, err := ProcessBody(tt.input, BodyMIMETypeHTML, h1Style, h2Style, bodyStyle, true)
+			if err != nil {
+				t.Fatalf("ProcessBody() failed: %v", err)
+			}
+			clean := ansiEscapeRegex.ReplaceAllString(processed, "")
+			for _, want := range tt.wantContains {
+				if !strings.Contains(clean, want) {
+					t.Errorf("processed body missing %q\nGot: %q", want, clean)
+				}
+			}
+			for _, notWant := range tt.wantNotContain {
+				if strings.Contains(clean, notWant) {
+					t.Errorf("processed body should not contain %q\nGot: %q", notWant, clean)
+				}
+			}
+		})
+	}
+}
+
+func TestProcessBodyHeadings(t *testing.T) {
+	origTerm := os.Getenv("TERM")
+	origTermProgram := os.Getenv("TERM_PROGRAM")
+	defer func() {
+		os.Setenv("TERM", origTerm)
+		os.Setenv("TERM_PROGRAM", origTermProgram)
+	}()
+	os.Setenv("TERM", "xterm")
+	os.Setenv("TERM_PROGRAM", "")
+
+	h1Style := lipgloss.NewStyle()
+	h2Style := lipgloss.NewStyle()
+	bodyStyle := lipgloss.NewStyle()
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"h3", `<h3>Subheading Three</h3>`, "Subheading Three"},
+		{"h4", `<h4>Subheading Four</h4>`, "Subheading Four"},
+		{"h5", `<h5>Subheading Five</h5>`, "Subheading Five"},
+		{"h6", `<h6>Subheading Six</h6>`, "Subheading Six"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			processed, _, err := ProcessBody(tt.input, BodyMIMETypeHTML, h1Style, h2Style, bodyStyle, true)
+			if err != nil {
+				t.Fatalf("ProcessBody() failed: %v", err)
+			}
+			if !strings.Contains(processed, tt.want) {
+				t.Errorf("processed body missing %q\nGot: %q", tt.want, processed)
+			}
+		})
+	}
+}
+
+func TestProcessBodyInlineFormatting(t *testing.T) {
+	origTerm := os.Getenv("TERM")
+	origTermProgram := os.Getenv("TERM_PROGRAM")
+	defer func() {
+		os.Setenv("TERM", origTerm)
+		os.Setenv("TERM_PROGRAM", origTermProgram)
+	}()
+	os.Setenv("TERM", "xterm")
+	os.Setenv("TERM_PROGRAM", "")
+
+	h1Style := lipgloss.NewStyle()
+	h2Style := lipgloss.NewStyle()
+	bodyStyle := lipgloss.NewStyle()
+
+	ansiEscapeRegex := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"bold", `<b>bold text</b>`, "bold text"},
+		{"strong", `<strong>strong text</strong>`, "strong text"},
+		{"italic", `<i>italic text</i>`, "italic text"},
+		{"em", `<em>emphasized</em>`, "emphasized"},
+		{"underline", `<u>underlined</u>`, "underlined"},
+		{"strikethrough s", `<s>struck</s>`, "struck"},
+		{"strikethrough del", `<del>deleted</del>`, "deleted"},
+		{"nested bold+italic", `<b><i>both</i></b>`, "both"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			processed, _, err := ProcessBody(tt.input, BodyMIMETypeHTML, h1Style, h2Style, bodyStyle, true)
+			if err != nil {
+				t.Fatalf("ProcessBody() failed: %v", err)
+			}
+			clean := ansiEscapeRegex.ReplaceAllString(processed, "")
+			if !strings.Contains(clean, tt.want) {
+				t.Errorf("processed body missing %q\nGot: %q", tt.want, clean)
+			}
+		})
+	}
+}
+
+func TestRenderListItem(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		depth    string
+		index    string
+		contains []string
+	}{
+		{"unordered", "Apple", "0", "", []string{"• Apple"}},
+		{"ordered first", "First", "0", "1", []string{"1. First"}},
+		{"ordered second", "Second", "0", "2", []string{"2. Second"}},
+		{"nested depth 1", "Inner", "1", "", []string{"  • Inner"}},
+		{"nested depth 2", "Deep", "2", "3", []string{"    3. Deep"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := renderListItem(tt.text, tt.depth, tt.index)
+			for _, want := range tt.contains {
+				if !strings.Contains(got, want) {
+					t.Errorf("renderListItem(%q,%q,%q) = %q, missing %q", tt.text, tt.depth, tt.index, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestRenderStyledText(t *testing.T) {
+	if got := renderStyledText("plain", 0); got != "plain" {
+		t.Errorf("renderStyledText plain = %q, want %q", got, "plain")
+	}
+	bold := renderStyledText("x", clib.HTMLStyleBold)
+	if !strings.Contains(bold, "x") {
+		t.Errorf("bold render lost text: %q", bold)
+	}
+	if !strings.Contains(bold, "\x1b[") {
+		t.Errorf("bold render missing ANSI codes: %q", bold)
+	}
+	combined := renderStyledText("y", clib.HTMLStyleBold|clib.HTMLStyleItalic|clib.HTMLStyleUnderline|clib.HTMLStyleStrikethrough)
+	if !strings.Contains(combined, "y") {
+		t.Errorf("combined render lost text: %q", combined)
+	}
+}
+
+func TestHTMLToElementsLists(t *testing.T) {
+	elements, ok := clib.HTMLToElements(`<ol><li>One</li><li>Two</li></ol>`)
+	if !ok {
+		t.Fatalf("HTMLToElements failed")
+	}
+	var items []clib.HTMLElement
+	for _, e := range elements {
+		if e.Type == clib.HElemListItem {
+			items = append(items, e)
+		}
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 list items, got %d", len(items))
+	}
+	if items[0].Text != "One" || items[1].Text != "Two" {
+		t.Errorf("list item text = %q, %q", items[0].Text, items[1].Text)
+	}
+	if items[0].Attr2 != "1" || items[1].Attr2 != "2" {
+		t.Errorf("ordered indices = %q, %q (want 1, 2)", items[0].Attr2, items[1].Attr2)
+	}
+}
+
+func TestHTMLToElementsUnorderedNoIndex(t *testing.T) {
+	elements, ok := clib.HTMLToElements(`<ul><li>A</li><li>B</li></ul>`)
+	if !ok {
+		t.Fatalf("HTMLToElements failed")
+	}
+	var items []clib.HTMLElement
+	for _, e := range elements {
+		if e.Type == clib.HElemListItem {
+			items = append(items, e)
+		}
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 list items, got %d", len(items))
+	}
+	for _, it := range items {
+		if it.Attr2 != "" {
+			t.Errorf("unordered item should have empty index, got %q", it.Attr2)
+		}
+	}
+}
+
+func TestHTMLToElementsHR(t *testing.T) {
+	elements, ok := clib.HTMLToElements(`<p>Before</p><hr><p>After</p>`)
+	if !ok {
+		t.Fatalf("HTMLToElements failed")
+	}
+	found := false
+	for _, e := range elements {
+		if e.Type == clib.HElemHR {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected an HELEM_HR element")
+	}
+}
+
+func TestHTMLToElementsHeadings(t *testing.T) {
+	elements, ok := clib.HTMLToElements(`<h3>Title 3</h3><h6>Title 6</h6>`)
+	if !ok {
+		t.Fatalf("HTMLToElements failed")
+	}
+	wantTypes := map[int]bool{clib.HElemH3: false, clib.HElemH6: false}
+	for _, e := range elements {
+		if _, ok := wantTypes[e.Type]; ok {
+			wantTypes[e.Type] = true
+		}
+	}
+	for et, found := range wantTypes {
+		if !found {
+			t.Errorf("expected heading element type %d", et)
+		}
+	}
+}
+
+func TestHTMLToElementsInlineStyle(t *testing.T) {
+	elements, ok := clib.HTMLToElements(`<b>bold</b> and <i>italic</i>`)
+	if !ok {
+		t.Fatalf("HTMLToElements failed")
+	}
+	foundBold := false
+	foundItalic := false
+	for _, e := range elements {
+		if e.Type == clib.HElemText {
+			if e.Style&clib.HTMLStyleBold != 0 && strings.Contains(e.Text, "bold") {
+				foundBold = true
+			}
+			if e.Style&clib.HTMLStyleItalic != 0 && strings.Contains(e.Text, "italic") {
+				foundItalic = true
+			}
+		}
+	}
+	if !foundBold {
+		t.Errorf("expected a bold-styled TEXT element")
+	}
+	if !foundItalic {
+		t.Errorf("expected an italic-styled TEXT element")
 	}
 }

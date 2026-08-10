@@ -35,6 +35,7 @@ Plain text, not encrypted. Edit with any text editor. Restart matcha to apply ch
   },
   "email": {
     "reply": "r",
+    "reply_all": "shift+r",
     "forward": "f",
     "delete": "d",
     "archive": "a",

@@ -84,9 +84,10 @@ func Allowed(current tea.Model) bool {
 }
 
 // BuildCommands assembles context-specific and global palette commands.
-func BuildCommands(current tea.Model, folderInbox *tui.FolderInbox) []tui.PaletteCommand {
+func BuildCommands(current tea.Model, folderInbox *tui.FolderInbox, cfg *config.Config) []tui.PaletteCommand {
 	kb := config.Keybinds
 	var cmds []tui.PaletteCommand
+	splitEnabled := cfg != nil && cfg.EnableSplitPane
 
 	switch v := current.(type) {
 	case *tui.Composer:
@@ -101,6 +102,11 @@ func BuildCommands(current tea.Model, folderInbox *tui.FolderInbox) []tui.Palett
 			tui.PaletteCommand{Title: "Delete email", Hint: kb.Email.Delete, Keywords: "trash remove", Action: KeyAction(kb.Email.Delete)},
 			tui.PaletteCommand{Title: "Toggle images", Hint: kb.Email.ToggleImages, Keywords: "pictures show hide", Action: KeyAction(kb.Email.ToggleImages)},
 		)
+		if !v.IsPreviewMode() && splitEnabled {
+			cmds = append(cmds,
+				tui.PaletteCommand{Title: "Change to split view", Keywords: "split pane preview side by side layout", Action: func() tea.Msg { return tui.OpenSplitFromFullscreenMsg{} }},
+			)
+		}
 		cmds = append(cmds, EmailExportCommands(v, folderInbox)...)
 	case *tui.Inbox, *tui.FolderInbox:
 		cmds = append(cmds,
@@ -115,6 +121,18 @@ func BuildCommands(current tea.Model, folderInbox *tui.FolderInbox) []tui.Palett
 			tui.PaletteCommand{Title: "Jump to folder", Keywords: "navigate switch folder go", Action: func() tea.Msg { return tui.JumpToFolderMsg{} }},
 		)
 		if fi, ok := current.(*tui.FolderInbox); ok && fi.HasSplitPreview() {
+			if fi.IsVerticalSplit() {
+				cmds = append(cmds,
+					tui.PaletteCommand{Title: "Change layout to horizontal", Keywords: "split pane orientation layout side by side", Action: func() tea.Msg { return tui.ToggleSplitOrientationMsg{} }},
+				)
+			} else {
+				cmds = append(cmds,
+					tui.PaletteCommand{Title: "Change layout to vertical", Keywords: "split pane orientation layout stacked top bottom", Action: func() tea.Msg { return tui.ToggleSplitOrientationMsg{} }},
+				)
+			}
+			cmds = append(cmds,
+				tui.PaletteCommand{Title: "Open in full screen", Keywords: "fullscreen full screen maximize expand", Action: func() tea.Msg { return tui.OpenFullscreenFromSplitMsg{} }},
+			)
 			if ev := fi.GetPreviewPane(); ev != nil {
 				cmds = append(cmds, EmailExportCommands(ev, folderInbox)...)
 			}

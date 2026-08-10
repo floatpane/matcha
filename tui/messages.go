@@ -110,7 +110,59 @@ type ChooseServiceMsg struct {
 }
 
 type EmailResultMsg struct {
-	Err error
+	Err     error
+	Warning string
+}
+
+// ApplyPatchMsg requests applying the currently viewed patch to a local repo.
+type ApplyPatchMsg struct {
+	RawEmail  string
+	Subject   string
+	From      string
+	AccountID string
+}
+
+// PatchStagedMsg signals that a patch has been applied to disk and changes
+// staged via git add, and a commit should now be created (which may require
+// handing the terminal to pinentry for GPG signing).
+type PatchStagedMsg struct {
+	Subject       string
+	From          string
+	CommitMsg     string
+	Files         []string
+	NothingStaged bool
+	Err           error
+}
+
+// PatchApplyResultMsg signals the result of a patch apply operation.
+type PatchApplyResultMsg struct {
+	Subject  string
+	Files    []string
+	Err      error
+	DryRun   bool
+	Warnings []string
+}
+
+// GoToSendPatchMsg signals navigation to the patch-send flow.
+type GoToSendPatchMsg struct{}
+
+// SendPatchMsg requests sending a patch email generated from a local repo.
+type SendPatchMsg struct {
+	To           string
+	Cc           string
+	Subject      string
+	RepoDir      string
+	CommitRange  string
+	AccountID    string
+	FromOverride string
+	Version      int
+}
+
+// PatchGeneratedMsg signals that a patch was generated and is ready to send.
+type PatchGeneratedMsg struct {
+	SendPatchMsg
+	RawPatch []byte
+	Err      error
 }
 
 type ClearStatusMsg struct{}
@@ -125,6 +177,18 @@ type UpdatePreviewMsg struct {
 	UID       uint32
 	AccountID string
 }
+
+// ToggleSplitOrientationMsg requests switching the split pane orientation
+// between horizontal and vertical while a split preview is open.
+type ToggleSplitOrientationMsg struct{}
+
+// OpenFullscreenFromSplitMsg requests closing the split preview and opening
+// the currently previewed email in a full-screen EmailView.
+type OpenFullscreenFromSplitMsg struct{}
+
+// OpenSplitFromFullscreenMsg requests switching from a full-screen EmailView
+// back to the split-pane layout with the same email shown in the preview.
+type OpenSplitFromFullscreenMsg struct{}
 
 type PreviewBodyFetchedMsg struct {
 	UID          uint32
@@ -189,6 +253,10 @@ type EmailsAppendedMsg struct {
 }
 
 type ReplyToEmailMsg struct {
+	Email fetcher.Email
+}
+
+type ReplyAllEmailMsg struct {
 	Email fetcher.Email
 }
 
@@ -635,10 +703,14 @@ type DaemonEventMsg struct {
 
 // --- Plugin Messages ---
 
-// PluginNotifyMsg signals that a plugin wants to show a notification.
+// PluginNotifyMsg signals that a plugin wants to show a non-blocking
+// toast notification overlaid on the current view.
 type PluginNotifyMsg struct {
 	Message  string
+	Title    string
 	Duration float64 // Duration in seconds (default 2)
+	Kind     string  // "info", "warning", or "error" (default "info")
+	Closable bool    // If true, user can dismiss with a key press
 }
 
 // PluginKeyBinding describes a plugin-registered keyboard shortcut for display in the help bar.

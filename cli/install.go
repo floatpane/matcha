@@ -1,6 +1,10 @@
 package cli
 
 import (
+	"bufio"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/floatpane/matcha/internal/httpclient"
+	"github.com/floatpane/matcha/internal/marketplace"
 	"github.com/floatpane/matcha/plugins"
 )
 
@@ -127,6 +132,11 @@ func isKnownThemeName(name string) bool {
 }
 
 func installPlugin(source string) error {
+	// Check if source is a plugin name from marketplace
+	if !isURL(source) && !isFilePath(source) {
+		return installFromMarketplace(source)
+	}
+
 	data, filename, err := resolvePluginSource(source)
 	if err != nil {
 		return err
@@ -150,6 +160,146 @@ func installPlugin(source string) error {
 	return nil
 }
 
+// installFromMarketplace installs a plugin from the new marketplace with security checks
+func installFromMarketplace(name string) error {
+	// Fetch plugin info from marketplace API
+	plugin, err := marketplace.FetchPluginInfo(name)
+	if err != nil {
+		// Fallback to old registry system
+		return installFromOldRegistry(name)
+	}
+
+	// Check verification status
+	if !plugin.IsVerifiedSafe() {
+		fmt.Printf("⚠️  Warning: Plugin '%s' has not been verified as safe\n", plugin.Title)
+		fmt.Printf("   Verification status: %s\n", plugin.VerificationStatus)
+		fmt.Println()
+		fmt.Print("Do you want to continue? (y/N): ")
+
+		reader := bufio.NewReader(os.Stdin)
+		response, _ := reader.ReadString('\n')
+		response = strings.TrimSpace(strings.ToLower(response))
+
+		if response != "y" && response != "yes" {
+			return fmt.Errorf("installation cancelled by user")
+		}
+	}
+
+	// Check if author is trusted
+	if !plugin.IsTrustedAuthor() {
+		fmt.Printf("⚠️  Warning: Plugin author '%s' is not verified\n", plugin.Author.DisplayName)
+		fmt.Printf("   GitHub: https://github.com/%s\n", plugin.Author.GitHubUsername)
+		fmt.Println()
+		fmt.Print("Do you trust this author? (y/N): ")
+
+		reader := bufio.NewReader(os.Stdin)
+		response, _ := reader.ReadString('\n')
+		response = strings.TrimSpace(strings.ToLower(response))
+
+		if response != "y" && response != "yes" {
+			return fmt.Errorf("installation cancelled by user")
+		}
+	}
+
+	// Download plugin file
+	client := httpclient.New(httpclient.RegistryFetchTimeout)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, plugin.FileURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to build download request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to download plugin: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download plugin: HTTP %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read plugin content: %w", err)
+	}
+
+	// Verify SHA256
+	computedHash := sha256.Sum256(data)
+	computedHashStr := hex.EncodeToString(computedHash[:])
+
+	if computedHashStr != plugin.SHA256 {
+		fmt.Printf("⚠️  Warning: SHA256 mismatch!\n")
+		fmt.Printf("   Expected: %s\n", plugin.SHA256)
+		fmt.Printf("   Got:      %s\n", computedHashStr)
+		fmt.Println()
+		fmt.Print("Do you want to continue anyway? (y/N): ")
+
+		reader := bufio.NewReader(os.Stdin)
+		response, _ := reader.ReadString('\n')
+		response = strings.TrimSpace(strings.ToLower(response))
+
+		if response != "y" && response != "yes" {
+			return fmt.Errorf("installation cancelled due to SHA256 mismatch")
+		}
+	}
+
+	filename := plugin.Name + ".lua"
+	dir, err := pluginsDir()
+	if err != nil {
+		return err
+	}
+
+	dest := filepath.Join(dir, filename)
+	if err := os.WriteFile(dest, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write plugin: %w", err)
+	}
+
+	fmt.Printf("✓ Installed plugin %s v%s\n", plugin.Title, plugin.Version)
+	fmt.Printf("  Location: %s\n", dest)
+
+	if plugin.IsTrustedAuthor() && plugin.IsVerifiedSafe() {
+		fmt.Println("  Status: Verified safe ✓")
+	}
+
+	return nil
+}
+
+// installFromOldRegistry falls back to the old registry system
+func installFromOldRegistry(name string) error {
+	entries, err := plugins.FetchRegistry()
+	if err != nil {
+		return fmt.Errorf("failed to fetch plugin registry: %w", err)
+	}
+
+	for _, e := range entries {
+		if strings.EqualFold(e.Name, name) || strings.EqualFold(strings.TrimSuffix(e.File, ".lua"), name) {
+			data, err := plugins.FetchPlugin(e)
+			if err != nil {
+				return err
+			}
+
+			filename := e.File
+			if !strings.HasSuffix(filename, ".lua") {
+				filename += ".lua"
+			}
+
+			dir, err := pluginsDir()
+			if err != nil {
+				return err
+			}
+
+			dest := filepath.Join(dir, filename)
+			if err := os.WriteFile(dest, data, 0o644); err != nil {
+				return fmt.Errorf("failed to write plugin: %w", err)
+			}
+
+			fmt.Printf("Installed plugin %s to %s\n", filename, dest)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("plugin '%s' not found", name)
+}
+
 func resolvePluginSource(source string) ([]byte, string, error) {
 	if isURL(source) {
 		data, err := download(source)
@@ -158,21 +308,6 @@ func resolvePluginSource(source string) ([]byte, string, error) {
 		}
 		parts := strings.Split(strings.TrimRight(source, "/"), "/")
 		return data, parts[len(parts)-1], nil
-	}
-
-	// Bare name from registry.
-	entries, err := plugins.FetchRegistry()
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to fetch plugin registry: %w", err)
-	}
-	for _, e := range entries {
-		if strings.EqualFold(e.Name, source) || strings.EqualFold(strings.TrimSuffix(e.File, ".lua"), source) {
-			data, err := plugins.FetchPlugin(e)
-			if err != nil {
-				return nil, "", err
-			}
-			return data, e.File, nil
-		}
 	}
 
 	// Local file fallback.

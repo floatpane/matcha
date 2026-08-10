@@ -82,7 +82,7 @@ func (m *PasswordPrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *PasswordPrompt) View() tea.View {
 	var b strings.Builder
 
-	b.WriteString(logoStyle.Render(choiceLogo))
+	b.WriteString(renderLogo(choiceLogo))
 	b.WriteString("\n")
 
 	lockTitle := lipgloss.NewStyle().

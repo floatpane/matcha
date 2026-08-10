@@ -243,6 +243,9 @@
       "install": "Instaluj",
       "error": "Instalacja nieudana",
       "delete_confirm": "Usunąć wtyczkę?",
+      "install_confirm": "Zainstalować {title}?",
+      "install_author": "autor: {author}",
+      "unverified_warning": "Niezweryfikowany autor. Instalujesz na własne ryzyko.",
       "help": "j/k: nawigacja • enter: instaluj • d: usuń • esc: wstecz"
     },
     "time": {

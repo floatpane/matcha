@@ -27,9 +27,9 @@ func newPolicy() *bluemonday.Policy {
 	dataImagePrefixPattern := regexp.MustCompile(`(?i)^image/(gif|jpe?g|png|webp);base64,`)
 	langClassPattern := regexp.MustCompile(`(?i)^language-[a-z0-9+#.]+$`)
 	p.AllowElements(
-		"a", "b", "blockquote", "br", "code", "div", "em", "h1", "h2",
-		"i", "img", "li", "ol", "p", "pre", "span", "strong", "table",
-		"tbody", "td", "th", "thead", "tr", "u", "ul",
+		"a", "b", "blockquote", "br", "code", "del", "div", "em", "h1", "h2",
+		"h3", "h4", "h5", "h6", "hr", "i", "img", "li", "ol", "p", "pre", "s",
+		"span", "strong", "table", "tbody", "td", "th", "thead", "tr", "u", "ul",
 	)
 	p.AllowAttrs("href").Matching(linkURLPattern).OnElements("a")
 	p.AllowAttrs("src").Matching(imageURLPattern).OnElements("img")

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -252,6 +253,13 @@ func (lru *LRU) Put(folder string, uid uint32, accountID string, body *CachedEma
 	defer lru.mu.Unlock()
 
 	key := lru.makeKey(folder, uid, accountID)
+
+	// Don't cache empty bodies to prevent storing incomplete fetches
+	if strings.TrimSpace(body.Body) == "" {
+		lru.removeKey(key)
+		_ = removeBodyFromDisk(folder, uid, accountID)
+		return
+	}
 
 	if body.SizeBytes > lru.threshold {
 		lru.removeKey(key)

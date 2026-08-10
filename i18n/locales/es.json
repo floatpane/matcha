@@ -239,6 +239,9 @@
       "install": "Instalar",
       "error": "Falló la instalación",
       "delete_confirm": "¿Eliminar plugin?",
+      "install_confirm": "¿Instalar {title}?",
+      "install_author": "por {author}",
+      "unverified_warning": "Autor no verificado. Instala bajo tu propia responsabilidad.",
       "help": "j/k: navegar • enter: instalar • d: eliminar • esc: atrás"
     },
     "time": {

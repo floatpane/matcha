@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	InitialEmailLimit = 50
+	InitialEmailLimit = 0
 	PaginationLimit   = 50
 	MaxCacheEmails    = 100
 	FolderInbox       = "INBOX"

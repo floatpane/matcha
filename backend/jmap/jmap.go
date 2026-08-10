@@ -150,15 +150,18 @@ func (p *Provider) FetchEmails(_ context.Context, folder string, limit, offset u
 
 	req := &jmapclient.Request{}
 
-	queryCallID := req.Invoke(&email.Query{
+	queryCall := &email.Query{
 		Account: p.accountID,
 		Filter:  &email.FilterCondition{InMailbox: mboxID},
 		Sort: []*email.SortComparator{
 			{Property: "receivedAt", IsAscending: false},
 		},
 		Position: int64(offset),
-		Limit:    uint64(limit),
-	})
+	}
+	if limit > 0 {
+		queryCall.Limit = uint64(limit)
+	}
+	queryCallID := req.Invoke(queryCall)
 
 	req.Invoke(&email.Get{
 		Account: p.accountID,

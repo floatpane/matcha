@@ -8,6 +8,7 @@ import (
 	"mime/quotedprintable"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,92 @@ const termGhostty = "ghostty"
 
 func linkStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(theme.ActiveTheme.Link)
+}
+
+func h3Style() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(theme.ActiveTheme.Accent).
+		Bold(true)
+}
+
+func h4Style() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(theme.ActiveTheme.Accent).
+		Bold(false)
+}
+
+func h5Style() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(theme.ActiveTheme.Secondary).
+		Bold(true)
+}
+
+func h6Style() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(theme.ActiveTheme.Secondary).
+		Bold(false).
+		Italic(true)
+}
+
+func hrStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(theme.ActiveTheme.Secondary)
+}
+
+func renderStyledText(s string, style int) string {
+	if style == 0 || strings.TrimSpace(s) == "" {
+		return s
+	}
+	st := lipgloss.NewStyle()
+	if style&clib.HTMLStyleBold != 0 {
+		st = st.Bold(true)
+	}
+	if style&clib.HTMLStyleItalic != 0 {
+		st = st.Italic(true)
+	}
+	if style&clib.HTMLStyleUnderline != 0 {
+		st = st.Underline(true)
+	}
+	if style&clib.HTMLStyleStrikethrough != 0 {
+		st = st.Strikethrough(true)
+	}
+	return st.Render(s)
+}
+
+func renderListItem(itemText, depthStr, indexStr string) string {
+	depth := 0
+	if d, err := strconv.Atoi(depthStr); err == nil {
+		depth = d
+	}
+	if depth < 0 {
+		depth = 0
+	}
+	indent := strings.Repeat("  ", depth)
+	var marker string
+	if indexStr != "" {
+		marker = indexStr + ". "
+	} else {
+		marker = "• "
+	}
+	lines := strings.Split(strings.TrimSpace(itemText), "\n")
+	for i, line := range lines {
+		if i == 0 {
+			lines[i] = indent + marker + line
+		} else {
+			lines[i] = indent + strings.Repeat(" ", len(marker)) + line
+		}
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func renderHR() string {
+	width := 40
+	if cols, _, ok := getTerminalSize(); ok && cols > 0 {
+		width = cols
+	}
+	if width > 60 {
+		width = 60
+	}
+	return "\n" + hrStyle().Render(strings.Repeat("─", width)) + "\n"
 }
 
 // hyperlinkSupported checks if the terminal supports OSC 8 hyperlinks.
@@ -593,6 +680,12 @@ func processBody(rawBody, mimeType string, inline map[string]string, h1Style, h2
 	return bodyStyle.Render(result), placements, nil
 }
 
+type pendingImage struct {
+	index   int
+	encoded string
+	rows    int
+}
+
 func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Style lipgloss.Style, disableImages bool) (string, []ImagePlacement, error) {
 	// Parse HTML into structured elements using C parser.
 	elements, ok := clib.HTMLToElements(string(htmlBody))
@@ -603,18 +696,14 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 	// Process elements: apply styles and collect image placements.
 	var text strings.Builder
 	var imgIndex int
-	var pendingImages []struct {
-		index   int
-		encoded string
-		rows    int
-	}
+	var pendingImages []pendingImage
 
 	onWroteRegex := regexp.MustCompile(`On\s+(.+?),\s+(.+?)\s+wrote:`)
 
 	for _, elem := range elements {
 		switch elem.Type {
 		case clib.HElemText:
-			text.WriteString(elem.Text)
+			text.WriteString(renderStyledText(elem.Text, elem.Style))
 
 		case clib.HElemH1:
 			text.WriteString(h1Style.Render(elem.Text))
@@ -622,6 +711,22 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 
 		case clib.HElemH2:
 			text.WriteString(h2Style.Render(elem.Text))
+			text.WriteString("\n\n")
+
+		case clib.HElemH3:
+			text.WriteString(h3Style().Render(elem.Text))
+			text.WriteString("\n\n")
+
+		case clib.HElemH4:
+			text.WriteString(h4Style().Render(elem.Text))
+			text.WriteString("\n\n")
+
+		case clib.HElemH5:
+			text.WriteString(h5Style().Render(elem.Text))
+			text.WriteString("\n\n")
+
+		case clib.HElemH6:
+			text.WriteString(h6Style().Render(elem.Text))
 			text.WriteString("\n\n")
 
 		case clib.HElemLink:
@@ -632,42 +737,7 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 			}
 
 		case clib.HElemImage:
-			src := strings.TrimSpace(elem.Attr1)
-			alt := stripTerminalControls(elem.Attr2)
-			if hasTerminalControls(src) {
-				continue
-			}
-
-			if !disableImages && imageProtocolSupported() {
-				payload := resolveImagePayload(src, inline)
-
-				if payload != "" {
-					encoded, rows := prerenderImage(payload)
-					if encoded == "" {
-						debugImageProtocol("prerender failed for src=%s", src)
-					} else {
-						debugImageProtocol("collected image placement src=%s rows=%d", src, rows)
-
-						idx := imgIndex
-						imgIndex++
-						pendingImages = append(pendingImages, struct {
-							index   int
-							encoded string
-							rows    int
-						}{idx, encoded, rows})
-
-						fmt.Fprintf(&text, "\n[[MATCHA_IMG:%d]]", idx)
-						fmt.Fprintf(&text, "\n%s%d%s\n", imageRowPlaceholderPrefix, rows, imageRowPlaceholderSuffix)
-						continue
-					}
-				}
-				debugImageProtocol("no payload for src=%s", src)
-			}
-			if isRemoteImageURL(src) && hyperlinkSupported() {
-				fmt.Fprintf(&text, "\n %s \n", hyperlink(src, fmt.Sprintf("[Click here to view image: %s]", alt)))
-			} else {
-				fmt.Fprintf(&text, "\n %s \n", linkStyle().Render(fmt.Sprintf("[Image: %s, %s]", alt, src)))
-			}
+			renderImageElement(&text, &imgIndex, &pendingImages, elem, inline, disableImages)
 
 		case clib.HElemTable:
 			headerRows := 0
@@ -695,6 +765,12 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 
 		case clib.HElemCode:
 			text.WriteString(renderCodeBlock(elem.Text, elem.Attr1))
+
+		case clib.HElemListItem:
+			text.WriteString(renderListItem(elem.Text, elem.Attr1, elem.Attr2))
+
+		case clib.HElemHR:
+			text.WriteString(renderHR())
 		}
 	}
 
@@ -707,33 +783,75 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 	// Now expand the image row placeholders to actual newlines
 	result = expandImageRowPlaceholders(result)
 
-	// Build image placements by finding the line numbers of image markers.
+	placements, result := buildImagePlacements(result, pendingImages)
+
+	return result, placements, nil
+}
+
+func renderImageElement(text *strings.Builder, imgIndex *int, pendingImages *[]pendingImage, elem clib.HTMLElement, inline map[string]string, disableImages bool) {
+	src := strings.TrimSpace(elem.Attr1)
+	alt := stripTerminalControls(elem.Attr2)
+	if hasTerminalControls(src) {
+		return
+	}
+
+	if !disableImages && imageProtocolSupported() {
+		payload := resolveImagePayload(src, inline)
+
+		if payload != "" {
+			encoded, rows := prerenderImage(payload)
+			if encoded == "" {
+				debugImageProtocol("prerender failed for src=%s", src)
+			} else {
+				debugImageProtocol("collected image placement src=%s rows=%d", src, rows)
+
+				idx := *imgIndex
+				*imgIndex++
+				*pendingImages = append(*pendingImages, pendingImage{idx, encoded, rows})
+
+				fmt.Fprintf(text, "\n[[MATCHA_IMG:%d]]", idx)
+				fmt.Fprintf(text, "\n%s%d%s\n", imageRowPlaceholderPrefix, rows, imageRowPlaceholderSuffix)
+				return
+			}
+		}
+		debugImageProtocol("no payload for src=%s", src)
+	}
+	if isRemoteImageURL(src) && hyperlinkSupported() {
+		fmt.Fprintf(text, "\n %s \n", hyperlink(src, fmt.Sprintf("[Click here to view image: %s]", alt)))
+	} else {
+		fmt.Fprintf(text, "\n %s \n", linkStyle().Render(fmt.Sprintf("[Image: %s, %s]", alt, src)))
+	}
+}
+
+func buildImagePlacements(result string, pendingImages []pendingImage) ([]ImagePlacement, string) {
+	if len(pendingImages) == 0 {
+		return nil, result
+	}
+
 	var placements []ImagePlacement
-	if len(pendingImages) > 0 {
-		lines := strings.Split(result, "\n")
-		imgMarkerRegex := regexp.MustCompile(`\[\[MATCHA_IMG:(\d+)\]\]`)
-		for lineNum, line := range lines {
-			if matches := imgMarkerRegex.FindStringSubmatch(line); matches != nil {
-				var idx int
-				fmt.Sscanf(matches[1], "%d", &idx) //nolint:errcheck,gosec
-				for _, pi := range pendingImages {
-					if pi.index == idx {
-						placements = append(placements, ImagePlacement{
-							Line:    lineNum,
-							Encoded: pi.encoded,
-							Rows:    pi.rows,
-						})
-						break
-					}
+	lines := strings.Split(result, "\n")
+	imgMarkerRegex := regexp.MustCompile(`\[\[MATCHA_IMG:(\d+)\]\]`)
+	for lineNum, line := range lines {
+		if matches := imgMarkerRegex.FindStringSubmatch(line); matches != nil {
+			var idx int
+			fmt.Sscanf(matches[1], "%d", &idx) //nolint:errcheck,gosec
+			for _, pi := range pendingImages {
+				if pi.index == idx {
+					placements = append(placements, ImagePlacement{
+						Line:    lineNum,
+						Encoded: pi.encoded,
+						Rows:    pi.rows,
+					})
+					break
 				}
 			}
 		}
-
-		// Remove the image markers from the text (leave the spacing)
-		result = imgMarkerRegex.ReplaceAllString(result, "")
 	}
 
-	return result, placements, nil
+	// Remove the image markers from the text (leave the spacing)
+	result = imgMarkerRegex.ReplaceAllString(result, "")
+
+	return placements, result
 }
 
 func resolveImagePayload(src string, inline map[string]string) string {

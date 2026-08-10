@@ -237,6 +237,9 @@
       "install": "安装",
       "error": "安装失败",
       "delete_confirm": "删除插件？",
+      "install_confirm": "安装 {title}？",
+      "install_author": "作者：{author}",
+      "unverified_warning": "未验证的作者。安装风险自负。",
       "help": "j/k: 导航 • enter: 安装 • d: 删除 • esc: 返回"
     },
     "time": {

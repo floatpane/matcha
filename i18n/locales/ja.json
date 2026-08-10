@@ -237,6 +237,9 @@
       "install": "インストール",
       "error": "インストール失敗",
       "delete_confirm": "プラグインを削除しますか？",
+      "install_confirm": "{title} をインストールしますか？",
+      "install_author": "作者: {author}",
+      "unverified_warning": "認証されていない作者です。自己責任でインストールしてください。",
       "help": "j/k: 移動 • enter: インストール • d: 削除 • esc: 戻る"
     },
     "time": {

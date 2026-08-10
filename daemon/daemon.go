@@ -331,7 +331,7 @@ func (d *Daemon) syncAllAccounts(ctx context.Context) {
 			continue
 		}
 
-		emails, err := p.FetchEmails(ctx, inboxFolder, 50, 0)
+		emails, err := p.FetchEmails(ctx, inboxFolder, 0, 0)
 		if err != nil {
 			log.Printf("daemon: sync %s failed: %v", acct.Email, err)
 			d.broadcastToSubscribers(acct.ID, inboxFolder, daemonrpc.EventSyncError, daemonrpc.SyncErrorEvent{
@@ -456,7 +456,7 @@ func (d *Daemon) fetchAndCache(accountID, folder string) {
 		return
 	}
 
-	emails, err := fetcher.FetchFolderEmails(acct, folder, 50, 0)
+	emails, err := fetcher.FetchFolderEmails(acct, folder, 0, 0)
 	if err != nil {
 		log.Printf("daemon: cache fetch for %s/%s failed: %v", accountID, folder, err)
 		return

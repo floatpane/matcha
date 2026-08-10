@@ -36,6 +36,28 @@ func SetupMailto() error {
 	}
 }
 
+// SetupProtocolHandler registers matcha as the handler for the matcha: URL scheme
+// (used for matcha:install:<slug> deep links from the marketplace website).
+func SetupProtocolHandler() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("could not find executable: %w", err)
+	}
+	exe, err = filepath.Abs(exe)
+	if err != nil {
+		return fmt.Errorf("could not resolve absolute path: %w", err)
+	}
+
+	switch runtime.GOOS {
+	case "linux":
+		return setupProtocolLinux(exe)
+	case "darwin":
+		return setupProtocolDarwin(exe)
+	default:
+		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+}
+
 func setupMailtoLinux(exe string) error {
 	desktopContent := fmt.Sprintf(`[Desktop Entry]
 Name=Matcha Email
@@ -189,5 +211,131 @@ func setupMailtoDarwin(exe string) error {
 	fmt.Println("2. Go to Mail -> Settings (or Preferences) -> General.")
 	fmt.Println("3. Select 'MatchaMail.app' from the 'Default email reader' dropdown.")
 
+	return nil
+}
+
+func setupProtocolLinux(exe string) error {
+	desktopContent := fmt.Sprintf(`[Desktop Entry]
+Name=Matcha
+Comment=Terminal-based email client
+Exec=%s %%u
+Terminal=true
+Type=Application
+Icon=matcha
+Categories=Network;Email;
+MimeType=x-scheme-handler/matcha;
+`, exe)
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	appsDir := filepath.Join(home, ".local", "share", "applications")
+	if err := os.MkdirAll(appsDir, 0750); err != nil {
+		return err
+	}
+
+	desktopFile := filepath.Join(appsDir, "matcha-protocol.desktop")
+	if err := os.WriteFile(desktopFile, []byte(desktopContent), 0644); err != nil {
+		return err
+	}
+
+	_ = exec.Command("update-desktop-database", appsDir).Run() //nolint:noctx
+
+	cmd := exec.Command("xdg-mime", "default", "matcha-protocol.desktop", "x-scheme-handler/matcha") //nolint:noctx
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to run xdg-mime: %w", err)
+	}
+
+	fmt.Printf("Successfully registered %s as handler for matcha: URLs\n", exe)
+	return nil
+}
+
+func setupProtocolDarwin(exe string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	appDir := filepath.Join(home, "Applications", "MatchaProtocol.app")
+	os.RemoveAll(appDir) //nolint:errcheck,gosec
+
+	contentsDir := filepath.Join(appDir, "Contents")
+	macosDir := filepath.Join(contentsDir, "MacOS")
+	resourcesDir := filepath.Join(contentsDir, "Resources")
+
+	if err := os.MkdirAll(macosDir, 0750); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(resourcesDir, 0750); err != nil {
+		return err
+	}
+
+	tmpLogo := filepath.Join(os.TempDir(), "matcha_logo_protocol.png")
+	if err := os.WriteFile(tmpLogo, assets.Logo, 0644); err == nil {
+		icnsPath := filepath.Join(resourcesDir, "MatchaProtocol.icns")
+		_ = exec.Command("sips", "-s", "format", "icns", tmpLogo, "--out", icnsPath).Run() //nolint:noctx
+		os.Remove(tmpLogo)                                                                 //nolint:errcheck,gosec
+	}
+
+	infoPlist := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>MatchaProtocol</string>
+	<key>CFBundleIconFile</key>
+	<string>MatchaProtocol.icns</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.floatpane.matcha.protocol-handler</string>
+	<key>CFBundleName</key>
+	<string>MatchaProtocol</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>Matcha Protocol</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>matcha</string>
+			</array>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+		</dict>
+	</array>
+</dict>
+</plist>`
+	if err := os.WriteFile(filepath.Join(contentsDir, "Info.plist"), []byte(infoPlist), 0644); err != nil {
+		return err
+	}
+
+	swiftCode := strings.ReplaceAll(macosHandlerSwift, "{{MATCHA_PATH}}", exe)
+
+	tmpSwiftFile := filepath.Join(os.TempDir(), "matcha_protocol_handler.swift")
+	if err := os.WriteFile(tmpSwiftFile, []byte(swiftCode), 0644); err != nil {
+		return err
+	}
+	defer os.Remove(tmpSwiftFile) //nolint:errcheck
+
+	exeDest := filepath.Join(macosDir, "MatchaProtocol")
+
+	cmd := exec.Command("swiftc", "-O", tmpSwiftFile, "-o", exeDest) //nolint:noctx
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to compile Swift handler app: %w", err)
+	}
+
+	lsregister := "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
+	_ = exec.Command(lsregister, "-f", appDir).Run() //nolint:noctx
+
+	fmt.Printf("Successfully registered matcha: protocol handler at %s\n", appDir)
 	return nil
 }

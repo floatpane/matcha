@@ -1,5 +1,7 @@
 [
   {
+    "_note": "DEPRECATED: This registry is being phased out in favor of the new marketplace at https://marketplace.matcha.email",
+    "_migration": "Plugins are migrating to the new marketplace with enhanced security, verification, and version control",
     "name": "account_indicator",
     "title": "Account Indicator",
     "description": "Shows which account received the email you're currently viewing.",

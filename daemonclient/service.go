@@ -6,11 +6,15 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/floatpane/matcha/backend"
+	_ "github.com/floatpane/matcha/backend/imap"    // register imap backend for directService
 	_ "github.com/floatpane/matcha/backend/jmap"    // register jmap backend for directService
 	_ "github.com/floatpane/matcha/backend/maildir" // register maildir backend for directService
+	_ "github.com/floatpane/matcha/backend/pop3"    // register pop3 backend for directService
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/daemonrpc"
 	"github.com/floatpane/matcha/fetcher"
@@ -51,7 +55,7 @@ func NewService(cfg *config.Config) Service {
 	}
 
 	// Try connecting to existing daemon.
-	if svc := tryConnect(); svc != nil {
+	if svc := tryConnectWithConfig(cfg); svc != nil {
 		return svc
 	}
 
@@ -65,7 +69,7 @@ func NewService(cfg *config.Config) Service {
 	// Wait briefly for daemon to become ready, then connect.
 	for i := 0; i < 20; i++ {
 		time.Sleep(100 * time.Millisecond)
-		if svc := tryConnect(); svc != nil {
+		if svc := tryConnectWithConfig(cfg); svc != nil {
 			loglevel.Debugf("service: connected to auto-started daemon")
 			return svc
 		}
@@ -75,7 +79,7 @@ func NewService(cfg *config.Config) Service {
 	return newDirectService(cfg)
 }
 
-func tryConnect() *daemonService {
+func tryConnectWithConfig(cfg *config.Config) *daemonService {
 	client, err := Dial()
 	if err != nil {
 		return nil
@@ -84,7 +88,7 @@ func tryConnect() *daemonService {
 		client.Close() //nolint:errcheck,gosec
 		return nil
 	}
-	return &daemonService{client: client}
+	return &daemonService{cfg: cfg, client: client}
 }
 
 func autoStartDaemon() error {
@@ -104,27 +108,118 @@ func autoStartDaemon() error {
 
 // daemonService routes all operations through the daemon socket.
 type daemonService struct {
+	cfg    *config.Config
 	client *Client
+	mu     sync.Mutex // guards client during reconnect
+}
+
+// call executes fn against the current client. If the call fails with a
+// connection-level error, it attempts to reconnect once and retries.
+func (s *daemonService) call(fn func(*Client) error) error {
+	s.mu.Lock()
+	client := s.client
+	s.mu.Unlock()
+
+	if client == nil {
+		if !s.reconnect() {
+			return fmt.Errorf("daemon connection lost and could not be re-established")
+		}
+		s.mu.Lock()
+		client = s.client
+		s.mu.Unlock()
+	}
+
+	err := fn(client)
+	if err == nil {
+		return nil
+	}
+
+	if !isConnError(err) {
+		return err
+	}
+
+	loglevel.Debugf("service: daemon connection lost (%v), attempting reconnect", err)
+	if s.reconnect() {
+		s.mu.Lock()
+		client = s.client
+		s.mu.Unlock()
+		err2 := fn(client)
+		if err2 == nil {
+			loglevel.Debugf("service: reconnected to daemon successfully")
+			return nil
+		}
+		return err2
+	}
+
+	return err
+}
+
+// reconnect closes the old client and establishes a new connection,
+// auto-starting the daemon if necessary. Returns true on success.
+func (s *daemonService) reconnect() bool {
+	s.mu.Lock()
+	if s.client != nil {
+		s.client.Close() //nolint:errcheck,gosec
+		s.client = nil
+	}
+	s.mu.Unlock()
+
+	if svc := tryConnectWithConfig(s.cfg); svc != nil {
+		s.mu.Lock()
+		s.client = svc.client
+		s.mu.Unlock()
+		return true
+	}
+	return false
+}
+
+// isConnError reports whether err indicates a broken socket connection
+// rather than an application-level RPC error.
+func isConnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "connection closed") {
+		return true
+	}
+	if strings.Contains(msg, "use of closed network connection") {
+		return true
+	}
+	if strings.Contains(msg, "broken pipe") {
+		return true
+	}
+	if strings.Contains(msg, "EOF") {
+		return true
+	}
+	if strings.Contains(msg, "connect to daemon") {
+		return true
+	}
+	return false
 }
 
 func (s *daemonService) FetchEmails(accountID, folder string, limit, offset uint32) ([]backend.Email, error) {
 	var emails []backend.Email
-	err := s.client.Call(daemonrpc.MethodFetchEmails, daemonrpc.FetchEmailsParams{
-		AccountID: accountID,
-		Folder:    folder,
-		Limit:     limit,
-		Offset:    offset,
-	}, &emails)
+	err := s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodFetchEmails, daemonrpc.FetchEmailsParams{
+			AccountID: accountID,
+			Folder:    folder,
+			Limit:     limit,
+			Offset:    offset,
+		}, &emails)
+	})
 	return emails, err
 }
 
 func (s *daemonService) FetchEmailBody(accountID, folder string, uid uint32) (string, string, []backend.Attachment, error) {
 	var result daemonrpc.FetchEmailBodyResult
-	err := s.client.Call(daemonrpc.MethodFetchEmailBody, daemonrpc.FetchEmailBodyParams{
-		AccountID: accountID,
-		Folder:    folder,
-		UID:       uid,
-	}, &result)
+	err := s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodFetchEmailBody, daemonrpc.FetchEmailBodyParams{
+			AccountID: accountID,
+			Folder:    folder,
+			UID:       uid,
+		}, &result)
+	})
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -142,121 +237,157 @@ func (s *daemonService) FetchEmailBody(accountID, folder string, uid uint32) (st
 }
 
 func (s *daemonService) DeleteEmails(accountID, folder string, uids []uint32) error {
-	return s.client.Call(daemonrpc.MethodDeleteEmails, daemonrpc.DeleteEmailsParams{
-		AccountID: accountID,
-		Folder:    folder,
-		UIDs:      uids,
-	}, nil)
+	return s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodDeleteEmails, daemonrpc.DeleteEmailsParams{
+			AccountID: accountID,
+			Folder:    folder,
+			UIDs:      uids,
+		}, nil)
+	})
 }
 
 func (s *daemonService) ArchiveEmails(accountID, folder string, uids []uint32) error {
-	return s.client.Call(daemonrpc.MethodArchiveEmails, daemonrpc.ArchiveEmailsParams{
-		AccountID: accountID,
-		Folder:    folder,
-		UIDs:      uids,
-	}, nil)
+	return s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodArchiveEmails, daemonrpc.ArchiveEmailsParams{
+			AccountID: accountID,
+			Folder:    folder,
+			UIDs:      uids,
+		}, nil)
+	})
 }
 
 func (s *daemonService) MoveEmails(accountID string, uids []uint32, src, dst string) error {
-	return s.client.Call(daemonrpc.MethodMoveEmails, daemonrpc.MoveEmailsParams{
-		AccountID:    accountID,
-		UIDs:         uids,
-		SourceFolder: src,
-		DestFolder:   dst,
-	}, nil)
+	return s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodMoveEmails, daemonrpc.MoveEmailsParams{
+			AccountID:    accountID,
+			UIDs:         uids,
+			SourceFolder: src,
+			DestFolder:   dst,
+		}, nil)
+	})
 }
 
 func (s *daemonService) MarkRead(accountID, folder string, uids []uint32) error {
-	return s.client.Call(daemonrpc.MethodMarkRead, daemonrpc.MarkReadParams{
-		AccountID: accountID,
-		Folder:    folder,
-		UIDs:      uids,
-		Read:      true,
-	}, nil)
+	return s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodMarkRead, daemonrpc.MarkReadParams{
+			AccountID: accountID,
+			Folder:    folder,
+			UIDs:      uids,
+			Read:      true,
+		}, nil)
+	})
 }
 
 func (s *daemonService) MarkUnread(accountID, folder string, uids []uint32) error {
-	return s.client.Call(daemonrpc.MethodMarkRead, daemonrpc.MarkReadParams{
-		AccountID: accountID,
-		Folder:    folder,
-		UIDs:      uids,
-		Read:      false,
-	}, nil)
+	return s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodMarkRead, daemonrpc.MarkReadParams{
+			AccountID: accountID,
+			Folder:    folder,
+			UIDs:      uids,
+			Read:      false,
+		}, nil)
+	})
 }
 
 func (s *daemonService) QueueEmail(accountID string, to, cc, bcc []string, subject, body, htmlBody string, images map[string][]byte, attachments map[string][]byte, inReplyTo string, references []string, signSMIME, encryptSMIME, signPGP, encryptPGP bool, delaySeconds int, prebuiltRaw []byte) (string, error) {
 	var result daemonrpc.QueueEmailResult
-	err := s.client.Call(daemonrpc.MethodQueueEmail, daemonrpc.QueueEmailParams{
-		Email: daemonrpc.SendEmailParams{
-			AccountID:    accountID,
-			To:           to,
-			Cc:           cc,
-			Bcc:          bcc,
-			Subject:      subject,
-			Body:         body,
-			HTMLBody:     htmlBody,
-			Images:       images,
-			Attachments:  attachments,
-			InReplyTo:    inReplyTo,
-			References:   references,
-			SignSMIME:    signSMIME,
-			EncryptSMIME: encryptSMIME,
-			SignPGP:      signPGP,
-			EncryptPGP:   encryptPGP,
-			PrebuiltRaw:  prebuiltRaw,
-		},
-		DelaySeconds: delaySeconds,
-	}, &result)
+	err := s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodQueueEmail, daemonrpc.QueueEmailParams{
+			Email: daemonrpc.SendEmailParams{
+				AccountID:    accountID,
+				To:           to,
+				Cc:           cc,
+				Bcc:          bcc,
+				Subject:      subject,
+				Body:         body,
+				HTMLBody:     htmlBody,
+				Images:       images,
+				Attachments:  attachments,
+				InReplyTo:    inReplyTo,
+				References:   references,
+				SignSMIME:    signSMIME,
+				EncryptSMIME: encryptSMIME,
+				SignPGP:      signPGP,
+				EncryptPGP:   encryptPGP,
+				PrebuiltRaw:  prebuiltRaw,
+			},
+			DelaySeconds: delaySeconds,
+		}, &result)
+	})
 	return result.JobID, err
 }
 
 func (s *daemonService) CancelEmail(jobID string) error {
-	return s.client.Call(daemonrpc.MethodCancelEmail, daemonrpc.CancelEmailParams{
-		JobID: jobID,
-	}, nil)
+	return s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodCancelEmail, daemonrpc.CancelEmailParams{
+			JobID: jobID,
+		}, nil)
+	})
 }
 
 func (s *daemonService) FetchFolders(accountID string) ([]backend.Folder, error) {
 	var folders []backend.Folder
-	err := s.client.Call(daemonrpc.MethodFetchFolders, daemonrpc.FetchFoldersParams{
-		AccountID: accountID,
-	}, &folders)
+	err := s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodFetchFolders, daemonrpc.FetchFoldersParams{
+			AccountID: accountID,
+		}, &folders)
+	})
 	return folders, err
 }
 
 func (s *daemonService) RefreshFolder(accountID, folder string) error {
-	return s.client.Call(daemonrpc.MethodRefreshFolder, daemonrpc.RefreshFolderParams{
-		AccountID: accountID,
-		Folder:    folder,
-	}, nil)
+	return s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodRefreshFolder, daemonrpc.RefreshFolderParams{
+			AccountID: accountID,
+			Folder:    folder,
+		}, nil)
+	})
 }
 
 func (s *daemonService) Subscribe(accountID, folder string) error {
-	return s.client.Call(daemonrpc.MethodSubscribe, daemonrpc.SubscribeParams{
-		AccountID: accountID,
-		Folder:    folder,
-	}, nil)
+	return s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodSubscribe, daemonrpc.SubscribeParams{
+			AccountID: accountID,
+			Folder:    folder,
+		}, nil)
+	})
 }
 
 func (s *daemonService) Unsubscribe(accountID, folder string) error {
-	return s.client.Call(daemonrpc.MethodUnsubscribe, daemonrpc.UnsubscribeParams{
-		AccountID: accountID,
-		Folder:    folder,
-	}, nil)
+	return s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodUnsubscribe, daemonrpc.UnsubscribeParams{
+			AccountID: accountID,
+			Folder:    folder,
+		}, nil)
+	})
 }
 
 func (s *daemonService) ReloadConfig() error {
-	return s.client.Call(daemonrpc.MethodReloadConfig, nil, nil)
+	return s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodReloadConfig, nil, nil)
+	})
 }
 
 func (s *daemonService) Events() <-chan *daemonrpc.Event {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.client == nil {
+		ch := make(chan *daemonrpc.Event)
+		close(ch)
+		return ch
+	}
 	return s.client.Events()
 }
 
 func (s *daemonService) IsDaemon() bool { return true }
 
 func (s *daemonService) Close() error {
-	return s.client.Close()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.client != nil {
+		return s.client.Close()
+	}
+	return nil
 }
 
 // directService runs operations in-process (no daemon).

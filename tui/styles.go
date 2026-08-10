@@ -71,8 +71,9 @@ func (m Status) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Status) View() tea.View {
-	logoStyle := lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent)
-	styledLogo := logoStyle.Render(asciiLogo)
+	// renderLogo checks the plugin banner override (set via
+	// matcha.ui.set_banner) and falls back to the default asciiLogo.
+	styledLogo := renderLogo(asciiLogo)
 
 	spinnerLine := fmt.Sprintf("   %s %s", m.spinner.View(), m.message)
 

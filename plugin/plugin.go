@@ -1,11 +1,13 @@
 package plugin
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/floatpane/matcha/internal/loglevel"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -44,8 +46,12 @@ type Manager struct {
 	// statuses holds persistent status strings per view area, shown in the UI.
 	statuses map[string]string
 	// pendingNotification is set by matcha.notify() and consumed by the orchestrator.
-	pendingNotification string
-	pendingDuration     float64 // seconds, 0 means default (2s)
+	pendingNotification *PendingNotification
+	// pendingLoadNotifications holds plugin load errors queued for display.
+	// They are drained one-at-a-time into pendingNotification by the
+	// orchestrator so that multiple failed plugins don't get lost when the
+	// single-slot pendingNotification is already occupied.
+	pendingLoadNotifications []*PendingNotification
 	// pendingFields holds compose field updates set by matcha.set_compose_field().
 	pendingFields map[string]string
 	// bindings holds plugin-registered keyboard shortcuts.
@@ -61,6 +67,11 @@ type Manager struct {
 	pluginSchemas map[string][]SettingDef
 	// pluginValues holds current setting values per plugin.
 	pluginValues map[string]map[string]interface{}
+
+	// ui holds all plugin-driven UI customization state: text overrides,
+	// component visibility toggles, custom injected components, and the
+	// startup banner override. See ui.go for details.
+	ui uiState
 }
 
 // NewManager creates a new plugin manager with a Lua VM.
@@ -72,6 +83,7 @@ func NewManager() *Manager {
 		pluginSchemas: make(map[string][]SettingDef),
 		pluginValues:  make(map[string]map[string]interface{}),
 	}
+	m.initUI()
 
 	L := lua.NewState(lua.Options{
 		SkipOpenLibs: true,
@@ -138,10 +150,11 @@ func (m *Manager) loadPlugin(name, path string) {
 
 	if err := m.state.DoFile(path); err != nil {
 		log.Printf("plugin %q: load error: %v", name, err)
+		m.queueLoadNotification(name, err)
 		return
 	}
 	m.plugins = append(m.plugins, name)
-	log.Printf("plugin %q: loaded", name)
+	loglevel.Verbosef("plugin %q: loaded", name)
 }
 
 // Plugins returns the names of all loaded plugins.
@@ -149,24 +162,52 @@ func (m *Manager) Plugins() []string {
 	return m.plugins
 }
 
-// PendingNotification holds a notification message and its display duration.
+// NotifyKind classifies a plugin notification for visual styling.
+type NotifyKind string
+
+const (
+	NotifyKindInfo    NotifyKind = "info"
+	NotifyKindWarning NotifyKind = "warning"
+	NotifyKindError   NotifyKind = "error"
+)
+
+// PendingNotification holds a notification requested by a plugin via
+// matcha.notify(). It is consumed once by the orchestrator via
+// TakePendingNotification().
 type PendingNotification struct {
 	Message  string
-	Duration float64 // seconds, 0 means default
+	Title    string
+	Duration float64 // seconds, 0 means default (2s)
+	Kind     NotifyKind
+	Closable bool // true = dismissible with a key press; false = auto-close only
 }
 
 // TakePendingNotification returns and clears any pending notification.
-func (m *Manager) TakePendingNotification() (PendingNotification, bool) {
-	if m.pendingNotification == "" {
-		return PendingNotification{}, false
+func (m *Manager) TakePendingNotification() (*PendingNotification, bool) {
+	if m.pendingNotification == nil && len(m.pendingLoadNotifications) > 0 {
+		m.pendingNotification = m.pendingLoadNotifications[0]
+		m.pendingLoadNotifications = m.pendingLoadNotifications[1:]
 	}
-	n := PendingNotification{
-		Message:  m.pendingNotification,
-		Duration: m.pendingDuration,
+	if m.pendingNotification == nil {
+		return nil, false
 	}
-	m.pendingNotification = ""
-	m.pendingDuration = 0
+	n := m.pendingNotification
+	m.pendingNotification = nil
 	return n, true
+}
+
+// queueLoadNotification records a plugin load error as a non-blocking
+// notification so the orchestrator can surface it in the UI via the
+// bubble-overlay notification system. Multiple failures are queued and
+// drained one-at-a-time by TakePendingNotification.
+func (m *Manager) queueLoadNotification(name string, err error) {
+	m.pendingLoadNotifications = append(m.pendingLoadNotifications, &PendingNotification{
+		Title:    "Plugin load error",
+		Message:  fmt.Sprintf("%s: %v", name, err),
+		Duration: 6,
+		Kind:     NotifyKindError,
+		Closable: true,
+	})
 }
 
 // TakePendingFields returns and clears any pending compose field updates.

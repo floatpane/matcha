@@ -59,6 +59,9 @@ type logEntryMsg struct {
 }
 
 type clearErrorNotifMsg struct{}
+type clearPluginNotifMsg struct{}
+
+const maxBodyFetchRetries = 3
 
 // Model is the main Bubble Tea application model that orchestrates the TUI.
 type Model struct {
@@ -96,6 +99,13 @@ type Model struct {
 
 	errorNotification overlay.Notification
 	showErrorNotif    bool
+
+	pluginNotification overlay.Notification
+	showPluginNotif    bool
+
+	// Track body fetch retries to prevent infinite loops
+	pendingBodyFetchUID   uint32
+	pendingBodyFetchCount int
 }
 
 // NewModel creates the initial TUI model.
@@ -868,7 +878,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		config.Keybinds.Global.CommandPalette != "" &&
 		keyMsg.String() == config.Keybinds.Global.CommandPalette &&
 		palette.Allowed(m.current) {
-		cmd := m.palette.Open(palette.BuildCommands(m.current, m.folderInbox), m.width, m.contentHeight())
+		cmd := m.palette.Open(palette.BuildCommands(m.current, m.folderInbox, m.config), m.width, m.contentHeight())
 		return m, cmd
 	}
 
@@ -904,6 +914,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	case tea.KeyPressMsg:
 		if m.showErrorNotif && msg.String() == config.Keybinds.Global.DismissNotification {
 			m.showErrorNotif = false
+			return m, nil
+		}
+		if m.showPluginNotif && m.pluginNotification.Done() {
+			m.showPluginNotif = false
+		}
+		if m.showPluginNotif && msg.String() == config.Keybinds.Global.DismissNotification {
+			m.showPluginNotif = false
 			return m, nil
 		}
 		if msg.String() == config.Keybinds.Composer.UndoSend {
@@ -1125,13 +1142,40 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, m.fetchCurrentFolderEmails(msg.FolderName)
 
 	case tui.PluginNotifyMsg:
-		m.previousModel = m.current
-		m.current = tui.NewStatus(msg.Message)
+		// Build a non-blocking overlay notification instead of swapping the
+		// full-screen view. The notification is composited on top of the
+		// current view via PlaceOn() in View().
 		dur := time.Duration(msg.Duration * float64(time.Second))
 		if dur <= 0 {
 			dur = 2 * time.Second
 		}
-		return m, tea.Tick(dur, func(t time.Time) tea.Msg { return tui.RestoreViewMsg{} })
+		col := max(0, m.width-44)
+		opts := []overlay.Option{
+			overlay.WithMessage(msg.Message),
+			overlay.WithPosition(0, col),
+			overlay.WithDuration(dur),
+		}
+		if msg.Title != "" {
+			opts = append(opts, overlay.WithTitle(msg.Title))
+		}
+		if msg.Closable {
+			opts = append(opts,
+				overlay.WithKey(config.Keybinds.Global.DismissNotification),
+				overlay.WithDismissMode(overlay.DismissEither),
+			)
+		} else {
+			opts = append(opts, overlay.WithDismissMode(overlay.DismissAfterTimer))
+		}
+		switch msg.Kind {
+		case "warning":
+			m.pluginNotification = overlay.NewWarning(opts...)
+		case "error":
+			m.pluginNotification = overlay.NewError(opts...)
+		default:
+			m.pluginNotification = overlay.NewInfo(opts...)
+		}
+		m.showPluginNotif = true
+		return m, tea.Tick(dur, func(time.Time) tea.Msg { return clearPluginNotifMsg{} })
 
 	case tui.PluginPromptSubmitMsg:
 		if m.pendingPrompt != nil {
@@ -1233,14 +1277,40 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, fetchcmd.FetchPreviewBodyCmd(m.config, msg.UID, msg.AccountID, folderName)
 
 	case tui.PreviewBodyFetchedMsg:
-		if msg.Err == nil && m.folderInbox != nil {
-			m.cacheEmailBody(m.folderName(), msg.UID, msg.AccountID, msg.Body, msg.BodyMIMEType, msg.Attachments)
+		if msg.Err != nil {
+			log.Printf("preview body fetch error for UID %d: %v", msg.UID, msg.Err)
+			m.pendingBodyFetchUID = 0
+			m.pendingBodyFetchCount = 0
+			return m, m.showErrorCmd(msg.Err.Error())
 		}
-		if m.folderInbox != nil {
-			m.current, cmd = m.current.Update(msg)
-			return m, cmd
+		if m.folderInbox == nil {
+			m.pendingBodyFetchUID = 0
+			m.pendingBodyFetchCount = 0
+			return m, nil
 		}
-		return m, nil
+		// If body is empty or whitespace-only, retry the fetch (up to max retries)
+		if strings.TrimSpace(msg.Body) == "" {
+			if m.pendingBodyFetchUID == msg.UID && m.pendingBodyFetchCount >= maxBodyFetchRetries {
+				log.Printf("preview body still empty after %d retries for UID %d, showing error", maxBodyFetchRetries, msg.UID)
+				m.pendingBodyFetchUID = 0
+				m.pendingBodyFetchCount = 0
+				return m, m.showErrorCmd("Email body could not be loaded after multiple attempts")
+			}
+			m.pendingBodyFetchUID = msg.UID
+			m.pendingBodyFetchCount++
+			log.Printf("preview body empty for UID %d, retrying fetch (%d/%d)", msg.UID, m.pendingBodyFetchCount, maxBodyFetchRetries)
+			return m, tea.Batch(
+				m.current.Init(),
+				fetchcmd.FetchPreviewBodyCmd(m.config, msg.UID, msg.AccountID, m.folderName()),
+			)
+		}
+		// Reset retry counter on successful fetch
+		m.pendingBodyFetchUID = 0
+		m.pendingBodyFetchCount = 0
+		// Cache the valid body
+		m.cacheEmailBody(m.folderName(), msg.UID, msg.AccountID, msg.Body, msg.BodyMIMEType, msg.Attachments)
+		m.current, cmd = m.current.Update(msg)
+		return m, cmd
 
 	case tui.EmailMovedMsg:
 		if msg.Err != nil {
@@ -1267,6 +1337,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	case tui.DaemonEventMsg:
 		if msg.Event == nil {
+			// Events channel closed — daemon may have reconnected with a
+			// fresh channel. Re-subscribe if still in daemon mode.
+			if m.service != nil && m.service.IsDaemon() {
+				return m, idledaemon.ListenForDaemonEvents(m.service.Events())
+			}
 			return m, nil
 		}
 		var daemonCmds []tea.Cmd
@@ -1427,6 +1502,55 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	case tui.ConfigSavedMsg:
 		m.afterConfigSaved()
+		return m, nil
+
+	case tui.ToggleSplitOrientationMsg:
+		if m.config.EnableSplitPane && m.folderInbox != nil && m.folderInbox.HasSplitPreview() {
+			if m.config.GetSplitPaneOrientation() == config.SplitPaneVertical {
+				m.config.SplitPaneOrientation = config.SplitPaneHorizontal
+			} else {
+				m.config.SplitPaneOrientation = config.SplitPaneVertical
+			}
+			tui.ClearKittyGraphics()
+			m.folderInbox.SetSplitOrientation(m.config.GetSplitPaneOrientation())
+			m.current, cmd = m.current.Update(m.currentWindowSize())
+			return m, cmd
+		}
+		return m, nil
+
+	case tui.OpenFullscreenFromSplitMsg:
+		if m.folderInbox != nil && m.folderInbox.HasSplitPreview() {
+			previewPane := m.folderInbox.GetPreviewPane()
+			if previewPane == nil {
+				return m, nil
+			}
+			email := previewPane.GetEmail()
+			m.folderInbox.CloseSplitPreview()
+			mailbox := tui.MailboxInbox
+			if inbox := m.folderInbox.GetInbox(); inbox != nil {
+				mailbox = inbox.GetMailbox()
+			}
+			emailIndex := m.store.GetEmailIndex(email.UID, email.AccountID)
+			emailView := tui.NewEmailView(email, emailIndex, m.width, m.height, mailbox, m.config.DisableImages)
+			m.current = emailView
+			m.syncPluginStatus()
+			m.syncPluginKeyBindings()
+			m.updateCurrentWindowSize()
+			return m, tea.Batch(append(m.pluginFlagCmds(), m.current.Init())...)
+		}
+		return m, nil
+
+	case tui.OpenSplitFromFullscreenMsg:
+		if ev, ok := m.current.(*tui.EmailView); ok && m.config.EnableSplitPane && m.folderInbox != nil {
+			email := ev.GetEmail()
+			m.folderInbox.OpenSplitPreview(email.UID, email.AccountID, &email)
+			m.current = m.folderInbox
+			m.updateCurrentWindowSize()
+			markReadCmd := m.markEmailReadAndQueue(email.AccountID, email.UID, false)
+			return m, tea.Batch(append(m.pluginFlagCmds(), markReadCmd, func() tea.Msg {
+				return tui.UpdatePreviewMsg{UID: email.UID, AccountID: email.AccountID}
+			})...)
+		}
 		return m, nil
 
 	case tui.LanguageChangedMsg:
@@ -1656,11 +1780,35 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	case tui.EmailBodyFetchedMsg:
 		if msg.Err != nil {
 			log.Printf("could not fetch email body: %v", msg.Err)
+			m.pendingBodyFetchUID = 0
+			m.pendingBodyFetchCount = 0
 			if m.folderInbox != nil {
 				m.current = m.folderInbox
 			}
 			return m, m.showErrorCmd(msg.Err.Error())
 		}
+		// If body is empty or whitespace-only, retry the fetch instead of showing incomplete content
+		if strings.TrimSpace(msg.Body) == "" {
+			if m.pendingBodyFetchUID == msg.UID && m.pendingBodyFetchCount >= maxBodyFetchRetries {
+				log.Printf("email body still empty after %d retries for UID %d, showing error", maxBodyFetchRetries, msg.UID)
+				m.pendingBodyFetchUID = 0
+				m.pendingBodyFetchCount = 0
+				if m.folderInbox != nil {
+					m.current = m.folderInbox
+				}
+				return m, m.showErrorCmd("Email body could not be loaded after multiple attempts")
+			}
+			m.pendingBodyFetchUID = msg.UID
+			m.pendingBodyFetchCount++
+			log.Printf("email body empty for UID %d, retrying fetch (%d/%d)", msg.UID, m.pendingBodyFetchCount, maxBodyFetchRetries)
+			m.current = tui.NewStatus("Fetching email content...")
+			return m, tea.Batch(
+				append(m.pluginFlagCmds(), m.current.Init(), fetchcmd.FetchFolderEmailBodyCmd(m.config, msg.UID, msg.AccountID, m.folderName(), msg.Mailbox), m.pluginNotifyCmd())...,
+			)
+		}
+		// Reset retry counter on successful fetch
+		m.pendingBodyFetchUID = 0
+		m.pendingBodyFetchCount = 0
 		m.store.UpdateEmailBodyByUID(msg.UID, msg.AccountID, msg.Body, msg.BodyMIMEType, msg.Attachments)
 		folderForCache := m.folderName()
 		m.cacheEmailBody(folderForCache, msg.UID, msg.AccountID, msg.Body, msg.BodyMIMEType, msg.Attachments)
@@ -1765,6 +1913,131 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		m.syncPluginKeyBindings()
 		return m, m.current.Init()
 
+	case tui.ReplyAllEmailMsg:
+		// Determine the original sender (Reply-To if present, else From)
+		var sender string
+		if len(msg.Email.ReplyTo) > 0 {
+			sender = strings.Join(msg.Email.ReplyTo, ", ")
+		} else {
+			sender = msg.Email.From
+		}
+		subject := msg.Email.Subject
+		normalizedSubject := strings.ToLower(strings.TrimSpace(subject))
+		if !strings.HasPrefix(normalizedSubject, "re:") {
+			subject = "Re: " + subject
+		}
+		quotedText := fmt.Sprintf("\n\nOn %s, %s wrote:\n> %s", msg.Email.Date.Local().Format("Jan 2, 2006 at 3:04 PM"), msg.Email.From, strings.ReplaceAll(msg.Email.Body, "\n", "\n> "))
+
+		// Build set of the user's own addresses to exclude from reply-all
+		selfAddrs := make(map[string]bool)
+		if m.config != nil {
+			for _, acc := range m.config.Accounts {
+				selfAddrs[strings.ToLower(acc.Email)] = true
+				selfAddrs[strings.ToLower(acc.GetFetchEmail())] = true
+				selfAddrs[strings.ToLower(acc.GetSendAsEmail())] = true
+			}
+			// For catch-all accounts, also exclude the delivery address
+			accountID := msg.Email.AccountID
+			if accountID == "" && len(m.config.Accounts) > 0 {
+				accountID = m.config.GetFirstAccount().ID
+			}
+			for _, acc := range m.config.Accounts {
+				if acc.ID == accountID && acc.CatchAll && len(msg.Email.To) > 0 {
+					if addr, err := mail.ParseAddress(msg.Email.To[0]); err == nil {
+						selfAddrs[strings.ToLower(addr.Address)] = true
+					} else {
+						selfAddrs[strings.ToLower(strings.TrimSpace(msg.Email.To[0]))] = true
+					}
+					break
+				}
+			}
+		}
+
+		// Collect Cc recipients from original To list, excluding self and the sender
+		seen := make(map[string]bool)
+		var ccRecipients []string
+		for _, addr := range msg.Email.To {
+			parsed, err := mail.ParseAddress(addr)
+			var addrLower string
+			displayAddr := addr
+			if err == nil {
+				addrLower = strings.ToLower(parsed.Address)
+				displayAddr = parsed.Address
+			} else {
+				addrLower = strings.ToLower(strings.TrimSpace(addr))
+			}
+			if selfAddrs[addrLower] || seen[addrLower] {
+				continue
+			}
+			seen[addrLower] = true
+			ccRecipients = append(ccRecipients, displayAddr)
+		}
+		cc := strings.Join(ccRecipients, ", ")
+
+		var composer *tui.Composer
+		hideTips := false
+		if m.config != nil {
+			hideTips = m.config.HideTips
+		}
+		if m.config != nil && len(m.config.Accounts) > 0 {
+			accountID := msg.Email.AccountID
+			if accountID == "" {
+				accountID = m.config.GetFirstAccount().ID
+			}
+			composer = tui.NewComposerWithAccounts(m.config.Accounts, accountID, sender, subject, "", hideTips)
+			// For catch-all accounts, pre-fill From with the specific address the email was delivered to.
+			if len(msg.Email.To) > 0 {
+				for i := range m.config.Accounts {
+					if m.config.Accounts[i].ID == accountID && m.config.Accounts[i].CatchAll {
+						acc := &m.config.Accounts[i]
+						deliveryAddr := msg.Email.To[0]
+						if addr, err := mail.ParseAddress(deliveryAddr); err == nil {
+							deliveryAddr = addr.Address
+						}
+						fromVal := deliveryAddr
+						if acc.Name != "" {
+							fromVal = fmt.Sprintf("%s <%s>", acc.Name, deliveryAddr)
+						}
+						composer.SetFromOverride(fromVal)
+						break
+					}
+				}
+			}
+		} else {
+			composer = tui.NewComposer("", sender, subject, "", hideTips)
+		}
+		if m.config != nil {
+			composer.SetShowCcBcc(m.config.ShowCcBccByDefault)
+		}
+		if cc != "" {
+			composer.SetCc(cc)
+		}
+		composer.SetQuotedText(quotedText)
+
+		// Set reply headers
+		inReplyTo := msg.Email.MessageID
+		references := append(msg.Email.References, msg.Email.MessageID) //nolint:gocritic
+		composer.SetReplyContext(inReplyTo, references)
+
+		m.applySpellcheckOptions(composer)
+		if m.config != nil && m.config.ShowOriginalOnReply {
+			sz := m.currentWindowSize()
+			replySplit := tui.NewReplySplitView(
+				msg.Email,
+				composer,
+				m.config.GetSplitPaneOrientation(),
+				m.config.DisableImages,
+				sz.Width,
+				sz.Height,
+			)
+			m.current = replySplit
+		} else {
+			m.current = composer
+		}
+		m.updateCurrentWindowSize()
+		m.syncPluginKeyBindings()
+		return m, m.current.Init()
+
 	case tui.ForwardEmailMsg:
 		subject := msg.Email.Subject
 		if !strings.HasPrefix(strings.ToLower(subject), "fwd:") {
@@ -1834,7 +2107,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		m.updateCurrentWindowSize()
 		return m, m.current.Init()
 
-	case tui.FileSelectedMsg, tui.CancelFilePickerMsg:
+	case tui.FileSelectedMsg:
+		m.pendingExport = nil
+		m.restoreView()
+		// Forward the selected paths to the restored composer so its
+		// FileSelectedMsg handler can append them to attachmentPaths.
+		// Without this, attachments selected in the picker are dropped.
+		if m.current != nil {
+			newModel, cmd := m.current.Update(msg)
+			m.current = newModel
+			return m, cmd
+		}
+		return m, nil
+
+	case tui.CancelFilePickerMsg:
 		m.pendingExport = nil
 		m.restoreView()
 		return m, nil
@@ -1959,6 +2245,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		m.showErrorNotif = false
 		return m, nil
 
+	case clearPluginNotifMsg:
+		m.showPluginNotif = false
+		return m, nil
+
 	case tui.InfoNotifyMsg:
 		dur := time.Duration(msg.Duration * float64(time.Second))
 		if dur <= 0 {
@@ -2008,10 +2298,81 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.updateCurrentWindowSize()
 			return m, tea.Batch(m.current.Init(), m.showErrorCmd(msg.Err.Error()))
 		}
+		if msg.Warning != "" {
+			log.Printf("Email send warning: %s", msg.Warning)
+			m.current = tui.NewChoice()
+			m.updateCurrentWindowSize()
+			return m, tea.Batch(m.current.Init(), m.showInfoCmd(msg.Warning))
+		}
 		if m.plugins != nil {
 			m.plugins.CallHook(plugin.HookEmailSendAfter)
 		}
 		return m, m.setChoiceMenu()
+
+	case tui.ApplyPatchMsg:
+		// Apply patch to current directory by default; user can change via config.
+		repoDir := "."
+		if cwd, err := os.Getwd(); err == nil {
+			repoDir = cwd
+		}
+		return m, send.ApplyPatchCmd(repoDir, msg)
+
+	case tui.PatchStagedMsg:
+		// Patch has been applied to disk and staged. Run git commit via
+		// tea.ExecProcess so the terminal is released for GPG pinentry.
+		repoDir := "."
+		if cwd, err := os.Getwd(); err == nil {
+			repoDir = cwd
+		}
+		return m, send.CommitPatchCmd(repoDir, msg)
+
+	case tui.PatchApplyResultMsg:
+		if msg.Err != nil {
+			errMsg := fmt.Sprintf("Patch apply failed: %v", msg.Err)
+			return m, tea.Batch(m.showErrorCmd(errMsg))
+		}
+		verb := "applied"
+		if msg.DryRun {
+			verb = "validated"
+		}
+		status := fmt.Sprintf("Patch %s: %s", verb, msg.Subject)
+		if len(msg.Files) > 0 {
+			status += fmt.Sprintf(" (%d files)", len(msg.Files))
+		}
+		if len(msg.Warnings) > 0 {
+			status += "\n" + strings.Join(msg.Warnings, "\n")
+		}
+		return m, tea.Batch(m.showInfoCmd(status))
+
+	case tui.GoToSendPatchMsg:
+		if m.config == nil || len(m.config.Accounts) == 0 {
+			return m, m.showErrorCmd("no accounts configured")
+		}
+		m.previousModel = m.current
+		m.current = tui.NewPatchSend(m.config.Accounts)
+		m.updateCurrentWindowSize()
+		return m, m.current.Init()
+
+	case tui.SendPatchMsg:
+		m.previousModel = m.current
+		m.current = tui.NewStatus("Generating and sending patch...")
+		return m, tea.Batch(m.current.Init(), send.SendPatchCmd(m.sendEmailDependencies(), msg))
+
+	case tui.PatchGeneratedMsg:
+		if msg.Err != nil {
+			errMsg := fmt.Sprintf("Patch generation failed: %v", msg.Err)
+			if m.previousModel != nil {
+				m.current = m.previousModel
+				m.previousModel = nil
+				m.updateCurrentWindowSize()
+			}
+			return m, tea.Batch(m.current.Init(), m.showErrorCmd(errMsg))
+		}
+		// Patch generated — now send the raw patch email via SMTP.
+		// We need the original SendPatchMsg (with To/Cc) to inject the
+		// recipients into the raw RFC 5322 message. The patch-send form
+		// stores it in the PatchGeneratedMsg.
+		return m, send.SendRawPatchCmd(m.sendEmailDependencies(), msg.SendPatchMsg, msg.RawPatch)
 
 	case tui.DeleteEmailMsg:
 		tui.ClearKittyGraphics()
@@ -2197,6 +2558,9 @@ func (m *Model) View() tea.View {
 	}
 	if m.showErrorNotif {
 		v.Content = m.errorNotification.PlaceOn(v.Content)
+	}
+	if m.showPluginNotif {
+		v.Content = m.pluginNotification.PlaceOn(v.Content)
 	}
 	v.AltScreen = true
 	return v

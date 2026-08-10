@@ -54,6 +54,8 @@ const (
 	// destination for any provider that does not have a custom mapping
 	// (e.g. Gmail's "[Gmail]/All Mail").
 	defaultArchiveMailbox = "Archive"
+	// AllEmailsLimit means fetch every message in the folder.
+	AllEmailsLimit = uint32(0)
 )
 
 func getDebugIMAPWriter() io.Writer {
@@ -132,7 +134,7 @@ type Folder struct {
 func formatAddress(addr imap.Address) string {
 	email := addr.Addr()
 	if addr.Name != "" {
-		return addr.Name + " <" + email + ">"
+		return decodeHeader(addr.Name) + " <" + email + ">"
 	}
 	return email
 }
@@ -498,20 +500,38 @@ func getMailboxByAttr(c *imapclient.Client, attr imap.MailboxAttr) (string, erro
 	return foundMailbox, nil
 }
 
-func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset uint32) ([]Email, error) {
-	if hasBackendProvider(account) {
-		p, err := newBackendProvider(account)
-		if err != nil {
-			return nil, err
-		}
-		defer p.Close() //nolint:errcheck
-		emails, err := p.FetchEmails(context.Background(), mailbox, limit, offset)
-		if err != nil {
-			return nil, err
-		}
-		return backendEmailsToFetcher(emails), nil
+func buildDeliveryHeaderSection() *imap.FetchItemBodySection {
+	return &imap.FetchItemBodySection{
+		Specifier:    imap.PartSpecifierHeader,
+		HeaderFields: []string{"Delivered-To", "X-Forwarded-To", "X-Original-To", "References"},
+		Peek:         true,
 	}
+}
 
+func determineFetchEmail(account *config.Account) string {
+	fetchEmail := strings.ToLower(strings.TrimSpace(account.FetchEmail))
+	if fetchEmail == "" {
+		fetchEmail = strings.ToLower(strings.TrimSpace(account.Email))
+	}
+	return fetchEmail
+}
+
+func determineChunkSize(limit uint32) uint32 {
+	chunkSize := uint32(1000)
+	if limit != 0 && limit < chunkSize {
+		chunkSize = limit
+	}
+	return chunkSize
+}
+
+func trimEmailsToLimit(emails []Email, limit uint32) []Email {
+	if limit != 0 && len(emails) > int(limit) {
+		return emails[:limit]
+	}
+	return emails
+}
+
+func fetchIMAPEmails(account *config.Account, mailbox string, limit, offset uint32) ([]Email, error) {
 	c, err := connect(account)
 	if err != nil {
 		return nil, err
@@ -527,32 +547,23 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 		return []Email{}, nil
 	}
 
-	var allEmails []Email
-
-	// Start from the top minus offset
 	if selectData.NumMessages <= offset {
 		return []Email{}, nil
 	}
+
 	cursor := selectData.NumMessages - offset
-
-	// Determine if we should filter
-	fetchEmail := strings.ToLower(strings.TrimSpace(account.FetchEmail))
-	if fetchEmail == "" {
-		fetchEmail = strings.ToLower(strings.TrimSpace(account.Email))
+	fetchEmail := determineFetchEmail(account)
+	sentMailbox, err := getMailboxByAttr(c, imap.MailboxAttrSent)
+	if err != nil {
+		sentMailbox = getSentMailbox(account)
 	}
-	isSentMailbox := mailbox == getSentMailbox(account)
+	isSentMailbox := mailbox == sentMailbox
+	deliveryHeaderSection := buildDeliveryHeaderSection()
+	chunkSize := determineChunkSize(limit)
+	fetchAll := limit == 0
 
-	// Delivery header section for matching auto-forwarded emails
-	deliveryHeaderSection := &imap.FetchItemBodySection{
-		Specifier:    imap.PartSpecifierHeader,
-		HeaderFields: []string{"Delivered-To", "X-Forwarded-To", "X-Original-To", "References"},
-		Peek:         true,
-	}
-
-	// Loop until we have enough emails or run out of messages
-	for len(allEmails) < int(limit) && cursor > 0 {
-		chunkSize := limit
-
+	var allEmails []Email
+	for (fetchAll || len(allEmails) < int(limit)) && cursor > 0 {
 		from := uint32(1)
 		if cursor > chunkSize {
 			from = cursor - chunkSize + 1
@@ -573,76 +584,7 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 			return nil, err
 		}
 
-		// Filter messages in this batch
-		var batchEmails []Email
-		for _, msg := range batchMsgs {
-			if msg.Envelope == nil {
-				continue
-			}
-
-			var fromAddr string
-			if len(msg.Envelope.From) > 0 {
-				fromAddr = formatAddress(msg.Envelope.From[0])
-			}
-
-			var toAddrList []string
-			for _, addr := range msg.Envelope.To {
-				toAddrList = append(toAddrList, addr.Addr())
-			}
-			for _, addr := range msg.Envelope.Cc {
-				toAddrList = append(toAddrList, addr.Addr())
-			}
-
-			var replyToAddrList []string
-			for _, addr := range msg.Envelope.ReplyTo {
-				replyToAddrList = append(replyToAddrList, addr.Addr())
-			}
-
-			matched := false
-			switch {
-			case account.CatchAll:
-				matched = true
-			case isSentMailbox:
-				var senderEmail string
-				if len(msg.Envelope.From) > 0 {
-					senderEmail = msg.Envelope.From[0].Addr()
-				}
-				if addressMatches(senderEmail, fetchEmail, account) {
-					matched = true
-				}
-			default:
-				for _, r := range toAddrList {
-					if addressMatches(r, fetchEmail, account) {
-						matched = true
-						break
-					}
-				}
-				// Check delivery headers for auto-forwarded emails
-				if !matched {
-					headerData := msg.FindBodySection(deliveryHeaderSection)
-					matched = deliveryHeadersMatch(headerData, fetchEmail, account)
-				}
-			}
-
-			if !matched {
-				continue
-			}
-
-			headerData := msg.FindBodySection(deliveryHeaderSection)
-			batchEmails = append(batchEmails, Email{
-				UID:        uint32(msg.UID),
-				From:       fromAddr,
-				To:         toAddrList,
-				ReplyTo:    replyToAddrList,
-				Subject:    decodeHeader(msg.Envelope.Subject),
-				Date:       msg.Envelope.Date,
-				IsRead:     hasSeenFlag(msg.Flags),
-				MessageID:  msg.Envelope.MessageID,
-				InReplyTo:  firstEnvelopeInReplyTo(msg.Envelope.InReplyTo),
-				References: headerMessageIDs(headerData, "References"),
-				AccountID:  account.ID,
-			})
-		}
+		batchEmails := filterAndBuildBatchEmails(batchMsgs, fetchEmail, account, isSentMailbox, deliveryHeaderSection)
 
 		// Sort batch Newest -> Oldest by UID desc
 		sort.Slice(batchEmails, func(i, j int) bool {
@@ -653,12 +595,92 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 		cursor = from - 1
 	}
 
-	// Trim if we have too many
-	if len(allEmails) > int(limit) {
-		allEmails = allEmails[:limit]
+	return trimEmailsToLimit(allEmails, limit), nil
+}
+
+func filterAndBuildBatchEmails(batchMsgs []*imapclient.FetchMessageBuffer, fetchEmail string, account *config.Account, isSentMailbox bool, deliveryHeaderSection *imap.FetchItemBodySection) []Email {
+	var batchEmails []Email
+	for _, msg := range batchMsgs {
+		if msg.Envelope == nil {
+			continue
+		}
+
+		var fromAddr string
+		if len(msg.Envelope.From) > 0 {
+			fromAddr = formatAddress(msg.Envelope.From[0])
+		}
+
+		var toAddrList []string
+		for _, addr := range msg.Envelope.To {
+			toAddrList = append(toAddrList, addr.Addr())
+		}
+		for _, addr := range msg.Envelope.Cc {
+			toAddrList = append(toAddrList, addr.Addr())
+		}
+
+		var replyToAddrList []string
+		for _, addr := range msg.Envelope.ReplyTo {
+			replyToAddrList = append(replyToAddrList, addr.Addr())
+		}
+
+		if !messageMatchesAccount(msg, toAddrList, fetchEmail, account, isSentMailbox, deliveryHeaderSection) {
+			continue
+		}
+
+		headerData := msg.FindBodySection(deliveryHeaderSection)
+		batchEmails = append(batchEmails, Email{
+			UID:        uint32(msg.UID),
+			From:       fromAddr,
+			To:         toAddrList,
+			ReplyTo:    replyToAddrList,
+			Subject:    decodeHeader(msg.Envelope.Subject),
+			Date:       msg.Envelope.Date,
+			IsRead:     hasSeenFlag(msg.Flags),
+			MessageID:  msg.Envelope.MessageID,
+			InReplyTo:  firstEnvelopeInReplyTo(msg.Envelope.InReplyTo),
+			References: headerMessageIDs(headerData, "References"),
+			AccountID:  account.ID,
+		})
+	}
+	return batchEmails
+}
+
+func messageMatchesAccount(msg *imapclient.FetchMessageBuffer, toAddrList []string, fetchEmail string, account *config.Account, isSentMailbox bool, deliveryHeaderSection *imap.FetchItemBodySection) bool {
+	switch {
+	case account.CatchAll:
+		return true
+	case isSentMailbox:
+		var senderEmail string
+		if len(msg.Envelope.From) > 0 {
+			senderEmail = msg.Envelope.From[0].Addr()
+		}
+		return addressMatches(senderEmail, fetchEmail, account)
+	default:
+		for _, r := range toAddrList {
+			if addressMatches(r, fetchEmail, account) {
+				return true
+			}
+		}
+		headerData := msg.FindBodySection(deliveryHeaderSection)
+		return deliveryHeadersMatch(headerData, fetchEmail, account)
+	}
+}
+
+func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset uint32) ([]Email, error) {
+	if hasBackendProvider(account) {
+		p, err := newBackendProvider(account)
+		if err != nil {
+			return nil, err
+		}
+		defer p.Close() //nolint:errcheck
+		emails, err := p.FetchEmails(context.Background(), mailbox, limit, offset)
+		if err != nil {
+			return nil, err
+		}
+		return backendEmailsToFetcher(emails), nil
 	}
 
-	return allEmails, nil
+	return fetchIMAPEmails(account, mailbox, limit, offset)
 }
 
 // FetchEmailBodyFromMailbox returns the chosen body, its MIME type
@@ -1600,7 +1622,18 @@ func FetchEmails(account *config.Account, limit, offset uint32) ([]Email, error)
 }
 
 func FetchSentEmails(account *config.Account, limit, offset uint32) ([]Email, error) {
-	return FetchMailboxEmails(account, getSentMailbox(account), limit, offset)
+	c, err := connect(account)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close() //nolint:errcheck
+
+	sentMailbox, err := getMailboxByAttr(c, imap.MailboxAttrSent)
+	if err != nil {
+		sentMailbox = getSentMailbox(account)
+	}
+
+	return FetchMailboxEmails(account, sentMailbox, limit, offset)
 }
 
 func FetchEmailBody(account *config.Account, uid uint32) (string, string, []Attachment, error) {
@@ -1608,7 +1641,18 @@ func FetchEmailBody(account *config.Account, uid uint32) (string, string, []Atta
 }
 
 func FetchSentEmailBody(account *config.Account, uid uint32) (string, string, []Attachment, error) {
-	return FetchEmailBodyFromMailbox(account, getSentMailbox(account), uid)
+	c, err := connect(account)
+	if err != nil {
+		return "", "", nil, err
+	}
+	defer c.Close() //nolint:errcheck
+
+	sentMailbox, err := getMailboxByAttr(c, imap.MailboxAttrSent)
+	if err != nil {
+		sentMailbox = getSentMailbox(account)
+	}
+
+	return FetchEmailBodyFromMailbox(account, sentMailbox, uid)
 }
 
 func FetchAttachment(account *config.Account, uid uint32, partID string, encoding string) ([]byte, error) {
@@ -1616,7 +1660,18 @@ func FetchAttachment(account *config.Account, uid uint32, partID string, encodin
 }
 
 func FetchSentAttachment(account *config.Account, uid uint32, partID string, encoding string) ([]byte, error) {
-	return FetchAttachmentFromMailbox(account, getSentMailbox(account), uid, partID, encoding)
+	c, err := connect(account)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close() //nolint:errcheck
+
+	sentMailbox, err := getMailboxByAttr(c, imap.MailboxAttrSent)
+	if err != nil {
+		sentMailbox = getSentMailbox(account)
+	}
+
+	return FetchAttachmentFromMailbox(account, sentMailbox, uid, partID, encoding)
 }
 
 func DeleteEmail(account *config.Account, uid uint32) error {
@@ -1624,7 +1679,18 @@ func DeleteEmail(account *config.Account, uid uint32) error {
 }
 
 func DeleteSentEmail(account *config.Account, uid uint32) error {
-	return DeleteEmailFromMailbox(account, getSentMailbox(account), uid)
+	c, err := connect(account)
+	if err != nil {
+		return err
+	}
+	defer c.Close() //nolint:errcheck
+
+	sentMailbox, err := getMailboxByAttr(c, imap.MailboxAttrSent)
+	if err != nil {
+		sentMailbox = getSentMailbox(account)
+	}
+
+	return DeleteEmailFromMailbox(account, sentMailbox, uid)
 }
 
 func ArchiveEmail(account *config.Account, uid uint32) error {
@@ -1632,7 +1698,18 @@ func ArchiveEmail(account *config.Account, uid uint32) error {
 }
 
 func ArchiveSentEmail(account *config.Account, uid uint32) error {
-	return ArchiveEmailFromMailbox(account, getSentMailbox(account), uid)
+	c, err := connect(account)
+	if err != nil {
+		return err
+	}
+	defer c.Close() //nolint:errcheck
+
+	sentMailbox, err := getMailboxByAttr(c, imap.MailboxAttrSent)
+	if err != nil {
+		sentMailbox = getSentMailbox(account)
+	}
+
+	return ArchiveEmailFromMailbox(account, sentMailbox, uid)
 }
 
 // AppendToSentMailbox appends a raw RFC822 message to the Sent mailbox via IMAP APPEND.
@@ -1643,7 +1720,10 @@ func AppendToSentMailbox(account *config.Account, rawMsg []byte) error {
 	}
 	defer c.Close() //nolint:errcheck
 
-	sentMailbox := getSentMailbox(account)
+	sentMailbox, err := getMailboxByAttr(c, imap.MailboxAttrSent)
+	if err != nil {
+		sentMailbox = getSentMailbox(account)
+	}
 	appendCmd := c.Append(sentMailbox, int64(len(rawMsg)), &imap.AppendOptions{
 		Flags: []imap.Flag{imap.FlagSeen},
 		Time:  time.Now(),

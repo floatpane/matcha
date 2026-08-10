@@ -239,6 +239,9 @@
       "install": "Installer",
       "error": "Échec de l'installation",
       "delete_confirm": "Supprimer le plugin ?",
+      "install_confirm": "Installer {title} ?",
+      "install_author": "par {author}",
+      "unverified_warning": "Auteur non vérifié. Installation à vos propres risques.",
       "help": "j/k: naviguer • entrée: installer • d: supprimer • esc: retour"
     },
     "time": {

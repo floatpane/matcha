@@ -641,3 +641,40 @@ func TestLRU_ConcurrentReadWrite(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestEmailBody_EmptyBodyNotCached(t *testing.T) {
+	setup(t)
+
+	// Empty body should not be cached
+	emptyBody := CachedEmailBody{UID: 1, AccountID: "account", Body: ""}
+	threshold := 100 * 1024 * 1024
+
+	if err := SaveEmailBody("INBOX", emptyBody, threshold); err != nil {
+		t.Fatalf("SaveEmailBody: %v", err)
+	}
+
+	// Should not find the empty body in cache
+	if got := GetCachedEmailBody("INBOX", 1, "account", threshold); got != nil {
+		t.Error("Empty body should not be cached")
+	}
+
+	// Whitespace-only body should also not be cached
+	whitespaceBody := CachedEmailBody{UID: 2, AccountID: "account", Body: "   \n\t  "}
+	if err := SaveEmailBody("INBOX", whitespaceBody, threshold); err != nil {
+		t.Fatalf("SaveEmailBody: %v", err)
+	}
+
+	if got := GetCachedEmailBody("INBOX", 2, "account", threshold); got != nil {
+		t.Error("Whitespace-only body should not be cached")
+	}
+
+	// Non-empty body should still be cached
+	validBody := CachedEmailBody{UID: 3, AccountID: "account", Body: "Hello World"}
+	if err := SaveEmailBody("INBOX", validBody, threshold); err != nil {
+		t.Fatalf("SaveEmailBody: %v", err)
+	}
+
+	if got := GetCachedEmailBody("INBOX", 3, "account", threshold); got == nil {
+		t.Error("Valid non-empty body should be cached")
+	}
+}

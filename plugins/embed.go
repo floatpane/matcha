@@ -14,11 +14,13 @@ const RawPluginBaseURL = "https://raw.githubusercontent.com/floatpane/matcha/mas
 
 // PluginEntry represents a single plugin in the registry.
 type PluginEntry struct {
-	Name        string `json:"name"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	File        string `json:"file"`
-	URL         string `json:"url,omitempty"`
+	Name              string `json:"name"`
+	Title             string `json:"title"`
+	Description       string `json:"description"`
+	File              string `json:"file"`
+	URL               string `json:"url,omitempty"`
+	AuthorDisplayName string `json:"author_display_name,omitempty"`
+	AuthorVerified    bool   `json:"author_verified,omitempty"`
 }
 
 // FetchRegistry fetches the plugin registry from GitHub.

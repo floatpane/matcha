@@ -284,7 +284,7 @@ func (d *Daemon) handleRefreshFolder(ctx context.Context, _ *daemonrpc.Conn, par
 		fetchCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
 		defer cancel()
 
-		emails, err := p.FetchEmails(fetchCtx, args.Folder, 50, 0)
+		emails, err := p.FetchEmails(fetchCtx, args.Folder, 0, 0)
 		if err != nil {
 			d.broadcastToSubscribers(args.AccountID, args.Folder, daemonrpc.EventSyncError, daemonrpc.SyncErrorEvent{
 				AccountID: args.AccountID,
