@@ -31,7 +31,7 @@ require (
 	github.com/yuin/goldmark v1.8.2
 	github.com/yuin/gopher-lua v1.1.2
 	github.com/zalando/go-keyring v0.2.8
-	go.mozilla.org/pkcs7 v0.9.0
+	go.mozilla.org/pkcs7 v0.10.0
 	golang.org/x/term v0.45.0
 	golang.org/x/text v0.40.0
 )
