@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -651,67 +652,12 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
+	warnUnknownConfigKeys(data)
+
 	secureMode := GetSessionKey() != nil
 
 	var config Config
 	var needsMigration bool
-
-	type rawAccount struct {
-		ID                 string `json:"id"`
-		Name               string `json:"name"`
-		Email              string `json:"email"`
-		Password           string `json:"password,omitempty"`
-		ServiceProvider    string `json:"service_provider"`
-		FetchEmail         string `json:"fetch_email,omitempty"`
-		SendAsEmail        string `json:"send_as_email,omitempty"`
-		IMAPServer         string `json:"imap_server,omitempty"`
-		IMAPPort           int    `json:"imap_port,omitempty"`
-		SMTPServer         string `json:"smtp_server,omitempty"`
-		SMTPPort           int    `json:"smtp_port,omitempty"`
-		Insecure           bool   `json:"insecure,omitempty"`
-		SMTPUsername       string `json:"smtp_username,omitempty"`
-		SMTPPassword       string `json:"smtp_password,omitempty"`
-		SMIMECert          string `json:"smime_cert,omitempty"`
-		SMIMEKey           string `json:"smime_key,omitempty"`
-		SMIMESignByDefault bool   `json:"smime_sign_by_default,omitempty"`
-		PGPPublicKey       string `json:"pgp_public_key,omitempty"`
-		PGPPrivateKey      string `json:"pgp_private_key,omitempty"`
-		PGPKeySource       string `json:"pgp_key_source,omitempty"`
-		PGPPIN             string `json:"pgp_pin,omitempty"`
-		PGPSignByDefault   bool   `json:"pgp_sign_by_default,omitempty"`
-		AuthMethod         string `json:"auth_method,omitempty"`
-		PassCmd            string `json:"pass_cmd,omitempty"`
-		Protocol           string `json:"protocol,omitempty"`
-		JMAPEndpoint       string `json:"jmap_endpoint,omitempty"`
-		POP3Server         string `json:"pop3_server,omitempty"`
-		POP3Port           int    `json:"pop3_port,omitempty"`
-		MaildirPath        string `json:"maildir_path,omitempty"`
-		CatchAll           bool   `json:"catch_all,omitempty"`
-	}
-	type diskConfig struct {
-		Accounts                []rawAccount                      `json:"accounts"`
-		DisableImages           bool                              `json:"disable_images,omitempty"`
-		HideTips                bool                              `json:"hide_tips,omitempty"`
-		DisableNotifications    bool                              `json:"disable_notifications,omitempty"`
-		DisableDaemon           bool                              `json:"disable_daemon,omitempty"`
-		EnableSplitPane         bool                              `json:"enable_split_pane,omitempty"`
-		SplitPaneOrientation    string                            `json:"split_pane_orientation,omitempty"`
-		EnableThreaded          bool                              `json:"enable_threaded,omitempty"`
-		EnableDetailedDates     bool                              `json:"enable_detailed_dates,omitempty"`
-		DisableSpellcheck       bool                              `json:"disable_spellcheck,omitempty"`
-		DisableSpellSuggestions bool                              `json:"disable_spell_suggestions,omitempty"`
-		Theme                   string                            `json:"theme,omitempty"`
-		MailingLists            []MailingList                     `json:"mailing_lists,omitempty"`
-		DateFormat              string                            `json:"date_format,omitempty"`
-		Language                string                            `json:"language,omitempty"`
-		BodyCacheThresholdMB    int                               `json:"body_cache_threshold_mb,omitempty"`
-		UndoDelaySeconds        int                               `json:"undo_delay_seconds,omitempty"`
-		PluginSettings          map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
-		HasSeenSetupGuide       bool                              `json:"has_seen_setup_guide,omitempty"`
-		MouseEnabled            *bool                             `json:"mouse_enabled,omitempty"`
-		ShowOriginalOnReply     bool                              `json:"show_original_on_reply,omitempty"`
-		ShowCcBccByDefault      bool                              `json:"show_cc_bcc_by_default,omitempty"`
-	}
 
 	var raw diskConfig
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -956,4 +902,120 @@ func EnsurePGPDir() error {
 	}
 	pgpDir := filepath.Join(dir, "pgp")
 	return os.MkdirAll(pgpDir, 0700)
+}
+
+type rawAccount struct {
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	Email              string `json:"email"`
+	Password           string `json:"password,omitempty"`
+	ServiceProvider    string `json:"service_provider"`
+	FetchEmail         string `json:"fetch_email,omitempty"`
+	SendAsEmail        string `json:"send_as_email,omitempty"`
+	IMAPServer         string `json:"imap_server,omitempty"`
+	IMAPPort           int    `json:"imap_port,omitempty"`
+	SMTPServer         string `json:"smtp_server,omitempty"`
+	SMTPPort           int    `json:"smtp_port,omitempty"`
+	Insecure           bool   `json:"insecure,omitempty"`
+	SMTPUsername       string `json:"smtp_username,omitempty"`
+	SMTPPassword       string `json:"smtp_password,omitempty"`
+	SMIMECert          string `json:"smime_cert,omitempty"`
+	SMIMEKey           string `json:"smime_key,omitempty"`
+	SMIMESignByDefault bool   `json:"smime_sign_by_default,omitempty"`
+	PGPPublicKey       string `json:"pgp_public_key,omitempty"`
+	PGPPrivateKey      string `json:"pgp_private_key,omitempty"`
+	PGPKeySource       string `json:"pgp_key_source,omitempty"`
+	PGPPIN             string `json:"pgp_pin,omitempty"`
+	PGPSignByDefault   bool   `json:"pgp_sign_by_default,omitempty"`
+	AuthMethod         string `json:"auth_method,omitempty"`
+	PassCmd            string `json:"pass_cmd,omitempty"`
+	Protocol           string `json:"protocol,omitempty"`
+	JMAPEndpoint       string `json:"jmap_endpoint,omitempty"`
+	POP3Server         string `json:"pop3_server,omitempty"`
+	POP3Port           int    `json:"pop3_port,omitempty"`
+	MaildirPath        string `json:"maildir_path,omitempty"`
+	CatchAll           bool   `json:"catch_all,omitempty"`
+}
+
+type diskConfig struct {
+	Accounts                []rawAccount                      `json:"accounts"`
+	DisableImages           bool                              `json:"disable_images,omitempty"`
+	HideTips                bool                              `json:"hide_tips,omitempty"`
+	DisableNotifications    bool                              `json:"disable_notifications,omitempty"`
+	DisableDaemon           bool                              `json:"disable_daemon,omitempty"`
+	EnableSplitPane         bool                              `json:"enable_split_pane,omitempty"`
+	SplitPaneOrientation    string                            `json:"split_pane_orientation,omitempty"`
+	EnableThreaded          bool                              `json:"enable_threaded,omitempty"`
+	EnableDetailedDates     bool                              `json:"enable_detailed_dates,omitempty"`
+	DisableSpellcheck       bool                              `json:"disable_spellcheck,omitempty"`
+	DisableSpellSuggestions bool                              `json:"disable_spell_suggestions,omitempty"`
+	Theme                   string                            `json:"theme,omitempty"`
+	MailingLists            []MailingList                     `json:"mailing_lists,omitempty"`
+	DateFormat              string                            `json:"date_format,omitempty"`
+	Language                string                            `json:"language,omitempty"`
+	BodyCacheThresholdMB    int                               `json:"body_cache_threshold_mb,omitempty"`
+	UndoDelaySeconds        int                               `json:"undo_delay_seconds,omitempty"`
+	PluginSettings          map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
+	HasSeenSetupGuide       bool                              `json:"has_seen_setup_guide,omitempty"`
+	MouseEnabled            *bool                             `json:"mouse_enabled,omitempty"`
+	ShowOriginalOnReply     bool                              `json:"show_original_on_reply,omitempty"`
+	ShowCcBccByDefault      bool                              `json:"show_cc_bcc_by_default,omitempty"`
+}
+
+var knownConfigKeys map[string]bool
+var knownAccountKeys map[string]bool
+var knownKeysOnce sync.Once
+
+func initKnownKeys() {
+	knownConfigKeys = structJSONKeys(diskConfig{})
+	knownAccountKeys = structJSONKeys(rawAccount{})
+}
+
+func structJSONKeys(v any) map[string]bool {
+	keys := make(map[string]bool)
+	t := reflect.TypeOf(v)
+	for i := range t.NumField() {
+		f := t.Field(i)
+		tag := f.Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		name, _, _ := strings.Cut(tag, ",")
+		if name == "" {
+			name = strings.ToLower(f.Name)
+		}
+		keys[name] = true
+	}
+	return keys
+}
+
+func warnUnknownConfigKeys(data []byte) {
+	knownKeysOnce.Do(initKnownKeys)
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	for key := range raw {
+		if !knownConfigKeys[key] {
+			log.Printf("matcha: unknown config key %q", key)
+		}
+		if key == "accounts" {
+			accounts, ok := raw["accounts"].([]interface{})
+			if !ok {
+				continue
+			}
+			for i, acc := range accounts {
+				accMap, ok := acc.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				for accKey := range accMap {
+					if !knownAccountKeys[accKey] {
+						log.Printf("matcha: unknown config key in accounts[%d]: %q", i, accKey)
+					}
+				}
+			}
+		}
+	}
 }
