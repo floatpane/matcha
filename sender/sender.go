@@ -221,8 +221,9 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		return nil, fmt.Errorf("unsupported or missing service_provider: %s", account.ServiceProvider)
 	}
 
-	plainAuth := smtp.PlainAuth("", account.Email, account.Password, smtpServer)
-	loginAuthFallback := &loginAuth{username: account.Email, password: account.Password}
+	password := account.ResolvePassword()
+	plainAuth := smtp.PlainAuth("", account.Email, password, smtpServer)
+	loginAuthFallback := &loginAuth{username: account.Email, password: password}
 
 	fromHeader := account.FormatFromHeader()
 
@@ -803,8 +804,9 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 		return nil, fmt.Errorf("unsupported or missing service_provider: %s", account.ServiceProvider)
 	}
 
-	plainAuth := smtp.PlainAuth("", account.Email, account.Password, smtpServer)
-	loginAuthFallback := &loginAuth{username: account.Email, password: account.Password}
+	password := account.ResolvePassword()
+	plainAuth := smtp.PlainAuth("", account.Email, password, smtpServer)
+	loginAuthFallback := &loginAuth{username: account.Email, password: password}
 
 	fromHeader := account.FormatFromHeader()
 

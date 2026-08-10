@@ -445,7 +445,12 @@ func connectWithOptions(account *config.Account, extraOpts *imapclient.Options) 
 			return nil, fmt.Errorf("XOAUTH2 authentication failed: %w", err)
 		}
 	} else {
-		if err := c.Login(account.Email, account.Password).Wait(); err != nil {
+		password := account.ResolvePassword()
+		if password == "" {
+			c.Close() //nolint:errcheck,gosec
+			return nil, fmt.Errorf("no password available for %s: keyring or pass_cmd returned nothing (see https://docs.matcha.email/Features/PassCmd)", account.Email)
+		}
+		if err := c.Login(account.Email, password).Wait(); err != nil {
 			return nil, fmt.Errorf("authentication error: %w", err)
 		}
 	}
