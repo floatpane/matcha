@@ -218,7 +218,18 @@ func (d *Daemon) ReloadConfig() error {
 	}
 	d.mu.Lock()
 	d.config = cfg
+	// Providers hold a pointer into the old Accounts slice, so keeping them
+	// would pin stale credentials (e.g. a re-resolved pass_cmd password).
+	// Drop them all and rebuild against the freshly loaded accounts.
+	old := d.providers
+	d.providers = make(map[string]backend.Provider, len(cfg.Accounts))
 	d.mu.Unlock()
+
+	for id, p := range old {
+		if err := p.Close(); err != nil {
+			log.Printf("daemon: error closing provider %s: %v", id, err)
+		}
+	}
 
 	// Reinitialize providers for new/changed accounts.
 	d.initProviders()
@@ -275,14 +286,61 @@ func (d *Daemon) broadcastToSubscribers(accountID, folder, eventType string, dat
 	})
 }
 
-// getProvider returns the provider for the given account ID.
+// getProvider returns the provider for the given account ID, creating it on
+// demand when it is missing.
+//
+// The daemon outlives any client, so its in-memory config can predate accounts
+// that were added later; and a provider that failed to build at startup used to
+// stay missing forever. Both showed up as "no provider for account <id>" on
+// every delete/archive. Reload from disk and retry before giving up.
 func (d *Daemon) getProvider(accountID string) (backend.Provider, error) {
 	d.mu.RLock()
-	defer d.mu.RUnlock()
 	p, ok := d.providers[accountID]
-	if !ok {
-		return nil, fmt.Errorf("no provider for account %s", accountID)
+	known := d.config.GetAccountByID(accountID) != nil
+	d.mu.RUnlock()
+	if ok {
+		return p, nil
 	}
+
+	if !known {
+		if err := d.ReloadConfig(); err != nil {
+			return nil, fmt.Errorf("no provider for account %s (config reload failed: %w)", accountID, err)
+		}
+		// ReloadConfig rebuilds every provider, so the account is now covered
+		// if it exists on disk at all.
+		d.mu.RLock()
+		p, ok = d.providers[accountID]
+		d.mu.RUnlock()
+		if ok {
+			return p, nil
+		}
+		return nil, fmt.Errorf("no provider for account %s: account not found in config", accountID)
+	}
+
+	return d.createProvider(accountID)
+}
+
+// createProvider builds and stores a provider for a known account.
+func (d *Daemon) createProvider(accountID string) (backend.Provider, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Another caller may have won the race while the lock was released.
+	if p, ok := d.providers[accountID]; ok {
+		return p, nil
+	}
+
+	acct := d.config.GetAccountByID(accountID)
+	if acct == nil {
+		return nil, fmt.Errorf("no provider for account %s: account not found in config", accountID)
+	}
+
+	p, err := backend.New(acct)
+	if err != nil {
+		return nil, fmt.Errorf("create provider for %s: %w", acct.Email, err)
+	}
+	d.providers[accountID] = p
+	log.Printf("daemon: provider created on demand for %s (%s)", acct.Email, acct.Protocol)
 	return p, nil
 }
 

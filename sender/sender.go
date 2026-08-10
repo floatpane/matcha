@@ -712,6 +712,9 @@ func deliverSMTP(account *config.Account, smtpServer string, smtpPort int, allRe
 
 	smtpUser := account.GetSMTPUsername()
 	smtpPass := account.GetSMTPPassword()
+	if smtpPass == "" {
+		smtpPass = account.ResolvePassword()
+	}
 	plainAuth := smtp.PlainAuth("", smtpUser, smtpPass, smtpServer)
 	loginAuthFallback := &loginAuth{username: smtpUser, password: smtpPass}
 
@@ -817,6 +820,9 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 
 	smtpUser := account.GetSMTPUsername()
 	smtpPass := account.GetSMTPPassword()
+	if smtpPass == "" {
+		smtpPass = account.ResolvePassword()
+	}
 	plainAuth := smtp.PlainAuth("", smtpUser, smtpPass, smtpServer)
 	loginAuthFallback := &loginAuth{username: smtpUser, password: smtpPass}
 
