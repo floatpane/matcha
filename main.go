@@ -3717,6 +3717,26 @@ func downloadAttachmentCmd(account *config.Account, uid uint32, folderName strin
 	}
 }
 
+// isLocalDevBuild reports whether this binary is an unstamped build running
+// outside of any package sandbox, e.g. `make build` or `go run .` from a
+// clone. It matters for the update checks: detectInstalledVersion falls back
+// to asking the system package manager, so a contributor running their own
+// build is told the version of the *packaged* Matcha they happen to have
+// installed, which almost never matches the latest release tag.
+//
+// Version alone isn't a reliable signal: snap and flatpak builds are also
+// unstamped (snapcraft.yaml and the flatpak manifest build without ldflags),
+// but they *are* managed by the update path (trySnapRefresh, tryFlatpakUpdate).
+// SNAP and FLATPAK_ID are always injected by their respective runtimes
+// (snapenv.basicEnv; flatpak-run.c's "FLATPAK_ID is always set"), so their
+// presence rules out a local dev build even when the version is unstamped.
+func isLocalDevBuild() bool {
+	v := strings.TrimSpace(version)
+	unstamped := v == "" || v == "dev"
+	sandboxed := os.Getenv("SNAP") != "" || os.Getenv("FLATPAK_ID") != ""
+	return unstamped && !sandboxed
+}
+
 /*
 detectInstalledVersion returns a best-effort installed version string.
 Priority:
@@ -3808,6 +3828,10 @@ installed version. This runs in the background when the TUI initializes.
 */
 func checkForUpdatesCmd() tea.Cmd {
 	return func() tea.Msg {
+		// A local dev build is not something `matcha update` can upgrade.
+		if isLocalDevBuild() {
+			return nil
+		}
 		// Non-fatal: if anything goes wrong we just don't show the update message.
 		const api = "https://api.github.com/repos/floatpane/matcha/releases/latest"
 		resp, err := httpClient.Get(api)
@@ -3834,6 +3858,10 @@ func checkForUpdatesCmd() tea.Cmd {
 // a V1RCAvailableMsg when the installed version is still pre-v1.
 func checkForV1RCCmd() tea.Cmd {
 	return func() tea.Msg {
+		// Same reasoning as checkForUpdatesCmd.
+		if isLocalDevBuild() {
+			return nil
+		}
 		const api = "https://api.github.com/repos/floatpane/matcha/releases"
 		resp, err := httpClient.Get(api)
 		if err != nil {
