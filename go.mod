@@ -9,7 +9,7 @@ require (
 	git.sr.ht/~rockorager/go-jmap v0.5.3
 	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/PuerkitoBio/goquery v1.12.0
-	github.com/charmbracelet/x/ansi v0.11.7
+	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-maildir v0.6.0
 	github.com/emersion/go-message v0.18.2
