@@ -2,6 +2,7 @@ package sender
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -13,6 +14,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
+	"net"
 	"net/mail"
 	"net/smtp"
 	"net/textproto"
@@ -26,6 +28,7 @@ import (
 	"github.com/emersion/go-pgpmail"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/config"
+	"github.com/floatpane/matcha/internal/httpclient"
 	"github.com/floatpane/matcha/internal/loglevel"
 	"github.com/floatpane/matcha/pgp"
 	"github.com/yuin/goldmark"
@@ -683,7 +686,7 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	allRecipients = append(allRecipients, cc...)
 	allRecipients = append(allRecipients, bcc...)
 
-	addr := fmt.Sprintf("%s:%d", smtpServer, smtpPort)
+	addr := net.JoinHostPort(smtpServer, fmt.Sprintf("%d", smtpPort))
 
 	tlsConfig := &tls.Config{
 		ServerName:         smtpServer,
@@ -701,7 +704,11 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 	// Port 465 uses implicit TLS (the connection starts with TLS).
 	// All other ports use plain TCP with optional STARTTLS upgrade.
 	if smtpPort == 465 {
-		conn, err := tls.Dial("tcp", addr, tlsConfig) //nolint:noctx
+		dialer := tls.Dialer{
+			NetDialer: &net.Dialer{Timeout: httpclient.SMTPDialTimeout},
+			Config:    tlsConfig,
+		}
+		conn, err := dialer.DialContext(context.Background(), "tcp", addr)
 		if err != nil {
 			return nil, err
 		}
@@ -712,8 +719,14 @@ func SendEmail(account *config.Account, to, cc, bcc []string, subject, plainBody
 		}
 	} else {
 		var err error
-		c, err = smtp.Dial(addr)
+		nd := &net.Dialer{Timeout: httpclient.SMTPDialTimeout}
+		conn, dialErr := nd.DialContext(context.Background(), "tcp", addr)
+		if dialErr != nil {
+			return nil, dialErr
+		}
+		c, err = smtp.NewClient(conn, smtpServer)
 		if err != nil {
+			conn.Close() //nolint:errcheck,gosec
 			return nil, err
 		}
 	}
