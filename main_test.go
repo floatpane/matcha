@@ -171,6 +171,60 @@ func TestUndoDeleteRestoresFolderCounter(t *testing.T) {
 	}
 }
 
+func TestIsLocalDevBuildDetectsUnstampedVersions(t *testing.T) {
+	original := version
+	t.Cleanup(func() { version = original })
+
+	for _, tc := range []struct {
+		name    string
+		version string
+		snap    string
+		flatpak string
+		want    bool
+	}{
+		{name: "plain go build", version: "dev", want: true},
+		{name: "empty ldflags value", version: "", want: true},
+		{name: "whitespace only", version: "  ", want: true},
+		{name: "released version", version: "0.44.0", want: false},
+		{name: "tagged version", version: "v1.0.0-rc1", want: false},
+		{name: "unstamped snap build", version: "dev", snap: "/snap/matcha/42", want: false},
+		{name: "unstamped flatpak build", version: "dev", flatpak: "com.floatpane.matcha", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			version = tc.version
+			// An empty value stands in for "unset": isLocalDevBuild compares
+			// against "", so absent and set-but-empty are equivalent. Setting
+			// both also isolates the test from a runner that is itself inside a
+			// snap or flatpak.
+			t.Setenv("SNAP", tc.snap)
+			t.Setenv("FLATPAK_ID", tc.flatpak)
+
+			if got := isLocalDevBuild(); got != tc.want {
+				t.Fatalf("isLocalDevBuild() with version %q, SNAP=%q, FLATPAK_ID=%q = %t, want %t",
+					tc.version, tc.snap, tc.flatpak, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestUpdateChecksAreSkippedOnLocalDevBuilds(t *testing.T) {
+	original := version
+	t.Cleanup(func() { version = original })
+	version = "dev"
+	t.Setenv("SNAP", "")
+	t.Setenv("FLATPAK_ID", "")
+
+	// Both checks must bail out before reaching the GitHub API, so a dev build
+	// neither advertises an update nor makes a network call to find one.
+	if msg := checkForUpdatesCmd()(); msg != nil {
+		t.Fatalf("checkForUpdatesCmd() on a dev build = %#v, want nil", msg)
+	}
+
+	if msg := checkForV1RCCmd()(); msg != nil {
+		t.Fatalf("checkForV1RCCmd() on a dev build = %#v, want nil", msg)
+	}
+}
+
 func TestUnreadBadgeCountDeduplicatesOverlappingStores(t *testing.T) {
 	email := fetcher.Email{UID: 42, AccountID: "acct-a"}
 	got := unreadBadgeCount(
