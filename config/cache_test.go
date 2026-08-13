@@ -462,6 +462,73 @@ func TestEmailBodyCache_AttachmentsPreserved(t *testing.T) {
 	}
 }
 
+func TestEmailBodyCache_InlineImageDataPreserved(t *testing.T) {
+	setup(t)
+
+	inlineData := []byte{0x89, 0x50, 0x4E, 0x47, 0x00, 0x01, 0x02, 0x03}
+	a1 := CachedAttachment{
+		Filename:  "logo.png",
+		PartID:    "2",
+		MIMEType:  "image/png",
+		ContentID: "logo@example.com",
+		Inline:    true,
+		Data:      inlineData,
+	}
+
+	a2 := CachedAttachment{
+		Filename: "report.pdf",
+		PartID:   "3",
+		MIMEType: "application/pdf",
+	}
+
+	body := CachedEmailBody{
+		UID:         1,
+		AccountID:   "account",
+		Body:        "inline image body",
+		Attachments: []CachedAttachment{a1, a2},
+	}
+
+	threshold := 100 * 1024 * 1024
+
+	if err := SaveEmailBody("INBOX", body, threshold); err != nil {
+		t.Fatalf("SaveEmailBody: %v", err)
+	}
+
+	output := GetCachedEmailBody("INBOX", 1, "account", threshold)
+	if output == nil {
+		t.Fatal("GetCachedEmailBody returned nil")
+	}
+
+	if len(output.Attachments) != 2 {
+		t.Fatalf("expected 2 attachments, got %d", len(output.Attachments))
+	}
+
+	if got := output.Attachments[0].Data; !slices.Equal(got, inlineData) {
+		t.Errorf("inline attachment Data: got %v, want %v", got, inlineData)
+	}
+
+	if output.Attachments[1].Data != nil {
+		t.Errorf("non-inline attachment should not carry Data, got %v", output.Attachments[1].Data)
+	}
+}
+
+func TestEmailBodyCache_InlineImageDataCountsTowardSize(t *testing.T) {
+	body := CachedEmailBody{
+		UID:       1,
+		AccountID: "account",
+		Body:      "hello",
+		Attachments: []CachedAttachment{
+			{Data: []byte("0123456789")},
+			{Data: []byte("ABCDE")},
+		},
+	}
+
+	got := calculateEmailBodySize(&body)
+	if got != len(body.Body)+10+5 {
+		t.Errorf("calculateEmailBodySize: got %d, want %d", got, len(body.Body)+10+5)
+	}
+}
+
 func TestLRU_EvictsLeastRecentlyUsed(t *testing.T) {
 	setup(t)
 
