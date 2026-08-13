@@ -615,7 +615,8 @@ func removeAccountFromDraftsCache(accountID string) error {
 
 // --- Email Body Cache ---
 
-// CachedAttachment stores attachment metadata (not the binary data).
+// CachedAttachment stores attachment metadata and, for inline attachments,
+// the decoded payload needed to render CID images.
 type CachedAttachment struct {
 	Filename         string `json:"filename"`
 	PartID           string `json:"part_id"`
@@ -628,6 +629,7 @@ type CachedAttachment struct {
 	IsSMIMEEncrypted bool   `json:"is_smime_encrypted,omitempty"`
 	IsCalendarInvite bool   `json:"is_calendar_invite,omitempty"`
 	CalendarData     []byte `json:"calendar_data,omitempty"` // Raw .ics data for calendar invites
+	Data             []byte `json:"data,omitempty"`          // Decoded payload for inline attachments (e.g. CID images)
 }
 
 // CachedEmailBody stores the body and attachment metadata for a single email.
@@ -719,6 +721,7 @@ func calculateEmailBodySize(body *CachedEmailBody) int {
 		size += len(att.MIMEType)
 		size += len(att.ContentID)
 		size += len(att.CalendarData)
+		size += len(att.Data)
 	}
 	return size
 }

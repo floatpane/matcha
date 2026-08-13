@@ -960,6 +960,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				if ca.IsCalendarInvite && len(ca.CalendarData) > 0 {
 					att.Data = ca.CalendarData
 				}
+				if ca.Inline && len(ca.Data) > 0 {
+					att.Data = ca.Data
+				}
 				attachments = append(attachments, att)
 			}
 			return m, func() tea.Msg {
@@ -980,14 +983,18 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			folderName := m.folderInbox.GetCurrentFolder()
 			var cachedAttachments []config.CachedAttachment
 			for _, a := range msg.Attachments {
-				cachedAttachments = append(cachedAttachments, config.CachedAttachment{
+				ca := config.CachedAttachment{
 					Filename:  a.Filename,
 					PartID:    a.PartID,
 					Encoding:  a.Encoding,
 					MIMEType:  a.MIMEType,
 					ContentID: a.ContentID,
 					Inline:    a.Inline,
-				})
+				}
+				if a.Inline && len(a.Data) > 0 {
+					ca.Data = a.Data
+				}
+				cachedAttachments = append(cachedAttachments, ca)
 			}
 			go func() {
 				err := config.SaveEmailBody(folderName, config.CachedEmailBody{
@@ -1506,6 +1513,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				if ca.IsCalendarInvite && len(ca.CalendarData) > 0 {
 					att.Data = ca.CalendarData
 				}
+				if ca.Inline && len(ca.Data) > 0 {
+					att.Data = ca.Data
+				}
 				attachments = append(attachments, att)
 			}
 			return m, func() tea.Msg {
@@ -1555,6 +1565,9 @@ func (m *mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			}
 			if a.IsCalendarInvite && len(a.Data) > 0 {
 				ca.CalendarData = a.Data
+			}
+			if a.Inline && len(a.Data) > 0 {
+				ca.Data = a.Data
 			}
 			cachedAttachments = append(cachedAttachments, ca)
 		}
