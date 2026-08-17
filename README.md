@@ -59,7 +59,7 @@ Matcha Documention is available on [our website](https://docs.matcha.email)
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=floatpane/matcha&type=date&legend=top-left)](https://www.star-history.com/#floatpane/matcha&type=date&legend=top-left)
+[![Star History Chart](https://star-history.dera.page/svg?repos=floatpane/matcha&type=date&legend=top-left)](https://star-history.dera.page/#floatpane/matcha&type=date&legend=top-left)
 
 ## Contributing
 
