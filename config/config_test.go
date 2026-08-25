@@ -725,3 +725,28 @@ func TestResolvePassword(t *testing.T) {
 		}
 	})
 }
+
+// TestGetConfigFile verifies the resolved config file path is built from the
+// config directory and ends at config.json.
+func TestGetConfigFile(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("HOME", tempDir)
+
+	got, err := GetConfigFile()
+	if err != nil {
+		t.Fatalf("GetConfigFile failed: %v", err)
+	}
+
+	want := filepath.Join(tempDir, ".config", "matcha", "config.json")
+	if got != want {
+		t.Errorf("GetConfigFile() = %q, want %q", got, want)
+	}
+
+	dir, err := GetConfigDir()
+	if err != nil {
+		t.Fatalf("GetConfigDir failed: %v", err)
+	}
+	if filepath.Dir(got) != dir {
+		t.Errorf("config file %q is not inside config dir %q", got, dir)
+	}
+}

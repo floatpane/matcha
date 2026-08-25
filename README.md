@@ -35,6 +35,7 @@ Matcha has a built-in plugin system with 35+ community plugins. Browse and insta
 matcha marketplace                # browse plugins in the TUI
 matcha install <url_or_file>      # install a plugin
 matcha config <plugin_name>       # configure an installed plugin
+matcha config path                # print the config file location
 ```
 
 Anyone can submit their own plugin — just add an entry to `plugins/registry.json` and open a PR. [Learn more](https://docs.matcha.email/Features/Plugins#submit-your-plugin)

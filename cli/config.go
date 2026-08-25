@@ -5,10 +5,22 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/floatpane/matcha/config"
 )
 
 // RunConfig handles `matcha config [plugin_name]`.
 func RunConfig(args []string) error {
+	// `matcha config path` prints the resolved config file location and exits.
+	if len(args) == 1 && args[0] == "path" {
+		path, err := config.GetConfigFile()
+		if err != nil {
+			return fmt.Errorf("cannot resolve config path: %w", err)
+		}
+		fmt.Println(path)
+		return nil
+	}
+
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		editor = "vi"
