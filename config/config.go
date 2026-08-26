@@ -392,6 +392,11 @@ func GetConfigDir() (string, error) {
 	return configDir()
 }
 
+// GetConfigFile returns the full path to the configuration file (exported).
+func GetConfigFile() (string, error) {
+	return configFile()
+}
+
 // configDir returns the path to the configuration directory (internal).
 func configDir() (string, error) {
 	home, err := os.UserHomeDir()

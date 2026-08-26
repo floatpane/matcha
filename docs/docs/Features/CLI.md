@@ -240,6 +240,14 @@ matcha config ai_rewrite
 
 Opens `~/.config/matcha/plugins/ai_rewrite.lua` so you can edit settings like API keys or model names.
 
+**Print the config file location:**
+
+```bash
+matcha config path
+```
+
+Prints the resolved path to `config.json` and exits without opening an editor. Useful in scripts or when you just need to know where Matcha keeps its configuration.
+
 ## matcha update
 
 Check for and install the latest version of Matcha.
