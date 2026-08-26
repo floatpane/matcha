@@ -731,6 +731,9 @@ func TestResolvePassword(t *testing.T) {
 func TestGetConfigFile(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("HOME", tempDir)
+	// os.UserHomeDir() reads USERPROFILE on Windows, so set it too or the
+	// override is ignored and the resolved path points at the real home.
+	t.Setenv("USERPROFILE", tempDir)
 
 	got, err := GetConfigFile()
 	if err != nil {
