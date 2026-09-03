@@ -28,7 +28,7 @@ require (
 	github.com/knadh/go-pop3 v1.0.2
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/wagslane/go-password-validator v0.3.0
-	github.com/yuin/goldmark v1.8.2
+	github.com/yuin/goldmark v1.8.6
 	github.com/yuin/gopher-lua v1.1.2
 	github.com/zalando/go-keyring v0.2.8
 	go.mozilla.org/pkcs7 v0.9.0
