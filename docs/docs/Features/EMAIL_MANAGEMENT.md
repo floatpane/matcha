@@ -2,6 +2,8 @@
 
 ![settings](../assets/features/settings.png)
 
+![Matcha inbox showing sample messages and navigation shortcuts](../assets/features/inbox_view.png)
+
 Matcha provides comprehensive tools for managing your emails directly from the terminal.
 
 ## Key Features

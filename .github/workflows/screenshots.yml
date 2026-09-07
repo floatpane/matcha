@@ -85,6 +85,7 @@ jobs:
           go build -ldflags="-s -w -X main.version=$LATEST_TAG -X main.commit=$COMMIT -X main.date=$DATE" -o matcha .
           go build -o email_view ./screenshots/cmd/email_view
           go build -o inbox_view ./screenshots/cmd/inbox_view
+          go build -o calendar_view ./screenshots/cmd/calendar_view
 
       - name: Prepare Tapes
         run: |
@@ -92,6 +93,7 @@ jobs:
             [ "$tape" = "screenshots/common.tape" ] && continue
             sed -i 's|go run \./screenshots/cmd/email_view|./email_view|' "$tape"
             sed -i 's|go run \./screenshots/cmd/inbox_view|./inbox_view|' "$tape"
+            sed -i 's|go run \./screenshots/cmd/calendar_view|./calendar_view|' "$tape"
             sed -i 's|go run \.|./matcha|' "$tape"
           done
 

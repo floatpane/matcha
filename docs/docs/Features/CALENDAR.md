@@ -14,19 +14,7 @@ Matcha can parse and display calendar invites (`.ics` attachments) directly in t
 
 When you open an email containing a calendar invite, Matcha parses the `.ics` data and renders an event card above the email body:
 
-```
-╔══════════════════════════════════════════╗
-║ 📅 Meeting Invite                       ║
-║                                         ║
-║ Title:     Weekly Standup               ║
-║ When:      Mon Apr 20, 2026, 10:00 AM - ║
-║            10:30 AM                     ║
-║ Where:     Conference Room B            ║
-║ Organizer: alice@example.com            ║
-║                                         ║
-║ Press 1:Accept  2:Decline  3:Tentative  ║
-╚══════════════════════════════════════════╝
-```
+![Calendar invitation showing the Weekly Standup title, time, location, organizer, and RSVP shortcuts](../assets/features/calendar_view.png)
 
 ## Keybindings
 

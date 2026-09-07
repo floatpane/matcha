@@ -1,6 +1,8 @@
 # Composing Emails
 
-![composer](../assets/features/compose_email.png) ![Empty Composer](../assets/features/compose_empty.png)
+![Matcha composer with recipients, subject, message body, attachments, and Send button](../assets/features/compose_email.png)
+
+![Empty Matcha composer ready for a new message](../assets/features/compose_empty.png)
 
 Matcha provides a clean, intuitive interface for writing emails.
 

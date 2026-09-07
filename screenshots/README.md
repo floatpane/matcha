@@ -19,5 +19,6 @@ This pipeline runs in CI via the `.github/workflows/screenshots.yml` workflow to
 |------|-------------|
 | `cmd/inbox_view/main.go` | Renders a mock inbox populated with realistic email entries for screenshot capture. |
 | `cmd/email_view/main.go` | Renders a mock email view with headers, body content, and inline images for screenshot capture. |
+| `cmd/calendar_view/main.go` | Renders a sample calendar invitation with event details and RSVP shortcuts. |
 
 The rest are the tapes themselves

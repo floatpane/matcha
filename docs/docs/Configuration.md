@@ -7,6 +7,8 @@ sidebar_position: 5
 
 Configuration is stored in `~/.config/matcha/config.json`.
 
+![Matcha settings view with configuration categories](./assets/features/settings.png)
+
 ## Example Configuration
 
 > Passwords have been removed since [v0.19.0](https://github.com/floatpane/matcha/releases/tag/v0.19.0)
