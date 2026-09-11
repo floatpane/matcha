@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/armor"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message/mail"
@@ -2114,19 +2115,35 @@ func decryptPGPMessage(encryptedData []byte, account *config.Account) ([]byte, e
 		return nil, errors.New("no PGP keys found in private keyring")
 	}
 
-	// Decrypt using go-pgpmail
-	mr, err := pgpmail.Read(bytes.NewReader(encryptedData), openpgp.EntityList{entityList[0]}, nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt PGP message: %w", err)
+	keyring := openpgp.EntityList{entityList[0]}
+
+	var md *openpgp.MessageDetails
+	if bytes.HasPrefix(bytes.TrimSpace(encryptedData), []byte("-----BEGIN PGP MESSAGE-----")) {
+		// Bare armored payload: decrypt directly
+		block, err := armor.Decode(bytes.NewReader(encryptedData))
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode PGP armor: %w", err)
+		}
+		md, err = openpgp.ReadMessage(block.Body, keyring, nil, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt PGP message: %w", err)
+		}
+	} else {
+		// Full PGP/MIME entity: decrypt using go-pgpmail
+		mr, err := pgpmail.Read(bytes.NewReader(encryptedData), keyring, nil, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt PGP message: %w", err)
+		}
+		md = mr.MessageDetails
 	}
 
 	// Read decrypted content from UnverifiedBody
-	if mr.MessageDetails == nil || mr.MessageDetails.UnverifiedBody == nil {
+	if md == nil || md.UnverifiedBody == nil {
 		return nil, errors.New("no decrypted content available")
 	}
 
 	var decrypted bytes.Buffer
-	if _, err := io.Copy(&decrypted, mr.MessageDetails.UnverifiedBody); err != nil {
+	if _, err := io.Copy(&decrypted, md.UnverifiedBody); err != nil {
 		return nil, fmt.Errorf("failed to read decrypted content: %w", err)
 	}
 
