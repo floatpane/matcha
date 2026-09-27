@@ -20,7 +20,7 @@
         {
           packages = rec {
             matcha = gomod2nixPkgs.buildGoApplication {
-              go = pkgs.go_1_26;
+              go = pkgs.go_1_27;
               pname = "matcha";
               version = self.shortRev or "dev";
 
@@ -59,7 +59,7 @@
 
           devShells.default = pkgs.mkShell {
             buildInputs = with pkgs; [
-              go_1_26
+              go_1_27
               gopls
               gotools
               gomod2nix.packages.${system}.default

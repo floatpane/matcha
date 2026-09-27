@@ -81,8 +81,8 @@ jobs:
         if: steps.ver.outputs.skip != 'true'
         working-directory: nixpkgs
         run: |
-          # master nixpkgs heavily cached. Staging has go_1_26 = 1.26.3.
-          # Overlay swaps only go_1_26 → minimal rebuild.
+          # master nixpkgs heavily cached. Staging has go_1_27 = 1.27.1.
+          # Overlay swaps only go_1_27 → minimal rebuild.
           STAGING_REV=$(git rev-parse upstream/staging)
           echo "STAGING_REV=$STAGING_REV" >> $GITHUB_ENV
           cat > /tmp/go-overlay.nix <<EOF
@@ -90,9 +90,9 @@ jobs:
             staging = import (builtins.fetchTarball
               "https://github.com/NixOS/nixpkgs/archive/$STAGING_REV.tar.gz") {};
           in final: prev: {
-            go_1_26 = staging.go_1_26;
-            go = staging.go_1_26;
-            buildGoModule = prev.buildGoModule.override { go = staging.go_1_26; };
+            go_1_27 = staging.go_1_27;
+            go = staging.go_1_27;
+            buildGoModule = prev.buildGoModule.override { go = staging.go_1_27; };
           }
           EOF
           cat /tmp/go-overlay.nix
