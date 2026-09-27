@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Matcha! This guide will help you 
 
 ### Prerequisites
 
-- [Go 1.26+](https://go.dev/dl/)
+- [Go 1.27+](https://go.dev/dl/)
 - A terminal emulator with modern capabilities (kitty, ghostty, alacritty, etc.)
 - An IMAP email account for testing
 
