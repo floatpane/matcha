@@ -2,16 +2,16 @@ schema = 3
 
 [mod]
   [mod.'charm.land/bubbles/v2']
-    version = 'v2.1.0'
-    hash = 'sha256-2OmqpBrl+taOJzAhVM6OReLmoYRxZOXx9JqFNjQjsPA='
+    version = 'v2.1.1'
+    hash = 'sha256-y0GRfSVvlxNzOX40GjcYxZdo92RjmHwU43T3ix9+IcU='
 
   [mod.'charm.land/bubbletea/v2']
-    version = 'v2.0.7'
-    hash = 'sha256-YOkvKUahFMMytHXr3AAABDifBtHt29930obiu/kx1vA='
+    version = 'v2.0.8'
+    hash = 'sha256-ZWcqUjUSKcT8uovaljKp4V8IQ7kIJtoAOGZ2VbpF3hs='
 
   [mod.'charm.land/lipgloss/v2']
-    version = 'v2.0.4'
-    hash = 'sha256-KrO8Q1/yQZBTMwysp/cAi5Kdz2/ZODBOr3C5X04zG/M='
+    version = 'v2.0.5'
+    hash = 'sha256-EZCcXcyT9XS93UcZvIF42WUXnPlPYe4YLdhdFwCZ5NI='
 
   [mod.'cunicu.li/go-iso7816']
     version = 'v0.8.8'
@@ -66,8 +66,8 @@ schema = 3
     hash = 'sha256-RHsRT2EZ1nDOElxAK+6/DC9XAaGVjDTgPvRh3pyCfY4='
 
   [mod.'github.com/charmbracelet/ultraviolet']
-    version = 'v0.0.0-20260525132238-948f4557a654'
-    hash = 'sha256-V0e1U50upnr+gWvao41MTiLHAbd5wAlt4GD8hiAVZ38='
+    version = 'v0.0.0-20260703014108-f5a850f9c2b7'
+    hash = 'sha256-cWqmxeaaHGrESdwZVtCv8mDw1Ta4xFpXidWDeIZfuHA='
 
   [mod.'github.com/charmbracelet/x/ansi']
     version = 'v0.11.7'
@@ -137,6 +137,10 @@ schema = 3
     version = 'v0.2.0'
     hash = 'sha256-a8aqIcH7IJd6WVWroortjIr6vpQ30AKepdwLJi/1+ms='
 
+  [mod.'github.com/floatpane/go-emoji-shortcode']
+    version = 'v0.0.1'
+    hash = 'sha256-rQaiyi8eq3fMuSyOm5t/nA4NkiJaqBPW/zypUTMBGi0='
+
   [mod.'github.com/floatpane/go-icalendar']
     version = 'v0.0.1'
     hash = 'sha256-pWL1yAiNKYsecSyas7jUtyW+FC/Exnb74e/XVsRlu5U='
@@ -145,9 +149,17 @@ schema = 3
     version = 'v0.0.1'
     hash = 'sha256-hXPLDYyK0YQ2uclQKt4MM607gHblh1t9BQkPkZy1B1Y='
 
+  [mod.'github.com/floatpane/go-mailpatch']
+    version = 'v0.1.0'
+    hash = 'sha256-3SG/kNtHdXfxJZpxGpBOZbpIoQaJwwCkr6hT6leL29M='
+
   [mod.'github.com/floatpane/go-openpgp-card-hl']
     version = 'v0.1.2'
     hash = 'sha256-bn8lKPx7xhHYhZDYb/UShjY3tRMh6DwdDABpvCQyTTg='
+
+  [mod.'github.com/floatpane/go-patchapply']
+    version = 'v0.1.0'
+    hash = 'sha256-Fy/LsDC/E1F0zB66Ex+DO/oJ2kTR6QkWQFwSYHRU6DM='
 
   [mod.'github.com/floatpane/go-secretbox']
     version = 'v0.1.0'
@@ -202,8 +214,8 @@ schema = 3
     hash = 'sha256-JlWckeGaWG+bXK8l8WEdZqmSiTwCA8b1qbmBKa/Fj3E='
 
   [mod.'github.com/mattn/go-runewidth']
-    version = 'v0.0.23'
-    hash = 'sha256-SmChZ2U1aR8pW3LPhdM7KcVF5TO6VcHgRzBtUXbBWJA='
+    version = 'v0.0.24'
+    hash = 'sha256-t2uvZkmlTXQCj76p4poI9y82iziJX2lF44UhkLgLN40='
 
   [mod.'github.com/microcosm-cc/bluemonday']
     version = 'v1.0.27'
@@ -226,8 +238,8 @@ schema = 3
     hash = 'sha256-rDcdNYH6ZD8KouyyiZCUEy8JrjOQoAkxHBhugrfHjFo='
 
   [mod.'github.com/sahilm/fuzzy']
-    version = 'v0.1.1'
-    hash = 'sha256-f2VsDI6G+V2w31tSDzbZPi9EI2E7jRV6Aq8yeOorSZY='
+    version = 'v0.1.3'
+    hash = 'sha256-iIUiVfjmgB927jbdLrtrQrrXKcOfhvMHnC+65UZAyNY='
 
   [mod.'github.com/wagslane/go-password-validator']
     version = 'v0.3.0'
@@ -270,8 +282,8 @@ schema = 3
     hash = 'sha256-TBKV2c/m0SgPqrJSE0ltJXfImrYPafNuziLN25jgsYY='
 
   [mod.'golang.org/x/sync']
-    version = 'v0.21.0'
-    hash = 'sha256-2n7PVb1krz7UpnXYGVmCrxV0fZBnjQdVVt6eVudEPYY='
+    version = 'v0.22.0'
+    hash = 'sha256-VZjl0fAM0p/nI81zh+pdBjzxFupx0UcKYXBBpL2ZS7k='
 
   [mod.'golang.org/x/sys']
     version = 'v0.46.0'
@@ -282,8 +294,8 @@ schema = 3
     hash = 'sha256-nzbvOgvGRbx1qpq1rbk7b6zNsNeNj8mOGoyZLtnzq3w='
 
   [mod.'golang.org/x/text']
-    version = 'v0.38.0'
-    hash = 'sha256-PzREcn7yzTAJ0WBvyYL/2/r+tfoeKTY/E5HVXi/CJsU='
+    version = 'v0.40.0'
+    hash = 'sha256-LJfnki46XEreGbSgjl+DeqgcTsINTOu2owyXNvijMcA='
 
   [mod.'kernel.org/pub/linux/libs/security/libcap/psx']
     version = 'v1.2.77'
