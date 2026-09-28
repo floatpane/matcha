@@ -434,6 +434,9 @@ func (m *Model) cachedAttachmentsToFetcher(cached []config.CachedAttachment) []f
 		if ca.IsCalendarInvite && len(ca.CalendarData) > 0 {
 			att.Data = ca.CalendarData
 		}
+		if ca.Inline && len(ca.Data) > 0 {
+			att.Data = ca.Data
+		}
 		attachments = append(attachments, att)
 	}
 	return attachments
@@ -454,6 +457,9 @@ func cachedAttachmentToConfig(a fetcher.Attachment) config.CachedAttachment {
 	}
 	if a.IsCalendarInvite && len(a.Data) > 0 {
 		ca.CalendarData = a.Data
+	}
+	if a.Inline && len(a.Data) > 0 {
+		ca.Data = a.Data
 	}
 	return ca
 }
