@@ -1086,7 +1086,8 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 				loglevel.Debugf("pgp: decrypting part %s", partID)
 				decrypted, decErr := decryptPGPMessage(data, account)
 				loglevel.Debugf("pgp: decryptPGPMessage returned len=%d decErr=%v", len(decrypted), decErr)
-				if decErr == nil {
+				switch {
+				case decErr == nil:
 					// Parse the decrypted MIME content.
 					// mail.CreateReader can return (reader, non-nil-error) for
 					// unknown charsets — accept the reader in that case too.
@@ -1134,11 +1135,11 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 						IsPGPEncrypted: true,
 						PGPVerified:    true,
 					})
-				} else if !errors.Is(decErr, errPGPKeyNotConfigured) {
+				case !errors.Is(decErr, errPGPKeyNotConfigured):
 					extractedBody = fmt.Sprintf("**PGP Decryption Failed:** %s\n", decErr)
 					extractedBodyMIMEType = mimeTextPlain
 					htmlPartID = partExtracted
-				} else {
+				default:
 					extractedBody = "**PGP Encrypted:** Key not configured\n"
 					extractedBodyMIMEType = mimeTextPlain
 					htmlPartID = partExtracted
@@ -2249,7 +2250,7 @@ var errPGPKeyNotConfigured = errors.New("pgp: key not configured")
 func decryptPGPMessage(encryptedData []byte, account *config.Account) ([]byte, error) {
 	provider, err := pgp.NewProvider(account)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", errPGPKeyNotConfigured, err)
+		return nil, fmt.Errorf("%w: %w", errPGPKeyNotConfigured, err)
 	}
 	if pgp.IsBareArmoredMessage(encryptedData) {
 		return provider.DecryptBare(encryptedData)
