@@ -1,14 +1,14 @@
-.PHONY: build test run run-log clean lint fmt vet build-full install generate_screenshots
+.PHONY: build test run run-log clean lint fmt vet build-full install generate_screenshots generate_gif
 
 INSTALL_DIR ?= /usr/local/bin
 
 BINARY_NAME=matcha
 BUILD_DIR=bin
 
+# Records demo.tape against a fake Maildir inbox into public/assets/demo.gif.
 generate_gif:
-	alias matcha="go run ."
+	.github/workflows/scripts/demo-sandbox.sh
 	vhs demo.tape
-	mv demo.gif public/assets/demo.gif
 
 generate_screenshots:
 	@mkdir -p docs/docs/assets/features/

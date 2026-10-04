@@ -26,27 +26,15 @@ jobs:
           go-version: "stable"
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
-
-      - name: Create Dummy Config
-        # Create the config in the workspace so we can map HOME to it for the container.
         run: |
-          mkdir -p ~/.config/matcha
-          cat <<EOF > ~/.config/matcha/config.json
-          {
-            "accounts": [
-              {
-                "id": "demo-user",
-                "name": "Matcha Client",
-                "email": "matcha@floatpane.com",
-                "password": "dummy-password",
-                "service_provider": "custom",
-                "fetch_email": "matcha@floatpane.com"
-              }
-            ],
-            "has_seen_setup_guide": true
-          }
-          EOF
+          sudo apt-get update
+          sudo apt-get install -y libpcsclite-dev zsh ffmpeg ttyd fonts-noto-color-emoji
+          mkdir -p ~/.local/share/fonts
+          wget -q https://github.com/ryanoasis/nerd-fonts/releases/download/v3.1.1/JetBrainsMono.zip
+          unzip -o JetBrainsMono.zip -d ~/.local/share/fonts
+          fc-cache -f
+          go install github.com/charmbracelet/vhs@latest
+
       - name: Build Matcha
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -60,26 +48,17 @@ jobs:
           DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
           go build -ldflags="-s -w -X main.version=$LATEST_TAG -X main.commit=$COMMIT -X main.date=$DATE" -o matcha .
 
-      - name: Prepare Tape
-        # Patch the tape to run the compiled binary instead of "go run ."
-        # This works seamlessly because the typing of this command is 'Hidden' in your tape.
-        run: sed -i 's/go run ./.\/matcha/' demo.tape
+      - name: Create fake inbox sandbox
+        # Throwaway $HOME with a Maildir account of demo emails; demo.tape
+        # points HOME and PATH at it, so nothing touches real mail.
+        run: MATCHA_BIN="$PWD/matcha" .github/workflows/scripts/demo-sandbox.sh
 
-      - name: Run VHS'
+      - name: Record demo GIF
         env:
           CLICOLOR_FORCE: "1"
         run: |
-          sudo apt update
-          sudo apt install -y ffmpeg ttyd
-          mkdir -p ~/.local/share/fonts
-          wget https://github.com/ryanoasis/nerd-fonts/releases/download/v3.1.1/JetBrainsMono.zip
-          unzip -o JetBrainsMono.zip -d ~/.local/share/fonts
-          fc-cache -fv
-          go install github.com/charmbracelet/vhs@latest
           TERM=xterm-256color vhs demo.tape
-
-      - name: Move GIF to Assets
-        run: sudo mv demo.gif public/assets/demo.gif
+          ls -la public/assets/demo.gif
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v8

@@ -559,6 +559,10 @@ func (m *Model) shutdownService() {
 	m.idleWatcher.StopAll()
 	if m.service != nil {
 		m.service.Close() //nolint:errcheck,gosec
+		// Drop the closed service so a later shutdown (e.g. ctrl+c after
+		// esc-ing back to the menu) doesn't close it twice and panic, and
+		// re-entering the inbox builds a fresh one.
+		m.service = nil
 	}
 }
 
