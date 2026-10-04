@@ -1,142 +1,132 @@
-# This VHS tape file creates a demo video showcasing Matcha's features
-# Run with: vhs demo.tape
+# Matcha demo — README GIF (public/assets/demo.gif).
+#
+# Run from the repo root:
+#   make generate_gif
+# which is:
+#   .github/workflows/scripts/demo-sandbox.sh && vhs demo.tape
+#
+# Records against a throwaway $HOME with a fake Maildir inbox, so no real
+# mail ever appears on screen.
 
-# Output configuration
-Output demo.gif
+Output public/assets/demo.gif
 
-# Terminal settings
-Set FontSize 14
+# ---------------------------------------------------------------- settings
+Set Shell zsh
+Set Theme "nord"
+Set FontSize 16
 Set FontFamily "JetBrainsMono Nerd Font"
-Set Width 1400
+Set Width 1200
 Set Height 800
-Set Theme "Catppuccin Mocha"
 Set Padding 20
 Set Framerate 30
-Set PlaybackSpeed 0.7
-
-# Window chrome
+Set PlaybackSpeed 2
+Set TypingSpeed 55ms
+Set CursorBlink false
 Set WindowBar Colorful
-Set WindowBarSize 40
+Set WindowBarSize 36
 Set BorderRadius 10
+Set Margin 24
+Set MarginFill "#242933"
 
-# ============================================
-# DEMO START
-# ============================================
-
-Sleep 500ms
-
-# Show the command being typed but actually run "go run ."
+# ---------------------------------------------------------------- prep (hidden)
 Hide
-Type "go run ."
+Type "export HOME=$PWD/.demo-sandbox PATH=$PWD/.demo-sandbox/bin:$PATH PS1='%F{green}❯%f ' && clear"
 Enter
+Sleep 300ms
 Show
 
-# Wait for app to load and show main menu
-Sleep 2s
-
-# ============================================
-# SECTION 1: Show Menu Navigation
-# ============================================
-
-# Highlight the menu by navigating through options
-Down
-Sleep 600ms
-Down
-Sleep 600ms
-
-# Navigate back up to "View Inbox"
-Up
-Sleep 400ms
-Up
-Sleep 400ms
-
-# ============================================
-# SECTION 2: Compose Email Demo
-# ============================================
-
-# Go to Compose Email
-Down
+# ================================================================ SCENE 1 — HOOK
+Sleep 700ms
+Type "matcha"
 Sleep 400ms
 Enter
-Sleep 1.5s
+Sleep 6.5s
 
-# Type the recipient
-Type "friend@example.com"
+# ================================================================ SCENE 2 — INBOX
+Enter
+Sleep 1.8s
+Type@350ms "jjj"
 Sleep 400ms
-Tab
-Sleep 300ms
-Tab
-Sleep 100ms
-Tab
-Sleep 200ms
+Type@350ms "kkk"
+Sleep 500ms
+Enter
+Sleep 5.5s
 
-# Type the subject
-Type "Hello from the terminal!"
-Sleep 400ms
-Tab
-Sleep 300ms
-
-# Type the email body with Markdown
-Type "# Greetings!"
-Enter
-Enter
-Type "I'm sending this email from **Matcha** - "
-Type "a beautiful terminal email client."
-Enter
-Enter
-Type "Features I love:"
-Enter
-Type "- Keyboard-first design"
-Enter
-Type "- Markdown support"
-Enter
-Type "- Multi-account management"
-Enter
-Enter
-Type "Try it yourself!"
-Sleep 1s
-
-# Show the completed compose form
-Sleep 1.5s
-
-# Exit without sending (for demo)
+# ================================================================ SCENE 3 — SEARCH + PALETTE
 Escape
-Sleep 800ms
+Sleep 600ms
+Type "/"
+Sleep 400ms
+Type "from:grace"
+Sleep 400ms
+Enter
+Sleep 1.4s
+Enter
+Sleep 1.8s
+Escape
+Sleep 700ms
+Ctrl+K
+Sleep 900ms
+Type@90ms "thread"
+Sleep 700ms
+Enter
+Sleep 2.2s
+
+# ================================================================ SCENE 4 — COMPOSE
+Escape
+Sleep 900ms
+Down
+Sleep 400ms
+Enter
+Sleep 1s
+Type "grace@compiler.dev"
+Tab
+Type "Re: Launch checklist for v1.0"
+Tab
+Type "# Build is green ✅"
+Enter
+Enter
+Type "Demo video is **done**. Ship it!"
+Sleep 2.5s
+Escape
+Sleep 900ms
 Type "y"
-Sleep 1s
+Sleep 900ms
 
-# ============================================
-# SECTION 3: Quick Settings Peek
-# ============================================
-
-# Navigate to Settings
+# ================================================================ SCENE 5 — PLUGIN MARKETPLACE
 Down
-Sleep 400ms
+Sleep 250ms
 Down
-Sleep 400ms
+Sleep 250ms
 Down
 Sleep 400ms
 Enter
+Sleep 500ms
+# The marketplace fetches the plugin registry over the network. Pause the
+# recording until it renders so load time never shows up (or shifts sync).
+Hide
+Wait+Screen@20s /floatpane/
+Sleep 300ms
+Show
+Sleep 2.5s
+Type@600ms "jjjjj"
+Sleep 4s
 
-# Show settings briefly
-Sleep 1.5s
-
-# Go back to menu
+# ================================================================ SCENE 6 — OUTRO / CTA
 Escape
-Sleep 1s
-
-# ============================================
-# FINALE
-# ============================================
-
-# Show main menu one more time
-Sleep 1.5s
-
-# Exit gracefully
+Sleep 600ms
 Ctrl+C
-Sleep 800ms
-
-# Final message
-Type "# Email, right in your terminal."
+Hide
+Type "clear"
 Enter
-Sleep 1.5s
+Sleep 200ms
+Show
+Sleep 500ms
+Type "brew install floatpane/matcha/matcha  # docs.matcha.email"
+Sleep 4.5s
+
+# ---------------------------------------------------------------- clean reset (hidden)
+Hide
+Ctrl+U
+Type "clear"
+Enter
