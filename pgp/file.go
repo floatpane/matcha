@@ -73,8 +73,16 @@ func (p *FileBasedProvider) Encrypt(payload []byte, recipients []string) ([]byte
 }
 
 // Decrypt decrypts a multipart/encrypted MIME payload using the account's
-// private key.
+// private key. A bare ASCII-armored OpenPGP message is detected and handled by
+// the armor-aware path, because pgpmail.Read expects a complete MIME entity and
+// would otherwise fail on the armor's first line with a malformed-header error.
+// Server-side encrypted mail (e.g. mailbox.org's Encrypted Inbox) reaches this
+// method with the raw body of its application/octet-stream part.
 func (p *FileBasedProvider) Decrypt(payload []byte) ([]byte, error) {
+	if IsBareArmoredMessage(payload) {
+		return p.DecryptBare(payload)
+	}
+
 	entity, err := p.loadPrivateEntity()
 	if err != nil {
 		return nil, err
@@ -98,7 +106,13 @@ func (p *FileBasedProvider) Decrypt(payload []byte) ([]byte, error) {
 // DecryptBare decrypts a bare ASCII-armored OpenPGP ciphertext block using the
 // account's private key. Unlike Decrypt, the input is the raw armored block
 // (the body of application/octet-stream), not a full multipart/encrypted message.
+// A complete MIME entity is delegated back to Decrypt so either entry point
+// accepts either form.
 func (p *FileBasedProvider) DecryptBare(armored []byte) ([]byte, error) {
+	if !IsBareArmoredMessage(armored) {
+		return p.Decrypt(armored)
+	}
+
 	entity, err := p.loadPrivateEntity()
 	if err != nil {
 		return nil, err
@@ -122,6 +136,14 @@ func (p *FileBasedProvider) DecryptBare(armored []byte) ([]byte, error) {
 		return nil, fmt.Errorf("pgp: read decrypted content: %w", err)
 	}
 	return out.Bytes(), nil
+}
+
+// IsBareArmoredMessage reports whether data is a bare ASCII-armored OpenPGP
+// message rather than a complete MIME entity. Leading whitespace is ignored so
+// armor fetched from an IMAP body section (which may carry a leading CRLF) is
+// still recognized.
+func IsBareArmoredMessage(data []byte) bool {
+	return bytes.HasPrefix(bytes.TrimSpace(data), []byte("-----BEGIN PGP MESSAGE-----"))
 }
 
 // Verify checks a detached PGP signature against signedContent (the raw bytes

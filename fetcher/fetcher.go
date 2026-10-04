@@ -1083,65 +1083,61 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 			loglevel.Debugf("pgp: fetchInlinePart returned len=%d err=%v", len(data), err)
 			if err == nil && bytes.Contains(data, []byte("-----BEGIN PGP MESSAGE-----")) {
 				// This is PGP encrypted content
-				pgpProvider, provErr := pgp.NewProvider(account)
-				loglevel.Debugf("pgp: NewProvider returned provErr=%v", provErr)
-				if provErr == nil {
-					loglevel.Debugf("pgp: calling DecryptBare")
-					decrypted, decErr := pgpProvider.DecryptBare(data)
-					loglevel.Debugf("pgp: DecryptBare returned len=%d decErr=%v", len(decrypted), decErr)
-					if decErr == nil {
-						// Parse the decrypted MIME content.
-						// mail.CreateReader can return (reader, non-nil-error) for
-						// unknown charsets — accept the reader in that case too.
-						mr, parseErr := mail.CreateReader(bytes.NewReader(decrypted))
-						if mr != nil && (parseErr == nil || message.IsUnknownCharset(parseErr)) {
-							for {
-								p, err := mr.NextPart()
-								if errors.Is(err, io.EOF) {
-									break
-								}
-								if err != nil && !message.IsUnknownCharset(err) {
-									break
-								}
-								if p == nil {
-									continue
-								}
+				loglevel.Debugf("pgp: decrypting part %s", partID)
+				decrypted, decErr := decryptPGPMessage(data, account)
+				loglevel.Debugf("pgp: decryptPGPMessage returned len=%d decErr=%v", len(decrypted), decErr)
+				if decErr == nil {
+					// Parse the decrypted MIME content.
+					// mail.CreateReader can return (reader, non-nil-error) for
+					// unknown charsets — accept the reader in that case too.
+					mr, parseErr := mail.CreateReader(bytes.NewReader(decrypted))
+					if mr != nil && (parseErr == nil || message.IsUnknownCharset(parseErr)) {
+						for {
+							p, err := mr.NextPart()
+							if errors.Is(err, io.EOF) {
+								break
+							}
+							if err != nil && !message.IsUnknownCharset(err) {
+								break
+							}
+							if p == nil {
+								continue
+							}
 
-								if h, ok := p.Header.(*mail.InlineHeader); ok {
-									ct, _, _ := h.ContentType()
-									if strings.HasPrefix(ct, mimeTextHTML) {
-										body, _ := io.ReadAll(p.Body)
-										extractedBody = string(body)
-										extractedBodyMIMEType = mimeTextHTML
-										htmlPartID = "decrypted"
-									} else if strings.HasPrefix(ct, mimeTextPlain) && extractedBody == "" {
-										body, _ := io.ReadAll(p.Body)
-										extractedBody = string(body)
-										extractedBodyMIMEType = mimeTextPlain
-										plainPartID = "decrypted"
-									}
+							if h, ok := p.Header.(*mail.InlineHeader); ok {
+								ct, _, _ := h.ContentType()
+								if strings.HasPrefix(ct, mimeTextHTML) {
+									body, _ := io.ReadAll(p.Body)
+									extractedBody = string(body)
+									extractedBodyMIMEType = mimeTextHTML
+									htmlPartID = "decrypted"
+								} else if strings.HasPrefix(ct, mimeTextPlain) && extractedBody == "" {
+									body, _ := io.ReadAll(p.Body)
+									extractedBody = string(body)
+									extractedBodyMIMEType = mimeTextPlain
+									plainPartID = "decrypted"
 								}
 							}
 						}
-
-						// Fallback: if MIME parsing failed or yielded no body, treat
-						// the raw decrypted bytes as plain text.
-						if extractedBody == "" {
-							extractedBody = strings.TrimSpace(string(decrypted))
-							extractedBodyMIMEType = mimeTextPlain
-							plainPartID = "decrypted"
-						}
-
-						attachments = append(attachments, Attachment{
-							Filename:       "pgp-status.internal",
-							IsPGPEncrypted: true,
-							PGPVerified:    true,
-						})
-					} else {
-						extractedBody = fmt.Sprintf("**PGP Decryption Failed:** %s\n", decErr)
-						extractedBodyMIMEType = mimeTextPlain
-						htmlPartID = partExtracted
 					}
+
+					// Fallback: if MIME parsing failed or yielded no body, treat
+					// the raw decrypted bytes as plain text.
+					if extractedBody == "" {
+						extractedBody = strings.TrimSpace(string(decrypted))
+						extractedBodyMIMEType = mimeTextPlain
+						plainPartID = "decrypted"
+					}
+
+					attachments = append(attachments, Attachment{
+						Filename:       "pgp-status.internal",
+						IsPGPEncrypted: true,
+						PGPVerified:    true,
+					})
+				} else if !errors.Is(decErr, errPGPKeyNotConfigured) {
+					extractedBody = fmt.Sprintf("**PGP Decryption Failed:** %s\n", decErr)
+					extractedBodyMIMEType = mimeTextPlain
+					htmlPartID = partExtracted
 				} else {
 					extractedBody = "**PGP Encrypted:** Key not configured\n"
 					extractedBodyMIMEType = mimeTextPlain
@@ -2237,6 +2233,28 @@ func loadPGPKeyring(account *config.Account) openpgp.EntityList {
 	}
 
 	return keyring
+}
+
+// errPGPKeyNotConfigured indicates a PGP provider could not be constructed for
+// the account, so an encrypted message cannot be decrypted.
+var errPGPKeyNotConfigured = errors.New("pgp: key not configured")
+
+// decryptPGPMessage decrypts a PGP-encrypted payload with the account's private
+// key. The payload may be a bare ASCII-armored OpenPGP message (the body of the
+// application/octet-stream part of a server-side encrypted message, such as
+// mailbox.org's Encrypted Inbox) or a complete RFC 3156 multipart/encrypted MIME
+// entity. Both forms are handled so server-side encryption decrypts the same way
+// as client-side PGP/MIME. Passing the raw armor straight to a MIME parser is
+// what used to fail with a malformed-header error before the key was ever used.
+func decryptPGPMessage(encryptedData []byte, account *config.Account) ([]byte, error) {
+	provider, err := pgp.NewProvider(account)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", errPGPKeyNotConfigured, err)
+	}
+	if pgp.IsBareArmoredMessage(encryptedData) {
+		return provider.DecryptBare(encryptedData)
+	}
+	return provider.Decrypt(encryptedData)
 }
 
 // verifyPGPSignature verifies a PGP detached signature against signed content.

@@ -58,6 +58,9 @@ func (p *SmartcardProvider) Encrypt(payload []byte, recipients []string) ([]byte
 // Only RSA decryption keys are supported by the PC/SC interface; for
 // ECDH/Curve25519 keys use a gpg-agent backed flow instead.
 func (p *SmartcardProvider) Decrypt(payload []byte) ([]byte, error) {
+	if IsBareArmoredMessage(payload) {
+		return p.DecryptBare(payload)
+	}
 	if p.account.PGPPIN == "" {
 		return nil, errors.New("pgp smartcard: PIN not configured")
 	}

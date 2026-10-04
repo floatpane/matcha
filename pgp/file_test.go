@@ -212,6 +212,66 @@ func TestFileBasedProviderEncryptDecryptRoundtrip(t *testing.T) {
 	}
 }
 
+// TestFileBasedProviderDecryptBareArmor ensures the MIME-oriented Decrypt entry
+// point also accepts a bare ASCII-armored message, which is what server-side
+// encryption (e.g. mailbox.org's Encrypted Inbox) stores in the
+// application/octet-stream part. Handing that armor to a MIME parser is the bug
+// from #1715: it fails with "malformed MIME header line" before the key is used.
+func TestFileBasedProviderDecryptBareArmor(t *testing.T) {
+	provider, entity := newTestProvider(t)
+
+	const want = "server-side encrypted body"
+	var armored bytes.Buffer
+	aw, err := armor.Encode(&armored, "PGP MESSAGE", nil)
+	if err != nil {
+		t.Fatalf("armor.Encode: %v", err)
+	}
+	pw, err := openpgp.Encrypt(aw, []*openpgp.Entity{entity}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("openpgp.Encrypt: %v", err)
+	}
+	if _, err := pw.Write([]byte(want)); err != nil {
+		t.Fatalf("write plaintext: %v", err)
+	}
+	if err := pw.Close(); err != nil {
+		t.Fatalf("plaintext close: %v", err)
+	}
+	if err := aw.Close(); err != nil {
+		t.Fatalf("armor close: %v", err)
+	}
+
+	decrypted, err := provider.Decrypt(armored.Bytes())
+	if err != nil {
+		t.Fatalf("Decrypt(bare armor): %v", err)
+	}
+	if string(decrypted) != want {
+		t.Fatalf("Decrypt(bare armor) = %q, want %q", decrypted, want)
+	}
+}
+
+// TestFileBasedProviderDecryptBareAcceptsMIME ensures DecryptBare delegates a
+// complete multipart/encrypted entity to the MIME path instead of failing to
+// decode it as armor.
+func TestFileBasedProviderDecryptBareAcceptsMIME(t *testing.T) {
+	provider, _ := newTestProvider(t)
+
+	const want = "Confidential message body"
+	payload := []byte("Content-Type: text/plain\r\nMIME-Version: 1.0\r\n\r\n" + want)
+
+	encrypted, err := provider.Encrypt(payload, []string{"test@test.com"})
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	decrypted, err := provider.DecryptBare(encrypted)
+	if err != nil {
+		t.Fatalf("DecryptBare(MIME entity): %v", err)
+	}
+	if !strings.Contains(string(decrypted), want) {
+		t.Fatalf("DecryptBare(MIME entity) missing %q; got:\n%s", want, decrypted)
+	}
+}
+
 func TestFileBasedProviderSignVerifyRoundtrip(t *testing.T) {
 	provider, _ := newTestProvider(t)
 
