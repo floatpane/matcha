@@ -14,7 +14,9 @@
       "previous": "Anterior",
       "loading": "Cargando...",
       "error": "Error",
-      "success": "Éxito"
+      "success": "Éxito",
+      "logs": "Logs",
+      "no_logs_yet": "No logs yet"
     },
     "composer": {
       "title": "Redactar Nuevo Correo",
@@ -42,20 +44,22 @@
       "draft_saved": "Borrador guardado",
       "invalid_email": "✗ Dirección de correo no válida",
       "invalid_email_fields": "Uno o más campos de correo son inválidos",
-      "recipient_required": "Añade al menos un destinatario"
+      "recipient_required": "Añade al menos un destinatario",
+      "sign_smime": "Sign Email (S/MIME)",
+      "sign_pgp": "Sign Email (PGP)",
+      "encrypt_pgp": "Encrypt Email (PGP)"
     },
     "inbox": {
       "title": "Bandeja de entrada",
       "all_accounts": "Todas las Cuentas",
       "sent": "Enviados",
       "trash": "Papelera",
-      "archive": "Archivo",
+      "archive": "archivar",
       "empty": "Sin correos",
       "loading": "Cargando correos...",
       "refreshing": "Actualizando...",
       "visual_mode": "modo visual",
       "delete": "eliminar",
-      "archive": "archivar",
       "refresh": "actualizar",
       "search": "buscar",
       "filter": "filtrar",
@@ -77,7 +81,9 @@
       "drafts": "Borradores",
       "help": "Use ↑/↓ para navegar, enter para seleccionar, y ctrl+c para salir.",
       "unknown": "desconocido",
-      "update_available": "Actualización disponible: {latest} (instalada: {current}) — ejecute `matcha update` para actualizar"
+      "update_available": "Actualización disponible: {latest} (instalada: {current}) — ejecute `matcha update` para actualizar",
+      "mouse_prompt": "Enable mouse support? (click, scroll, and select with your mouse) [y/n]",
+      "mouse_help": "Press y to enable or n to disable. You can change this later in Settings."
     },
     "folder_inbox": {
       "folders_title": "Carpetas",
@@ -176,7 +182,9 @@
       "show_cc_bcc_by_default": "Mostrar CC/BCC por defecto",
       "on": "ACTIVADO",
       "off": "DESACTIVADO",
-      "restart_required": "Se requiere reiniciar para aplicar el cambio de idioma"
+      "restart_required": "Se requiere reiniciar para aplicar el cambio de idioma",
+      "mouse_support": "Mouse Support",
+      "show_original_on_reply": "Show Original on Reply"
     },
     "settings_encryption": {
       "title": "Cifrado de Aplicación",
