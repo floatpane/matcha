@@ -7,7 +7,7 @@ require (
 	charm.land/bubbletea/v2 v2.0.10
 	charm.land/lipgloss/v2 v2.0.6
 	git.sr.ht/~rockorager/go-jmap v0.5.3
-	github.com/ProtonMail/go-crypto v1.4.1
+	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
