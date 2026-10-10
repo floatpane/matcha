@@ -102,7 +102,7 @@ func (p *Provider) refreshMailboxes() error {
 	for _, inv := range resp.Responses {
 		if r, ok := inv.Args.(*mailbox.GetResponse); ok {
 			for _, mbox := range r.List {
-				p.mailboxes[mbox.Name] = mbox.ID
+				p.mailboxes[folderName(mbox)] = mbox.ID
 				if mbox.Role != "" {
 					p.roleToID[mbox.Role] = mbox.ID
 				}
@@ -110,6 +110,15 @@ func (p *Provider) refreshMailboxes() error {
 		}
 	}
 	return nil
+}
+
+// folderName reports the inbox as "INBOX" (servers like Fastmail call it
+// "Inbox") so it matches the folder name the rest of the app uses.
+func folderName(mbox *mailbox.Mailbox) string {
+	if mbox.Role == mailbox.RoleInbox {
+		return "INBOX"
+	}
+	return mbox.Name
 }
 
 // resolveMailboxID maps a folder name to a JMAP mailbox ID.
@@ -670,7 +679,7 @@ func (p *Provider) FetchFolders(_ context.Context) ([]backend.Folder, error) {
 		if r, ok := inv.Args.(*mailbox.GetResponse); ok {
 			for _, mbox := range r.List {
 				folders = append(folders, backend.Folder{
-					Name:      mbox.Name,
+					Name:      folderName(mbox),
 					Delimiter: "/",
 				})
 			}
