@@ -35,7 +35,7 @@
       "enter_to_switch": "Enter para trocar",
       "no_account": "nenhuma conta configurada",
       "send_confirm": "Pressione Enter para enviar o e-mail.",
-      "help": "Markdown/HTML • tab/shift+tab: navegar • ctrl+e: $EDITOR • esc: salvar rascunho & sair",
+      "help": "Markdown/HTML • {NextField}/{PrevField}: navegar • {Editor}: $EDITOR • {Cancel}: salvar rascunho & sair",
       "exit_confirm": "Tem certeza de que deseja sair? Este rascunho será salvo",
       "sending": "Enviando e-mail...",
       "sent": "E-mail enviado com sucesso",
@@ -75,7 +75,7 @@
       "settings": "Configurações",
       "marketplace": "Loja de Plugins",
       "drafts": "Rascunhos",
-      "help": "Use ↑/↓ para navegar, enter para selecionar e ctrl+c para sair.",
+      "help": "Use {NavArrows} para navegar, enter para selecionar e {Quit} para sair.",
       "unknown": "desconhecido",
       "update_available": "Atualização disponível: {latest} (instalada: {current}) — execute `matcha update` para atualizar"
     },
@@ -88,7 +88,7 @@
         "one": "Mover {count} e-mail para pasta:",
         "other": "Mover {count} e-mails para pasta:"
       },
-      "help": "j/k: navegar  enter: mover  esc: cancelar",
+      "help": "{NavVim}: navegar  enter: mover  {Cancel}: cancelar",
       "help_folders": "tab: próxima pasta • shift+tab: pasta anterior • m: mover"
     },
     "login": {
@@ -242,7 +242,7 @@
       "install_confirm": "Instalar {title}?",
       "install_author": "por {author}",
       "unverified_warning": "Autor não verificado. Instale por sua conta e risco.",
-      "help": "j/k: navegar • enter: instalar • d: excluir • esc: voltar"
+      "help": "{NavVim}: navegar • enter: instalar • d: excluir • {Cancel}: voltar"
     },
     "time": {
       "just_now": "agora mesmo",

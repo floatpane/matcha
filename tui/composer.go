@@ -1748,7 +1748,7 @@ func (m *Composer) View() tea.View { //nolint:gocyclo
 	}
 
 	mainContent := lipgloss.JoinVertical(lipgloss.Left, composerViewElements...)
-	helpText := t("composer.help")
+	helpText := keybindHelp("composer.help")
 	for _, pk := range m.pluginKeyBindings {
 		helpText += " • " + pk.Key + ": " + pk.Description
 	}

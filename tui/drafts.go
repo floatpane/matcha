@@ -93,9 +93,12 @@ func NewDrafts(drafts []config.Draft) *Drafts {
 	l.SetFilteringEnabled(true)
 	l.SetStatusBarItemName("draft", "drafts")
 	l.AdditionalShortHelpKeys = func() []key.Binding {
+		kb := config.Keybinds
+		open := kbKey(kb.Drafts.Open, "enter")
+		del := kbKey(kb.Drafts.Delete, "d")
 		return []key.Binding{
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("\ue5fe enter", "open")),
-			key.NewBinding(key.WithKeys("d"), key.WithHelp("\uea81 d", "delete")),
+			key.NewBinding(key.WithKeys(open), key.WithHelp("\ue5fe "+open, "open")),
+			key.NewBinding(key.WithKeys(del), key.WithHelp("\uea81 "+del, "delete")),
 		}
 	}
 	l.KeyMap.Quit.SetEnabled(false)

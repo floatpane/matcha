@@ -277,7 +277,12 @@ func (m *PatchSend) View() tea.View {
 	}
 
 	// Help
-	help := helpStyle.Render("tab/↓/↑: navigate • enter: send • ctrl+p: preview • esc: cancel")
+	help := helpStyle.Render(joinHelp(
+		helpItem("", joinKeys("tab", navArrowsLabel()), "navigate"),
+		helpItem("", keyEnter, "send"),
+		helpItem("", "ctrl+p", "preview"),
+		helpItem("", cancelKey(), "cancel"),
+	))
 	b.WriteString(help)
 
 	return tea.NewView(b.String())
@@ -304,7 +309,7 @@ func (m *PatchSend) previewView() tea.View {
 	b.WriteString(previewStyle.Render(m.preview))
 	b.WriteString("\n\n")
 
-	help := helpStyle.Render("esc: back to form")
+	help := helpStyle.Render(cancelKey() + ": back to form")
 	b.WriteString(help)
 
 	return tea.NewView(b.String())

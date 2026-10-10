@@ -140,6 +140,6 @@ func (m *MailingListEditor) View() tea.View {
 		"",
 		addrView,
 		"",
-		helpStyle.Render("tab/↑/↓: switch fields • enter: submit • esc: back"),
+		helpStyle.Render("tab/↑/↓: switch fields • enter: submit • "+cancelKey()+": back"),
 	))
 }

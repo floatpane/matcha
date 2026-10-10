@@ -479,9 +479,11 @@ func (m *Inbox) updateList() {
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		var bindings []key.Binding
 		if len(m.tabs) > 1 {
+			prevTab := kbKey(config.Keybinds.Inbox.PrevTab, "h")
+			nextTab := kbKey(config.Keybinds.Inbox.NextTab, "l")
 			bindings = append(bindings,
-				key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "prev tab")),
-				key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "next tab")),
+				key.NewBinding(key.WithKeys("left", prevTab), key.WithHelp(joinKeys("←", prevTab), "prev tab")),
+				key.NewBinding(key.WithKeys("right", nextTab), key.WithHelp(joinKeys("→", nextTab), "next tab")),
 			)
 		}
 		bindings = append(bindings, m.extraShortHelpKeys...)
@@ -498,6 +500,18 @@ func (m *Inbox) updateList() {
 	l.KeyMap.Filter = key.NewBinding(key.WithKeys(filterKey()), key.WithHelp(filterKey(), t("inbox.filter")))
 	l.KeyMap.NextPage = key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdn", "next page"))
 	l.KeyMap.PrevPage = key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "prev page"))
+	l.KeyMap.CursorUp = key.NewBinding(
+		key.WithKeys("up", kbKey(config.Keybinds.Global.NavUp, "k")),
+		key.WithHelp(joinKeys("↑", kbKey(config.Keybinds.Global.NavUp, "k")), "up"),
+	)
+	l.KeyMap.CursorDown = key.NewBinding(
+		key.WithKeys("down", kbKey(config.Keybinds.Global.NavDown, "j")),
+		key.WithHelp(joinKeys("↓", kbKey(config.Keybinds.Global.NavDown, "j")), "down"),
+	)
+	if cancel := kbKey(config.Keybinds.Global.Cancel, "esc"); cancel != "esc" {
+		l.KeyMap.ClearFilter = key.NewBinding(key.WithKeys(cancel), key.WithHelp(cancel, "clear filter"))
+		l.KeyMap.CancelWhileFiltering = key.NewBinding(key.WithKeys(cancel), key.WithHelp(cancel, "cancel"))
+	}
 
 	// Disable default help to render it manually at the bottom
 	l.SetShowHelp(false)

@@ -35,7 +35,7 @@
       "enter_to_switch": "Entrée pour changer",
       "no_account": "aucun compte configuré",
       "send_confirm": "Appuyez sur Entrée pour envoyer l'e-mail.",
-      "help": "Markdown/HTML • tab/shift+tab: naviguer • ctrl+e: $EDITOR • esc: sauvegarder brouillon & quitter",
+      "help": "Markdown/HTML • {NextField}/{PrevField}: naviguer • {Editor}: $EDITOR • {Cancel}: sauvegarder brouillon & quitter",
       "exit_confirm": "Êtes-vous sûr de vouloir quitter ? Ce brouillon sera sauvegardé",
       "sending": "Envoi de l'e-mail...",
       "sent": "E-mail envoyé avec succès",
@@ -75,7 +75,7 @@
       "settings": "Paramètres",
       "marketplace": "Marketplace de Plugins",
       "drafts": "Brouillons",
-      "help": "Utilisez ↑/↓ pour naviguer, entrée pour sélectionner, et ctrl+c pour quitter.",
+      "help": "Utilisez {NavArrows} pour naviguer, entrée pour sélectionner, et {Quit} pour quitter.",
       "unknown": "inconnu",
       "update_available": "Mise à jour disponible : {latest} (installée : {current}) — exécutez `matcha update` pour mettre à jour"
     },
@@ -88,7 +88,7 @@
         "one": "Déplacer {count} e-mail vers le dossier :",
         "other": "Déplacer {count} e-mails vers le dossier :"
       },
-      "help": "j/k: naviguer  entrée: déplacer  esc: annuler",
+      "help": "{NavVim}: naviguer  entrée: déplacer  {Cancel}: annuler",
       "help_folders": "tab: dossier suivant • shift+tab: dossier précédent • m: déplacer"
     },
     "login": {
@@ -242,7 +242,7 @@
       "install_confirm": "Installer {title} ?",
       "install_author": "par {author}",
       "unverified_warning": "Auteur non vérifié. Installation à vos propres risques.",
-      "help": "j/k: naviguer • entrée: installer • d: supprimer • esc: retour"
+      "help": "{NavVim}: naviguer • entrée: installer • d: supprimer • {Cancel}: retour"
     },
     "time": {
       "just_now": "à l'instant",

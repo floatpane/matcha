@@ -35,7 +35,7 @@
       "enter_to_switch": "Enter щоб змінити",
       "no_account": "обліковий запис не налаштовано",
       "send_confirm": "Натисніть Enter, щоб надіслати лист.",
-      "help": "Markdown/HTML • tab/shift+tab: навігація • ctrl+e: $EDITOR • esc: зберегти чернетку та вийти",
+      "help": "Markdown/HTML • {NextField}/{PrevField}: навігація • {Editor}: $EDITOR • {Cancel}: зберегти чернетку та вийти",
       "exit_confirm": "Ви впевнені, що хочете вийти? Цей чернетку буде збережено",
       "sending": "Відправлення листа...",
       "sent": "Лист успішно надіслано",
@@ -75,7 +75,7 @@
       "settings": "Налаштування",
       "marketplace": "Магазин плагінів",
       "drafts": "Чернетки",
-      "help": "Використовуйте ↑/↓ для навігації, enter для вибору, та ctrl+c щоб вийти.",
+      "help": "Використовуйте {NavArrows} для навігації, enter для вибору, та {Quit} щоб вийти.",
       "unknown": "невідомо",
       "update_available": "Доступне оновлення: {latest} (встановлено: {current}) — виконайте `matcha update` для оновлення"
     },
@@ -89,7 +89,7 @@
         "few": "Перемістити {count} листи до теки:",
         "other": "Перемістити {count} листів до теки:"
       },
-      "help": "j/k: навігація  enter: перемістити  esc: скасувати",
+      "help": "{NavVim}: навігація  enter: перемістити  {Cancel}: скасувати",
       "help_folders": "tab: наступна тека • shift+tab: попередня тека • m: перемістити"
     },
     "login": {
@@ -244,7 +244,7 @@
       "install_confirm": "Встановити {title}?",
       "install_author": "автор: {author}",
       "unverified_warning": "Неперевірений автор. Встановлюєте на власний ризик.",
-      "help": "j/k: навігація • enter: встановити • d: видалити • esc: назад"
+      "help": "{NavVim}: навігація • enter: встановити • d: видалити • {Cancel}: назад"
     },
     "time": {
       "just_now": "щойно",

@@ -945,7 +945,7 @@ func (m *FolderInbox) renderWithMoveOverlay(content string) string {
 	}
 
 	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render(t("folder_inbox.help")))
+	b.WriteString(helpStyle.Render(keybindHelp("folder_inbox.help")))
 
 	box := moveOverlayStyle.Render(b.String())
 
@@ -1019,14 +1019,29 @@ func (m *FolderInbox) renderWithJumpOverlay(content string) string {
 	b.WriteString("\n\n")
 
 	// Update help text based on filter state
+	kb := config.Keybinds
+	cancel := kbKey(kb.Global.Cancel, "esc")
 	var helpText string
 	switch {
 	case m.jumpFilterInput.Focused():
-		helpText = "enter: apply filter • esc: cancel"
+		helpText = joinHelp(
+			helpItem("", keyEnter, "apply filter"),
+			helpItem("", cancel, "cancel"),
+		)
 	case m.jumpFilterInput.Value() != "":
-		helpText = "f: clear filter • j/k: navigate • enter: jump • esc: cancel"
+		helpText = joinHelp(
+			helpItem("", filterKey(), "clear filter"),
+			helpItem("", navVimLabel(), "navigate"),
+			helpItem("", keyEnter, "jump"),
+			helpItem("", cancel, "cancel"),
+		)
 	default:
-		helpText = "f: filter folders • j/k: navigate • enter: jump • esc: cancel"
+		helpText = joinHelp(
+			helpItem("", filterKey(), "filter folders"),
+			helpItem("", navVimLabel(), "navigate"),
+			helpItem("", keyEnter, "jump"),
+			helpItem("", cancel, "cancel"),
+		)
 	}
 	b.WriteString(helpStyle.Render(helpText))
 
@@ -1115,14 +1130,18 @@ func (m *FolderInbox) RemoveEmail(uid uint32, accountID string) {
 
 // updateHelpKeys refreshes the inbox help keys based on preview state
 func (m *FolderInbox) updateHelpKeys() {
+	kb := config.Keybinds
+	nextFolder := kbKey(kb.Folder.NextFolder, "tab")
+	prevFolder := kbKey(kb.Folder.PrevFolder, "shift+tab")
 	bindings := []key.Binding{
-		key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next folder")),
-		key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "prev folder")),
+		key.NewBinding(key.WithKeys(nextFolder), key.WithHelp(nextFolder, "next folder")),
+		key.NewBinding(key.WithKeys(prevFolder), key.WithHelp(prevFolder, "prev folder")),
 	}
 	if m.previewPane != nil || m.previewedUID != 0 {
+		switchPane := joinKeys(kbKey(kb.Folder.FocusPreview, "]"), kbKey(kb.Folder.FocusInbox, "["))
 		bindings = append(bindings,
-			key.NewBinding(key.WithKeys("]"), key.WithHelp("]/[", "switch pane")),
-			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close preview")),
+			key.NewBinding(key.WithKeys(kbKey(kb.Folder.FocusPreview, "]")), key.WithHelp(switchPane, "switch pane")),
+			key.NewBinding(key.WithKeys(kbKey(kb.Global.Cancel, "esc")), key.WithHelp(kbKey(kb.Global.Cancel, "esc"), "close preview")),
 		)
 	}
 	m.inbox.extraShortHelpKeys = bindings

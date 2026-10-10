@@ -163,7 +163,7 @@ func (m *Settings) viewPlugins() string {
 			b.WriteString(style.Render(cursor+line) + "\n")
 		}
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("↑/↓ navigate • enter open • esc back"))
+		b.WriteString(helpStyle.Render(navArrowsLabel() + " navigate • enter open • esc back"))
 		return b.String()
 	}
 
@@ -200,7 +200,7 @@ func (m *Settings) viewPlugins() string {
 			}
 		}
 		b.WriteString("\n\n")
-		b.WriteString(helpStyle.Render("↑/↓ navigate • enter toggle/edit • esc back"))
+		b.WriteString(helpStyle.Render(navArrowsLabel() + " navigate • enter toggle/edit • " + cancelKey() + " back"))
 	}
 
 	return b.String()

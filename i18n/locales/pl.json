@@ -35,7 +35,7 @@
       "enter_to_switch": "Enter aby przełączyć",
       "no_account": "brak skonfigurowanego konta",
       "send_confirm": "Naciśnij Enter, aby wysłać wiadomość.",
-      "help": "Markdown/HTML • tab/shift+tab: nawigacja • ctrl+e: $EDITOR • esc: zapisz szkic i wyjdź",
+      "help": "Markdown/HTML • {NextField}/{PrevField}: nawigacja • {Editor}: $EDITOR • {Cancel}: zapisz szkic i wyjdź",
       "exit_confirm": "Czy na pewno chcesz wyjść? Ten szkic zostanie zapisany",
       "sending": "Wysyłanie wiadomości...",
       "sent": "Wiadomość wysłana pomyślnie",
@@ -75,7 +75,7 @@
       "settings": "Ustawienia",
       "marketplace": "Sklep z Wtyczkami",
       "drafts": "Szkice",
-      "help": "Użyj ↑/↓ do nawigacji, enter do wyboru i ctrl+c aby wyjść.",
+      "help": "Użyj {NavArrows} do nawigacji, enter do wyboru i {Quit} aby wyjść.",
       "unknown": "nieznany",
       "update_available": "Dostępna aktualizacja: {latest} (zainstalowana: {current}) — uruchom `matcha update` aby zaktualizować"
     },
@@ -90,7 +90,7 @@
         "many": "Przenieś {count} wiadomości do folderu:",
         "other": "Przenieś {count} wiadomości do folderu:"
       },
-      "help": "j/k: nawigacja  enter: przenieś  esc: anuluj",
+      "help": "{NavVim}: nawigacja  enter: przenieś  {Cancel}: anuluj",
       "help_folders": "tab: następny folder • shift+tab: poprzedni folder • m: przenieś"
     },
     "login": {
@@ -246,7 +246,7 @@
       "install_confirm": "Zainstalować {title}?",
       "install_author": "autor: {author}",
       "unverified_warning": "Niezweryfikowany autor. Instalujesz na własne ryzyko.",
-      "help": "j/k: nawigacja • enter: instaluj • d: usuń • esc: wstecz"
+      "help": "{NavVim}: nawigacja • enter: instaluj • d: usuń • {Cancel}: wstecz"
     },
     "time": {
       "just_now": "właśnie teraz",

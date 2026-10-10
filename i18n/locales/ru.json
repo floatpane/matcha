@@ -35,7 +35,7 @@
       "enter_to_switch": "Enter для переключения",
       "no_account": "учётная запись не настроена",
       "send_confirm": "Нажмите Enter для отправки письма.",
-      "help": "Markdown/HTML • tab/shift+tab: навигация • ctrl+e: $EDITOR • esc: сохранить черновик и выйти",
+      "help": "Markdown/HTML • {NextField}/{PrevField}: навигация • {Editor}: $EDITOR • {Cancel}: сохранить черновик и выйти",
       "exit_confirm": "Вы уверены, что хотите выйти? Этот черновик будет сохранён",
       "sending": "Отправка письма...",
       "sent": "Письмо успешно отправлено",
@@ -75,7 +75,7 @@
       "settings": "Настройки",
       "marketplace": "Магазин Плагинов",
       "drafts": "Черновики",
-      "help": "Используйте ↑/↓ для навигации, enter для выбора и ctrl+c для выхода.",
+      "help": "Используйте {NavArrows} для навигации, enter для выбора и {Quit} для выхода.",
       "unknown": "неизвестно",
       "update_available": "Доступно обновление: {latest} (установлено: {current}) — запустите `matcha update` для обновления"
     },
@@ -90,7 +90,7 @@
         "many": "Переместить {count} писем в папку:",
         "other": "Переместить {count} письма в папку:"
       },
-      "help": "j/k: навигация  enter: переместить  esc: отмена",
+      "help": "{NavVim}: навигация  enter: переместить  {Cancel}: отмена",
       "help_folders": "tab: следующая папка • shift+tab: предыдущая папка • m: переместить"
     },
     "login": {
@@ -246,7 +246,7 @@
       "install_confirm": "Установить {title}?",
       "install_author": "автор: {author}",
       "unverified_warning": "Непроверенный автор. Устанавливайте на свой риск.",
-      "help": "j/k: навигация • enter: установить • d: удалить • esc: назад"
+      "help": "{NavVim}: навигация • enter: установить • d: удалить • {Cancel}: назад"
     },
     "time": {
       "just_now": "только что",
