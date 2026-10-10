@@ -212,6 +212,6 @@ func (m *ContactEditor) View() tea.View {
 		"",
 		emailView,
 		"",
-		helpStyle.Render("tab/↑/↓: switch fields • enter: submit • esc: back"),
+		helpStyle.Render("tab/↑/↓: switch fields • enter: submit • "+cancelKey()+": back"),
 	))
 }

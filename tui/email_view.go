@@ -530,22 +530,38 @@ func (m *EmailView) renderHeader() string {
 
 // renderHelp renders the bottom help bar based on current focus and state.
 func (m *EmailView) renderHelp() string {
+	kb := config.Keybinds
 	if m.focusOnAttachments {
-		helpText := "↑/↓: navigate • enter: download • esc/tab: back to email body"
+		helpText := joinHelp(
+			helpItem("", navArrowsLabel(), "navigate"),
+			helpItem("", keyEnter, "download"),
+			helpItem("", joinKeys(kbKey(kb.Global.Cancel, "esc"), kbKey(kb.Email.FocusAttachments, "tab")), "back to email body"),
+		)
 		if m.pluginStatus != "" {
-			helpText += " • " + m.pluginStatus
+			helpText += helpSeparator + m.pluginStatus
 		}
 		return helpStyle.Render(helpText)
 	}
 
 	var shortcuts strings.Builder
-	shortcuts.WriteString("\uf112 r: reply • \uf064 shift+r: reply all • \uf064 f: forward • \uea81 d: delete • \uea98 a: archive • \uf435 tab: focus attachments • \ueb06 esc: back to inbox")
+	shortcuts.WriteString(joinHelp(
+		helpItem("\uf112", kbKey(kb.Email.Reply, "r"), "reply"),
+		helpItem("\uf064", kbKey(kb.Email.ReplyAll, "shift+r"), "reply all"),
+		helpItem("\uf064", kbKey(kb.Email.Forward, "f"), "forward"),
+		helpItem("\uea81", kbKey(kb.Email.Delete, "d"), "delete"),
+		helpItem("\uea98", kbKey(kb.Email.Archive, "a"), "archive"),
+		helpItem("\uf435", kbKey(kb.Email.FocusAttachments, "tab"), "focus attachments"),
+		helpItem("\ueb06", kbKey(kb.Global.Cancel, "esc"), "back to inbox"),
+	))
 	if m.isPatch && m.patchInfo != nil && m.patchInfo.HasDiff {
-		shortcuts.WriteString(" • \uf126 p: apply patch")
+		shortcuts.WriteString(helpSeparator)
+		shortcuts.WriteString(helpItem("\uf126", kbKey(kb.Email.ApplyPatch, "p"), "apply patch").String())
 	}
-	shortcuts.WriteString(" • \uf1d3 P: send patch")
+	shortcuts.WriteString(helpSeparator)
+	shortcuts.WriteString(helpItem("\uf1d3", kbKey(kb.Email.SendPatch, "P"), "send patch").String())
 	if view.ImageProtocolSupported() {
-		shortcuts.WriteString("• \uf03e i: toggle images")
+		shortcuts.WriteString(helpSeparator)
+		shortcuts.WriteString(helpItem("\uf03e", kbKey(kb.Email.ToggleImages, "i"), "toggle images").String())
 	}
 	for _, pk := range m.pluginKeyBindings {
 		shortcuts.WriteString(" • ")

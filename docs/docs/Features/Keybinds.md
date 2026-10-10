@@ -122,6 +122,14 @@ Standard [bubbletea](https://charm.land/bubbletea) key strings:
 | Named key         | `enter`, `esc`, `tab`, `space`    |
 | Arrow             | `up`, `down`, `left`, `right`     |
 
+## Help bars show your keys
+
+Every bottom help bar is rendered from the active `keybinds.json`, so a remapped binding shows up in the help text after the next restart. Remap `email.reply` to `q` and the email view prints `q: reply` instead of `r: reply`.
+
+Arrow keys stay printed next to remapped navigation (`↑/↓/p/n`) because they always work, and translated help strings are built from the same bindings, so non-English users see their own keys too.
+
+Two places still document the built-in keys, because those handlers don't read config yet: the settings panes and the modal pickers (file picker, login, password prompt).
+
 ## Conflict warning
 
 If two actions inside the same area share a key, matcha shows a yellow warning at the top of the start menu:

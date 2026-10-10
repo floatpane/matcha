@@ -35,7 +35,7 @@
       "enter_to_switch": "Enter para cambiar",
       "no_account": "ninguna cuenta configurada",
       "send_confirm": "Presione Enter para enviar el correo.",
-      "help": "Markdown/HTML • tab/shift+tab: navegar • ctrl+e: $EDITOR • esc: guardar borrador y salir",
+      "help": "Markdown/HTML • {NextField}/{PrevField}: navegar • {Editor}: $EDITOR • {Cancel}: guardar borrador y salir",
       "exit_confirm": "¿Está seguro de que desea salir? Este borrador se guardará",
       "sending": "Enviando correo...",
       "sent": "Correo enviado exitosamente",
@@ -75,7 +75,7 @@
       "settings": "Configuración",
       "marketplace": "Tienda de Plugins",
       "drafts": "Borradores",
-      "help": "Use ↑/↓ para navegar, enter para seleccionar, y ctrl+c para salir.",
+      "help": "Use {NavArrows} para navegar, enter para seleccionar, y {Quit} para salir.",
       "unknown": "desconocido",
       "update_available": "Actualización disponible: {latest} (instalada: {current}) — ejecute `matcha update` para actualizar"
     },
@@ -88,7 +88,7 @@
         "one": "Mover {count} correo a carpeta:",
         "other": "Mover {count} correos a carpeta:"
       },
-      "help": "j/k: navegar  enter: mover  esc: cancelar",
+      "help": "{NavVim}: navegar  enter: mover  {Cancel}: cancelar",
       "help_folders": "tab: siguiente carpeta • shift+tab: carpeta anterior • m: mover"
     },
     "login": {
@@ -242,7 +242,7 @@
       "install_confirm": "¿Instalar {title}?",
       "install_author": "por {author}",
       "unverified_warning": "Autor no verificado. Instala bajo tu propia responsabilidad.",
-      "help": "j/k: navegar • enter: instalar • d: eliminar • esc: atrás"
+      "help": "{NavVim}: navegar • enter: instalar • d: eliminar • {Cancel}: atrás"
     },
     "time": {
       "just_now": "justo ahora",

@@ -215,7 +215,7 @@ func (m Choice) View() tea.View {
 	}
 
 	mainContent := b.String()
-	helpView := helpStyle.Render(t("choice.help"))
+	helpView := helpStyle.Render(keybindHelp("choice.help"))
 
 	if m.height > 0 {
 		currentHeight := lipgloss.Height(docStyle.Render(mainContent + helpView))

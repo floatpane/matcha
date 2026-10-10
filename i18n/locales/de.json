@@ -35,7 +35,7 @@
       "enter_to_switch": "Enter zum Wechseln",
       "no_account": "kein Konto konfiguriert",
       "send_confirm": "Drücken Sie Enter, um die E-Mail zu senden.",
-      "help": "Markdown/HTML • tab/shift+tab: navigieren • ctrl+e: $EDITOR • esc: Entwurf speichern & beenden",
+      "help": "Markdown/HTML • {NextField}/{PrevField}: navigieren • {Editor}: $EDITOR • {Cancel}: Entwurf speichern & beenden",
       "exit_confirm": "Sind Sie sicher, dass Sie beenden möchten? Dieser Entwurf wird gespeichert",
       "sending": "E-Mail wird gesendet...",
       "sent": "E-Mail erfolgreich gesendet",
@@ -75,7 +75,7 @@
       "settings": "Einstellungen",
       "marketplace": "Plugin-Marktplatz",
       "drafts": "Entwürfe",
-      "help": "Verwenden Sie ↑/↓ zum Navigieren, Enter zum Auswählen und ctrl+c zum Beenden.",
+      "help": "Verwenden Sie {NavArrows} zum Navigieren, Enter zum Auswählen und {Quit} zum Beenden.",
       "unknown": "unbekannt",
       "update_available": "Update verfügbar: {latest} (installiert: {current}) — führen Sie `matcha update` aus, um zu aktualisieren"
     },
@@ -88,7 +88,7 @@
         "one": "{count} E-Mail in Ordner verschieben:",
         "other": "{count} E-Mails in Ordner verschieben:"
       },
-      "help": "j/k: navigieren  enter: verschieben  esc: abbrechen",
+      "help": "{NavVim}: navigieren  enter: verschieben  {Cancel}: abbrechen",
       "help_folders": "tab: nächster Ordner • shift+tab: vorheriger Ordner • m: verschieben"
     },
     "login": {
@@ -242,7 +242,7 @@
       "install_confirm": "{title} installieren?",
       "install_author": "von {author}",
       "unverified_warning": "Ungeprüfter Autor. Installation auf eigenes Risiko.",
-      "help": "j/k: navigieren • enter: installieren • d: löschen • esc: zurück"
+      "help": "{NavVim}: navigieren • enter: installieren • d: löschen • {Cancel}: zurück"
     },
     "time": {
       "just_now": "gerade eben",

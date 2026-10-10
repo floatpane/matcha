@@ -35,7 +35,7 @@
       "enter_to_switch": "Enterで切替",
       "no_account": "アカウントが設定されていません",
       "send_confirm": "Enterキーを押してメールを送信します。",
-      "help": "Markdown/HTML • tab/shift+tab: 移動 • ctrl+e: $EDITOR • esc: 下書きを保存して終了",
+      "help": "Markdown/HTML • {NextField}/{PrevField}: 移動 • {Editor}: $EDITOR • {Cancel}: 下書きを保存して終了",
       "exit_confirm": "終了してもよろしいですか?この下書きは保存されます",
       "sending": "メール送信中...",
       "sent": "メールが正常に送信されました",
@@ -75,7 +75,7 @@
       "settings": "設定",
       "marketplace": "プラグインマーケットプレイス",
       "drafts": "下書き",
-      "help": "↑/↓で移動、Enterで選択、ctrl+cで終了します。",
+      "help": "{NavArrows}で移動、Enterで選択、{Quit}で終了します。",
       "unknown": "不明",
       "update_available": "アップデート利用可能: {latest} (インストール済み: {current}) — `matcha update`を実行してアップグレード"
     },
@@ -87,7 +87,7 @@
       "move_multiple": {
         "other": "{count}件のメールをフォルダに移動:"
       },
-      "help": "j/k: 移動  enter: 移動  esc: キャンセル",
+      "help": "{NavVim}: 移動  enter: 移動  {Cancel}: キャンセル",
       "help_folders": "tab: 次のフォルダ • shift+tab: 前のフォルダ • m: 移動"
     },
     "login": {
@@ -240,7 +240,7 @@
       "install_confirm": "{title} をインストールしますか？",
       "install_author": "作者: {author}",
       "unverified_warning": "認証されていない作者です。自己責任でインストールしてください。",
-      "help": "j/k: 移動 • enter: インストール • d: 削除 • esc: 戻る"
+      "help": "{NavVim}: 移動 • enter: インストール • d: 削除 • {Cancel}: 戻る"
     },
     "time": {
       "just_now": "たった今",

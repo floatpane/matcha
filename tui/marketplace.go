@@ -527,7 +527,7 @@ func (m Marketplace) View() tea.View {
 		footer.WriteString(mpStatusStyle.Render("  " + m.status))
 		footer.WriteString("\n")
 	}
-	footer.WriteString(helpStyle.Render(t("marketplace.help")))
+	footer.WriteString(helpStyle.Render(keybindHelp("marketplace.help")))
 
 	content := body.String()
 	help := footer.String()

@@ -40,7 +40,7 @@
       "enter_to_switch": "Enter to switch",
       "no_account": "no account configured",
       "send_confirm": "Press Enter to send the email.",
-      "help": "Markdown/HTML • tab/shift+tab: navigate • ctrl+e: $EDITOR • esc: save draft & exit",
+      "help": "Markdown/HTML • {NextField}/{PrevField}: navigate • {Editor}: $EDITOR • {Cancel}: save draft & exit",
       "exit_confirm": "Are you sure you want to exit? This draft will be saved",
       "sending": "Sending email...",
       "sent": "Email sent successfully",
@@ -80,7 +80,7 @@
       "settings": "Settings",
       "marketplace": "Plugin Marketplace",
       "drafts": "Drafts",
-      "help": "Use ↑/↓ to navigate, enter to select, and ctrl+c to quit.",
+      "help": "Use {NavArrows} to navigate, enter to select, and {Quit} to quit.",
       "unknown": "unknown",
       "update_available": "Update available: {latest} (installed: {current}) — run `matcha update` to upgrade",
       "mouse_prompt": "Enable mouse support? (click, scroll, and select with your mouse) [y/n]",
@@ -95,7 +95,7 @@
         "one": "Move {count} email to folder:",
         "other": "Move {count} emails to folder:"
       },
-      "help": "j/k: navigate  enter: move  esc: cancel",
+      "help": "{NavVim}: navigate  enter: move  {Cancel}: cancel",
       "help_folders": "tab: next folder • shift+tab: prev folder • m: move"
     },
     "login": {
@@ -251,7 +251,7 @@
       "install_confirm": "Install {title}?",
       "install_author": "by {author}",
       "unverified_warning": "Unverified author. Install at your own risk.",
-      "help": "j/k: navigate • enter: install • d: delete • esc: back"
+      "help": "{NavVim}: navigate • enter: install • d: delete • {Cancel}: back"
     },
     "time": {
       "just_now": "just now",

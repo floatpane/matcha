@@ -35,7 +35,7 @@
       "enter_to_switch": "按Enter切换",
       "no_account": "未配置账户",
       "send_confirm": "按Enter发送邮件。",
-      "help": "Markdown/HTML • tab/shift+tab: 导航 • ctrl+e: $EDITOR • esc: 保存草稿并退出",
+      "help": "Markdown/HTML • {NextField}/{PrevField}: 导航 • {Editor}: $EDITOR • {Cancel}: 保存草稿并退出",
       "exit_confirm": "确定要退出吗?此草稿将被保存",
       "sending": "正在发送邮件...",
       "sent": "邮件发送成功",
@@ -75,7 +75,7 @@
       "settings": "设置",
       "marketplace": "插件市场",
       "drafts": "草稿",
-      "help": "使用 ↑/↓ 导航,按 enter 选择,按 ctrl+c 退出。",
+      "help": "使用 {NavArrows} 导航,按 enter 选择,按 {Quit} 退出。",
       "unknown": "未知",
       "update_available": "可用更新: {latest} (已安装: {current}) — 运行 `matcha update` 进行升级"
     },
@@ -87,7 +87,7 @@
       "move_multiple": {
         "other": "将 {count} 封邮件移动到文件夹:"
       },
-      "help": "j/k: 导航  enter: 移动  esc: 取消",
+      "help": "{NavVim}: 导航  enter: 移动  {Cancel}: 取消",
       "help_folders": "tab: 下一个文件夹 • shift+tab: 上一个文件夹 • m: 移动"
     },
     "login": {
@@ -240,7 +240,7 @@
       "install_confirm": "安装 {title}？",
       "install_author": "作者：{author}",
       "unverified_warning": "未验证的作者。安装风险自负。",
-      "help": "j/k: 导航 • enter: 安装 • d: 删除 • esc: 返回"
+      "help": "{NavVim}: 导航 • enter: 安装 • d: 删除 • {Cancel}: 返回"
     },
     "time": {
       "just_now": "刚刚",

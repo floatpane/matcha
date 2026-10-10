@@ -35,7 +35,7 @@
       "enter_to_switch": "اضغط Enter للتبديل",
       "no_account": "لم يتم تكوين حساب",
       "send_confirm": "اضغط Enter لإرسال البريد الإلكتروني.",
-      "help": "Markdown/HTML • tab/shift+tab: التنقل • ctrl+e: $EDITOR • esc: حفظ المسودة والخروج",
+      "help": "Markdown/HTML • {NextField}/{PrevField}: التنقل • {Editor}: $EDITOR • {Cancel}: حفظ المسودة والخروج",
       "exit_confirm": "هل أنت متأكد أنك تريد الخروج؟ سيتم حفظ هذه المسودة",
       "sending": "جاري إرسال البريد الإلكتروني...",
       "sent": "تم إرسال البريد الإلكتروني بنجاح",
@@ -75,7 +75,7 @@
       "settings": "الإعدادات",
       "marketplace": "متجر الإضافات",
       "drafts": "المسودات",
-      "help": "استخدم ↑/↓ للتنقل، enter للاختيار، وctrl+c للخروج.",
+      "help": "استخدم {NavArrows} للتنقل، enter للاختيار، و{Quit} للخروج.",
       "unknown": "غير معروف",
       "update_available": "تحديث متاح: {latest} (المثبت: {current}) — قم بتشغيل `matcha update` للترقية"
     },
@@ -90,7 +90,7 @@
         "many": "نقل {count} رسالة بريد إلكتروني إلى المجلد:",
         "other": "نقل {count} رسالة بريد إلكتروني إلى المجلد:"
       },
-      "help": "j/k: التنقل  enter: نقل  esc: إلغاء",
+      "help": "{NavVim}: التنقل  enter: نقل  {Cancel}: إلغاء",
       "help_folders": "tab: المجلد التالي • shift+tab: المجلد السابق • m: نقل"
     },
     "login": {
@@ -246,7 +246,7 @@
       "install_confirm": "تثبيت {title}؟",
       "install_author": "بواسطة {author}",
       "unverified_warning": "مؤلف غير موثق. التثبيت على مسؤوليتك الخاصة.",
-      "help": "j/k: التنقل • enter: تثبيت • d: حذف • esc: رجوع"
+      "help": "{NavVim}: التنقل • enter: تثبيت • d: حذف • {Cancel}: رجوع"
     },
     "time": {
       "just_now": "الآن",
