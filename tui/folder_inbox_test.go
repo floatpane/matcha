@@ -1,12 +1,65 @@
 package tui
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
 )
+
+func TestFolderInboxFoldersFollowAccountTabs(t *testing.T) {
+	accounts := []config.Account{
+		{ID: "outlook", Name: "Outlook", FetchEmail: "outlook@example.com"},
+		{ID: "yahoo", Name: "Yahoo", FetchEmail: "yahoo@example.com"},
+	}
+	fi := NewFolderInbox([]string{keyINBOX}, accounts)
+	fi.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	fi.SetFolderData(
+		[]string{keyINBOX, "Outlook only", "Yahoo only"},
+		map[string]int{keyINBOX: 5, "Outlook only": 2, "Yahoo only": 3},
+		map[string][]string{
+			"outlook": {keyINBOX, "Outlook only"},
+			"yahoo":   {keyINBOX, "Yahoo only"},
+		},
+		map[string]map[string]int{
+			"outlook": {keyINBOX: 2, "Outlook only": 2},
+			"yahoo":   {keyINBOX: 3, "Yahoo only": 3},
+		},
+	)
+	if !strings.Contains(fi.renderSidebar(), "Folders") || fi.unread[keyINBOX] != 5 {
+		t.Fatal("ALL tab should show merged folders and unread counts")
+	}
+
+	fi.Update(tea.KeyPressMsg{Code: tea.KeyRight, Text: "right"})
+	if !slices.Equal(fi.folders, []string{keyINBOX, "Outlook only"}) || fi.unread[keyINBOX] != 2 {
+		t.Fatalf("Outlook tab showed folders %v and unread %v", fi.folders, fi.unread)
+	}
+	if !strings.Contains(fi.renderSidebar(), "Outlook") {
+		t.Fatal("Outlook tab should show Outlook as the sidebar title")
+	}
+	fi.activeFolderIdx = 1
+	fi.switchFolder()
+	fi.Update(tea.KeyPressMsg{Code: tea.KeyRight, Text: "right"})
+	if !slices.Equal(fi.folders, []string{keyINBOX, "Yahoo only"}) || fi.currentFolder != keyINBOX || fi.unread[keyINBOX] != 3 {
+		t.Fatalf("Yahoo tab showed folder %q, folders %v, unread %v", fi.currentFolder, fi.folders, fi.unread)
+	}
+	fi.Update(tea.KeyPressMsg{Code: tea.KeyLeft, Text: "left"})
+	if fi.currentFolder != "Outlook only" {
+		t.Fatalf("Outlook folder selection was not restored: %q", fi.currentFolder)
+	}
+	fi.DecrementUnreadCount("Outlook only", "outlook")
+	_, counts := fi.GetAccountFolderData("outlook")
+	if counts["Outlook only"] != 1 || fi.unread["Outlook only"] != 1 {
+		t.Fatalf("account unread count did not update: %v", counts)
+	}
+	fi.Update(tea.KeyPressMsg{Code: tea.KeyLeft, Text: "left"})
+	if fi.currentFolder != keyINBOX || fi.unread["Outlook only"] != 1 {
+		t.Fatalf("ALL tab did not restore its selection and merged count: folder %q unread %v", fi.currentFolder, fi.unread)
+	}
+}
 
 // TestFolderInboxSplitPreviewRendersSearchHit covers the case Lea reported on
 // PR #1186: opening a search result in split-pane mode used to silently drop
