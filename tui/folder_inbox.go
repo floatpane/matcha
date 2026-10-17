@@ -11,6 +11,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	overlay "github.com/floatpane/bubble-overlay"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
@@ -251,6 +252,23 @@ func (m *FolderInbox) Init() tea.Cmd {
 }
 
 func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
+	// A page can finish after the user switches folders or opens an overlay.
+	// Only change the loading state of the folder that made the request.
+	switch msg := msg.(type) {
+	case FetchingMoreEmailsMsg:
+		if msg.FolderName != "" && msg.FolderName != m.currentFolder {
+			return m, nil
+		}
+		m.inbox.isFetching = true
+		m.inbox.list.Title = m.inbox.getTitle()
+		return m, nil
+	case FolderEmailsPageFailedMsg:
+		if msg.FolderName == m.currentFolder {
+			m.inbox.isFetching = false
+			m.inbox.list.Title = m.inbox.getTitle()
+		}
+		return m, nil
+	}
 	// If move overlay is active, handle its input
 	if m.movingEmail {
 		return m.updateMoveOverlay(msg)
@@ -298,9 +316,11 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 		if msg.Button != tea.MouseLeft {
 			return m, nil
 		}
-		if msg.X < sidebarWidth {
-			// title(1) + PaddingBottom(1) = 2 header rows (explicit \n doesn't add a row)
-			folderIdx := msg.Y - 2
+		if msg.X < m.effectiveSidebarWidth() {
+			folderIdx := msg.Y
+			if isUIVisible("header") {
+				folderIdx -= lipgloss.Height(sidebarTitleStyle.Render(" "))
+			}
 			if folderIdx >= 0 && folderIdx < len(m.folders) {
 				m.activeFolderIdx = folderIdx
 				return m, m.switchFolder()
@@ -454,7 +474,7 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 		m.inbox.isRefreshing = false
 		m.inbox.SetEmails(msg.Emails, m.accounts)
 		m.inbox.SetFolderName(msg.FolderName)
-		return m, nil
+		return m, m.wrapInboxCmd(m.inbox.continueUnreadFetch())
 
 	case FolderEmailsAppendedMsg:
 		if msg.FolderName != m.currentFolder {
@@ -467,7 +487,7 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 				m.inbox.noMoreByAccount = make(map[string]bool)
 			}
 			m.inbox.noMoreByAccount[msg.AccountID] = true
-			return m, nil
+			return m, m.wrapInboxCmd(m.inbox.continueUnreadFetch())
 		}
 		for _, email := range msg.Emails {
 			m.inbox.emailsByAccount[email.AccountID] = append(m.inbox.emailsByAccount[email.AccountID], email)
@@ -475,7 +495,7 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 		}
 		m.inbox.emailCountByAcct[msg.AccountID] = len(m.inbox.emailsByAccount[msg.AccountID])
 		m.inbox.updateList()
-		return m, nil
+		return m, m.wrapInboxCmd(m.inbox.continueUnreadFetch())
 
 	case EmailMovedMsg:
 		if msg.Err != nil {
@@ -550,21 +570,36 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 
 // wrapInboxCmd intercepts messages from the inbox and adds folder context.
 func (m *FolderInbox) wrapInboxCmd(cmd tea.Cmd) tea.Cmd {
+	return m.wrapInboxCmdForFolder(cmd, m.currentFolder)
+}
+
+func (m *FolderInbox) wrapInboxCmdForFolder(cmd tea.Cmd, folderName string) tea.Cmd {
+	if cmd == nil {
+		return nil
+	}
 	return func() tea.Msg {
 		msg := cmd()
 		switch inner := msg.(type) {
+		case tea.BatchMsg:
+			wrapped := make(tea.BatchMsg, 0, len(inner))
+			for _, nested := range inner {
+				if nested != nil {
+					wrapped = append(wrapped, m.wrapInboxCmdForFolder(nested, folderName))
+				}
+			}
+			return wrapped
 		case FetchMoreEmailsMsg:
 			return FetchFolderMoreEmailsMsg{
 				Offset:     inner.Offset,
 				AccountID:  inner.AccountID,
-				FolderName: m.currentFolder,
+				FolderName: folderName,
 				Limit:      inner.Limit,
 			}
 		case RequestRefreshMsg:
-			inner.FolderName = m.currentFolder
+			inner.FolderName = folderName
 			return inner
 		case SearchRequestedMsg:
-			inner.FolderName = m.currentFolder
+			inner.FolderName = folderName
 			return inner
 		}
 		return msg
@@ -875,20 +910,18 @@ func (m *FolderInbox) renderSidebar() string {
 				title = acc.FetchEmail
 			}
 		}
-		b.WriteString(sidebarTitleStyle.Render(title))
+		b.WriteString(sidebarTitleStyle.Render(ansi.Truncate(title, sidebarWidth-4, "…")))
 		b.WriteString("\n")
 	}
 
 	for i, folder := range m.folders {
-		displayName := m.formatFolderName(folder)
+		var suffix string
 		unread := m.unread[folder]
-
-		var tab string
 		if unread > 0 {
-			tab = fmt.Sprintf("%s (%d)", displayName, unread)
-		} else {
-			tab = displayName
+			suffix = fmt.Sprintf(" (%d)", unread)
 		}
+		nameWidth := max(1, sidebarWidth-4-ansi.StringWidth(suffix))
+		tab := ansi.Truncate(m.formatFolderName(folder), nameWidth, "…") + suffix
 
 		if i == m.activeFolderIdx {
 			b.WriteString(activeFolderStyle.Width(sidebarWidth - 4).Render(tab))
@@ -1095,6 +1128,24 @@ func (m *FolderInbox) IncrementUnreadCount(folder string) {
 func (m *FolderInbox) SetEmails(emails []fetcher.Email, accounts []config.Account) {
 	m.accounts = accounts
 	m.inbox.SetEmails(emails, accounts)
+}
+
+// MarkEmailAsRead updates the visible list and fills the unread-only view if
+// reading this message left too few rows.
+func (m *FolderInbox) MarkEmailAsRead(uid uint32, accountID string) tea.Cmd {
+	m.inbox.MarkEmailAsRead(uid, accountID)
+	return m.wrapInboxCmd(m.inbox.continueUnreadFetch())
+}
+
+// ContinueUnreadFetch requests another page when the active unread-only list
+// is still short after loading a folder from the cache or server.
+func (m *FolderInbox) ContinueUnreadFetch() tea.Cmd {
+	return m.wrapInboxCmd(m.inbox.continueUnreadFetch())
+}
+
+// PaginationPageSize returns the page size for this folder's inbox pane.
+func (m *FolderInbox) PaginationPageSize() uint32 {
+	return m.inbox.PaginationPageSize()
 }
 
 // GetCurrentFolder returns the currently selected folder name.

@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/backend"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
@@ -157,6 +158,57 @@ func TestInboxSearchResultsFilterByActiveAccountTab(t *testing.T) {
 	email := inbox.GetEmailAtIndex(0)
 	if email == nil || email.UID != 1 {
 		t.Fatalf("GetEmailAtIndex should use filtered search results, got %#v", email)
+	}
+}
+
+func TestInboxUnreadOnlyFiltersCurrentAccountAndUpdatesAfterRead(t *testing.T) {
+	accounts := []config.Account{{ID: "a", FetchEmail: "a@example.com"}, {ID: "b", FetchEmail: "b@example.com"}}
+	emails := []fetcher.Email{
+		{UID: 1, AccountID: "a", Subject: "A read", IsRead: true},
+		{UID: 2, AccountID: "a", Subject: "A unread"},
+		{UID: 3, AccountID: "b", Subject: "B unread"},
+	}
+	inbox := NewInbox(emails, accounts)
+	inbox.Update(tea.KeyPressMsg{Code: 'U', Text: "U"})
+	if got := len(inbox.list.Items()); got != 2 {
+		t.Fatalf("ALL unread view has %d items, want 2", got)
+	}
+	inbox.Update(tea.KeyPressMsg{Code: tea.KeyRight, Text: "right"})
+	if got := len(inbox.list.Items()); got != 1 {
+		t.Fatalf("account A unread view has %d items, want 1", got)
+	}
+	inbox.MarkEmailAsRead(2, "a")
+	if got := len(inbox.list.Items()); got != 0 {
+		t.Fatalf("read message remained in unread view: %d items", got)
+	}
+	inbox.Update(tea.KeyPressMsg{Code: 'U', Text: "U"})
+	if got := len(inbox.list.Items()); got != 2 {
+		t.Fatalf("account A full view has %d items, want 2", got)
+	}
+}
+
+func TestInboxUnreadOnlyPaginatesPastReadMessages(t *testing.T) {
+	accounts := []config.Account{{ID: "a", FetchEmail: "a@example.com"}, {ID: "b", FetchEmail: "b@example.com"}}
+	inbox := NewInbox([]fetcher.Email{{UID: 1, AccountID: "a", IsRead: true}}, accounts)
+	_, cmd := inbox.Update(tea.KeyPressMsg{Code: 'U', Text: "U"})
+	if cmd == nil {
+		t.Fatal("empty unread view should fetch another page")
+	}
+	first, ok := cmd().(FetchMoreEmailsMsg)
+	if !ok || first.AccountID != "a" {
+		t.Fatalf("first unread page request = %#v, want account a", first)
+	}
+	_, cmd = inbox.Update(EmailsAppendedMsg{Mailbox: MailboxInbox, AccountID: "a"})
+	if cmd == nil {
+		t.Fatal("exhausting account a should continue with account b")
+	}
+	second, ok := cmd().(FetchMoreEmailsMsg)
+	if !ok || second.AccountID != "b" {
+		t.Fatalf("second unread page request = %#v, want account b", second)
+	}
+	inbox.Update(EmailsAppendedMsg{Mailbox: MailboxInbox, AccountID: "b", Emails: []fetcher.Email{{UID: 2, AccountID: "b", Subject: "unread"}}})
+	if got := len(inbox.list.Items()); got != 1 {
+		t.Fatalf("unread page did not appear: %d items", got)
 	}
 }
 
@@ -484,10 +536,55 @@ func TestFetchMoreTriggeredAtListEnd(t *testing.T) {
 		t.Fatalf("expected MailboxInbox, got %s", fetchMsg.Mailbox)
 	}
 
-	// Default list height is 14, but our minimum limit is 20
-	expectedLimit := uint32(20)
+	// Without a measured pane, use the default cap of 40 messages.
+	expectedLimit := uint32(40)
 	if fetchMsg.Limit != expectedLimit {
 		t.Fatalf("expected Limit %d, got %d", expectedLimit, fetchMsg.Limit)
+	}
+}
+
+func TestInboxPaginationPageSizeUsesConfiguredCapOrHeight(t *testing.T) {
+	inbox := NewInbox(nil, nil)
+	inbox.SetSize(80, 20)
+	if got := inbox.PaginationPageSize(); got != 20 {
+		t.Fatalf("small pane page size = %d, want 20", got)
+	}
+	if got := inbox.list.Paginator.PerPage; got <= 10 {
+		t.Fatalf("small pane shows %d messages per page, want more than half the pane", got)
+	}
+	if got := lipgloss.Height(inbox.View().Content); got > 20 {
+		t.Fatalf("small pane renders %d rows, want at most 20", got)
+	}
+	inbox.SetSize(80, 60)
+	if got := inbox.PaginationPageSize(); got != 40 {
+		t.Fatalf("tall pane page size = %d, want 40", got)
+	}
+	if got := inbox.list.Paginator.PerPage; got != 40 {
+		t.Fatalf("tall pane shows %d messages per page, want 40", got)
+	}
+	if got := lipgloss.Height(inbox.View().Content); got > 60 {
+		t.Fatalf("tall pane renders %d rows, want at most 60", got)
+	}
+	inbox.SetPaginationPageSize(config.PaginationPageSize{HeightFactor: 1})
+	if got := inbox.PaginationPageSize(); got != 60 {
+		t.Fatalf("height mode page size = %d, want 60", got)
+	}
+	if got := inbox.list.Paginator.PerPage; got <= 40 {
+		t.Fatalf("height mode shows %d messages per page, want more than 40", got)
+	}
+	inbox.SetPaginationPageSize(config.PaginationPageSize{HeightFactor: 0.5})
+	if got := inbox.PaginationPageSize(); got != 30 {
+		t.Fatalf("half-height page size = %d, want 30", got)
+	}
+	if got := inbox.list.Paginator.PerPage; got != 30 {
+		t.Fatalf("half-height mode shows %d messages per page, want 30", got)
+	}
+	inbox.SetPaginationPageSize(config.PaginationPageSize{Limit: 25})
+	if got := inbox.PaginationPageSize(); got != 25 {
+		t.Fatalf("configured cap page size = %d, want 25", got)
+	}
+	if got := inbox.list.Paginator.PerPage; got != 25 {
+		t.Fatalf("configured cap shows %d messages per page, want 25", got)
 	}
 }
 

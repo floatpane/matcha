@@ -641,6 +641,11 @@ func (m *Model) setFolderInboxDefaults() {
 	m.folderInbox.SetDefaultThreaded(m.config.EnableThreaded)
 	m.folderInbox.SetDisableImages(m.config.DisableImages)
 	m.folderInbox.SetSplitOrientation(m.config.GetSplitPaneOrientation())
+	m.folderInbox.GetInbox().SetPaginationPageSize(m.config.GetPaginationPageSize())
+}
+
+func (m *Model) fetchFolderEmailsCmd(folderName string) tea.Cmd {
+	return fetchcmd.FetchFolderEmailsCmd(m.config, folderName, m.folderInbox.PaginationPageSize())
 }
 
 func (m *Model) setFolderInboxEmails(folderName string, emails []fetcher.Email) {
@@ -666,21 +671,21 @@ func (m *Model) cacheFolderEmailBodies(folderName string, emails []fetcher.Email
 func (m *Model) refreshFolderEmails(folderName string) tea.Cmd {
 	delete(m.store.FolderEmails, folderName)
 	m.folderInbox.SetRefreshing(true)
-	return fetchcmd.FetchFolderEmailsCmd(m.config, folderName)
+	return m.fetchFolderEmailsCmd(folderName)
 }
 
 func (m *Model) fetchCurrentFolderEmails(folderName string) tea.Cmd {
 	if cached, ok := m.store.FolderEmails[folderName]; ok {
 		m.setFolderInboxEmails(folderName, cached)
-		return m.pluginNotifyCmd()
+		return tea.Batch(m.folderInbox.ContinueUnreadFetch(), m.pluginNotifyCmd())
 	}
 	if diskCached := emailstore.LoadFolderEmailsFromCache(folderName); len(diskCached) > 0 {
 		m.store.FolderEmails[folderName] = diskCached
 		m.setFolderInboxEmails(folderName, diskCached)
-		return tea.Batch(fetchcmd.FetchFolderEmailsCmd(m.config, folderName), m.pluginNotifyCmd())
+		return tea.Batch(m.fetchFolderEmailsCmd(folderName), m.pluginNotifyCmd())
 	}
 	m.folderInbox.SetLoadingEmails(true)
-	return tea.Batch(fetchcmd.FetchFolderEmailsCmd(m.config, folderName), m.pluginNotifyCmd())
+	return tea.Batch(m.fetchFolderEmailsCmd(folderName), m.pluginNotifyCmd())
 }
 
 func (m *Model) updateDaemonSubscriptions(previousFolder, newFolder string) {
@@ -703,11 +708,15 @@ func (m *Model) markEmailReadAndQueue(accountID string, uid uint32, suppress boo
 		return nil
 	}
 	m.store.MarkEmailAsReadInStores(uid, accountID)
+	var listCmd tea.Cmd
+	if m.folderInbox != nil {
+		listCmd = m.folderInbox.MarkEmailAsRead(uid, accountID)
+	}
 	account := m.config.GetAccountByID(accountID)
 	if account != nil {
-		return fetchcmd.MarkEmailAsReadCmd(account, uid, accountID, m.folderName())
+		return tea.Batch(listCmd, fetchcmd.MarkEmailAsReadCmd(account, uid, accountID, m.folderName()))
 	}
-	return nil
+	return listCmd
 }
 
 func (m *Model) maybeYubiKeyNotification(accountID string, attachments []fetcher.Attachment) tea.Cmd {
@@ -906,8 +915,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}
 	}
 
-	m.current, cmd = m.current.Update(msg)
-	cmds = append(cmds, cmd)
+	// Folder fetch results are applied below to both the store and FolderInbox.
+	// Forwarding them here would append a page twice and lose the next-page cmd.
+	switch msg.(type) {
+	case tui.FolderEmailsFetchedMsg, tui.FolderEmailsAppendedMsg:
+	default:
+		m.current, cmd = m.current.Update(msg)
+		cmds = append(cmds, cmd)
+	}
 
 	if keyMsg, isKey := msg.(tea.KeyPressMsg); isKey {
 		if composer := getCurrentComposer(m.current); composer != nil && m.plugins != nil {
@@ -1071,7 +1086,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		batchCmds := []tea.Cmd{
 			m.current.Init(),
 			fetchcmd.FetchFoldersCmd(m.config),
-			fetchcmd.FetchFolderEmailsCmd(m.config, emailstore.FolderInbox),
+			m.fetchFolderEmailsCmd(emailstore.FolderInbox),
 			idledaemon.ListenForIdleUpdates(m.idleUpdates),
 		}
 		if m.service.IsDaemon() {
@@ -1222,34 +1237,32 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			return m, nil
 		}
 		m.setFolderInboxEmails(msg.FolderName, msg.Emails)
-		return m, tea.Batch(append(m.pluginFlagCmds(), m.pluginNotifyCmd())...)
+		return m, tea.Batch(append(m.pluginFlagCmds(), m.pluginNotifyCmd(), m.folderInbox.ContinueUnreadFetch())...)
 
 	case tui.FetchFolderMoreEmailsMsg:
-		if msg.AccountID == "" || m.config == nil {
+		if msg.AccountID == "" || m.config == nil || m.folderInbox == nil || m.folderInbox.GetCurrentFolder() != msg.FolderName {
 			return m, nil
 		}
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
 			return m, nil
 		}
-		limit := uint32(emailstore.PaginationLimit)
+		limit := m.folderInbox.PaginationPageSize()
 		if msg.Limit > 0 {
 			limit = msg.Limit
 		}
-		return m, tea.Batch(
-			func() tea.Msg { return tui.FetchingMoreEmailsMsg{} },
-			fetchcmd.FetchFolderEmailsPaginatedCmd(account, msg.FolderName, limit, msg.Offset),
-		)
+		_, _ = m.folderInbox.Update(tui.FetchingMoreEmailsMsg{FolderName: msg.FolderName})
+		return m, fetchcmd.FetchFolderEmailsPaginatedCmd(account, msg.FolderName, limit, msg.Offset)
 
 	case tui.FolderEmailsAppendedMsg:
 		if m.folderInbox == nil || m.folderInbox.GetCurrentFolder() != msg.FolderName {
 			return m, nil
 		}
-		m.folderInbox.Update(msg)
+		_, fetchCmd := m.folderInbox.Update(msg)
 		m.store.AppendToFolder(msg.FolderName, msg.Emails)
 		m.cacheFolderEmailBodies(msg.FolderName, m.store.FolderEmails[msg.FolderName])
 		m.syncUnreadBadge()
-		return m, nil
+		return m, fetchCmd
 
 	case tui.MoveEmailToFolderMsg:
 		if m.config == nil {
@@ -1333,13 +1346,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if m.folderInbox == nil {
 			return m, nil
 		}
-		return m, fetchcmd.FetchFolderEmailsCmd(m.config, m.folderInbox.GetCurrentFolder())
+		return m, m.fetchFolderEmailsCmd(m.folderInbox.GetCurrentFolder())
 
 	case tui.IdleNewMailMsg:
 		m.notifyNewMail(msg.AccountID, msg.FolderName)
 		if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == msg.FolderName {
 			return m, tea.Batch(
-				fetchcmd.FetchFolderEmailsCmd(m.config, msg.FolderName),
+				m.fetchFolderEmailsCmd(msg.FolderName),
 				idledaemon.ListenForIdleUpdates(m.idleUpdates),
 			)
 		}
@@ -1364,14 +1377,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			if err := json.Unmarshal(msg.Event.Data, &ev); err == nil {
 				m.notifyNewMail(ev.AccountID, ev.Folder)
 				if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
-					daemonCmds = append(daemonCmds, fetchcmd.FetchFolderEmailsCmd(m.config, ev.Folder))
+					daemonCmds = append(daemonCmds, m.fetchFolderEmailsCmd(ev.Folder))
 				}
 			}
 		case daemonrpc.EventSyncComplete:
 			var ev daemonrpc.SyncCompleteEvent
 			if err := json.Unmarshal(msg.Event.Data, &ev); err == nil {
 				if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
-					daemonCmds = append(daemonCmds, fetchcmd.FetchFolderEmailsCmd(m.config, ev.Folder))
+					daemonCmds = append(daemonCmds, m.fetchFolderEmailsCmd(ev.Folder))
 				}
 			}
 		}
@@ -1425,15 +1438,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if account == nil {
 			return m, nil
 		}
-		limit := uint32(emailstore.PaginationLimit)
+		limit := m.config.GetPaginationPageSize().LimitForHeight(m.height)
+		if m.folderInbox != nil {
+			limit = m.folderInbox.PaginationPageSize()
+		}
 		if msg.Limit > 0 {
 			limit = msg.Limit
 		}
 		folderName := m.folderName()
-		return m, tea.Batch(
-			func() tea.Msg { return tui.FetchingMoreEmailsMsg{} },
-			fetchcmd.FetchFolderEmailsPaginatedCmd(account, folderName, limit, msg.Offset),
-		)
+		m.current, _ = m.current.Update(tui.FetchingMoreEmailsMsg{FolderName: folderName})
+		return m, fetchcmd.FetchFolderEmailsPaginatedCmd(account, folderName, limit, msg.Offset)
 
 	case tui.SearchRequestedMsg:
 		folderName := msg.FolderName
@@ -1783,9 +1797,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		m.current = tui.NewStatus("Fetching email content...")
 		return m, tea.Batch(append(m.pluginFlagCmds(), m.current.Init(), fetchcmd.FetchFolderEmailBodyCmd(m.config, msg.UID, msg.AccountID, folderName, msg.Mailbox), m.pluginNotifyCmd())...)
 
-	case tui.FetchErr:
-		log.Printf("paginated fetch error: %v", error(msg))
-		return m, m.showErrorCmd(error(msg).Error())
+	case tui.FolderEmailsPageFailedMsg:
+		if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() != msg.FolderName {
+			return m, nil
+		}
+		if m.folderInbox != nil && m.current != m.folderInbox {
+			_, _ = m.folderInbox.Update(msg)
+		}
+		log.Printf("paginated fetch error for %s: %v", msg.FolderName, msg.Err)
+		return m, m.showErrorCmd(msg.Err.Error())
 
 	case tui.EmailBodyFetchedMsg:
 		if msg.Err != nil {
@@ -1832,11 +1852,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		var markReadCmd tea.Cmd
 		pluginSuppressed := m.plugins != nil && m.plugins.TakeAutoReadSuppressed()
 		if !email.IsRead && !pluginSuppressed {
-			m.store.MarkEmailAsReadInStores(msg.UID, msg.AccountID)
-			account := m.config.GetAccountByID(msg.AccountID)
-			if account != nil {
-				markReadCmd = fetchcmd.MarkEmailAsReadCmd(account, msg.UID, msg.AccountID, m.folderName())
-			}
+			markReadCmd = m.markEmailReadAndQueue(msg.AccountID, msg.UID, false)
 		}
 		emailIndex := m.store.GetEmailIndex(msg.UID, msg.AccountID)
 		emailView := tui.NewEmailView(*email, emailIndex, m.width, m.height, msg.Mailbox, m.config.DisableImages)
