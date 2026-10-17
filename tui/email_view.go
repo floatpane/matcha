@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"charm.land/bubbles/v2/viewport"
@@ -34,9 +35,17 @@ func ClearKittyGraphics() {
 }
 
 var (
-	emailHeaderStyle   = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).Padding(0, 1)
-	attachmentBoxStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), false, false, false, true).PaddingLeft(2).MarginTop(1)
+	emailHeaderStyle     = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).Padding(0, 1)
+	attachmentBoxStyle   = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), false, false, false, true).PaddingLeft(2).MarginTop(1)
+	remoteImageRequestID atomic.Uint64
 )
+
+type remoteImagesLoadedMsg struct {
+	requestID  uint64
+	body       string
+	placements []view.ImagePlacement
+	err        error
+}
 
 // BodyTransformer, if set, post-processes the rendered email body before it is
 // placed in the viewport. main.go wires this up to the plugin manager so that
@@ -52,32 +61,37 @@ func applyBodyTransform(body string, email fetcher.Email) string {
 }
 
 type EmailView struct {
-	viewport           viewport.Model
-	email              fetcher.Email
-	emailIndex         int
-	attachmentCursor   int
-	focusOnAttachments bool
-	accountID          string
-	mailbox            MailboxKind
-	disableImages      bool
-	showImages         bool
-	isSMIME            bool
-	smimeTrusted       bool
-	isEncrypted        bool
-	isPGP              bool
-	pgpTrusted         bool
-	isPGPEncrypted     bool
-	imagePlacements    []view.ImagePlacement
-	pluginStatus       string
-	pluginKeyBindings  []PluginKeyBinding
-	hasCalendarInvite  bool
-	calendarEvent      *calendar.Event
-	originalICSData    []byte
-	isPreviewMode      bool
-	columnOffset       int // horizontal offset for image rendering in split pane
-	rowOffset          int // vertical offset for image rendering in split pane (vertical layout)
-	isPatch            bool
-	patchInfo          *view.PatchInfo
+	viewport            viewport.Model
+	email               fetcher.Email
+	emailIndex          int
+	attachmentCursor    int
+	focusOnAttachments  bool
+	accountID           string
+	mailbox             MailboxKind
+	disableImages       bool
+	showImages          bool
+	showRemoteImages    bool
+	remoteImagesLoading bool
+	remoteLoadID        uint64
+	remoteBody          string
+	remotePlacements    []view.ImagePlacement
+	isSMIME             bool
+	smimeTrusted        bool
+	isEncrypted         bool
+	isPGP               bool
+	pgpTrusted          bool
+	isPGPEncrypted      bool
+	imagePlacements     []view.ImagePlacement
+	pluginStatus        string
+	pluginKeyBindings   []PluginKeyBinding
+	hasCalendarInvite   bool
+	calendarEvent       *calendar.Event
+	originalICSData     []byte
+	isPreviewMode       bool
+	columnOffset        int // horizontal offset for image rendering in split pane
+	rowOffset           int // vertical offset for image rendering in split pane (vertical layout)
+	isPatch             bool
+	patchInfo           *view.PatchInfo
 }
 
 func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox MailboxKind, disableImages bool) *EmailView {
@@ -260,6 +274,21 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		m.handleWindowSize(msg)
+	case remoteImagesLoadedMsg:
+		if !m.remoteImagesLoading || msg.requestID != m.remoteLoadID {
+			return m, nil
+		}
+		m.remoteImagesLoading = false
+		m.showRemoteImages = true
+		m.remoteBody = msg.body
+		m.remotePlacements = msg.placements
+		if msg.err != nil {
+			m.remoteBody = fmt.Sprintf("Error rendering body: %v", msg.err)
+		}
+		if m.showImages {
+			m.regenerateBody()
+		}
+		return m, nil
 	}
 
 	m.viewport, cmd = m.viewport.Update(msg)
@@ -330,6 +359,13 @@ func (m *EmailView) handleAttachmentFocusKey(msg tea.KeyPressMsg) (bool, func() 
 	return false, nil
 }
 
+func (m *EmailView) loadRemoteImagesKey() string {
+	if config.Keybinds.Email.LoadRemoteImages != "" {
+		return config.Keybinds.Email.LoadRemoteImages
+	}
+	return "I"
+}
+
 // handleEmailBodyKey handles key presses when the email body has focus.
 func (m *EmailView) handleEmailBodyKey(msg tea.KeyPressMsg) (bool, func() (tea.Model, tea.Cmd)) {
 	kb := config.Keybinds
@@ -340,6 +376,23 @@ func (m *EmailView) handleEmailBodyKey(msg tea.KeyPressMsg) (bool, func() (tea.M
 			ClearKittyGraphics()
 			m.regenerateBody()
 			return true, func() (tea.Model, tea.Cmd) { return m, nil }
+		}
+	case m.loadRemoteImagesKey():
+		if view.ImageProtocolSupported() && !m.showRemoteImages && !m.remoteImagesLoading {
+			m.showImages = true
+			m.remoteImagesLoading = true
+			m.remoteLoadID = remoteImageRequestID.Add(1)
+			ClearKittyGraphics()
+			m.regenerateBody()
+			body, mimeType := m.email.Body, m.email.BodyMIMEType
+			inline := inlineImagesFromAttachments(m.email.Attachments)
+			requestID := m.remoteLoadID
+			return true, func() (tea.Model, tea.Cmd) {
+				return m, func() tea.Msg {
+					rendered, placements, err := view.ProcessBodyWithInlineRemote(body, mimeType, inline, H1Style, H2Style, BodyStyle, false, true)
+					return remoteImagesLoadedMsg{requestID: requestID, body: rendered, placements: placements, err: err}
+				}
+			}
 		}
 	case kb.Email.Reply, kb.Email.ReplyAll, kb.Email.Forward:
 		if composeMsg, ok := m.handleComposeAction(msg.String()); ok {
@@ -426,14 +479,24 @@ func rsvpResponseFromKey(key string, kb config.KeybindsConfig) string {
 	return ""
 }
 
-// regenerateBody re-renders the email body after a state change such as
-// toggling image display.
-func (m *EmailView) regenerateBody() {
+// renderedBody returns the already downloaded remote images when available.
+// Ordinary UI updates only render inline images and never access the network.
+func (m *EmailView) renderedBody() (string, []view.ImagePlacement) {
+	if m.showImages && m.showRemoteImages {
+		return m.remoteBody, m.remotePlacements
+	}
 	inlineImages := inlineImagesFromAttachments(m.email.Attachments)
 	body, placements, err := view.ProcessBodyWithInline(m.email.Body, m.email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, !m.showImages)
 	if err != nil {
 		body = fmt.Sprintf("Error rendering body: %v", err)
 	}
+	return body, placements
+}
+
+// regenerateBody re-renders the email body after a state change such as
+// toggling image display.
+func (m *EmailView) regenerateBody() {
+	body, placements := m.renderedBody()
 	body = applyBodyTransform(body, m.email)
 	m.imagePlacements = placements
 	wrapped := wrapBodyToWidth(body, m.viewport.Width())
@@ -453,11 +516,7 @@ func (m *EmailView) handleWindowSize(msg tea.WindowSizeMsg) {
 	m.viewport.SetHeight(msg.Height - headerHeight - attachmentHeight)
 
 	ClearKittyGraphics()
-	inlineImages := inlineImagesFromAttachments(m.email.Attachments)
-	body, placements, err := view.ProcessBodyWithInline(m.email.Body, m.email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, !m.showImages)
-	if err != nil {
-		body = fmt.Sprintf("Error rendering body: %v", err)
-	}
+	body, placements := m.renderedBody()
 	body = applyBodyTransform(body, m.email)
 	if m.isPatch {
 		if patchBody, ok := view.RenderPatchBody(m.email.Body, m.email.BodyMIMEType, m.email.Subject, m.email.From, m.viewport.Width()); ok {
@@ -562,6 +621,13 @@ func (m *EmailView) renderHelp() string {
 	if view.ImageProtocolSupported() {
 		shortcuts.WriteString(helpSeparator)
 		shortcuts.WriteString(helpItem("\uf03e", kbKey(kb.Email.ToggleImages, "i"), "toggle images").String())
+		if m.remoteImagesLoading {
+			shortcuts.WriteString(helpSeparator)
+			shortcuts.WriteString("loading remote images…")
+		} else if !m.showRemoteImages {
+			shortcuts.WriteString(helpSeparator)
+			shortcuts.WriteString(helpItem("\uf03e", m.loadRemoteImagesKey(), "load remote images").String())
+		}
 	}
 	for _, pk := range m.pluginKeyBindings {
 		shortcuts.WriteString(" • ")
