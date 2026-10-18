@@ -37,16 +37,17 @@ type GlobalKeys struct {
 }
 
 type InboxKeys struct {
-	VisualMode     string `json:"visual_mode"`
-	ToggleThreaded string `json:"toggle_threaded"`
-	Delete         string `json:"delete"`
-	Archive        string `json:"archive"`
-	Refresh        string `json:"refresh"`
-	Search         string `json:"search"`
-	Filter         string `json:"filter"`
-	Open           string `json:"open"`
-	NextTab        string `json:"next_tab"`
-	PrevTab        string `json:"prev_tab"`
+	VisualMode       string `json:"visual_mode"`
+	ToggleThreaded   string `json:"toggle_threaded"`
+	ToggleUnreadOnly string `json:"toggle_unread_only"`
+	Delete           string `json:"delete"`
+	Archive          string `json:"archive"`
+	Refresh          string `json:"refresh"`
+	Search           string `json:"search"`
+	Filter           string `json:"filter"`
+	Open             string `json:"open"`
+	NextTab          string `json:"next_tab"`
+	PrevTab          string `json:"prev_tab"`
 }
 
 type EmailKeys struct {
@@ -124,16 +125,17 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 			"dismiss_notification": kb.Global.DismissNotification,
 		},
 		"inbox": {
-			"visual_mode":     kb.Inbox.VisualMode,
-			"toggle_threaded": kb.Inbox.ToggleThreaded,
-			keyDelete:         kb.Inbox.Delete,
-			"archive":         kb.Inbox.Archive,
-			"refresh":         kb.Inbox.Refresh,
-			"search":          kb.Inbox.Search,
-			"filter":          kb.Inbox.Filter,
-			"open":            kb.Inbox.Open,
-			"next_tab":        kb.Inbox.NextTab,
-			"prev_tab":        kb.Inbox.PrevTab,
+			"visual_mode":        kb.Inbox.VisualMode,
+			"toggle_threaded":    kb.Inbox.ToggleThreaded,
+			"toggle_unread_only": kb.Inbox.ToggleUnreadOnly,
+			keyDelete:            kb.Inbox.Delete,
+			"archive":            kb.Inbox.Archive,
+			"refresh":            kb.Inbox.Refresh,
+			"search":             kb.Inbox.Search,
+			"filter":             kb.Inbox.Filter,
+			"open":               kb.Inbox.Open,
+			"next_tab":           kb.Inbox.NextTab,
+			"prev_tab":           kb.Inbox.PrevTab,
 		},
 		"email": {
 			"reply":             kb.Email.Reply,

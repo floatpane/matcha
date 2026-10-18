@@ -25,6 +25,7 @@ func TestSaveAndLoadConfig(t *testing.T) {
 
 	// Define a sample configuration to save with multiple accounts.
 	expectedConfig := &Config{
+		PaginationPageSize: &PaginationPageSize{Limit: 55},
 		Accounts: []Account{
 			{
 				ID:              "test-id-1",
@@ -67,6 +68,61 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	// reflect.DeepEqual is used for a deep comparison of the structs.
 	if !reflect.DeepEqual(loadedConfig, expectedConfig) {
 		t.Errorf("Loaded config does not match expected config.\nGot:  %+v\nWant: %+v", loadedConfig, expectedConfig)
+	}
+}
+
+func TestPaginationPageSize(t *testing.T) {
+	for _, tc := range []struct {
+		jsonConfig   string
+		shortPane    uint32
+		tallPane     uint32
+		heightFactor float64
+	}{
+		{`{}`, 20, 40, 0},
+		{`{"pagination_page_size": 25}`, 20, 25, 0},
+		{`{"pagination_page_size": 40}`, 20, 40, 0},
+		{`{"pagination_page_size": "height"}`, 20, 60, 1},
+		{`{"pagination_page_size": "0.5*height"}`, 10, 30, 0.5},
+	} {
+		var cfg Config
+		if err := json.Unmarshal([]byte(tc.jsonConfig), &cfg); err != nil {
+			t.Fatalf("config %s: %v", tc.jsonConfig, err)
+		}
+		size := cfg.GetPaginationPageSize()
+		if got := size.LimitForHeight(20); got != tc.shortPane {
+			t.Fatalf("config %s, short pane: got %d, want %d", tc.jsonConfig, got, tc.shortPane)
+		}
+		if got := size.LimitForHeight(60); got != tc.tallPane {
+			t.Fatalf("config %s, tall pane: got %d, want %d", tc.jsonConfig, got, tc.tallPane)
+		}
+		if size.HeightFactor != tc.heightFactor {
+			t.Fatalf("config %s, height factor: got %g, want %g", tc.jsonConfig, size.HeightFactor, tc.heightFactor)
+		}
+		if cfg.PaginationPageSize != nil {
+			encoded, err := json.Marshal(&cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var roundTrip Config
+			if err := json.Unmarshal(encoded, &roundTrip); err != nil {
+				t.Fatal(err)
+			}
+			if got := roundTrip.GetPaginationPageSize(); got != size {
+				t.Fatalf("config %s round trip: got %+v, want %+v", tc.jsonConfig, got, size)
+			}
+		}
+	}
+	for _, invalid := range []string{
+		`{"pagination_page_size": 0}`,
+		`{"pagination_page_size": -1}`,
+		`{"pagination_page_size": "auto"}`,
+		`{"pagination_page_size": "0*height"}`,
+		`{"pagination_page_size": "1.5*height"}`,
+	} {
+		var cfg Config
+		if err := json.Unmarshal([]byte(invalid), &cfg); err == nil {
+			t.Fatalf("invalid config %s was accepted", invalid)
+		}
 	}
 }
 
