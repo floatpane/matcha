@@ -5,3 +5,4 @@ Title=Matcha
 IsRuntime=False
 Url=https://matcha.email/repo/
 SuggestRemoteName=matcha
+RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo
