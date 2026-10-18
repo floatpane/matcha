@@ -95,12 +95,17 @@ func BuildCommands(current tea.Model, folderInbox *tui.FolderInbox, cfg *config.
 			tui.PaletteCommand{Title: "Toggle CC/BCC fields", Keywords: "cc bcc carbon copy blind show hide", Action: func() tea.Msg { return tui.ToggleCcBccMsg{} }},
 		)
 	case *tui.EmailView:
+		loadRemoteImagesKey := kb.Email.LoadRemoteImages
+		if loadRemoteImagesKey == "" {
+			loadRemoteImagesKey = "I"
+		}
 		cmds = append(cmds,
 			tui.PaletteCommand{Title: "Reply", Hint: kb.Email.Reply, Keywords: "respond answer", Action: KeyAction(kb.Email.Reply)},
 			tui.PaletteCommand{Title: "Forward", Hint: kb.Email.Forward, Keywords: "fwd send on", Action: KeyAction(kb.Email.Forward)},
 			tui.PaletteCommand{Title: "Archive email", Hint: kb.Email.Archive, Keywords: "file store", Action: KeyAction(kb.Email.Archive)},
 			tui.PaletteCommand{Title: "Delete email", Hint: kb.Email.Delete, Keywords: "trash remove", Action: KeyAction(kb.Email.Delete)},
 			tui.PaletteCommand{Title: "Toggle images", Hint: kb.Email.ToggleImages, Keywords: "pictures show hide", Action: KeyAction(kb.Email.ToggleImages)},
+			tui.PaletteCommand{Title: "Load remote images", Hint: loadRemoteImagesKey, Keywords: "remote content privacy tracking", Action: KeyAction(loadRemoteImagesKey)},
 		)
 		if !v.IsPreviewMode() && splitEnabled {
 			cmds = append(cmds,

@@ -56,6 +56,7 @@ type EmailKeys struct {
 	Delete           string `json:"delete"`
 	Archive          string `json:"archive"`
 	ToggleImages     string `json:"toggle_images"`
+	LoadRemoteImages string `json:"load_remote_images"`
 	RsvpAccept       string `json:"rsvp_accept"`
 	RsvpDecline      string `json:"rsvp_decline"`
 	RsvpTentative    string `json:"rsvp_tentative"`
@@ -136,18 +137,19 @@ func ValidateKeybinds(kb KeybindsConfig) []string {
 			"prev_tab":        kb.Inbox.PrevTab,
 		},
 		"email": {
-			"reply":             kb.Email.Reply,
-			"reply_all":         kb.Email.ReplyAll,
-			"forward":           kb.Email.Forward,
-			keyDelete:           kb.Email.Delete,
-			"archive":           kb.Email.Archive,
-			"toggle_images":     kb.Email.ToggleImages,
-			"rsvp_accept":       kb.Email.RsvpAccept,
-			"rsvp_decline":      kb.Email.RsvpDecline,
-			"rsvp_tentative":    kb.Email.RsvpTentative,
-			"focus_attachments": kb.Email.FocusAttachments,
-			"apply_patch":       kb.Email.ApplyPatch,
-			"send_patch":        kb.Email.SendPatch,
+			"reply":              kb.Email.Reply,
+			"reply_all":          kb.Email.ReplyAll,
+			"forward":            kb.Email.Forward,
+			keyDelete:            kb.Email.Delete,
+			"archive":            kb.Email.Archive,
+			"toggle_images":      kb.Email.ToggleImages,
+			"load_remote_images": kb.Email.LoadRemoteImages,
+			"rsvp_accept":        kb.Email.RsvpAccept,
+			"rsvp_decline":       kb.Email.RsvpDecline,
+			"rsvp_tentative":     kb.Email.RsvpTentative,
+			"focus_attachments":  kb.Email.FocusAttachments,
+			"apply_patch":        kb.Email.ApplyPatch,
+			"send_patch":         kb.Email.SendPatch,
 		},
 		"composer": {
 			"undo_send":       kb.Composer.UndoSend,
