@@ -1,6 +1,6 @@
-// Package export provides utilities for exporting emails to HTML or Markdown
-// format, including full message metadata and headers parsed from the raw
-// RFC822 message.
+// Package export provides utilities for exporting emails to HTML, Markdown,
+// or EML format, including full message metadata and headers parsed from
+// the raw RFC822 message.
 package export
 
 import (
@@ -594,8 +594,11 @@ func formatSize(bytes int) string {
 // and the desired format extension.
 func SuggestFilename(subject, format string) string {
 	ext := extHTML
-	if format == "markdown" || format == "md" {
+	switch format {
+	case "markdown", "md":
 		ext = "md"
+	case "eml":
+		ext = "eml"
 	}
 
 	// Sanitize the subject for use as a filename
