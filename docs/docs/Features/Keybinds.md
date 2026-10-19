@@ -86,6 +86,8 @@ When viewing an email, the palette also includes:
   browser on other platforms.
 - **Export as Markdown** — exports the email (with full headers and metadata) as
   a Markdown file.
+- **Export as EML** — exports the original RFC822 message verbatim as an `.eml`
+  file, with all headers and body content unchanged.
 - **Open in browser** — saves the original email as HTML to a temporary file and
   opens it in the system's default browser.
 

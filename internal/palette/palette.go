@@ -180,6 +180,7 @@ func EmailExportCommands(ev *tui.EmailView, folderInbox *tui.FolderInbox) []tui.
 	return []tui.PaletteCommand{
 		{Title: "Export as HTML", Keywords: "export save html file", Action: exportAction("html")},
 		{Title: "Export as Markdown", Keywords: "export save markdown md file", Action: exportAction("markdown")},
+		{Title: "Export as EML", Keywords: "export save eml raw rfc822 original file", Action: exportAction("eml")},
 		{Title: "Open in browser", Keywords: "open browser web view original", Action: openInBrowserAction},
 	}
 }
