@@ -351,13 +351,13 @@ type AttachmentDownloadedMsg struct {
 }
 
 // ExportEmailMsg requests exporting the current email to a file.
-// Format is "html" or "markdown".
+// Format is "html", "markdown", or "eml".
 type ExportEmailMsg struct {
 	Email    fetcher.Email
 	Account  string
 	Folder   string
 	Mailbox  MailboxKind
-	Format   string // "html" or "markdown"
+	Format   string // "html", "markdown", or "eml"
 	SavePath string // empty means show a file picker first
 }
 
