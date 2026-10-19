@@ -2135,6 +2135,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		m.restoreView()
 		return m, nil
 
+	case tui.OpenPaletteMsg:
+		return m, m.palette.Open(msg.Commands, m.width, m.contentHeight())
+
 	case tui.GoToSaveFilePickerMsg:
 		if runtime.GOOS == "darwin" {
 			return m, func() tea.Msg {

@@ -380,6 +380,12 @@ type EmailOpenedInBrowserMsg struct {
 	Err error
 }
 
+// OpenPaletteMsg asks the top-level model to reopen the command palette with
+// a new set of commands, enabling multi-step palette flows.
+type OpenPaletteMsg struct {
+	Commands []PaletteCommand
+}
+
 // GoToSaveFilePickerMsg signals navigation to the save file picker for
 // email export.
 type GoToSaveFilePickerMsg struct {
