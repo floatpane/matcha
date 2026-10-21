@@ -71,13 +71,14 @@ func TestFetchMailboxEmailsUsesRequestedLimitForSmallFetchChunks(t *testing.T) {
 func startFetchRecorderIMAPServer(t *testing.T, messages uint32, fetchCommands chan<- string) (string, func()) {
 	t.Helper()
 
-	listener, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
-		Certificates: []tls.Certificate{newTestTLSCertificate(t)},
-	})
+	// Use plain TCP with STARTTLS support so the test matches the real-world
+	// connection flow used by connectWithOptions for non-993 ports.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("starting test IMAP server: %v", err)
 	}
 
+	cert := newTestTLSCertificate(t)
 	var closeOnce sync.Once
 	var connMu sync.Mutex
 	var conn net.Conn
@@ -100,13 +101,13 @@ func startFetchRecorderIMAPServer(t *testing.T, messages uint32, fetchCommands c
 		connMu.Lock()
 		conn = accepted
 		connMu.Unlock()
-		serveFetchRecorderIMAPConn(accepted, messages, fetchCommands)
+		serveFetchRecorderIMAPConn(accepted, messages, fetchCommands, cert)
 	}()
 
 	return listener.Addr().String(), closeServer
 }
 
-func serveFetchRecorderIMAPConn(conn net.Conn, messages uint32, fetchCommands chan<- string) {
+func serveFetchRecorderIMAPConn(conn net.Conn, messages uint32, fetchCommands chan<- string, cert tls.Certificate) {
 	defer conn.Close()
 
 	reader := bufio.NewReader(conn)
@@ -136,12 +137,25 @@ func serveFetchRecorderIMAPConn(conn net.Conn, messages uint32, fetchCommands ch
 		tag := fields[0]
 		switch strings.ToUpper(fields[1]) {
 		case "CAPABILITY":
-			if !writeIMAPLine("* CAPABILITY IMAP4rev1 AUTH=PLAIN") {
+			if !writeIMAPLine("* CAPABILITY IMAP4rev1 AUTH=PLAIN STARTTLS") {
 				return
 			}
 			if !writeIMAPLine("%s OK CAPABILITY completed", tag) {
 				return
 			}
+		case "STARTTLS":
+			if !writeIMAPLine("%s OK BEGIN TLS negotiation", tag) {
+				return
+			}
+			writer.Flush()
+			tlsConn := tls.Server(conn, &tls.Config{
+				Certificates: []tls.Certificate{cert},
+			})
+			if err := tlsConn.Handshake(); err != nil {
+				return
+			}
+			reader = bufio.NewReader(tlsConn)
+			writer = bufio.NewWriter(tlsConn)
 		case "LOGIN":
 			if !writeIMAPLine("%s OK LOGIN completed", tag) {
 				return
