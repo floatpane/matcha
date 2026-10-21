@@ -2,6 +2,7 @@ package sender
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -13,6 +14,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
+	"net"
 	"net/mail"
 	"net/smtp"
 	"net/textproto"
@@ -26,6 +28,7 @@ import (
 	"github.com/emersion/go-pgpmail"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/config"
+	"github.com/floatpane/matcha/internal/httpclient"
 	"github.com/floatpane/matcha/internal/loglevel"
 	"github.com/floatpane/matcha/pgp"
 	"github.com/yuin/goldmark"
@@ -708,7 +711,7 @@ func buildEmailMsg(account *config.Account, to, cc, bcc []string, subject, plain
 
 // deliverSMTP sends rawMsg to allRecipients via SMTP using account credentials.
 func deliverSMTP(account *config.Account, smtpServer string, smtpPort int, allRecipients []string, rawMsg []byte) error {
-	addr := fmt.Sprintf("%s:%d", smtpServer, smtpPort)
+	addr := net.JoinHostPort(smtpServer, fmt.Sprintf("%d", smtpPort))
 
 	smtpUser := account.GetSMTPUsername()
 	smtpPass := account.GetSMTPPassword()
@@ -733,7 +736,11 @@ func deliverSMTP(account *config.Account, smtpServer string, smtpPort int, allRe
 	var err error
 
 	if smtpPort == 465 {
-		conn, dialErr := tls.Dial("tcp", addr, tlsConfig) //nolint:noctx
+		dialer := tls.Dialer{
+			NetDialer: &net.Dialer{Timeout: httpclient.SMTPDialTimeout},
+			Config:    tlsConfig,
+		}
+		conn, dialErr := dialer.DialContext(context.Background(), "tcp", addr)
 		if dialErr != nil {
 			return dialErr
 		}
@@ -743,8 +750,14 @@ func deliverSMTP(account *config.Account, smtpServer string, smtpPort int, allRe
 			return err
 		}
 	} else {
-		c, err = smtp.Dial(addr)
+		nd := &net.Dialer{Timeout: httpclient.SMTPDialTimeout}
+		conn, dialErr := nd.DialContext(context.Background(), "tcp", addr)
+		if dialErr != nil {
+			return dialErr
+		}
+		c, err = smtp.NewClient(conn, smtpServer)
 		if err != nil {
+			conn.Close() //nolint:errcheck,gosec
 			return err
 		}
 	}
@@ -923,7 +936,7 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 	}
 
 	// Send via SMTP
-	addr := fmt.Sprintf("%s:%d", smtpServer, smtpPort)
+	addr := net.JoinHostPort(smtpServer, fmt.Sprintf("%d", smtpPort))
 
 	tlsConfig := &tls.Config{
 		ServerName:         smtpServer,
@@ -939,7 +952,11 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 	var c *smtp.Client
 
 	if smtpPort == 465 {
-		conn, err := tls.Dial("tcp", addr, tlsConfig) //nolint:noctx
+		dialer := tls.Dialer{
+			NetDialer: &net.Dialer{Timeout: httpclient.SMTPDialTimeout},
+			Config:    tlsConfig,
+		}
+		conn, err := dialer.DialContext(context.Background(), "tcp", addr)
 		if err != nil {
 			return nil, err
 		}
@@ -949,9 +966,14 @@ func SendCalendarReply(account *config.Account, to []string, subject, plainBody 
 			return nil, err
 		}
 	} else {
-		var err error
-		c, err = smtp.Dial(addr)
+		nd := &net.Dialer{Timeout: httpclient.SMTPDialTimeout}
+		conn, dialErr := nd.DialContext(context.Background(), "tcp", addr)
+		if dialErr != nil {
+			return nil, dialErr
+		}
+		c, err = smtp.NewClient(conn, smtpServer)
 		if err != nil {
+			conn.Close() //nolint:errcheck,gosec
 			return nil, err
 		}
 	}
