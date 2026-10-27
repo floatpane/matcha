@@ -40,6 +40,7 @@ type Service interface {
 	RefreshFolder(accountID, folder string) error
 	Subscribe(accountID, folder string) error
 	Unsubscribe(accountID, folder string) error
+	Search(accountID, folder string, query backend.SearchQuery) ([]backend.Email, error)
 	ReloadConfig() error
 	Events() <-chan *daemonrpc.Event
 	IsDaemon() bool
@@ -49,6 +50,13 @@ type Service interface {
 // NewService connects to the daemon, auto-starting it if needed.
 // Falls back to direct mode only if daemon cannot be started, or if DisableDaemon is set.
 func NewService(cfg *config.Config) Service {
+	return NewCLIClient(cfg, true)
+}
+
+// NewCLIClient connects to the daemon. If autoStart is true and daemon is not
+// running, it auto-starts the daemon. If autoStart is false, it falls back to
+// direct mode immediately if the daemon is not running.
+func NewCLIClient(cfg *config.Config, autoStart bool) Service {
 	if cfg.DisableDaemon {
 		log.Println("service: daemon disabled by config, using direct mode")
 		return newDirectService(cfg)
@@ -57,6 +65,11 @@ func NewService(cfg *config.Config) Service {
 	// Try connecting to existing daemon.
 	if svc := tryConnectWithConfig(cfg); svc != nil {
 		return svc
+	}
+
+	if !autoStart {
+		loglevel.Debugf("service: daemon not running, auto-start disabled, using direct mode")
+		return newDirectService(cfg)
 	}
 
 	// Daemon not running — auto-start it.
@@ -362,6 +375,16 @@ func (s *daemonService) Unsubscribe(accountID, folder string) error {
 	})
 }
 
+func (s *daemonService) Search(accountID, folder string, query backend.SearchQuery) ([]backend.Email, error) {
+	var emails []backend.Email
+	err := s.client.Call(daemonrpc.MethodSearch, daemonrpc.SearchParams{
+		AccountID: accountID,
+		Folder:    folder,
+		Query:     query.Raw, // Send the raw query string over RPC
+	}, &emails)
+	return emails, err
+}
+
 func (s *daemonService) ReloadConfig() error {
 	return s.call(func(c *Client) error {
 		return c.Call(daemonrpc.MethodReloadConfig, nil, nil)
@@ -557,6 +580,14 @@ func (s *directService) Subscribe(_, _ string) error {
 
 func (s *directService) Unsubscribe(_, _ string) error {
 	return nil
+}
+
+func (s *directService) Search(accountID, folder string, query backend.SearchQuery) ([]backend.Email, error) {
+	p, err := s.getProvider(accountID)
+	if err != nil {
+		return nil, err
+	}
+	return p.Search(context.Background(), folder, query)
 }
 
 func (s *directService) ReloadConfig() error {

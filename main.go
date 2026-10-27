@@ -176,6 +176,37 @@ func runSubcommand(args []string) {
 			cliutil.Exit(1)
 		}
 		cliutil.Exit(0)
+	case "folders":
+		if err := matchaCli.RunFolders(args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "folders failed: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
+	case "list":
+		if err := matchaCli.RunList(args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "list failed: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
+	case "read":
+		if err := matchaCli.RunRead(args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "read failed: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
+	case "search":
+		if err := matchaCli.RunSearch(args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "search failed: %v\n", err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
+	case "archive", "delete", "mark-read", "mark-unread", "move":
+		// RunManage takes the subcommand name as its first argument.
+		if err := matchaCli.RunManage(args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "%s failed: %v\n", args[1], err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
 	case "marketplace":
 		mp := tui.NewMarketplace(true)
 		p := tea.NewProgram(mp)
@@ -350,6 +381,15 @@ Usage:
 
 Commands:
   send             Send an email from the command line
+  folders          List the folders of an account
+  list             List the messages in a folder
+  read             Print one message
+  search           Search a folder
+  archive          Archive messages
+  delete           Delete messages
+  mark-read        Mark messages as read
+  mark-unread      Mark messages as unread
+  move             Move messages to another folder
   apply            Apply a patch from a git-format-patch email
   send-patch       Send a git-format-patch email
   contacts         Manage contacts (export, sync)
