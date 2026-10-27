@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/floatpane/matcha/backend"
 	"github.com/floatpane/matcha/daemonrpc"
 	"github.com/google/uuid"
 )
@@ -142,6 +143,30 @@ func (d *Daemon) handleFetchEmailBody(ctx context.Context, _ *daemonrpc.Conn, pa
 		BodyMIMEType: mimeType,
 		Attachments:  attInfos,
 	}, nil
+}
+
+func (d *Daemon) handleSearch(ctx context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
+	args, err := decodeParams[daemonrpc.SearchParams](params)
+	if err != nil {
+		return nil, parseError(err)
+	}
+
+	p, err := d.getProvider(args.AccountID)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	defer cancel()
+
+	// The daemon receives the raw query string and is responsible for parsing it.
+	query := backend.ParseSearchQuery(args.Query)
+
+	emails, err := p.Search(ctx, args.Folder, query)
+	if err != nil {
+		return nil, err
+	}
+	return emails, nil
 }
 
 func (d *Daemon) handleDeleteEmails(ctx context.Context, _ *daemonrpc.Conn, params json.RawMessage) (any, error) {
