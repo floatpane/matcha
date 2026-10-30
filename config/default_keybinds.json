@@ -26,6 +26,7 @@
     "delete": "d",
     "archive": "a",
     "toggle_images": "i",
+    "load_remote_images": "I",
     "rsvp_accept": "1",
     "rsvp_decline": "2",
     "rsvp_tentative": "3",

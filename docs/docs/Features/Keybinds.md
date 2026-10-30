@@ -40,6 +40,7 @@ Plain text, not encrypted. Edit with any text editor. Restart matcha to apply ch
     "delete": "d",
     "archive": "a",
     "toggle_images": "i",
+    "load_remote_images": "I",
     "rsvp_accept": "1",
     "rsvp_decline": "2",
     "rsvp_tentative": "3",
@@ -80,6 +81,8 @@ its keybinding, so it always matches whatever you've configured — and you can
 rely on the palette for less-common actions instead of memorizing every key.
 
 When viewing an email, the palette also includes:
+
+- **Load remote images** — fetches remote content for the current message only.
 
 - **Export as HTML** — exports the email (with full headers and metadata) as a
   self-contained HTML file. Opens a system save dialog on macOS, or a TUI file
