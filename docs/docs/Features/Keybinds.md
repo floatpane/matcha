@@ -81,11 +81,13 @@ rely on the palette for less-common actions instead of memorizing every key.
 
 When viewing an email, the palette also includes:
 
-- **Export as HTML** — exports the email (with full headers and metadata) as a
-  self-contained HTML file. Opens a system save dialog on macOS, or a TUI file
-  browser on other platforms.
-- **Export as Markdown** — exports the email (with full headers and metadata) as
-  a Markdown file.
+- **Export as…** — opens a second palette to choose the format, then exports the
+  email with full headers and metadata. Opens a system save dialog on macOS, or
+  a TUI file browser on other platforms. The format choices are:
+  - **Export as HTML** — a self-contained HTML file.
+  - **Export as Markdown** — a Markdown file.
+  - **Export as EML** — the original RFC822 message verbatim as an `.eml` file,
+    with all headers and body content unchanged.
 - **Open in browser** — saves the original email as HTML to a temporary file and
   opens it in the system's default browser.
 

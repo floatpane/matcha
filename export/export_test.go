@@ -154,6 +154,7 @@ func TestSuggestFilename(t *testing.T) {
 		{"Test Email", "html", "Test Email.html"},
 		{"Test Email", "markdown", "Test Email.md"},
 		{"Test Email", "md", "Test Email.md"},
+		{"Test Email", "eml", "Test Email.eml"},
 		{"", "html", "email.html"},
 		{"Re: Hello/World", "html", "Re- Hello-World.html"},
 		{"Test:Email*With?Bad\"Chars<>|", "html", "Test-Email-With-Bad-Chars---.html"},
