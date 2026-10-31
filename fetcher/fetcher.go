@@ -327,6 +327,37 @@ func decodeAttachmentData(rawBytes []byte, encoding string) ([]byte, error) {
 	}
 }
 
+// parseRawMessage extracts body text and MIME type from raw RFC822 message bytes.
+// Used as fallback when BODYSTRUCTURE parsing fails (e.g., non-standard bounce messages).
+func parseRawMessage(rawBytes []byte) (body, mimeType string) {
+	mr, err := mail.CreateReader(bytes.NewReader(rawBytes))
+	if err != nil {
+		return string(rawBytes), mimeTextPlain
+	}
+	for {
+		p, err := mr.NextPart()
+		if err != nil {
+			break
+		}
+		cType, _, _ := mime.ParseMediaType(p.Header.Get("Content-Type"))
+		b, readErr := io.ReadAll(p.Body)
+		if readErr != nil {
+			continue
+		}
+		if cType == mimeTextHTML {
+			return string(b), mimeTextHTML
+		}
+		if cType == mimeTextPlain && body == "" {
+			body = string(b)
+			mimeType = mimeTextPlain
+		}
+	}
+	if body == "" {
+		return string(rawBytes), mimeTextPlain
+	}
+	return body, mimeType
+}
+
 // parsePartID converts a string part ID like "1.2.3" to []int{1, 2, 3}.
 // Special cases: "TEXT" maps to empty with PartSpecifierText (handled by caller).
 func parsePartID(partID string) []int {
@@ -768,7 +799,12 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 	})
 	bsMsgs, err := fetchCmd.Collect()
 	if err != nil {
-		return "", "", nil, err
+		rawBytes, rawErr := FetchRawMessageFromMailbox(account, mailbox, uid)
+		if rawErr != nil {
+			return "", "", nil, fmt.Errorf("body structure fetch failed: %w; raw fetch also failed: %v", err, rawErr)
+		}
+		body, mimeType := parseRawMessage(rawBytes)
+		return body, mimeType, nil, nil
 	}
 
 	if len(bsMsgs) == 0 || bsMsgs[0].BodyStructure == nil {
