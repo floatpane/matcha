@@ -28,10 +28,9 @@ type Dependencies struct {
 // FolderInboxView is the subset of *tui.FolderInbox used by the action manager.
 type FolderInboxView interface {
 	SetEmails(emails []fetcher.Email, accounts []config.Account)
-	IncrementUnreadCount(folder string)
-	DecrementUnreadCount(folder string)
-	GetFolders() []string
-	GetUnreadCountsCopy() map[string]int
+	IncrementUnreadCount(folder, accountID string)
+	DecrementUnreadCount(folder, accountID string)
+	GetAccountFolderData(accountID string) ([]string, map[string]int)
 }
 
 // Manager handles delete, archive, and move actions with an undo grace period.
@@ -109,7 +108,7 @@ func (m *Manager) RestorePendingAction() {
 			for _, e := range pa.FolderSnap {
 				if e.UID == uid && e.AccountID == pa.AccountID {
 					if !e.IsRead {
-						m.folderInbox.IncrementUnreadCount(pa.FolderName)
+						m.folderInbox.IncrementUnreadCount(pa.FolderName, pa.AccountID)
 						restored = true
 					}
 					break
@@ -117,7 +116,8 @@ func (m *Manager) RestorePendingAction() {
 			}
 		}
 		if restored {
-			config.SaveAccountFolders(pa.AccountID, m.folderInbox.GetFolders(), m.folderInbox.GetUnreadCountsCopy()) //nolint:errcheck,gosec
+			folders, counts := m.folderInbox.GetAccountFolderData(pa.AccountID)
+			config.SaveAccountFolders(pa.AccountID, folders, counts) //nolint:errcheck,gosec
 		}
 	}
 	go emailstore.SaveFolderEmailsToCache(pa.FolderName, pa.FolderSnap)
@@ -393,7 +393,7 @@ func (m *Manager) decrementFolderUnreadForRemoved(folderName, accountID string, 
 		for _, e := range emails {
 			if e.UID == uid && e.AccountID == accountID {
 				if !e.IsRead {
-					m.folderInbox.DecrementUnreadCount(folderName)
+					m.folderInbox.DecrementUnreadCount(folderName, accountID)
 					decremented = true
 				}
 				break
@@ -402,7 +402,8 @@ func (m *Manager) decrementFolderUnreadForRemoved(folderName, accountID string, 
 	}
 
 	if decremented {
-		config.SaveAccountFolders(accountID, m.folderInbox.GetFolders(), m.folderInbox.GetUnreadCountsCopy()) //nolint:errcheck,gosec
+		folders, counts := m.folderInbox.GetAccountFolderData(accountID)
+		config.SaveAccountFolders(accountID, folders, counts) //nolint:errcheck,gosec
 	}
 }
 

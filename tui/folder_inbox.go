@@ -92,15 +92,20 @@ const (
 
 // FolderInbox combines a folder sidebar with an email list.
 type FolderInbox struct {
-	folders         []string
-	unread          map[string]int
-	activeFolderIdx int
-	currentFolder   string
-	inbox           *Inbox
-	accounts        []config.Account
-	width           int
-	height          int
-	isLoadingEmails bool
+	folders          []string
+	unread           map[string]int
+	mergedFolders    []string
+	mergedUnread     map[string]int
+	foldersByAccount map[string][]string
+	unreadByAccount  map[string]map[string]int
+	folderSelection  map[string]string
+	activeFolderIdx  int
+	currentFolder    string
+	inbox            *Inbox
+	accounts         []config.Account
+	width            int
+	height           int
+	isLoadingEmails  bool
 
 	// Move-to-folder overlay state
 	movingEmail      bool
@@ -236,11 +241,16 @@ func NewFolderInbox(folders []string, accounts []config.Account) *FolderInbox {
 	inbox.SetFolderName(currentFolder)
 
 	fi := &FolderInbox{
-		folders:         folders,
-		activeFolderIdx: 0,
-		currentFolder:   currentFolder,
-		inbox:           inbox,
-		accounts:        accounts,
+		folders:          folders,
+		mergedFolders:    folders,
+		mergedUnread:     make(map[string]int),
+		foldersByAccount: make(map[string][]string),
+		unreadByAccount:  make(map[string]map[string]int),
+		folderSelection:  map[string]string{"": currentFolder},
+		activeFolderIdx:  0,
+		currentFolder:    currentFolder,
+		inbox:            inbox,
+		accounts:         accounts,
 	}
 	fi.updateHelpKeys()
 	return fi
@@ -537,7 +547,13 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 
 	// Forward to inbox
 	var cmd tea.Cmd
+	previousAccount := m.inbox.GetCurrentAccountID()
 	_, cmd = m.inbox.Update(msg)
+	if currentAccount := m.inbox.GetCurrentAccountID(); currentAccount != previousAccount {
+		m.closeSplitPreview()
+		folderCmd := m.showAccountFolders(currentAccount)
+		return m, tea.Batch(cmd, folderCmd)
+	}
 
 	// Intercept FetchMoreEmailsMsg from inbox and convert to folder-aware version
 	if cmd != nil {
@@ -763,6 +779,7 @@ func (m *FolderInbox) switchFolder() tea.Cmd {
 	if m.activeFolderIdx >= 0 && m.activeFolderIdx < len(m.folders) {
 		prevFolder := m.currentFolder
 		m.currentFolder = m.folders[m.activeFolderIdx]
+		m.folderSelection[m.inbox.GetCurrentAccountID()] = m.currentFolder
 		m.isLoadingEmails = true
 		m.inbox.SetFolderName(m.currentFolder)
 		// Clear current emails while loading
@@ -867,8 +884,14 @@ func (m *FolderInbox) renderSidebar() string {
 	if isUIVisible("header") {
 		// Account name as title
 		title := t("folder_inbox.folders_title")
-		if len(m.accounts) > 0 {
-			acc := m.accounts[0]
+		if accountID := m.inbox.GetCurrentAccountID(); accountID != "" {
+			var acc config.Account
+			for _, candidate := range m.accounts {
+				if candidate.ID == accountID {
+					acc = candidate
+					break
+				}
+			}
 			if acc.Name != "" {
 				title = acc.Name
 			} else if acc.FetchEmail != "" {
@@ -1051,9 +1074,64 @@ func (m *FolderInbox) renderWithJumpOverlay(content string) string {
 	return overlay.Center(content, box, m.width, m.height)
 }
 
-// SetFolders updates the folder list.
+// SetFolderData supplies the merged view and each account's own folders.
+// It returns a folder switch when the current selection is unavailable after
+// a refresh, so the message list follows the new selection.
+func (m *FolderInbox) SetFolderData(merged []string, mergedUnread map[string]int, byAccount map[string][]string, unreadByAccount map[string]map[string]int) tea.Cmd {
+	m.mergedFolders = sortFolders(merged)
+	m.mergedUnread = mergedUnread
+	m.foldersByAccount = byAccount
+	m.unreadByAccount = unreadByAccount
+	return m.showAccountFolders(m.inbox.GetCurrentAccountID())
+}
+
+func (m *FolderInbox) showAccountFolders(accountID string) tea.Cmd {
+	if accountID == "" {
+		m.folders = m.mergedFolders
+		m.unread = m.mergedUnread
+	} else {
+		m.folders = sortFolders(m.foldersByAccount[accountID])
+		m.unread = m.unreadByAccount[accountID]
+	}
+	if len(m.folders) == 0 {
+		m.folders = []string{keyINBOX}
+	}
+
+	selected := m.folderSelection[accountID]
+	if selected == "" {
+		selected = keyINBOX
+	}
+	m.activeFolderIdx = 0
+	found := false
+	for i, folder := range m.folders {
+		if folder == selected {
+			m.activeFolderIdx = i
+			found = true
+			break
+		}
+	}
+	if !found {
+		selected = m.folders[0]
+	}
+	m.folderSelection[accountID] = selected
+	if selected == m.currentFolder {
+		return nil
+	}
+	previousFolder := m.currentFolder
+	m.currentFolder = selected
+	m.closeSplitPreview()
+	m.isLoadingEmails = true
+	m.inbox.SetFolderName(selected)
+	m.inbox.SetEmails(nil, m.accounts)
+	return func() tea.Msg {
+		return SwitchFolderMsg{FolderName: selected, PreviousFolder: previousFolder, AccountID: accountID}
+	}
+}
+
+// SetFolders updates the merged folder list.
 func (m *FolderInbox) SetFolders(folders []string) {
-	m.folders = sortFolders(folders)
+	m.mergedFolders = sortFolders(folders)
+	m.folders = m.mergedFolders
 	// Keep current folder if it still exists (search sorted list)
 	found := false
 	for i, f := range m.folders {
@@ -1070,25 +1148,40 @@ func (m *FolderInbox) SetFolders(folders []string) {
 }
 
 func (m *FolderInbox) SetUnreadCounts(counts map[string]int) {
+	m.mergedUnread = counts
 	m.unread = counts
 }
 
-func (m *FolderInbox) DecrementUnreadCount(folder string) {
-	if m.unread == nil {
+func (m *FolderInbox) DecrementUnreadCount(folder, accountID string) {
+	counts := m.unreadByAccount[accountID]
+	if counts == nil || counts[folder] == 0 {
 		return
 	}
-	if m.unread[folder] > 0 {
-		m.unread[folder]--
+	counts[folder]--
+	if m.mergedUnread[folder] > 0 {
+		m.mergedUnread[folder]--
 	}
 }
 
 // IncrementUnreadCount increases the unread counter for a folder. It is used to
 // restore the counter when a delete/archive action is undone.
-func (m *FolderInbox) IncrementUnreadCount(folder string) {
-	if m.unread == nil {
-		m.unread = make(map[string]int)
+func (m *FolderInbox) IncrementUnreadCount(folder, accountID string) {
+	if m.unreadByAccount[accountID] == nil {
+		m.unreadByAccount[accountID] = make(map[string]int)
 	}
-	m.unread[folder]++
+	m.unreadByAccount[accountID][folder]++
+	if m.mergedUnread == nil {
+		m.mergedUnread = make(map[string]int)
+	}
+	m.mergedUnread[folder]++
+}
+
+// GetAccountFolderData returns the folders and unread counts that belong to one account.
+func (m *FolderInbox) GetAccountFolderData(accountID string) ([]string, map[string]int) {
+	folders := append([]string(nil), m.foldersByAccount[accountID]...)
+	counts := make(map[string]int)
+	maps.Copy(counts, m.unreadByAccount[accountID])
+	return folders, counts
 }
 
 // SetEmails updates the inbox emails.
