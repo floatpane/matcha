@@ -86,6 +86,10 @@ func Allowed(current tea.Model) bool {
 // BuildCommands assembles context-specific and global palette commands.
 func BuildCommands(current tea.Model, folderInbox *tui.FolderInbox, cfg *config.Config) []tui.PaletteCommand {
 	kb := config.Keybinds
+	unreadOnlyKey := kb.Inbox.ToggleUnreadOnly
+	if unreadOnlyKey == "" {
+		unreadOnlyKey = "U"
+	}
 	var cmds []tui.PaletteCommand
 	splitEnabled := cfg != nil && cfg.EnableSplitPane
 
@@ -114,6 +118,7 @@ func BuildCommands(current tea.Model, folderInbox *tui.FolderInbox, cfg *config.
 			tui.PaletteCommand{Title: "Search mail", Hint: kb.Inbox.Search, Keywords: "find query", Action: KeyAction(kb.Inbox.Search)},
 			tui.PaletteCommand{Title: "Filter", Hint: kb.Inbox.Filter, Keywords: "narrow", Action: KeyAction(kb.Inbox.Filter)},
 			tui.PaletteCommand{Title: "Toggle threaded view", Hint: kb.Inbox.ToggleThreaded, Keywords: "conversation thread", Action: KeyAction(kb.Inbox.ToggleThreaded)},
+			tui.PaletteCommand{Title: "Toggle unread-only view", Hint: unreadOnlyKey, Keywords: "unread read filter", Action: KeyAction(unreadOnlyKey)},
 			tui.PaletteCommand{Title: "Select / visual mode", Hint: kb.Inbox.VisualMode, Keywords: "multi batch", Action: KeyAction(kb.Inbox.VisualMode)},
 			tui.PaletteCommand{Title: "Archive selected", Hint: kb.Inbox.Archive, Keywords: "file store", Action: KeyAction(kb.Inbox.Archive)},
 			tui.PaletteCommand{Title: "Delete selected", Hint: kb.Inbox.Delete, Keywords: "trash remove", Action: KeyAction(kb.Inbox.Delete)},

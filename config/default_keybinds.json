@@ -10,6 +10,7 @@
   "inbox": {
     "visual_mode": "v",
     "toggle_threaded": "T",
+    "toggle_unread_only": "U",
     "delete": "d",
     "archive": "a",
     "refresh": "r",

@@ -24,6 +24,7 @@ Plain text, not encrypted. Edit with any text editor. Restart matcha to apply ch
   "inbox": {
     "visual_mode": "v",
     "toggle_threaded": "T",
+    "toggle_unread_only": "U",
     "delete": "d",
     "archive": "a",
     "refresh": "r",
@@ -75,9 +76,13 @@ as Zed or VS Code. Start typing to fuzzy-filter, `↑`/`↓` to move, `enter` to
 The palette lists the global navigation commands (Compose, Inbox, Drafts,
 Marketplace, Settings, Main menu, Quit) plus the actions for whatever view you
 opened it from (reply/forward/delete/archive in an email; refresh/search/filter/
-toggle threaded/delete/archive in the inbox). Each palette action simply replays
+toggle threaded/toggle unread-only/delete/archive in the inbox). Each palette action simply replays
 its keybinding, so it always matches whatever you've configured — and you can
 rely on the palette for less-common actions instead of memorizing every key.
+
+In the inbox or a folder, press `U` to show only unread messages in the current
+account tab. Press it again to show all messages. Matcha loads additional pages
+when the first page does not contain enough unread messages to fill the view.
 
 When viewing an email, the palette also includes:
 

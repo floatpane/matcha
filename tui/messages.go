@@ -201,6 +201,12 @@ type PreviewBodyFetchedMsg struct {
 
 type FetchErr error
 
+// FolderEmailsPageFailedMsg identifies the folder whose pagination request failed.
+type FolderEmailsPageFailedMsg struct {
+	FolderName string
+	Err        error
+}
+
 type SearchRequestedMsg struct {
 	Query      backend.SearchQuery
 	Mailbox    MailboxKind
@@ -244,7 +250,9 @@ type FetchMoreEmailsMsg struct {
 	Limit     uint32
 }
 
-type FetchingMoreEmailsMsg struct{}
+type FetchingMoreEmailsMsg struct {
+	FolderName string
+}
 
 type EmailsAppendedMsg struct {
 	Emails    []fetcher.Email
