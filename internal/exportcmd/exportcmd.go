@@ -159,7 +159,8 @@ func DownloadAttachmentCmd(account *config.Account, uid uint32, msg tui.Download
 }
 
 // ExportEmailCmd fetches the raw RFC822 message, converts it to the desired
-// format (HTML or Markdown) with full metadata, and writes it to savePath.
+// format (HTML or Markdown) with full metadata, or leaves it unchanged for
+// EML, then writes it to savePath.
 func ExportEmailCmd(cfg *config.Config, email fetcher.Email, accountID, folderName, format, savePath string) tea.Cmd {
 	return func() tea.Msg {
 		account := cfg.GetAccountByID(accountID)
@@ -176,6 +177,8 @@ func ExportEmailCmd(cfg *config.Config, email fetcher.Email, accountID, folderNa
 		switch format {
 		case "markdown", "md":
 			data, err = export.EmailToMarkdown(rawMsg, email)
+		case "eml":
+			data = rawMsg
 		default:
 			data, err = export.EmailToHTML(rawMsg, email)
 		}

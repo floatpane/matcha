@@ -1,11 +1,16 @@
 package tui
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/floatpane/matcha/backend"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
@@ -613,4 +618,288 @@ func TestThreadedStatusBarCountsActualEmails(t *testing.T) {
 	if inbox.totalEmailCount != 4 {
 		t.Fatalf("expected totalEmailCount=4 after expand, got %d", inbox.totalEmailCount)
 	}
+}
+
+// TestItemDelegateKeepsSubjectWithinRowWidth renders the inbox delegate directly
+// and checks that a row never draws past the list width.
+func TestItemDelegateKeepsSubjectWithinRowWidth(t *testing.T) {
+	RebuildStyles()
+
+	when := time.Date(2020, time.January, 2, 15, 4, 5, 0, time.Local)
+	const layout = "2006-01-02"
+	dateStr := formatInboxDate(when, layout, true)
+	inbox := &Inbox{
+		dateFormat:    layout,
+		detailedDates: true,
+		selectedUIDs:  map[uint32]string{},
+	}
+
+	render := func(t *testing.T, width, index int, it item, selected, visual bool) string {
+		t.Helper()
+		inbox.visualMode = visual
+		if visual {
+			inbox.selectedUIDs = map[uint32]string{it.uid: "acct"}
+		} else {
+			inbox.selectedUIDs = map[uint32]string{}
+		}
+		l := list.New([]list.Item{it}, itemDelegate{inbox: inbox}, max(width, 1), 10)
+		l.SetWidth(width)
+		if selected {
+			l.Select(index)
+		} else if l.Index() == index {
+			l.Select(index + 1)
+		}
+		var buf bytes.Buffer
+		itemDelegate{inbox: inbox}.Render(&buf, l, index, it)
+		return buf.String()
+	}
+
+	assertBounded := func(t *testing.T, width int, rendered string) {
+		t.Helper()
+		if width <= 0 {
+			if rendered != "" {
+				t.Fatalf("width %d: want no visible content, got %q", width, rendered)
+			}
+			return
+		}
+		if !utf8.ValidString(rendered) {
+			t.Fatalf("width %d: invalid UTF-8 %q", width, rendered)
+		}
+		if strings.ContainsAny(rendered, "\r\n\t") {
+			t.Fatalf("width %d: embedded newline or tab in %q", width, rendered)
+		}
+		if got := lipgloss.Width(rendered); got > width {
+			t.Fatalf("width %d: display width %d exceeds list width: %q", width, got, ansi.Strip(rendered))
+		}
+	}
+
+	shortSubject := "Ship"
+	longSubject := strings.Repeat("A", 180)
+	base := func(title, from string) item {
+		return item{
+			title:  title,
+			desc:   from,
+			uid:    7,
+			date:   when,
+			isRead: true,
+		}
+	}
+
+	t.Run("short and long subjects align dates", func(t *testing.T) {
+		for _, width := range []int{40, 80, 120} {
+			short := render(t, width, 0, base(shortSubject, "Ada <ada@example.com>"), false, false)
+			long := render(t, width, 0, base(longSubject, "Ada <ada@example.com>"), false, false)
+			assertBounded(t, width, short)
+			assertBounded(t, width, long)
+
+			shortPlain := ansi.Strip(short)
+			longPlain := ansi.Strip(long)
+			if !strings.Contains(shortPlain, shortSubject) || strings.Contains(shortPlain, "…") {
+				t.Fatalf("width %d: short subject rendered %q", width, shortPlain)
+			}
+			if strings.Contains(longPlain, longSubject) || !strings.Contains(longPlain, "…") {
+				t.Fatalf("width %d: long subject rendered %q", width, longPlain)
+			}
+			if !strings.HasSuffix(shortPlain, dateStr) || !strings.HasSuffix(longPlain, dateStr) {
+				t.Fatalf("width %d: date %q not flush right in %q / %q", width, dateStr, shortPlain, longPlain)
+			}
+			shortEnd := lipgloss.Width(short)
+			longEnd := lipgloss.Width(long)
+			if shortEnd != width || longEnd != width {
+				t.Fatalf("width %d: date end columns %d and %d, want both flush at %d (%q / %q)", width, shortEnd, longEnd, width, shortPlain, longPlain)
+			}
+			if !strings.Contains(shortPlain, "·") {
+				t.Fatalf("width %d: missing separator in %q", width, shortPlain)
+			}
+		}
+	})
+
+	t.Run("narrow widths and exact fit", func(t *testing.T) {
+		it := base("SubjectAlpha", "Pat <pat@example.com>")
+		icon := "\uf2b6"
+		prefix := "1. "
+		separator := " · "
+		exact := itemStyle.GetHorizontalFrameSize() +
+			ansi.StringWidth(prefix) + ansi.StringWidth(icon) + 1 +
+			ansi.StringWidth("Pat") + ansi.StringWidth(separator) +
+			ansi.StringWidth("SubjectAlpha") + 2 + ansi.StringWidth(dateStr)
+
+		for _, width := range []int{0, 1, 2, 4, 8, 16, 24, exact, exact - 1} {
+			got := render(t, width, 0, it, false, false)
+			assertBounded(t, width, got)
+		}
+
+		fit := ansi.Strip(render(t, exact, 0, it, false, false))
+		if !strings.Contains(fit, "SubjectAlpha") || !strings.HasSuffix(fit, dateStr) || strings.Contains(fit, "…") {
+			t.Fatalf("exact width %d rendered %q", exact, fit)
+		}
+		over := ansi.Strip(render(t, exact-1, 0, it, false, false))
+		if strings.Contains(over, "SubjectAlpha") && strings.HasSuffix(over, dateStr) && !strings.Contains(over, "…") {
+			t.Fatalf("one cell over width %d still shows a full row %q", exact-1, over)
+		}
+	})
+
+	t.Run("date wider than the row", func(t *testing.T) {
+		inbox.dateFormat = "Monday, 02 January 2006 15:04:05 -0700"
+		t.Cleanup(func() { inbox.dateFormat = layout })
+		it := base("Hi", "Ada <ada@example.com>")
+		fullDate := formatInboxDate(it.date, inbox.dateFormat, true)
+		if ansi.StringWidth(fullDate) <= 24 {
+			t.Fatalf("fixture date %q is not wider than the row", fullDate)
+		}
+		for _, width := range []int{0, 1, 2, 4, 8, 16, 24} {
+			got := render(t, width, 0, it, false, false)
+			assertBounded(t, width, got)
+			if strings.Contains(ansi.Strip(got), fullDate) {
+				t.Fatalf("width %d kept wide date %q in %q", width, fullDate, ansi.Strip(got))
+			}
+		}
+	})
+
+	t.Run("selection markers stay inside the budget", func(t *testing.T) {
+		it := base("SubjectAlpha", "Pat <pat@example.com>")
+		icon := "\uf2b6"
+		exact := itemStyle.GetHorizontalFrameSize() +
+			ansi.StringWidth("1. ") + ansi.StringWidth(icon) + 1 +
+			ansi.StringWidth("Pat") + ansi.StringWidth(" · ") +
+			ansi.StringWidth("SubjectAlpha") + 2 + ansi.StringWidth(dateStr)
+
+		modes := []struct {
+			name     string
+			selected bool
+			visual   bool
+			marker   string
+		}{
+			{name: "unselected", marker: ""},
+			{name: "selected", selected: true, marker: "> "},
+			{name: "visual", visual: true, marker: "* "},
+			{name: "cursor and visual", selected: true, visual: true, marker: ">*"},
+		}
+		for _, mode := range modes {
+			for _, width := range []int{0, 1, 2, 4, 8, 16, 24, 40, exact} {
+				got := render(t, width, 0, it, mode.selected, mode.visual)
+				assertBounded(t, width, got)
+			}
+			plain := ansi.Strip(render(t, exact, 0, it, mode.selected, mode.visual))
+			frame := strings.Repeat(" ", itemStyle.GetHorizontalFrameSize())
+			if !strings.HasPrefix(plain, frame+mode.marker) {
+				t.Fatalf("%s: marker %q not reserved in %q", mode.name, mode.marker, plain)
+			}
+			if mode.marker != "" && strings.Contains(plain, "SubjectAlpha") && !strings.Contains(plain, "…") {
+				t.Fatalf("%s: marker did not consume subject budget in %q", mode.name, plain)
+			}
+		}
+	})
+
+	t.Run("unicode thread account and long sender", func(t *testing.T) {
+		items := []item{
+			base(strings.Repeat("件名", 40), "Ada <ada@example.com>"),
+			base(strings.Repeat("e\u0301", 40), "Ada <ada@example.com>"),
+			base(strings.Repeat("👨‍👩‍👧‍👦", 16)+" party", "Ada <ada@example.com>"),
+			base(strings.Repeat("A", 400), "Ada <ada@example.com>"),
+			base("Hello", strings.Repeat("B", 200)+" <long@example.com>"),
+			{
+				title: "All accounts", desc: "Ada <ada@example.com>", uid: 7, date: when, isRead: true,
+				accountEmail: "verylongemail@gmail.com",
+			},
+			base("Standalone", "Ada <ada@example.com>"),
+			{
+				title: "Topic", desc: "Ada <ada@example.com>", uid: 7, date: when, isRead: true,
+				threadRoot: true, threadCount: 3,
+			},
+			{
+				title: "Topic", desc: "Ada <ada@example.com>", uid: 8, date: when, isRead: true,
+				threadRoot: true, threadHeader: true, threadCount: 3, expanded: true,
+			},
+			{
+				title: "DeepChild", desc: "Ada <ada@example.com>", uid: 9, date: when, isRead: true,
+				threadChild: true, threadDepth: 12,
+			},
+		}
+		for _, it := range items {
+			for _, width := range []int{0, 1, 2, 4, 8, 16, 24, 40, 80, 120} {
+				assertBounded(t, width, render(t, width, 0, it, false, false))
+			}
+		}
+
+		cjk := ansi.Strip(render(t, 40, 0, items[0], false, false))
+		if !strings.Contains(cjk, "…") {
+			t.Fatalf("cjk subject was not ellipsized: %q", cjk)
+		}
+		combining := ansi.Strip(render(t, 40, 0, items[1], false, false))
+		if !strings.Contains(combining, "…") {
+			t.Fatalf("combining subject was not ellipsized: %q", combining)
+		}
+		emoji := ansi.Strip(render(t, 40, 0, items[2], false, false))
+		if !strings.Contains(emoji, "…") {
+			t.Fatalf("emoji subject was not ellipsized: %q", emoji)
+		}
+		unbroken := ansi.Strip(render(t, 40, 0, items[3], false, false))
+		if strings.Contains(unbroken, items[3].title) || !strings.Contains(unbroken, "…") {
+			t.Fatalf("unbroken subject rendered %q", unbroken)
+		}
+		sender := ansi.Strip(render(t, 80, 0, items[4], false, false))
+		if strings.Contains(sender, strings.Repeat("B", 200)) || !strings.Contains(sender, "…") {
+			t.Fatalf("long sender rendered %q", sender)
+		}
+
+		account := ansi.Strip(render(t, 120, 0, items[5], false, false))
+		if !strings.Contains(account, truncateEmail("verylongemail@gmail.com")) {
+			t.Fatalf("account indicator rendered %q", account)
+		}
+		numbered := ansi.Strip(render(t, 80, 99, base("Tenth", "Ada <ada@example.com>"), false, false))
+		if !strings.Contains(numbered, "100.") {
+			t.Fatalf("multi-digit row rendered %q", numbered)
+		}
+		root := ansi.Strip(render(t, 120, 0, items[7], false, false))
+		if !strings.Contains(root, "Topic (3)") {
+			t.Fatalf("thread root rendered %q", root)
+		}
+		header := ansi.Strip(render(t, 120, 0, items[8], false, false))
+		if !strings.Contains(header, "Close thread (3)") {
+			t.Fatalf("thread header rendered %q", header)
+		}
+		child := ansi.Strip(render(t, 120, 0, items[9], false, false))
+		if !strings.Contains(child, "↳") || !strings.Contains(child, "DeepChild") {
+			t.Fatalf("indented child rendered %q", child)
+		}
+	})
+
+	t.Run("empty and embedded whitespace leave the item unchanged", func(t *testing.T) {
+		empty := item{title: "", desc: "Ada <ada@example.com>", uid: 4, isRead: true}
+		beforeTitle, beforeFilter := empty.title, empty.FilterValue()
+		got := render(t, 80, 0, empty, false, false)
+		assertBounded(t, 80, got)
+		if empty.title != beforeTitle || empty.FilterValue() != beforeFilter {
+			t.Fatalf("empty render mutated item title %q filter %q", empty.title, empty.FilterValue())
+		}
+
+		spaced := item{
+			title:  "Hello\r\nWorld\t!",
+			desc:   "Ann\nLee\t<ann@example.com>",
+			uid:    5,
+			date:   when,
+			isRead: false,
+		}
+		title, filter := spaced.title, spaced.FilterValue()
+		rendered := render(t, 120, 0, spaced, false, false)
+		assertBounded(t, 120, rendered)
+		plain := ansi.Strip(rendered)
+		if !strings.Contains(plain, "Ann Lee · Hello World !") {
+			t.Fatalf("whitespace flattened to %q", plain)
+		}
+		if spaced.title != title || spaced.FilterValue() != filter || !strings.Contains(filter, "\n") {
+			t.Fatalf("whitespace render mutated title %q filter %q", spaced.title, spaced.FilterValue())
+		}
+
+		read := render(t, 80, 0, base("Colors", "Ada <ada@example.com>"), false, false)
+		unreadItem := base("Colors", "Ada <ada@example.com>")
+		unreadItem.isRead = false
+		unread := render(t, 80, 0, unreadItem, false, false)
+		assertBounded(t, 80, read)
+		assertBounded(t, 80, unread)
+		if read == unread || !strings.Contains(read, "\x1b") || !strings.Contains(unread, "\x1b") {
+			t.Fatalf("read/unread styles were not applied:\nread %q\nunread %q", read, unread)
+		}
+	})
 }

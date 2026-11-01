@@ -142,12 +142,12 @@ homebrew_casks:
     description: "A beautiful and functional email client for your terminal."
     homepage: "https://matcha.email"
     # Strip Apple quarantine xattr so unsigned binary runs without Gatekeeper prompt.
+    # Uses Homebrew's declarative install-steps DSL (goreleaser v2.19 replaced the
+    # arbitrary-Ruby `install` hook, which is now deprecated).
     hooks:
       post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/matcha"]
-          end
+        install_steps: |
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/matcha"]
 # 'winget' configures the WinGet manifest generation and publication.
 winget:
   - # Name of the package in WinGet.

@@ -11,6 +11,7 @@ import (
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	threading "github.com/floatpane/jwz-go"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
@@ -77,14 +78,129 @@ type itemDelegate struct {
 func (d itemDelegate) Height() int                               { return 1 }
 func (d itemDelegate) Spacing() int                              { return 0 }
 func (d itemDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
-func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) { //nolint:gocyclo
+func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
 	i, ok := listItem.(item)
 	if !ok {
 		return
 	}
 
+	// A zero-width list has no cells to draw. Negative widths are treated the same.
+	listWidth := m.Width()
+	if listWidth <= 0 {
+		return
+	}
+
+	isSelected := index == m.Index()
+	inVisualSelection := false
+	if d.inbox != nil && d.inbox.visualMode {
+		_, inVisualSelection = d.inbox.selectedUIDs[i.uid]
+	}
+	rowStyle, marker := inboxRowStyle(isSelected, inVisualSelection)
+
+	contentWidth := listWidth - rowStyle.GetHorizontalFrameSize()
+	if contentWidth < 0 {
+		contentWidth = 0
+	}
+
 	prefix := fmt.Sprintf("%d. ", index+1)
-	sender := parseSenderName(i.desc)
+	// For "ALL" view, show account indicator instead of the bare number.
+	if i.accountEmail != "" {
+		prefix = fmt.Sprintf("%d. [%s] ", index+1, truncateEmail(i.accountEmail))
+	}
+
+	statusIcon, statusStyle := inboxStatusPresentation(i)
+	// Normalize before parsing so a tab or newline still separates "Name <email>".
+	sender := parseSenderName(normalizeInboxRowText(i.desc))
+	subject := inboxSubjectText(i)
+
+	layout := ""
+	detailedDates := false
+	if d.inbox != nil {
+		layout = d.inbox.dateFormat
+		detailedDates = d.inbox.detailedDates
+	}
+	dateStr := formatInboxDate(i.date, layout, detailedDates)
+	var styledDate string
+	if isSelected {
+		styledDate = selectedDateStyle.Render(dateStr)
+	} else {
+		styledDate = statusStyle.Render(dateStr)
+	}
+
+	// dateGap is the minimum space between the subject and a right-aligned date.
+	const dateGap = 2
+	const ellipsis = "…"
+	separator := " · "
+
+	markerWidth := ansi.StringWidth(marker)
+	prefixWidth := ansi.StringWidth(prefix)
+	iconWidth := ansi.StringWidth(statusIcon) + 1 // trailing space after the icon
+	sepWidth := ansi.StringWidth(separator)
+	fixedWidth := markerWidth + prefixWidth + iconWidth + sepWidth
+	dateWidth := lipgloss.Width(styledDate)
+
+	// Drop the date before clipping the row chrome. Budgets clamp at zero.
+	showDate := dateWidth > 0 && contentWidth >= fixedWidth+dateWidth+dateGap
+	textBudget := contentWidth - fixedWidth
+	leftBudget := contentWidth
+	if showDate {
+		textBudget -= dateWidth + dateGap
+		leftBudget -= dateWidth + dateGap
+	}
+	if textBudget < 0 {
+		textBudget = 0
+	}
+	if leftBudget < 0 {
+		leftBudget = 0
+	}
+
+	senderBudget := textBudget / 2
+	sender = ansi.Truncate(sender, senderBudget, ellipsis)
+	subjectBudget := textBudget - ansi.StringWidth(sender)
+	if subjectBudget < 0 {
+		subjectBudget = 0
+	}
+	subject = ansi.Truncate(subject, subjectBudget, ellipsis)
+
+	left := marker + prefix + statusStyle.Render(statusIcon) + " " +
+		statusStyle.Render(sender) + separator + statusStyle.Render(subject)
+	if ansi.StringWidth(left) > leftBudget {
+		left = ansi.Truncate(left, leftBudget, ellipsis)
+	}
+
+	content := left
+	if showDate {
+		pad := contentWidth - ansi.StringWidth(left) - dateWidth
+		if pad < 0 {
+			pad = 0
+		}
+		content += strings.Repeat(" ", pad) + styledDate
+	}
+
+	rendered := rowStyle.Render(content)
+	if lipgloss.Width(rendered) > listWidth {
+		rendered = ansi.Truncate(rendered, listWidth, "")
+	}
+	fmt.Fprint(w, rendered) //nolint:errcheck
+}
+
+// inboxRowStyle chooses the row chrome and cursor marker before any truncation
+// so marker cells are part of the width budget.
+func inboxRowStyle(isSelected, inVisualSelection bool) (lipgloss.Style, string) {
+	switch {
+	case isSelected && inVisualSelection:
+		return selectedItemStyle, ">*"
+	case isSelected:
+		return selectedItemStyle, "> "
+	case inVisualSelection:
+		return visualSelectedStyle, "* "
+	default:
+		return itemStyle, ""
+	}
+}
+
+// inboxStatusPresentation returns the row icon and the read/unread color.
+func inboxStatusPresentation(i item) (string, lipgloss.Style) {
 	statusStyle := unreadEmailStyle
 	statusIcon := "\uf0e0"
 	if i.isRead {
@@ -101,66 +217,12 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if i.threadHeader {
 		statusIcon = "▴"
 	}
-	styledIcon := statusStyle.Render(statusIcon)
-	styledSender := statusStyle.Render(sender)
-	separator := " · "
+	return statusIcon, statusStyle
+}
 
-	// For "ALL" view, show account indicator instead of number
-	if i.accountEmail != "" {
-		prefix = fmt.Sprintf("%d. [%s] ", index+1, truncateEmail(i.accountEmail))
-	}
-
-	// Format and right-align date
-	layout := ""
-	detailedDates := false
-	if d.inbox != nil {
-		layout = d.inbox.dateFormat
-		detailedDates = d.inbox.detailedDates
-	}
-	dateStr := formatInboxDate(i.date, layout, detailedDates)
-	listWidth := m.Width() - 2 // account for PaddingLeft(2) in itemStyle
-	isSelected := index == m.Index()
-
-	var styledDate string
-	if isSelected {
-		styledDate = selectedDateStyle.Render(dateStr)
-	} else {
-		styledDate = statusStyle.Render(dateStr)
-	}
-	dateWidth := lipgloss.Width(styledDate)
-	cursorWidth := 0
-	if isSelected {
-		cursorWidth = 2 // "> " prefix
-	}
-
-	// Available width for the whole left side (prefix + sender + separator + subject)
-	maxLeft := listWidth - dateWidth - 2 - cursorWidth // 2 for spacing
-	if maxLeft < 10 {
-		maxLeft = 10
-	}
-
-	prefixWidth := lipgloss.Width(prefix)
-	iconWidth := lipgloss.Width(styledIcon) + 1
-	sepWidth := len(separator)
-
-	availableForText := maxLeft - prefixWidth - iconWidth - sepWidth
-	if availableForText < 10 {
-		availableForText = 10
-	}
-
-	maxSenderWidth := availableForText / 2
-	if lipgloss.Width(sender) > maxSenderWidth {
-		runes := []rune(sender)
-		for lipgloss.Width(string(runes)) > maxSenderWidth-1 && len(runes) > 0 {
-			runes = runes[:len(runes)-1]
-		}
-		sender = string(runes) + "…"
-		styledSender = statusStyle.Render(sender)
-	}
-
-	senderWidth := lipgloss.Width(styledSender)
-	subjectBudget := maxLeft - prefixWidth - iconWidth - senderWidth - sepWidth
-
+// inboxSubjectText composes the one-line subject, including thread chrome.
+// Stored titles are not modified.
+func inboxSubjectText(i item) string {
 	subject := i.title
 	if i.threadChild {
 		subject = strings.Repeat("  ", i.threadDepth) + "↳ " + subject
@@ -171,60 +233,14 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if i.threadRoot && i.threadCount > 1 {
 		subject = fmt.Sprintf("%s (%d)", subject, i.threadCount)
 	}
-	if subjectBudget < 4 {
-		subjectBudget = 4
-	}
-	if lipgloss.Width(subject) > subjectBudget {
-		runes := []rune(subject)
-		for lipgloss.Width(string(runes)) > subjectBudget-1 && len(runes) > 0 {
-			runes = runes[:len(runes)-1]
-		}
-		subject = string(runes) + "…"
-	}
-	styledSubject := statusStyle.Render(subject)
+	return normalizeInboxRowText(subject)
+}
 
-	str := prefix + styledIcon + " " + styledSender + separator + styledSubject
-
-	// Pad to push date to the right
-	padding := listWidth - lipgloss.Width(str) - dateWidth - cursorWidth
-	if padding < 1 {
-		padding = 1
-	}
-
-	// Check if this item is in visual selection
-	inVisualSelection := false
-	if d.inbox != nil && d.inbox.visualMode {
-		_, inVisualSelection = d.inbox.selectedUIDs[i.uid]
-	}
-
-	fn := itemStyle.Render
-	if inVisualSelection && !isSelected {
-		// Item is in visual selection but not the cursor
-		fn = func(s ...string) string {
-			return visualSelectedStyle.Render("* " + s[0])
-		}
-		cursorWidth = 2 // "* " prefix
-		padding = listWidth - lipgloss.Width(str) - dateWidth - cursorWidth
-		if padding < 1 {
-			padding = 1
-		}
-	} else if isSelected {
-		// Cursor position (may also be in selection)
-		prefix := "> "
-		if inVisualSelection {
-			prefix = ">*"
-		}
-		fn = func(s ...string) string {
-			return selectedItemStyle.Render(prefix + s[0])
-		}
-		cursorWidth = len(prefix)
-		padding = listWidth - lipgloss.Width(str) - dateWidth - cursorWidth
-		if padding < 1 {
-			padding = 1
-		}
-	}
-
-	fmt.Fprint(w, fn(str+strings.Repeat(" ", padding)+styledDate)) //nolint:errcheck
+// normalizeInboxRowText replaces embedded line breaks and tabs with spaces so
+// sender and subject text stay on the single list row.
+func normalizeInboxRowText(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", " ")
+	return strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(s)
 }
 
 // formatInboxDate formats a time as relative unless detailed dates are enabled

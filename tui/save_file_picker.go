@@ -43,7 +43,7 @@ type SaveFilePicker struct {
 func NewSaveFilePicker(startDir string, suggestedFilename string) *SaveFilePicker {
 	pi := textinput.New()
 	pi.Placeholder = "filename..."
-	pi.Prompt = "Save as: "
+	pi.Prompt = "Export as: "
 	pi.CharLimit = 255
 	pi.SetValue(suggestedFilename)
 	pi.SetStyles(ThemedTextInputStyles())
@@ -173,7 +173,7 @@ func (m *SaveFilePicker) View() tea.View {
 		if filename == "" {
 			filename = "(empty)"
 		}
-		fmt.Fprintf(&b, "  %s%s\n", savePickerInputStyle.Render("Save as: "), filename)
+		fmt.Fprintf(&b, "  %s%s\n", savePickerInputStyle.Render("Export as: "), filename)
 	}
 
 	b.WriteString("\n")
