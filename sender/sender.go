@@ -82,8 +82,8 @@ func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
 // variable so tests can swap it with a deterministic or failing reader. By
 // default it is crypto/rand.Reader.
 var (
-	randReader io.Reader = rand.Reader
-	osHostname           = os.Hostname
+	randReader = rand.Reader
+	osHostname = os.Hostname
 )
 
 // smimeOuterBoundary returns a fresh, high-entropy MIME boundary for an S/MIME
