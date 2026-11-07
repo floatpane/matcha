@@ -212,6 +212,17 @@ func (m *Model) newSettings() *tui.Settings {
 	return s
 }
 
+// isQuitKey reports whether key quits the app: the configured quit key, or
+// ctrl+c, which always works as a fallback.
+func isQuitKey(key string) bool {
+	return key == "ctrl+c" || (config.Keybinds.Global.Quit != "" && key == config.Keybinds.Global.Quit)
+}
+
+// isCancelKey reports whether key is the configured cancel/back key.
+func isCancelKey(key string) bool {
+	return config.Keybinds.Global.Cancel != "" && key == config.Keybinds.Global.Cancel
+}
+
 func getCurrentComposer(current tea.Model) *tui.Composer {
 	if c, ok := current.(*tui.Composer); ok {
 		return c
@@ -877,7 +888,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	if m.palette.IsOpen() {
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 			switch keyMsg.String() {
-			case "ctrl+c":
+			case "ctrl+c", config.Keybinds.Global.Quit:
 				m.shutdownService()
 				return m, tea.Quit
 			case config.Keybinds.Global.Cancel:
@@ -959,14 +970,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				}
 			}
 		}
-		if msg.String() == "ctrl+c" {
+		if isQuitKey(msg.String()) {
 			if composer := getCurrentComposer(m.current); composer != nil && composer.HasContent() {
 				m.saveDraftOnQuit(composer)
 			}
 			m.shutdownService()
 			return m, tea.Quit
 		}
-		if msg.String() == "esc" {
+		if isCancelKey(msg.String()) {
 			switch m.current.(type) {
 			case *tui.FilePicker:
 				return m, func() tea.Msg { return tui.CancelFilePickerMsg{} }
