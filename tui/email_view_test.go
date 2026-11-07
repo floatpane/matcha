@@ -1,12 +1,107 @@
 package tui
 
 import (
+	"encoding/base64"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/fetcher"
 )
+
+func TestRemoteImagePermissionIsPerMessageView(t *testing.T) {
+	t.Setenv("TERM", "xterm-kitty")
+	email := fetcher.Email{Body: "hello", BodyMIMEType: "text/plain"}
+	first := NewEmailView(email, 0, 80, 24, MailboxInbox, true)
+	if first.showImages || first.showRemoteImages {
+		t.Fatal("image display and remote loading should start disabled")
+	}
+	_, cmd := first.Update(tea.KeyPressMsg{Code: 'I', Text: "I"})
+	if !first.showImages || !first.remoteImagesLoading || first.showRemoteImages || cmd == nil {
+		t.Fatal("explicit remote-image action should queue loading in this view")
+	}
+	first.Update(cmd())
+	if !first.showRemoteImages || first.remoteImagesLoading {
+		t.Fatal("remote images should be enabled when loading finishes")
+	}
+	first.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	if !first.showRemoteImages {
+		t.Fatal("resizing should retain this message's permission")
+	}
+	second := NewEmailView(email, 1, 80, 24, MailboxInbox, false)
+	if second.showRemoteImages {
+		t.Fatal("remote-image permission leaked to another message view")
+	}
+}
+
+func TestRemoteImageLoadingRunsOnlyInCommandAndIsReused(t *testing.T) {
+	t.Setenv("TERM", "xterm-kitty")
+	const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+	png, err := base64.StdEncoding.DecodeString(pngBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(png)
+	}))
+	t.Cleanup(server.Close)
+	email := fetcher.Email{Body: `<img src="` + server.URL + `/test.png" alt="remote">`, BodyMIMEType: "text/html"}
+	first := NewEmailView(email, 0, 80, 24, MailboxInbox, false)
+	_, cmd := first.Update(tea.KeyPressMsg{Code: 'I', Text: "I"})
+	if cmd == nil || requests.Load() != 0 {
+		t.Fatalf("key press made %d requests or returned no command", requests.Load())
+	}
+	first.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	if requests.Load() != 0 {
+		t.Fatalf("resize while loading made %d requests", requests.Load())
+	}
+	result := cmd()
+	if requests.Load() != 0 {
+		t.Fatalf("background command fetched a local image: %d requests", requests.Load())
+	}
+	first.Update(result)
+	first.Update(tea.WindowSizeMsg{Width: 81, Height: 24})
+	if requests.Load() != 0 {
+		t.Fatalf("resize after loading fetched a local image: %d requests", requests.Load())
+	}
+	first.Update(tea.KeyPressMsg{Code: 'i', Text: "i"})
+	first.Update(tea.KeyPressMsg{Code: 'i', Text: "i"})
+	if requests.Load() != 0 {
+		t.Fatalf("image toggle fetched a local image: %d requests", requests.Load())
+	}
+	second := NewEmailView(email, 1, 80, 24, MailboxInbox, false)
+	second.Update(result)
+	if second.showRemoteImages {
+		t.Fatal("stale remote image result affected a different view")
+	}
+}
+
+func TestRemoteImageResultReachesNestedViews(t *testing.T) {
+	email := fetcher.Email{Body: "original", BodyMIMEType: "text/plain"}
+	preview := NewEmailView(email, 0, 80, 24, MailboxInbox, false)
+	preview.remoteImagesLoading = true
+	preview.remoteLoadID = 42
+	folder := &FolderInbox{previewPane: preview, movingEmail: true}
+	folder.Update(remoteImagesLoadedMsg{requestID: 42, body: "loaded"})
+	if !preview.showRemoteImages || preview.remoteImagesLoading {
+		t.Fatal("folder preview did not receive the remote image result")
+	}
+
+	replyEmail := NewEmailView(email, 0, 80, 24, MailboxInbox, false)
+	replyEmail.remoteImagesLoading = true
+	replyEmail.remoteLoadID = 43
+	reply := &ReplySplitView{emailView: replyEmail, focusComposer: true}
+	reply.Update(remoteImagesLoadedMsg{requestID: 43, body: "loaded"})
+	if !replyEmail.showRemoteImages || replyEmail.remoteImagesLoading {
+		t.Fatal("reply email pane did not receive the remote image result")
+	}
+}
 
 func TestEmailViewUpdate(t *testing.T) {
 	emailWithAttachments := fetcher.Email{

@@ -68,6 +68,9 @@ func (m *ReplySplitView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	kb := config.Keybinds
 
 	switch msg := msg.(type) {
+	case remoteImagesLoadedMsg:
+		_, cmd := m.emailView.Update(msg)
+		return m, cmd
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height

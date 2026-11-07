@@ -1,7 +1,7 @@
 # Image Protocol Compatibility
 
 ::: tip
-This feature is optional. To disable images, go to Settings > General > Disable Image Display: ON, you can also always turn it on for 1 email by pressing `i`. If you worry about security, we use a sandboxed subprocess for decoding on Linux (via Landlock + seccomp), via [termimage](https://github.com/floatpane/termimage), and we never execute any code from emails.
+This feature is optional. To disable image display, go to Settings > General > Disable Image Display: ON. Press `i` to toggle image display for one email. Matcha blocks remote images by default; press `I` while viewing an email to load its remote images. This permission lasts only for the current message view. Image decoding uses a sandboxed subprocess on Linux (via Landlock + seccomp) through [termimage](https://github.com/floatpane/termimage).
 :::
 Matcha supports modern terminal image protocols for displaying images directly in your terminal. This allows for rich email viewing with inline images, including those embedded in HTML emails (CID references), remote images, and base64-encoded data URIs.
 
@@ -40,7 +40,7 @@ Native support is included for the iTerm2 inline image protocol.
 ## Features
 
 - **Inline Email Images**: Display images embedded in HTML emails.
-- **Remote Image Fetching**: Automatically fetches and displays remote images from URLs.
+- **Remote Image Fetching**: Fetches remote images only after you press `I` for the current message.
 - **Data URI Support**: Renders base64-encoded inline images.
 - **Smart Fallback**: Gracefully falls back to clickable links when images aren't supported.
 

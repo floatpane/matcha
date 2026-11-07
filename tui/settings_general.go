@@ -17,7 +17,7 @@ type generalOption struct {
 
 func (m *Settings) buildGeneralOptions() []generalOption {
 	opts := []generalOption{
-		{"settings_general.disable_images", onOff(m.cfg.DisableImages), "Prevent images from loading automatically in emails."},
+		{"settings_general.disable_images", onOff(m.cfg.DisableImages), "Start emails with images hidden. Remote images always require per-message permission."},
 		{"settings_general.hide_tips", onOff(m.cfg.HideTips), "Hide helpful hints displayed at the bottom of the screen."},
 		{"settings_general.disable_notifications", onOff(m.cfg.DisableNotifications), "Turn off desktop notifications for new mail."},
 		{"settings_general.disable_daemon", onOff(!m.cfg.DisableDaemon), "Run a background daemon for push notifications and sync. Takes effect on restart."},

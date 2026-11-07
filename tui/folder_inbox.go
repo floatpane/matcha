@@ -251,6 +251,13 @@ func (m *FolderInbox) Init() tea.Cmd {
 }
 
 func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
+	if _, ok := msg.(remoteImagesLoadedMsg); ok {
+		if m.previewPane != nil {
+			_, cmd := m.previewPane.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+	}
 	// If move overlay is active, handle its input
 	if m.movingEmail {
 		return m.updateMoveOverlay(msg)
