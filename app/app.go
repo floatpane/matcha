@@ -223,6 +223,21 @@ func isCancelKey(key string) bool {
 	return config.Keybinds.Global.Cancel != "" && key == config.Keybinds.Global.Cancel
 }
 
+// isPaletteQuitKey is isQuitKey for the command palette, whose search filter
+// takes typed text. A configured quit key quits there only if it can't be
+// typed: a modified key ("ctrl+q") or a function key ("f10"). Plain
+// characters and names like "space" or "enter" go to the filter/list instead.
+func isPaletteQuitKey(key string) bool {
+	if key == "ctrl+c" {
+		return true
+	}
+	q := config.Keybinds.Global.Quit
+	if q == "" || key != q {
+		return false
+	}
+	return strings.Contains(q, "+") || (len(q) > 1 && q[0] == 'f' && strings.Trim(q[1:], "0123456789") == "")
+}
+
 func getCurrentComposer(current tea.Model) *tui.Composer {
 	if c, ok := current.(*tui.Composer); ok {
 		return c
@@ -887,14 +902,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	if m.palette.IsOpen() {
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
-			switch keyMsg.String() {
-			case "ctrl+c", config.Keybinds.Global.Quit:
+			k := keyMsg.String()
+			switch {
+			case isPaletteQuitKey(k):
 				m.shutdownService()
 				return m, tea.Quit
-			case config.Keybinds.Global.Cancel:
+			case k == config.Keybinds.Global.Cancel:
 				m.palette.Close()
 				return m, nil
-			case "enter":
+			case k == "enter":
 				actionCmd := m.palette.HandleKey(keyMsg)
 				m.palette.Close()
 				return m, actionCmd
