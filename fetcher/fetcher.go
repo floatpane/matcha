@@ -801,7 +801,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 	if err != nil {
 		rawBytes, rawErr := FetchRawMessageFromMailbox(account, mailbox, uid)
 		if rawErr != nil {
-			return "", "", nil, fmt.Errorf("body structure fetch failed: %w; raw fetch also failed: %v", err, rawErr)
+			return "", "", nil, fmt.Errorf("body structure fetch failed: %w; raw fetch also failed: %w", err, rawErr)
 		}
 		body, mimeType := parseRawMessage(rawBytes)
 		return body, mimeType, nil, nil
