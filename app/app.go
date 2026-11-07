@@ -1043,8 +1043,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		seen := make(map[string]bool)
 		var cachedFolders []string
 		unread := make(map[string]int)
+		foldersByAccount := make(map[string][]string)
+		unreadByAccount := make(map[string]map[string]int)
 		for _, acc := range m.config.Accounts {
 			folders, counters := config.GetCachedFolders(acc.ID)
+			foldersByAccount[acc.ID] = folders
+			unreadByAccount[acc.ID] = counters
 			for _, f := range folders {
 				if !seen[f] {
 					seen[f] = true
@@ -1059,7 +1063,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			cachedFolders = append([]string{emailstore.FolderInbox}, cachedFolders...)
 		}
 		m.folderInbox = tui.NewFolderInbox(cachedFolders, m.config.Accounts)
-		m.folderInbox.SetUnreadCounts(unread)
+		m.folderInbox.SetFolderData(cachedFolders, unread, foldersByAccount, unreadByAccount)
 		m.setFolderInboxDefaults()
 		m.loadFolderInboxCache(emailstore.FolderInbox)
 		m.current = m.folderInbox
@@ -1090,27 +1094,48 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if m.folderInbox == nil {
 			return m, nil
 		}
+		seen := make(map[string]bool)
 		var folderNames []string
 		unread := make(map[string]int)
-		for _, f := range msg.MergedFolders {
-			folderNames = append(folderNames, f.Name)
-			if f.Unread > 0 {
-				unread[f.Name] = int(f.Unread)
-			}
-		}
-		m.folderInbox.SetFolders(folderNames)
-		m.folderInbox.SetUnreadCounts(unread)
+		foldersByAccount := make(map[string][]string)
+		unreadByAccount := make(map[string]map[string]int)
 		for accID, folders := range msg.FoldersByAccount {
 			var names []string
-			unread := make(map[string]int)
+			counts := make(map[string]int)
 			for _, f := range folders {
 				names = append(names, f.Name)
+				if !seen[f.Name] {
+					seen[f.Name] = true
+					folderNames = append(folderNames, f.Name)
+				}
 				if f.Unread > 0 {
-					unread[f.Name] = int(f.Unread)
+					counts[f.Name] = int(f.Unread)
+					unread[f.Name] += int(f.Unread)
 				}
 			}
-			go config.SaveAccountFolders(accID, names, unread) //nolint:errcheck
+			foldersByAccount[accID] = names
+			unreadByAccount[accID] = counts
+			_ = config.SaveAccountFolders(accID, names, counts)
 		}
+		for _, acc := range m.config.Accounts {
+			if _, ok := foldersByAccount[acc.ID]; ok {
+				continue
+			}
+			folders, counts := config.GetCachedFolders(acc.ID)
+			foldersByAccount[acc.ID] = folders
+			unreadByAccount[acc.ID] = counts
+			for _, folder := range folders {
+				if !seen[folder] {
+					seen[folder] = true
+					folderNames = append(folderNames, folder)
+				}
+				unread[folder] += counts[folder]
+			}
+		}
+		if !seen[emailstore.FolderInbox] {
+			folderNames = append(folderNames, emailstore.FolderInbox)
+		}
+		folderCmd := m.folderInbox.SetFolderData(folderNames, unread, foldersByAccount, unreadByAccount)
 		if len(msg.Errors) > 0 {
 			lookup := map[string]string{}
 			for _, acc := range m.config.Accounts {
@@ -1132,12 +1157,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				parts = append(parts, fmt.Sprintf("%s: %v", name, err))
 			}
 			sort.Strings(parts)
-			return m, m.showErrorCmd(fmt.Sprintf(
+			return m, tea.Batch(folderCmd, m.showErrorCmd(fmt.Sprintf(
 				"Folder fetch failed for %d account(s): %s",
 				len(parts), strings.Join(parts, "; "),
-			))
+			)))
 		}
-		return m, nil
+		return m, folderCmd
 
 	case tui.SwitchFolderMsg:
 		if m.config == nil {

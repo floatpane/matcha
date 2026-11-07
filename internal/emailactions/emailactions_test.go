@@ -23,18 +23,22 @@ func (f *fakeFolderInbox) SetEmails(emails []fetcher.Email, accounts []config.Ac
 	f.accounts = accounts
 }
 
-func (f *fakeFolderInbox) IncrementUnreadCount(folder string) {
+func (f *fakeFolderInbox) IncrementUnreadCount(folder, accountID string) {
 	f.incremented = append(f.incremented, folder)
 	f.unread[folder]++
 }
 
-func (f *fakeFolderInbox) DecrementUnreadCount(folder string) {
+func (f *fakeFolderInbox) DecrementUnreadCount(folder, accountID string) {
 	f.decremented = append(f.decremented, folder)
 	f.unread[folder]--
 }
 
 func (f *fakeFolderInbox) GetFolders() []string {
 	return f.folders
+}
+
+func (f *fakeFolderInbox) GetAccountFolderData(accountID string) ([]string, map[string]int) {
+	return f.folders, f.GetUnreadCountsCopy()
 }
 
 func (f *fakeFolderInbox) GetUnreadCountsCopy() map[string]int {
