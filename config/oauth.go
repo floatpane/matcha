@@ -1,10 +1,12 @@
 package config
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	_ "embed"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -80,8 +82,10 @@ func GetOAuth2Token(email string) (string, error) {
 // helper script. It opens the user's browser for authorization.
 // provider should be "gmail" or "outlook". If empty, the script auto-detects from the email.
 // clientID and clientSecret are optional — if empty, the script uses stored credentials.
+// onOutput, if non-nil, receives each progress line the script writes to stderr
+// (including the authorization URL) as it happens.
 // The subprocess is killed after 5 minutes to prevent indefinite hangs.
-func RunOAuth2Flow(email, provider, clientID, clientSecret string) error {
+func RunOAuth2Flow(email, provider, clientID, clientSecret string, onOutput func(string)) error {
 	script, err := OAuthScriptPath()
 	if err != nil {
 		return err
@@ -95,17 +99,30 @@ func RunOAuth2Flow(email, provider, clientID, clientSecret string) error {
 		args = append(args, "--client-id", clientID, "--client-secret", clientSecret)
 	}
 
-	// 5-minute timeout: the user needs time to complete the browser-based
-	// OAuth consent flow, but the process must not hang forever.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "python3", args...)
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = io.Discard
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("oauth2 flow failed: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("oauth2 flow failed: %w", err)
+	}
 
 	var stderrBuf bytes.Buffer
-	cmd.Stderr = &stderrBuf
-	if err := cmd.Run(); err != nil {
+	scanner := bufio.NewScanner(stderr)
+	for scanner.Scan() {
+		line := scanner.Text()
+		stderrBuf.WriteString(line + "\n")
+		if onOutput != nil {
+			onOutput(line)
+		}
+	}
+	if err := cmd.Wait(); err != nil {
 		if stderrBuf.Len() > 0 {
 			return fmt.Errorf("oauth2 flow failed: %w: %s", err, strings.TrimSpace(stderrBuf.String()))
 		}

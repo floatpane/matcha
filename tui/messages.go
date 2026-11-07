@@ -99,6 +99,12 @@ type StartOAuth2Msg struct {
 	Email string
 }
 
+// OAuth2ProgressMsg carries one line of progress output (such as the
+// authorization URL) from a running OAuth2 flow.
+type OAuth2ProgressMsg struct {
+	Line string
+}
+
 // OAuth2CompleteMsg is sent when OAuth2 authorization completes.
 type OAuth2CompleteMsg struct {
 	Email string

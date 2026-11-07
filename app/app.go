@@ -86,6 +86,7 @@ type Model struct {
 
 	showLogPanel bool
 	logCh        <-chan logging.Entry
+	oauthCh      chan tea.Msg
 	logPanel     *tui.LogPanel
 
 	palette *palette.Palette
@@ -575,10 +576,19 @@ func (m *Model) saveConfigAfterCredentials() bool {
 }
 
 func (m *Model) runOAuth2Flow(account config.Account) tea.Cmd {
-	return func() tea.Msg {
-		err := config.RunOAuth2Flow(account.Email, account.ServiceProvider, "", "")
-		return tui.OAuth2CompleteMsg{Email: account.Email, Err: err}
-	}
+	ch := make(chan tea.Msg, 16)
+	m.oauthCh = ch
+	go func() {
+		err := config.RunOAuth2Flow(account.Email, account.ServiceProvider, "", "", func(line string) {
+			ch <- tui.OAuth2ProgressMsg{Line: line}
+		})
+		ch <- tui.OAuth2CompleteMsg{Email: account.Email, Err: err}
+	}()
+	return waitForOAuthMsg(ch)
+}
+
+func waitForOAuthMsg(ch <-chan tea.Msg) tea.Cmd {
+	return func() tea.Msg { return <-ch }
 }
 
 func (m *Model) afterConfigSaved() {
@@ -1000,7 +1010,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}
 		return m, m.setChoiceMenu()
 
+	case tui.OAuth2ProgressMsg:
+		if login, ok := m.current.(*tui.Login); ok {
+			login.AddOAuthStatus(msg.Line)
+		}
+		return m, waitForOAuthMsg(m.oauthCh)
+
 	case tui.OAuth2CompleteMsg:
+		m.oauthCh = nil
 		if msg.Err != nil {
 			log.Printf("OAuth2 authorization failed: %v", msg.Err)
 		}

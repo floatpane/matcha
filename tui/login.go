@@ -33,6 +33,8 @@ type Login struct {
 	hideTips   bool
 	width      int
 	height     int
+
+	oauthStatus []string
 }
 
 const (
@@ -554,6 +556,13 @@ func (m *Login) View() tea.View {
 
 	views = append(views, m.protocolFieldViews(proto)...)
 
+	if len(m.oauthStatus) > 0 {
+		views = append(views, "")
+		for _, line := range m.oauthStatus {
+			views = append(views, accountEmailStyle.Render(line))
+		}
+	}
+
 	views = append(views, "")
 	if !m.hideTips && tip != "" {
 		views = append(views, TipStyle.Render("Tip: "+tip))
@@ -568,6 +577,11 @@ func (m *Login) View() tea.View {
 	views = append(views, helpStyle.Render("\n"+helpLine))
 
 	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, views...))
+}
+
+// AddOAuthStatus appends a progress line from a running OAuth2 flow, shown below the form.
+func (m *Login) AddOAuthStatus(line string) {
+	m.oauthStatus = append(m.oauthStatus, line)
 }
 
 // SetEditMode sets the login form to edit an existing account.
