@@ -54,6 +54,9 @@ const goosDarwin = "darwin"
 // goosLinux is the runtime.GOOS value for Linux.
 const goosLinux = "linux"
 
+// keyCtrlC is the key string for ctrl+c, which always quits.
+const keyCtrlC = "ctrl+c"
+
 type logEntryMsg struct {
 	entry logging.Entry
 }
@@ -215,7 +218,7 @@ func (m *Model) newSettings() *tui.Settings {
 // isQuitKey reports whether key quits the app: the configured quit key, or
 // ctrl+c, which always works as a fallback.
 func isQuitKey(key string) bool {
-	return key == "ctrl+c" || (config.Keybinds.Global.Quit != "" && key == config.Keybinds.Global.Quit)
+	return key == keyCtrlC || (config.Keybinds.Global.Quit != "" && key == config.Keybinds.Global.Quit)
 }
 
 // isCancelKey reports whether key is the configured cancel/back key.
@@ -228,7 +231,7 @@ func isCancelKey(key string) bool {
 // typed: a modified key ("ctrl+q") or a function key ("f10"). Plain
 // characters and names like "space" or "enter" go to the filter/list instead.
 func isPaletteQuitKey(key string) bool {
-	if key == "ctrl+c" {
+	if key == keyCtrlC {
 		return true
 	}
 	q := config.Keybinds.Global.Quit
