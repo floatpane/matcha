@@ -771,9 +771,9 @@ func TestItemDelegateKeepsSubjectWithinRowWidth(t *testing.T) {
 			marker   string
 		}{
 			{name: "unselected", marker: ""},
-			{name: "selected", selected: true, marker: "> "},
+			{name: "selected", selected: true, marker: ""},
 			{name: "visual", visual: true, marker: "* "},
-			{name: "cursor and visual", selected: true, visual: true, marker: ">*"},
+			{name: "cursor and visual", selected: true, visual: true, marker: "* "},
 		}
 		for _, mode := range modes {
 			for _, width := range []int{0, 1, 2, 4, 8, 16, 24, 40, exact} {

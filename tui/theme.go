@@ -39,10 +39,15 @@ func RebuildStyles() {
 		Align(lipgloss.Center)
 
 	// choice.go
-	titleStyle = lipgloss.NewStyle().Foreground(t.AccentText).Background(t.AccentDark).Padding(0, 1)
+	titleStyle = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	listHeader = lipgloss.NewStyle().Foreground(t.SubtleText).PaddingBottom(1)
 	itemStyle = lipgloss.NewStyle().PaddingLeft(2)
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(t.Accent)
+	menuItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(t.SubtleText)
+	menuSelectedStyle = lipgloss.NewStyle().PaddingLeft(2).Background(t.Accent).Foreground(t.Contrast).Bold(true)
+	menuSectionStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(t.MutedText)
+	menuHintStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(t.SubtleText)
+	menuNoticeStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(t.Warning)
 
 	// settings.go
 	accountItemStyle = lipgloss.NewStyle().PaddingLeft(2)
@@ -64,31 +69,31 @@ func RebuildStyles() {
 	smimeToggleStyle = lipgloss.NewStyle().PaddingLeft(4).Foreground(t.Secondary)
 
 	// inbox.go
-	tabStyle = lipgloss.NewStyle().Padding(0, 2)
-	activeTabStyle = lipgloss.NewStyle().Padding(0, 2).Foreground(t.Accent).Bold(true).Underline(true)
-	tabBarStyle = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).PaddingBottom(1).MarginBottom(1)
+	tabStyle = lipgloss.NewStyle().Padding(0, 2).Foreground(t.SubtleText)
+	activeTabStyle = lipgloss.NewStyle().Padding(0, 2).Foreground(t.Contrast).Background(t.Accent).Bold(true)
+	tabBarStyle = lipgloss.NewStyle().MarginBottom(1)
 	unreadEmailStyle = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	readEmailStyle = lipgloss.NewStyle().Foreground(t.Secondary)
 	visualSelectedStyle = lipgloss.NewStyle().Background(t.AccentDark).Foreground(t.AccentText).PaddingLeft(2)
 	selectedDateStyle = lipgloss.NewStyle().Foreground(t.Accent)
+	inboxCursorStyle = lipgloss.NewStyle().Background(t.Accent).Foreground(t.Contrast).PaddingLeft(2)
 
 	// folder_inbox.go
 	sidebarStyle = lipgloss.NewStyle().
 		Width(sidebarWidth).
 		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(t.MutedText).
 		BorderRight(true).
 		PaddingRight(1).
 		PaddingLeft(1)
 	sidebarTitleStyle = lipgloss.NewStyle().
 		Foreground(t.Accent).
-		Bold(true).
-		PaddingBottom(1)
-	folderStyle = lipgloss.NewStyle().
-		PaddingLeft(1).
-		PaddingRight(1)
+		Bold(true)
+	sidebarSubtitleStyle = lipgloss.NewStyle().Foreground(t.MutedText)
+	folderStyle = lipgloss.NewStyle().Foreground(t.SubtleText)
+	folderUnreadStyle = lipgloss.NewStyle().Bold(true)
+	folderBadgeStyle = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	activeFolderStyle = lipgloss.NewStyle().
-		PaddingLeft(1).
-		PaddingRight(1).
 		Background(t.Accent).
 		Foreground(t.Contrast).
 		Bold(true)

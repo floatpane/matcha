@@ -31,6 +31,7 @@ var unreadEmailStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold
 var readEmailStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 var visualSelectedStyle lipgloss.Style
 var selectedDateStyle lipgloss.Style
+var inboxCursorStyle lipgloss.Style
 
 type item struct {
 	title, desc   string
@@ -96,6 +97,19 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		_, inVisualSelection = d.inbox.selectedUIDs[i.uid]
 	}
 	rowStyle, marker := inboxRowStyle(isSelected, inVisualSelection)
+	rowBg := rowStyle.GetBackground()
+	_, noBg := rowBg.(lipgloss.NoColor)
+	hasBG := !noBg
+	seg := lipgloss.NewStyle()
+	if hasBG {
+		seg = seg.Foreground(rowStyle.GetForeground()).Background(rowBg)
+	}
+	plain := func(text string) string {
+		if hasBG {
+			return seg.Render(text)
+		}
+		return text
+	}
 
 	contentWidth := listWidth - rowStyle.GetHorizontalFrameSize()
 	if contentWidth < 0 {
@@ -109,6 +123,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 
 	statusIcon, statusStyle := inboxStatusPresentation(i)
+	if hasBG {
+		statusStyle = seg.Bold(!i.isRead)
+	}
 	// Normalize before parsing so a tab or newline still separates "Name <email>".
 	sender := parseSenderName(normalizeInboxRowText(i.desc))
 	subject := inboxSubjectText(i)
@@ -121,7 +138,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 	dateStr := formatInboxDate(i.date, layout, detailedDates)
 	var styledDate string
-	if isSelected {
+	if isSelected && !hasBG {
 		styledDate = selectedDateStyle.Render(dateStr)
 	} else {
 		styledDate = statusStyle.Render(dateStr)
@@ -162,8 +179,8 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 	subject = ansi.Truncate(subject, subjectBudget, ellipsis)
 
-	left := marker + prefix + statusStyle.Render(statusIcon) + " " +
-		statusStyle.Render(sender) + separator + statusStyle.Render(subject)
+	left := plain(marker+prefix) + statusStyle.Render(statusIcon) + plain(" ") +
+		statusStyle.Render(sender) + plain(separator) + statusStyle.Render(subject)
 	if ansi.StringWidth(left) > leftBudget {
 		left = ansi.Truncate(left, leftBudget, ellipsis)
 	}
@@ -174,7 +191,10 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		if pad < 0 {
 			pad = 0
 		}
-		content += strings.Repeat(" ", pad) + styledDate
+		content += plain(strings.Repeat(" ", pad)) + styledDate
+	}
+	if used := ansi.StringWidth(content); hasBG && used < contentWidth {
+		content += seg.Render(strings.Repeat(" ", contentWidth-used))
 	}
 
 	rendered := rowStyle.Render(content)
@@ -189,9 +209,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 func inboxRowStyle(isSelected, inVisualSelection bool) (lipgloss.Style, string) {
 	switch {
 	case isSelected && inVisualSelection:
-		return selectedItemStyle, ">*"
+		return inboxCursorStyle, "* "
 	case isSelected:
-		return selectedItemStyle, "> "
+		return inboxCursorStyle, ""
 	case inVisualSelection:
 		return visualSelectedStyle, "* "
 	default:
@@ -911,11 +931,11 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if msg.Button != tea.MouseLeft {
 			return m, nil
 		}
-		// tabBarH: 5 rows if multiple accounts (text+PaddingBottom+BorderBottom+MarginBottom+\n), else 0
+		// tabBarH: 3 rows if multiple accounts (text+MarginBottom+\n), else 0
 		// list header: 3 rows (title row + status row + 1 padding row)
 		tabBarH := 0
 		if len(m.tabs) > 1 {
-			tabBarH = 5
+			tabBarH = 3
 		}
 		listContentStartY := tabBarH + 3
 		cursorInPage := msg.Y - listContentStartY

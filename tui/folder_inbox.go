@@ -1,9 +1,9 @@
 package tui
 
 import (
-	"fmt"
 	"maps"
 	"sort"
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -11,6 +11,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	overlay "github.com/floatpane/bubble-overlay"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
@@ -18,6 +19,10 @@ import (
 )
 
 const sidebarWidth = 25
+
+// sidebarHeaderRows is the height of the sidebar header (title, subtitle,
+// blank spacer) that sits above the first folder row.
+const sidebarHeaderRows = 3
 
 var (
 	sidebarStyle = lipgloss.NewStyle().
@@ -29,16 +34,14 @@ var (
 
 	sidebarTitleStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("42")).
-				Bold(true).
-				PaddingBottom(1)
+				Bold(true)
 
-	folderStyle = lipgloss.NewStyle().
-			PaddingLeft(1).
-			PaddingRight(1)
+	sidebarSubtitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	folderStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	folderUnreadStyle    = lipgloss.NewStyle().Bold(true)
+	folderBadgeStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 
 	activeFolderStyle = lipgloss.NewStyle().
-				PaddingLeft(1).
-				PaddingRight(1).
 				Background(lipgloss.Color("42")).
 				Foreground(lipgloss.Color("#000000")).
 				Bold(true)
@@ -306,8 +309,10 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 			return m, nil
 		}
 		if msg.X < sidebarWidth {
-			// title(1) + PaddingBottom(1) = 2 header rows (explicit \n doesn't add a row)
-			folderIdx := msg.Y - 2
+			folderIdx := msg.Y
+			if isUIVisible("header") {
+				folderIdx -= sidebarHeaderRows
+			}
 			if folderIdx >= 0 && folderIdx < len(m.folders) {
 				m.activeFolderIdx = folderIdx
 				return m, m.switchFolder()
@@ -867,47 +872,87 @@ func (m *FolderInbox) View() tea.View {
 }
 
 func (m *FolderInbox) renderSidebar() string {
+	contentWidth := sidebarWidth - 2 // sidebarStyle pads one cell on each side
 	var b strings.Builder
 
-	// The sidebar title ("Folders" / account name) is part of the "header"
+	// The sidebar header (account name and address) is part of the "header"
 	// component. Skip it when a plugin has hidden the header.
 	if isUIVisible("header") {
-		// Account name as title
 		title := t("folder_inbox.folders_title")
+		subtitle := ""
 		if len(m.accounts) > 0 {
 			acc := m.accounts[0]
-			if acc.Name != "" {
+			switch {
+			case acc.Name != "":
 				title = acc.Name
-			} else if acc.FetchEmail != "" {
+				subtitle = acc.FetchEmail
+			case acc.FetchEmail != "":
 				title = acc.FetchEmail
 			}
 		}
-		b.WriteString(sidebarTitleStyle.Render(title))
+		b.WriteString(sidebarTitleStyle.Render(ansi.Truncate(title, contentWidth, "\u2026")))
 		b.WriteString("\n")
+		b.WriteString(sidebarSubtitleStyle.Render(ansi.Truncate(subtitle, contentWidth, "\u2026")))
+		b.WriteString("\n\n")
 	}
 
 	for i, folder := range m.folders {
-		displayName := m.formatFolderName(folder)
-		unread := m.unread[folder]
-
-		var tab string
-		if unread > 0 {
-			tab = fmt.Sprintf("%s (%d)", displayName, unread)
-		} else {
-			tab = displayName
-		}
-
-		if i == m.activeFolderIdx {
-			b.WriteString(activeFolderStyle.Width(sidebarWidth - 4).Render(tab))
-		} else {
-			b.WriteString(folderStyle.Render(tab))
-		}
+		b.WriteString(m.renderFolderRow(folder, i == m.activeFolderIdx, contentWidth))
 		if i < len(m.folders)-1 {
 			b.WriteString("\n")
 		}
 	}
 
 	return sidebarStyle.Height(m.availableHeight()).Render(b.String())
+}
+
+// renderFolderRow draws one sidebar row: icon, name, and a right-aligned
+// unread count. The active row is filled edge to edge.
+func (m *FolderInbox) renderFolderRow(folder string, active bool, width int) string {
+	unread := m.unread[folder]
+	badge := ""
+	badgeWidth := 0
+	if unread > 0 {
+		badge = strconv.Itoa(unread)
+		badgeWidth = lipgloss.Width(badge) + 1
+	}
+
+	icon := folderIcon(folder)
+	// Leading space, icon, space, name, gap, badge, trailing space.
+	fixed := 3 + lipgloss.Width(icon) + badgeWidth
+	name := ansi.Truncate(m.formatFolderName(folder), max(width-fixed, 0), "\u2026")
+	gap := strings.Repeat(" ", max(width-3-lipgloss.Width(icon)-lipgloss.Width(name)-lipgloss.Width(badge), 0))
+
+	if active {
+		return activeFolderStyle.Width(width).Render(" " + icon + " " + name + gap + badge)
+	}
+	nameStyle := folderStyle
+	if unread > 0 {
+		nameStyle = folderUnreadStyle
+	}
+	return folderStyle.Render(" "+icon+" ") + nameStyle.Render(name) + gap + folderBadgeStyle.Render(badge)
+}
+
+// folderIcon picks a Nerd Font glyph for well-known folder names.
+func folderIcon(folder string) string {
+	name := strings.ToLower(folder)
+	switch {
+	case strings.Contains(name, "inbox"):
+		return "\ueb1c"
+	case strings.Contains(name, "sent"):
+		return "\uf1d8"
+	case strings.Contains(name, "draft"):
+		return "\uec0e"
+	case strings.Contains(name, "trash"), strings.Contains(name, "deleted"):
+		return "\uf1f8"
+	case strings.Contains(name, "archive"), strings.Contains(name, "all mail"):
+		return "\uf187"
+	case strings.Contains(name, "spam"), strings.Contains(name, "junk"):
+		return "\uf05e"
+	case strings.Contains(name, "star"), strings.Contains(name, "flag"):
+		return "\uf005"
+	}
+	return "\uf07b"
 }
 
 // formatFolderName makes IMAP folder names more readable.
@@ -942,7 +987,7 @@ func (m *FolderInbox) renderWithMoveOverlay(content string) string {
 	for i, folder := range choices {
 		displayName := m.formatFolderName(folder)
 		if i == m.moveTargetIdx {
-			b.WriteString(moveSelectedItemStyle.Render("> " + displayName))
+			b.WriteString(moveSelectedItemStyle.Render("▌ " + displayName))
 		} else {
 			b.WriteString(moveItemStyle.Render("  " + displayName))
 		}
@@ -1009,7 +1054,7 @@ func (m *FolderInbox) renderWithJumpOverlay(content string) string {
 
 		displayName := m.formatFolderName(m.folders[folderIdx])
 		if i == m.jumpTargetIdx {
-			b.WriteString(moveSelectedItemStyle.Render("> " + displayName))
+			b.WriteString(moveSelectedItemStyle.Render("▌ " + displayName))
 		} else {
 			b.WriteString(moveItemStyle.Render("  " + displayName))
 		}

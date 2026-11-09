@@ -104,7 +104,7 @@ func renderThemePreview(t theme.Theme, previewWidth int) string {
 	b.WriteString(activeTab.Render("Inbox") + "  " + secondary.Render("Sent") + "  " + secondary.Render("Drafts") + "\n")
 	b.WriteString(secondary.Render(strings.Repeat("─", previewWidth)) + "\n")
 
-	b.WriteString(accentBold.Render("> ") + dim.Render("Alice  ") + accent.Render("Meeting tomorrow") + "  " + muted.Render("2m ago") + "\n")
+	b.WriteString(accentBold.Render("▌ ") + dim.Render("Alice  ") + accent.Render("Meeting tomorrow") + "  " + muted.Render("2m ago") + "\n")
 	b.WriteString("  " + dim.Render("Bob    ") + secondary.Render("Re: Project update") + "  " + muted.Render("1h ago") + "\n")
 	b.WriteString("  " + dim.Render("Carol  ") + secondary.Render("Quick question") + "    " + muted.Render("3h ago") + "\n\n")
 

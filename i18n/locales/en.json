@@ -80,6 +80,8 @@
       "settings": "Settings",
       "marketplace": "Plugin Marketplace",
       "drafts": "Drafts",
+      "section_mail": "Mail",
+      "section_tools": "Tools",
       "help": "Use {NavArrows} to navigate, enter to select, and {Quit} to quit.",
       "unknown": "unknown",
       "update_available": "Update available: {latest} (installed: {current}) — run `matcha update` to upgrade",

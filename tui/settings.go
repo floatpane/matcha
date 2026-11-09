@@ -358,7 +358,7 @@ func (m *Settings) contentItemStyle(selected bool) lipgloss.Style {
 
 func (m *Settings) contentCursor(selected bool) string {
 	if selected && m.activePane == PaneContent {
-		return "> "
+		return "▌ "
 	}
 	return "  "
 }
@@ -439,7 +439,7 @@ func (m *Settings) View() tea.View {
 		cursor := "  "
 		if m.menuCursor == i {
 			if m.activePane == PaneMenu {
-				cursor = "> "
+				cursor = "▌ "
 			} else {
 				cursor = "• "
 			}

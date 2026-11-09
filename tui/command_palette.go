@@ -215,7 +215,7 @@ func (p *CommandPalette) renderRow(cmd PaletteCommand, selected bool, inner int)
 	prefix := "  "
 	titleStyle := lipgloss.NewStyle().Foreground(t.DimText)
 	if selected {
-		prefix = "> "
+		prefix = "▌ "
 		titleStyle = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	}
 

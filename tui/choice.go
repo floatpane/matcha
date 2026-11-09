@@ -1,12 +1,12 @@
 package tui
 
 import (
-	"fmt"
 	"reflect"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/theme"
 )
@@ -18,7 +18,15 @@ var (
 	listHeader        = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).PaddingBottom(1)
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(2)
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("42"))
+	menuItemStyle     = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("245"))
+	menuSelectedStyle = lipgloss.NewStyle().PaddingLeft(2).Background(lipgloss.Color("42")).Foreground(lipgloss.Color("#000000")).Bold(true)
+	menuSectionStyle  = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("241"))
+	menuHintStyle     = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("245"))
+	menuNoticeStyle   = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("214"))
 )
+
+// menuWidth is the width of the highlight bar behind the selected home entry.
+const menuWidth = 36
 
 // ASCII logo for the start screen
 const choiceLogo = `
@@ -67,20 +75,6 @@ func (m Choice) Init() tea.Cmd {
 	return nil
 }
 
-func (m Choice) computeMenuStartY() int {
-	y := 1 // docStyle top margin (Margin(1, 2))
-	y += 6 // choiceLogo: blank line + 5 ascii art lines (trailing \n doesn't add a visible row)
-	if len(m.keybindWarnings) > 0 {
-		y += len(m.keybindWarnings) + 1 // one row per warning + trailing \n
-	}
-	// listHeader with PaddingBottom(1) = 2 rows, then \n\n = 2 more rows
-	y += 4
-	if m.UpdateAvailable {
-		y += 3 // update message (1 row) + \n\n (2 rows)
-	}
-	return y
-}
-
 func (m Choice) handleSelect() (tea.Model, tea.Cmd) {
 	idx := m.cursor
 	marketplaceIdx := 2
@@ -127,10 +121,13 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Button != tea.MouseLeft {
 			return m, nil
 		}
-		idx := msg.Y - m.computeMenuStartY()
-		if idx >= 0 && idx < len(m.choices) {
-			m.cursor = idx
-			return m.handleSelect()
+		// The body starts one row below the top margin of docStyle.
+		_, rows := m.menuContent()
+		for i, row := range rows {
+			if row == msg.Y-1 {
+				m.cursor = i
+				return m.handleSelect()
+			}
 		}
 		return m, nil
 
@@ -170,29 +167,26 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Choice) View() tea.View {
-	var b strings.Builder
-
-	// renderLogo checks the plugin banner override (set via
-	// matcha.ui.set_banner) and falls back to the default choiceLogo.
-	b.WriteString(renderLogo(choiceLogo))
-	b.WriteString("\n")
+// menuContent renders the home screen body and returns the row (relative to
+// the top of the body) of every menu entry, so mouse clicks map to items.
+func (m Choice) menuContent() (string, []int) {
+	var lines []string
+	logo := strings.Split(renderLogo(choiceLogo), "\n")
+	for len(logo) > 0 && strings.TrimSpace(ansi.Strip(logo[len(logo)-1])) == "" {
+		logo = logo[:len(logo)-1]
+	}
+	lines = append(lines, logo...)
+	lines = append(lines, "")
 
 	if len(m.keybindWarnings) > 0 {
-		warnStyle := lipgloss.NewStyle().Foreground(theme.ActiveTheme.Warning).Padding(0, 1)
+		warnStyle := lipgloss.NewStyle().Foreground(theme.ActiveTheme.Warning).PaddingLeft(2)
 		for _, w := range m.keybindWarnings {
-			b.WriteString(warnStyle.Render("⚠ keybind " + w))
-			b.WriteString("\n")
+			lines = append(lines, warnStyle.Render("⚠ keybind "+w))
 		}
-		b.WriteString("\n")
+		lines = append(lines, "")
 	}
 
-	b.WriteString(listHeader.Render(t("choice.what_to_do")))
-	b.WriteString("\n\n")
-
-	// If we detected an update, show a short message under the header.
 	if m.UpdateAvailable {
-		updateStyle := lipgloss.NewStyle().Foreground(theme.ActiveTheme.Warning).Padding(0, 1)
 		cur := m.CurrentVersion
 		if cur == "" {
 			cur = t("choice.unknown")
@@ -201,33 +195,54 @@ func (m Choice) View() tea.View {
 			"latest":  m.LatestVersion,
 			"current": cur,
 		})
-		b.WriteString(updateStyle.Render(msg))
-		b.WriteString("\n\n")
+		lines = append(lines, menuNoticeStyle.Render(msg), "")
 	}
 
+	lines = append(lines, menuHintStyle.Render(t("choice.what_to_do")), "")
+
+	marketplaceIdx := m.marketplaceIndex()
+	rows := make([]int, len(m.choices))
 	for i, choice := range m.choices {
-		if m.cursor == i {
-			b.WriteString(selectedItemStyle.Render(fmt.Sprintf("> %s", choice)))
-		} else {
-			b.WriteString(itemStyle.Render(fmt.Sprintf("  %s", choice)))
+		if i == 0 {
+			lines = append(lines, menuSectionStyle.Render(t("choice.section_mail")))
 		}
-		b.WriteString("\n")
+		if i == marketplaceIdx {
+			lines = append(lines, "", menuSectionStyle.Render(t("choice.section_tools")))
+		}
+		rows[i] = len(lines)
+		if i == m.cursor {
+			lines = append(lines, menuSelectedStyle.Width(menuWidth).Render(choice))
+		} else {
+			lines = append(lines, menuItemStyle.Render(choice))
+		}
 	}
+	return strings.Join(lines, "\n"), rows
+}
 
-	mainContent := b.String()
+// marketplaceIndex is the first entry of the "Tools" section. Drafts shifts it
+// down by one when there are saved drafts.
+func (m Choice) marketplaceIndex() int {
+	if m.hasSavedDrafts {
+		return 3
+	}
+	return 2
+}
+
+func (m Choice) View() tea.View {
+	content, _ := m.menuContent()
 	helpView := helpStyle.Render(keybindHelp("choice.help"))
 
+	mainContent := content
 	if m.height > 0 {
-		currentHeight := lipgloss.Height(docStyle.Render(mainContent + helpView))
-		gap := m.height - currentHeight
-		if gap > 0 {
+		currentHeight := lipgloss.Height(docStyle.Render(mainContent + "\n" + helpView))
+		if gap := m.height - currentHeight; gap > 0 {
 			mainContent += strings.Repeat("\n", gap)
 		}
 	} else {
 		mainContent += "\n\n"
 	}
 
-	v := tea.NewView(docStyle.Render(mainContent + helpView))
+	v := tea.NewView(docStyle.Render(mainContent + "\n" + helpView))
 	if config.MouseEnabled != nil && *config.MouseEnabled {
 		v.MouseMode = tea.MouseModeCellMotion
 	}

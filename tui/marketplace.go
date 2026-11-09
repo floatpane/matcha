@@ -496,7 +496,7 @@ func (m Marketplace) View() tea.View {
 			cursor := "  "
 			nameStyle := mpItemNameStyle
 			if i == m.cursor {
-				cursor = mpCursorStyle.Render("> ")
+				cursor = mpCursorStyle.Render("▌ ")
 				nameStyle = mpSelectedStyle
 			}
 

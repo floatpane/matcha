@@ -199,7 +199,7 @@ func (m *SaveFilePicker) View() tea.View {
 		item := m.items[i]
 		cursor := "  "
 		if m.cursor == i {
-			cursor = "> "
+			cursor = "▌ "
 		}
 
 		itemName := savePickerDirectoryStyle.Render(item.Name() + "/")

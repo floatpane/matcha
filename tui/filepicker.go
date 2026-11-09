@@ -216,7 +216,7 @@ func (m *FilePicker) View() tea.View {
 		item := m.items[i]
 		cursor := "  "
 		if m.cursor == i {
-			cursor = "> "
+			cursor = "▌ "
 		}
 
 		itemName := item.Name()

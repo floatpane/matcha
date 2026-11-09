@@ -657,7 +657,7 @@ func (m *EmailView) renderAttachmentView() string {
 		cursor := "  "
 		style := itemStyle
 		if m.focusOnAttachments && i == m.attachmentCursor {
-			cursor = "> "
+			cursor = "▌ "
 			style = selectedItemStyle
 		}
 		b.WriteString(style.Render(fmt.Sprintf("%s%s", cursor, attachment.Filename)))
