@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -215,15 +216,71 @@ func (m *Model) newSettings() *tui.Settings {
 	return s
 }
 
-// isQuitKey reports whether key quits the app: the configured quit key, or
-// ctrl+c, which always works as a fallback.
-func isQuitKey(key string) bool {
-	return key == keyCtrlC || (config.Keybinds.Global.Quit != "" && key == config.Keybinds.Global.Quit)
+// isTypeableKey reports whether k is a key that types text: a single
+// character or "space". Names like "esc" and modified or function keys
+// ("ctrl+q", "f10") are not typeable.
+func isTypeableKey(k string) bool {
+	return k == "space" || utf8.RuneCountInString(k) == 1
 }
 
-// isCancelKey reports whether key is the configured cancel/back key.
-func isCancelKey(key string) bool {
-	return config.Keybinds.Global.Cancel != "" && key == config.Keybinds.Global.Cancel
+// quitKeyAllowed reports whether a typeable configured quit key may quit on
+// the given screen. Screens with text inputs are excluded so typing the key
+// doesn't quit. Inbox and FolderInbox allow it only while no search, filter or
+// folder-jump filter is active. Composer, ContactEditor and MailingListEditor
+// already quit on the key in their own Update, so they are allowed here to keep
+// the draft save and service shutdown below.
+func quitKeyAllowed(current tea.Model) bool {
+	switch v := current.(type) {
+	case tui.Choice, tui.Status, tui.Marketplace, *tui.EmailView, *tui.Drafts, *tui.SetupGuide,
+		*tui.Composer, *tui.ContactEditor, *tui.MailingListEditor:
+		return true
+	case *tui.Inbox:
+		return !v.IsSearchActive() && !v.IsFilterActive()
+	case *tui.FolderInbox:
+		if v.IsJumpFilterActive() {
+			return false
+		}
+		if inbox := v.GetInbox(); inbox != nil {
+			return !inbox.IsSearchActive() && !inbox.IsFilterActive()
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+// cancelKeyAllowed reports whether a typeable configured cancel key may act on
+// the given screen. Login and the file picker take typed text.
+func cancelKeyAllowed(current tea.Model) bool {
+	switch current.(type) {
+	case *tui.Login, *tui.FilePicker:
+		return false
+	}
+	return true
+}
+
+// isQuitKey reports whether key quits the app: ctrl+c always, or the
+// configured quit key. A typeable configured key (e.g. "q") only quits when
+// screenOK, the pre-Update result of quitKeyAllowed, is true.
+func isQuitKey(key string, screenOK bool) bool {
+	if key == keyCtrlC {
+		return true
+	}
+	q := config.Keybinds.Global.Quit
+	if q == "" || key != q {
+		return false
+	}
+	return !isTypeableKey(key) || screenOK
+}
+
+// isCancelKey reports whether key is the configured cancel/back key. A
+// typeable key only counts when screenOK (see cancelKeyAllowed) is true.
+func isCancelKey(key string, screenOK bool) bool {
+	c := config.Keybinds.Global.Cancel
+	if c == "" || key != c {
+		return false
+	}
+	return !isTypeableKey(key) || screenOK
 }
 
 // isPaletteQuitKey is isQuitKey for the command palette, whose search filter
@@ -946,6 +1003,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}
 	}
 
+	// Judge the screen before it handles the key: Update may close an
+	// overlay or switch screens.
+	quitScreenOK, cancelScreenOK := true, true
+	if _, ok := msg.(tea.KeyPressMsg); ok {
+		quitScreenOK = quitKeyAllowed(m.current)
+		cancelScreenOK = cancelKeyAllowed(m.current)
+	}
+
 	m.current, cmd = m.current.Update(msg)
 	cmds = append(cmds, cmd)
 
@@ -989,14 +1054,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				}
 			}
 		}
-		if isQuitKey(msg.String()) {
+		if isQuitKey(msg.String(), quitScreenOK) {
 			if composer := getCurrentComposer(m.current); composer != nil && composer.HasContent() {
 				m.saveDraftOnQuit(composer)
 			}
 			m.shutdownService()
 			return m, tea.Quit
 		}
-		if isCancelKey(msg.String()) {
+		if isCancelKey(msg.String(), cancelScreenOK) {
 			switch m.current.(type) {
 			case *tui.FilePicker:
 				return m, func() tea.Msg { return tui.CancelFilePickerMsg{} }

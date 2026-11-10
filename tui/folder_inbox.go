@@ -1109,6 +1109,12 @@ func (m *FolderInbox) GetCurrentFolder() string {
 	return m.currentFolder
 }
 
+// IsJumpFilterActive reports whether the folder-jump filter input has focus
+// and is taking typed text.
+func (m *FolderInbox) IsJumpFilterActive() bool {
+	return m.jumpingToFolder && m.jumpFilterInput.Focused()
+}
+
 // HasSplitPreview reports whether the split preview pane is currently open.
 func (m *FolderInbox) HasSplitPreview() bool {
 	return m.previewPane != nil
