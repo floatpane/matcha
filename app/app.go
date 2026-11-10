@@ -58,6 +58,9 @@ const goosLinux = "linux"
 // keyCtrlC is the key string for ctrl+c, which always quits.
 const keyCtrlC = "ctrl+c"
 
+// keySpace is the key string for the space bar.
+const keySpace = "space"
+
 type logEntryMsg struct {
 	entry logging.Entry
 }
@@ -220,7 +223,7 @@ func (m *Model) newSettings() *tui.Settings {
 // character or "space". Names like "esc" and modified or function keys
 // ("ctrl+q", "f10") are not typeable.
 func isTypeableKey(k string) bool {
-	return k == "space" || utf8.RuneCountInString(k) == 1
+	return k == keySpace || utf8.RuneCountInString(k) == 1
 }
 
 // quitKeyAllowed reports whether a typeable configured quit key may quit on
