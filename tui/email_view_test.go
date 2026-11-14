@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/fetcher"
+	"github.com/floatpane/matcha/view"
 )
 
 func TestRemoteImagePermissionIsPerMessageView(t *testing.T) {
@@ -88,7 +89,7 @@ func TestRemoteImageResultReachesNestedViews(t *testing.T) {
 	preview.remoteImagesLoading = true
 	preview.remoteLoadID = 42
 	folder := &FolderInbox{previewPane: preview, movingEmail: true}
-	folder.Update(remoteImagesLoadedMsg{requestID: 42, body: "loaded"})
+	folder.Update(remoteImagesLoadedMsg{requestID: 42, body: &view.RenderedBody{Text: "loaded"}})
 	if !preview.showRemoteImages || preview.remoteImagesLoading {
 		t.Fatal("folder preview did not receive the remote image result")
 	}
@@ -97,7 +98,7 @@ func TestRemoteImageResultReachesNestedViews(t *testing.T) {
 	replyEmail.remoteImagesLoading = true
 	replyEmail.remoteLoadID = 43
 	reply := &ReplySplitView{emailView: replyEmail, focusComposer: true}
-	reply.Update(remoteImagesLoadedMsg{requestID: 43, body: "loaded"})
+	reply.Update(remoteImagesLoadedMsg{requestID: 43, body: &view.RenderedBody{Text: "loaded"}})
 	if !replyEmail.showRemoteImages || replyEmail.remoteImagesLoading {
 		t.Fatal("reply email pane did not receive the remote image result")
 	}

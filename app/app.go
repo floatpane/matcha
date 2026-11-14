@@ -3,10 +3,12 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/mail"
 	"net/url"
 	"os"
+	"reflect"
 	"runtime"
 	"slices"
 	"sort"
@@ -58,8 +60,13 @@ type logEntryMsg struct {
 	entry logging.Entry
 }
 
-type clearErrorNotifMsg struct{}
-type clearPluginNotifMsg struct{}
+// clearErrorNotifMsg hides the error/info toast that was shown as gen; a
+// newer toast is not cleared by an older toast's timer.
+type clearErrorNotifMsg struct{ gen int }
+type clearPluginNotifMsg struct{ gen int }
+
+// badgeSyncMsg triggers a debounced unread-badge update.
+type badgeSyncMsg struct{ gen int }
 
 const maxBodyFetchRetries = 3
 
@@ -100,9 +107,21 @@ type Model struct {
 
 	errorNotification overlay.Notification
 	showErrorNotif    bool
+	errorNotifGen     int
 
 	pluginNotification overlay.Notification
 	showPluginNotif    bool
+	pluginNotifGen     int
+
+	// graphics keeps out-of-band (Kitty/Sixel) images in sync with the view.
+	graphics *tui.GraphicsPainter
+
+	// pendingDraftID is the draft to delete once the email being sent is
+	// confirmed; a failed send keeps it.
+	pendingDraftID string
+
+	badgeGen   int
+	badgeDirty bool
 
 	// Track body fetch retries to prevent infinite loops
 	pendingBodyFetchUID   uint32
@@ -126,6 +145,7 @@ func NewModel(cfg *config.Config, mailtoURL *url.URL, plugins *plugin.Manager, s
 		logCh:         logCh,
 		logPanel:      logPanel,
 		palette:       palette.New(),
+		graphics:      tui.NewGraphicsPainter(),
 		actionManager: emailactions.NewManager(emailactions.Dependencies{Config: cfg}, store, nil),
 		pluginBridge:  pluginbridge.NewManager(plugins, store, cfg, nil),
 	}
@@ -177,31 +197,18 @@ func newSetupGuide() *tui.SetupGuide {
 	isMac := runtime.GOOS == goosDarwin
 	isLinux := runtime.GOOS == goosLinux
 
+	// The helpers print progress meant for the CLI; while the TUI owns the
+	// screen that output is discarded instead of drawn over the interface.
 	var installHelper func() error
 	if isMac {
-		installHelper = func() error {
-			return silenced(func() error { return matchaCli.RunHelper([]string{"install"}) })
-		}
+		installHelper = func() error { return matchaCli.RunHelperTo(io.Discard, []string{"install"}) }
 	}
 	var setupMailto func() error
 	if isMac || isLinux {
-		setupMailto = func() error { return silenced(matchaCli.SetupMailto) }
+		setupMailto = func() error { return matchaCli.SetupMailtoTo(io.Discard) }
 	}
 
 	return tui.NewSetupGuide(isMac, isLinux, installHelper, setupMailto)
-}
-
-func silenced(fn func() error) error {
-	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-	if err != nil {
-		return fn()
-	}
-	defer func() { _ = devNull.Close() }()
-	origOut, origErr := os.Stdout, os.Stderr
-	os.Stdout, os.Stderr = devNull, devNull
-	runErr := fn()
-	os.Stdout, os.Stderr = origOut, origErr
-	return runErr
 }
 
 func (m *Model) newSettings() *tui.Settings {
@@ -229,28 +236,8 @@ func (m *Model) applySpellcheckOptions(c *tui.Composer) {
 	c.SetSpellcheckOptions(m.config.DisableSpellcheck, m.config.DisableSpellSuggestions)
 }
 
-func (m *Model) ensureProviders() {
-	if m.config == nil {
-		return
-	}
-	for _, acct := range m.config.Accounts {
-		m.providersMu.RLock()
-		_, ok := m.providers[acct.ID]
-		m.providersMu.RUnlock()
-		if ok {
-			continue
-		}
-		p, err := backend.New(&acct)
-		if err != nil {
-			log.Printf("backend: failed to create provider for %s: %v", acct.Email, err)
-			continue
-		}
-		m.providersMu.Lock()
-		m.providers[acct.ID] = p
-		m.providersMu.Unlock()
-	}
-}
-
+// resolveProvider runs inside the search command, so creating a provider
+// here (JMAP authenticates over the network) never blocks the UI goroutine.
 func (m *Model) resolveProvider(acct *config.Account) backend.Provider {
 	if acct == nil {
 		return nil
@@ -258,7 +245,23 @@ func (m *Model) resolveProvider(acct *config.Account) backend.Provider {
 	m.providersMu.RLock()
 	p := m.providers[acct.ID]
 	m.providersMu.RUnlock()
-	return p
+	if p != nil {
+		return p
+	}
+	cp := *acct
+	created, err := backend.New(&cp)
+	if err != nil {
+		log.Printf("backend: failed to create provider for %s: %v", acct.Email, err)
+		return nil
+	}
+	m.providersMu.Lock()
+	defer m.providersMu.Unlock()
+	if existing := m.providers[acct.ID]; existing != nil {
+		_ = created.Close()
+		return existing
+	}
+	m.providers[acct.ID] = created
+	return created
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -276,16 +279,26 @@ func waitForLogEntry(ch <-chan logging.Entry) tea.Cmd {
 	}
 }
 
+// syncUnreadBadge marks the dock badge as stale. The update itself is
+// debounced and runs off the UI goroutine (see Update).
 func (m *Model) syncUnreadBadge() {
-	if runtime.GOOS != "darwin" && loglevel.Get() < loglevel.LevelDebug {
-		return
-	}
+	m.badgeDirty = true
+}
+
+// unreadBadgeCmd computes the unread count and updates the badge in the
+// background.
+func (m *Model) unreadBadgeCmd() tea.Cmd {
 	count := notifications.CountUnread(m.store.EmailsByAcct, m.store.FolderEmails)
 	loglevel.Debugf("unread badge count: %d", count)
-	if runtime.GOOS != "darwin" {
-		return
+	if runtime.GOOS != goosDarwin {
+		return nil
 	}
-	_ = macos.SetBadge(count)
+	return func() tea.Msg {
+		if err := macos.SetBadge(count); err != nil {
+			loglevel.Debugf("set badge: %v", err)
+		}
+		return nil
+	}
 }
 
 func (m *Model) currentWindowSize() tea.WindowSizeMsg {
@@ -327,49 +340,145 @@ func (m *Model) logPanelHeight() int {
 	return 7
 }
 
+// notificationWidth is the width of toast notifications, border included.
+const notificationWidth = 42
+
+// notificationOptions positions a toast in the top-right corner and keeps it
+// inside the screen on narrow terminals.
+func (m *Model) notificationOptions(opts ...overlay.Option) []overlay.Option {
+	width := notificationWidth
+	if m.width > 0 && m.width < width+2 {
+		width = max(10, m.width-2)
+	}
+	col := max(0, m.width-width-2)
+	return append([]overlay.Option{
+		overlay.WithPosition(0, col),
+		overlay.WithWidth(width),
+	}, opts...)
+}
+
 func (m *Model) showErrorCmd(msg string) tea.Cmd {
-	col := max(0, m.width-44)
-	m.errorNotification = overlay.NewError(
+	m.errorNotification = overlay.NewError(m.notificationOptions(
 		overlay.WithMessage(msg),
 		overlay.WithKey(config.Keybinds.Global.DismissNotification),
-		overlay.WithPosition(0, col),
-	)
-	m.showErrorNotif = true
-	return tea.Tick(8*time.Second, func(time.Time) tea.Msg { return clearErrorNotifMsg{} })
+	)...)
+	return m.armErrorNotif(8 * time.Second)
 }
 
 func (m *Model) showInfoCmd(msg string) tea.Cmd {
-	col := max(0, m.width-44)
-	m.errorNotification = overlay.NewInfo(
+	m.errorNotification = overlay.NewInfo(m.notificationOptions(
 		overlay.WithMessage(msg),
 		overlay.WithKey(config.Keybinds.Global.DismissNotification),
-		overlay.WithPosition(0, col),
-	)
+	)...)
+	return m.armErrorNotif(4 * time.Second)
+}
+
+// armErrorNotif shows the error/info toast and schedules its removal.
+func (m *Model) armErrorNotif(d time.Duration) tea.Cmd {
 	m.showErrorNotif = true
-	return tea.Tick(4*time.Second, func(time.Time) tea.Msg { return clearErrorNotifMsg{} })
+	m.errorNotifGen++
+	gen := m.errorNotifGen
+	return tea.Tick(d, func(time.Time) tea.Msg { return clearErrorNotifMsg{gen: gen} })
+}
+
+// notificationRects returns the screen areas covered by toasts, so images
+// drawn out-of-band can be kept from covering them.
+func (m *Model) notificationRects() [][4]int {
+	var rects [][4]int
+	add := func(box string) {
+		if box == "" {
+			return
+		}
+		w, h := lipgloss.Width(box), lipgloss.Height(box)
+		rects = append(rects, [4]int{0, max(0, m.width-w-2), h, w + 2})
+	}
+	if m.showErrorNotif {
+		add(m.errorNotification.Render())
+	}
+	if m.showPluginNotif {
+		add(m.pluginNotification.Render())
+	}
+	if m.sendNotice != "" {
+		add(m.noticeBox(m.sendNotice))
+	}
+	if m.actionManager.ActionNotice != "" {
+		add(m.noticeBox(m.actionManager.ActionNotice))
+	}
+	return rects
+}
+
+// visibleImages returns the out-of-band images the current screen should
+// show. Images are hidden behind modal overlays and under toasts.
+func (m *Model) visibleImages() []tui.ScreenImage {
+	if m.palette.IsOpen() {
+		return nil
+	}
+	provider, ok := m.current.(tui.ImageProvider)
+	if !ok {
+		return nil
+	}
+	images := provider.VisibleImages()
+	maxRow := m.contentHeight()
+	kept := images[:0:0]
+	for _, img := range images {
+		if img.Row >= 0 && img.Row+img.Rows <= maxRow {
+			kept = append(kept, img)
+		}
+	}
+	for _, r := range m.notificationRects() {
+		kept = tui.FilterImagesOutside(kept, r[0], r[1], r[2], r[3])
+	}
+	return kept
+}
+
+// isTypingText reports whether the current view is editing text, in which
+// case global single-letter shortcuts (undo, dismiss) must not fire.
+func (m *Model) isTypingText() bool {
+	switch current := m.current.(type) {
+	case *tui.Composer, *tui.ReplySplitView, *tui.Login, *tui.PasswordPrompt:
+		return true
+	case *tui.FolderInbox:
+		if inbox := current.GetInbox(); inbox != nil {
+			return inbox.IsSearchOverlayOpen() || inbox.IsFiltering()
+		}
+	case *tui.Inbox:
+		return current.IsSearchOverlayOpen() || current.IsFiltering()
+	}
+	return false
+}
+
+// syncUnreadBadgeCmd debounces unread-badge updates; the badge helper is slow
+// and must never run on the UI goroutine.
+func (m *Model) syncUnreadBadgeCmd() tea.Cmd {
+	if runtime.GOOS != goosDarwin && loglevel.Get() < loglevel.LevelDebug {
+		return nil
+	}
+	m.badgeGen++
+	gen := m.badgeGen
+	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg { return badgeSyncMsg{gen: gen} })
+}
+
+// noticeBox renders a small bordered notice that fits the screen width.
+func (m *Model) noticeBox(text string) string {
+	style := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.ActiveTheme.Accent).
+		Padding(0, 1)
+	if m.width > 0 && lipgloss.Width(style.Render(text)) > m.width {
+		style = style.Width(m.width)
+	}
+	return style.Render(text)
 }
 
 func (m *Model) renderSendNoticeOverlay(content string) string {
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(theme.ActiveTheme.Accent).
-		Padding(0, 1).
-		Render(m.sendNotice)
-	lines := strings.Split(box, "\n")
-	boxWidth := lipgloss.Width(lines[0])
-	col := max(0, m.width-boxWidth)
+	lines := strings.Split(m.noticeBox(m.sendNotice), "\n")
+	col := max(0, m.width-lipgloss.Width(lines[0]))
 	return overlay.Block(content, lines, 0, col)
 }
 
 func (m *Model) renderActionNoticeOverlay(content string) string {
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(theme.ActiveTheme.Accent).
-		Padding(0, 1).
-		Render(m.actionManager.ActionNotice)
-	lines := strings.Split(box, "\n")
-	boxWidth := lipgloss.Width(lines[0])
-	col := max(0, m.width-boxWidth)
+	lines := strings.Split(m.noticeBox(m.actionManager.ActionNotice), "\n")
+	col := max(0, m.width-lipgloss.Width(lines[0]))
 	return overlay.Block(content, lines, 0, col)
 }
 
@@ -470,6 +579,7 @@ func (m *Model) cacheEmailBody(folderName string, uid uint32, accountID, body, b
 	for _, a := range attachments {
 		cachedAttachments = append(cachedAttachments, cachedAttachmentToConfig(a))
 	}
+	threshold := m.config.GetBodyCacheThreshold()
 	go func() {
 		if err := config.SaveEmailBody(folderName, config.CachedEmailBody{
 			UID:          uid,
@@ -477,7 +587,7 @@ func (m *Model) cacheEmailBody(folderName string, uid uint32, accountID, body, b
 			Body:         body,
 			BodyMIMEType: bodyMIMEType,
 			Attachments:  cachedAttachments,
-		}, m.config.GetBodyCacheThreshold()); err != nil {
+		}, threshold); err != nil {
 			loglevel.Debugf("error caching email body for UID %d: %v", uid, err)
 		}
 	}()
@@ -528,6 +638,14 @@ func (m *Model) deleteDraftAfterSend(draftID string) {
 		if err := config.DeleteDraft(draftID); err != nil {
 			log.Printf("Error deleting draft after send: %v", err)
 		}
+	}
+}
+
+// finishDraftAfterSend deletes the draft of a message once it is sent.
+func (m *Model) finishDraftAfterSend() {
+	if id := m.pendingDraftID; id != "" {
+		m.pendingDraftID = ""
+		go m.deleteDraftAfterSend(id)
 	}
 }
 
@@ -591,12 +709,24 @@ func waitForOAuthMsg(ch <-chan tea.Msg) tea.Cmd {
 	return func() tea.Msg { return <-ch }
 }
 
-func (m *Model) afterConfigSaved() {
-	if m.service != nil {
-		if err := m.service.ReloadConfig(); err != nil {
-			log.Printf("config reload: %v", err)
-		}
+// reloadService makes the mail service (daemon or direct) reload the config
+// from disk, off the UI goroutine, and drops providers built from the old
+// account settings.
+func (m *Model) reloadService() {
+	m.providersMu.Lock()
+	m.providers = make(map[string]backend.Provider)
+	m.providersMu.Unlock()
+	if svc := m.service; svc != nil {
+		go func() {
+			if err := svc.ReloadConfig(); err != nil {
+				log.Printf("config reload: %v", err)
+			}
+		}()
 	}
+}
+
+func (m *Model) afterConfigSaved() {
+	m.reloadService()
 	if m.folderInbox != nil {
 		m.folderInbox.SetDateFormat(m.config.GetDateFormat())
 		m.folderInbox.SetDetailedDates(m.config.EnableDetailedDates)
@@ -608,31 +738,46 @@ func (m *Model) afterConfigSaved() {
 }
 
 func (m *Model) afterLanguageChanged() {
-	switch m.current.(type) {
+	switch current := m.current.(type) {
 	case *tui.Composer, *tui.Inbox, *tui.FolderInbox:
 		m.current = tui.NewChoice()
+	case *tui.Settings:
+		// Rebuild with the new language but stay on the same page.
+		state := current.GetState()
+		s := m.newSettings()
+		s.RestoreState(state)
+		m.current = s
 	default:
 		m.current = m.newSettings()
 	}
 	m.current, _ = m.current.Update(m.currentWindowSize())
 }
 
-func (m *Model) deleteAccount(accountID string) {
+func (m *Model) deleteAccount(accountID string) error {
 	if m.config == nil {
-		return
+		return nil
 	}
+	var saveErr error
 	if m.config.RemoveAccount(accountID) {
 		if err := config.CleanupAccountCache(accountID); err != nil {
 			log.Printf("could not clean account cache: %v", err)
 		}
 		if err := config.SaveConfig(m.config); err != nil {
 			log.Printf("could not save config: %v", err)
+			saveErr = err
 		}
 	}
+	m.idleWatcher.Stop(accountID)
+	// Providers are bound to account settings; rebuild them so actions on
+	// the remaining accounts never reach the wrong server.
+	m.reloadService()
 	m.store.RemoveAccount(accountID)
-	m.current = m.newSettings()
+	s := m.newSettings()
+	s.RestoreState(tui.SettingsState{ActivePane: tui.PaneContent, ActiveCategory: tui.CategoryAccounts})
+	m.current = s
 	m.current, _ = m.current.Update(m.currentWindowSize())
 	m.updateSubordinates()
+	return saveErr
 }
 
 func (m *Model) loadFolderInboxCache(folderName string) {
@@ -662,15 +807,10 @@ func (m *Model) setFolderInboxEmails(folderName string, emails []fetcher.Email) 
 	m.syncPluginKeyBindings()
 }
 
-func (m *Model) cacheFolderEmailBodies(folderName string, emails []fetcher.Email) {
-	go emailstore.SaveFolderEmailsToCache(folderName, emails)
-	go func() {
-		validUIDs := make(map[uint32]string, len(emails))
-		for _, e := range emails {
-			validUIDs[e.UID] = e.AccountID
-		}
-		_ = config.PruneEmailBodyCache(folderName, validUIDs, m.config.GetBodyCacheThreshold())
-	}()
+// cacheFolderEmailBodies saves the folder list and prunes cached bodies of
+// mail that is gone. Accounts whose fetch failed are left untouched.
+func (m *Model) cacheFolderEmailBodies(folderName string, emails []fetcher.Email, failed map[string]error) {
+	emailstore.CacheFolderSnapshot(folderName, emails, failed, m.config.GetAccountIDs(), m.config.GetBodyCacheThreshold())
 }
 
 func (m *Model) refreshFolderEmails(folderName string) tea.Cmd {
@@ -855,7 +995,77 @@ func (m *Model) restoreView() {
 }
 
 // Update handles all incoming Bubble Tea messages and orchestrates the TUI.
-func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
+// After every message it reconciles out-of-band images with the new screen
+// and schedules background chores that the handlers flagged.
+func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var pre tea.Cmd
+	switch msg := msg.(type) {
+	case tui.GraphicsPaintMsg:
+		return m, m.graphics.Paint(msg)
+	case badgeSyncMsg:
+		if msg.gen != m.badgeGen {
+			return m, nil
+		}
+		return m, m.unreadBadgeCmd()
+	case tea.WindowSizeMsg:
+		// The renderer repaints everything after a resize.
+		pre = m.graphics.Reset(false)
+	case tui.EditorFinishedMsg, tui.PatchApplyResultMsg:
+		// An external program had the terminal; uploaded images may be gone.
+		pre = m.graphics.Reset(true)
+	}
+
+	previous := m.current
+	model, cmd := m.update(msg)
+
+	cmds := []tea.Cmd{pre, cmd}
+	if m.width > 0 && viewChanged(previous, m.current) {
+		// Views only receive resize events while they are active; one that
+		// comes back (e.g. the folder list after viewing an email) may
+		// still be laid out for an older terminal size.
+		var sizeCmd tea.Cmd
+		m.current, sizeCmd = m.current.Update(m.currentWindowSize())
+		cmds = append(cmds, sizeCmd)
+	}
+	if m.badgeDirty {
+		m.badgeDirty = false
+		cmds = append(cmds, m.syncUnreadBadgeCmd())
+	}
+	cmds = append(cmds, m.graphics.Sync(m.visibleImages()))
+	return model, tea.Batch(cmds...)
+}
+
+// quitCmd quits the program. Kitty images on screen are removed first and
+// the quit waits one frame so the removal reaches the terminal (the program
+// does not flush pending output when it shuts down).
+func (m *Model) quitCmd() tea.Cmd {
+	clearImages := m.graphics.Reset(false)
+	if clearImages == nil {
+		return tea.Quit
+	}
+	return tea.Sequence(clearImages, tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return tea.QuitMsg{} }))
+}
+
+// viewChanged reports whether the active view is a different model. Views
+// are compared by identity; value-type views (like the status screen) are
+// treated as unchanged, as comparing them could panic and they do not lay
+// themselves out.
+func viewChanged(a, b tea.Model) bool {
+	if a == nil || b == nil {
+		return (a == nil) != (b == nil)
+	}
+	ta, tb := reflect.TypeOf(a), reflect.TypeOf(b)
+	if ta != tb {
+		return true
+	}
+	if ta.Kind() != reflect.Pointer {
+		return false
+	}
+	return reflect.ValueOf(a).Pointer() != reflect.ValueOf(b).Pointer()
+}
+
+// update is the message handler behind Update.
+func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 	searchWasActive := false
@@ -864,6 +1074,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	if _, ok := msg.(logEntryMsg); ok {
 		return m, waitForLogEntry(m.logCh)
+	}
+
+	// Drive the plugin notification's countdown (its progress bar).
+	if m.showPluginNotif {
+		if _, isKey := msg.(tea.KeyPressMsg); !isKey {
+			if updated, notifCmd := m.pluginNotification.Update(msg); notifCmd != nil {
+				if n, ok := updated.(overlay.Notification); ok {
+					m.pluginNotification = n
+					if n.Done() {
+						m.showPluginNotif = false
+						return m, nil
+					}
+					return m, notifCmd
+				}
+			} else if n, ok := updated.(overlay.Notification); ok {
+				m.pluginNotification = n
+				if n.Done() {
+					m.showPluginNotif = false
+				}
+			}
+		}
 	}
 
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
@@ -879,7 +1110,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			switch keyMsg.String() {
 			case "ctrl+c":
 				m.shutdownService()
-				return m, tea.Quit
+				return m, m.quitCmd()
 			case config.Keybinds.Global.Cancel:
 				m.palette.Close()
 				return m, nil
@@ -891,8 +1122,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				return m, m.palette.HandleKey(keyMsg)
 			}
 		}
-		if _, ok := msg.(tea.MouseWheelMsg); ok {
-			return m, m.palette.Update(msg)
+		// The palette is modal: mouse events never reach the view below.
+		if mouse, ok := msg.(tea.MouseMsg); ok {
+			return m, m.palette.HandleMouse(mouse)
 		}
 	} else if keyMsg, ok := msg.(tea.KeyPressMsg); ok &&
 		config.Keybinds.Global.CommandPalette != "" &&
@@ -932,27 +1164,29 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		if m.showErrorNotif && msg.String() == config.Keybinds.Global.DismissNotification {
+		typing := m.isTypingText()
+		if !typing && m.showErrorNotif && msg.String() == config.Keybinds.Global.DismissNotification {
 			m.showErrorNotif = false
-			return m, nil
+			return m, tea.Batch(cmds...)
 		}
-		if m.showPluginNotif && m.pluginNotification.Done() {
+		if !typing && m.showPluginNotif && msg.String() == config.Keybinds.Global.DismissNotification {
 			m.showPluginNotif = false
+			return m, tea.Batch(cmds...)
 		}
-		if m.showPluginNotif && msg.String() == config.Keybinds.Global.DismissNotification {
-			m.showPluginNotif = false
-			return m, nil
-		}
-		if msg.String() == config.Keybinds.Composer.UndoSend {
+		if !typing && msg.String() == config.Keybinds.Composer.UndoSend {
 			if m.actionManager.IsPending() {
 				m.actionManager.RestorePendingAction()
-				return m, nil
+				return m, tea.Batch(cmds...)
 			}
 			if m.pendingJobID != "" {
 				jobID := m.pendingJobID
+				svc := m.service // read on the UI goroutine; shutdownService may nil it
 				m.pendingJobID = ""
+				if svc == nil {
+					return m, m.showErrorCmd("Could not undo: not connected to the mail service")
+				}
 				return m, func() tea.Msg {
-					if err := m.service.CancelEmail(jobID); err != nil {
+					if err := svc.CancelEmail(jobID); err != nil {
 						return tui.EmailResultMsg{Err: fmt.Errorf("could not undo: email may have already been sent")}
 					}
 					return tui.UndoSendMsg{JobID: jobID}
@@ -963,13 +1197,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			if composer := getCurrentComposer(m.current); composer != nil && composer.HasContent() {
 				m.saveDraftOnQuit(composer)
 			}
+			// Commit a delete/archive/move that is still in its undo window
+			// instead of silently dropping it.
+			flush := m.batchActionCmd()
 			m.shutdownService()
-			return m, tea.Quit
+			if flush != nil {
+				return m, tea.Sequence(flush, m.quitCmd())
+			}
+			return m, m.quitCmd()
 		}
 		if msg.String() == "esc" {
 			switch m.current.(type) {
-			case *tui.FilePicker:
-				return m, func() tea.Msg { return tui.CancelFilePickerMsg{} }
 			case *tui.FolderInbox, *tui.Inbox, *tui.Login:
 				if searchWasActive || filterWasActive || splitWasOpen {
 					return m, tea.Batch(cmds...)
@@ -980,9 +1218,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}
 
 	case tui.BackToInboxMsg:
-		if _, ok := m.current.(*tui.ReplySplitView); ok {
-			tui.ClearKittyGraphics()
-		}
 		if m.folderInbox != nil {
 			m.current = m.folderInbox
 		} else {
@@ -991,7 +1226,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, nil
 
 	case tui.BackToMailboxMsg:
-		tui.ClearKittyGraphics()
 		if m.folderInbox != nil {
 			m.current = m.folderInbox
 			return m, nil
@@ -999,13 +1233,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, m.setChoiceMenu()
 
 	case tui.DiscardDraftMsg:
-		if _, ok := m.current.(*tui.ReplySplitView); ok {
-			tui.ClearKittyGraphics()
-		}
 		if msg.ComposerState != nil {
 			draft := msg.ComposerState.ToDraft()
 			if err := config.SaveDraft(draft); err != nil {
 				log.Printf("Error saving draft: %v", err)
+				// Stay in the composer so the text is not lost.
+				return m, m.showErrorCmd(fmt.Sprintf("Could not save draft: %v", err))
 			}
 		}
 		return m, m.setChoiceMenu()
@@ -1020,14 +1253,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		m.oauthCh = nil
 		if msg.Err != nil {
 			log.Printf("OAuth2 authorization failed: %v", msg.Err)
+			return m, tea.Batch(m.setChoiceMenu(), m.showErrorCmd(fmt.Sprintf("Authorization failed: %v", msg.Err)))
 		}
 		return m, m.setChoiceMenu()
 
 	case tui.Credentials:
 		m.updateConfigFromCredentials(msg)
 		if !m.saveConfigAfterCredentials() {
-			return m, tea.Quit
+			return m, m.showErrorCmd("Could not save the account configuration; see the log for details")
 		}
+		m.reloadService()
 		lastAccount := m.config.Accounts[len(m.config.Accounts)-1]
 		isEdit := false
 		if login, ok := m.current.(*tui.Login); ok {
@@ -1056,7 +1291,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.current = tui.NewLogin(hideTips)
 			return m, m.current.Init()
 		}
-		m.ensureProviders()
 		seen := make(map[string]bool)
 		var cachedFolders []string
 		unread := make(map[string]int)
@@ -1117,17 +1351,31 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}
 		m.folderInbox.SetFolders(folderNames)
 		m.folderInbox.SetUnreadCounts(unread)
+		type accountFolders struct {
+			id     string
+			names  []string
+			unread map[string]int
+		}
+		toSave := make([]accountFolders, 0, len(msg.FoldersByAccount))
 		for accID, folders := range msg.FoldersByAccount {
-			var names []string
-			unread := make(map[string]int)
+			af := accountFolders{id: accID, unread: make(map[string]int)}
 			for _, f := range folders {
-				names = append(names, f.Name)
+				af.names = append(af.names, f.Name)
 				if f.Unread > 0 {
-					unread[f.Name] = int(f.Unread)
+					af.unread[f.Name] = int(f.Unread)
 				}
 			}
-			go config.SaveAccountFolders(accID, names, unread) //nolint:errcheck
+			toSave = append(toSave, af)
 		}
+		// The folder cache is one shared file: save sequentially, never in
+		// concurrent goroutines that overwrite each other.
+		go func() {
+			for _, af := range toSave {
+				if err := config.SaveAccountFolders(af.id, af.names, af.unread); err != nil {
+					log.Printf("could not save folder cache for %s: %v", af.id, err)
+				}
+			}
+		}()
 		if len(msg.Errors) > 0 {
 			lookup := map[string]string{}
 			for _, acc := range m.config.Accounts {
@@ -1176,12 +1424,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if dur <= 0 {
 			dur = 2 * time.Second
 		}
-		col := max(0, m.width-44)
-		opts := []overlay.Option{
+		opts := m.notificationOptions(
 			overlay.WithMessage(msg.Message),
-			overlay.WithPosition(0, col),
 			overlay.WithDuration(dur),
-		}
+		)
 		if msg.Title != "" {
 			opts = append(opts, overlay.WithTitle(msg.Title))
 		}
@@ -1202,7 +1448,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.pluginNotification = overlay.NewInfo(opts...)
 		}
 		m.showPluginNotif = true
-		return m, tea.Tick(dur, func(time.Time) tea.Msg { return clearPluginNotifMsg{} })
+		m.pluginNotifGen++
+		gen := m.pluginNotifGen
+		// Init starts the notification's own countdown so its progress bar moves.
+		return m, tea.Batch(
+			m.pluginNotification.Init(),
+			tea.Tick(dur, func(time.Time) tea.Msg { return clearPluginNotifMsg{gen: gen} }),
+		)
 
 	case tui.PluginPromptSubmitMsg:
 		if m.pendingPrompt != nil {
@@ -1227,19 +1479,30 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if m.folderInbox == nil {
 			return m, nil
 		}
+		previous := m.store.FolderEmails[msg.FolderName]
+		if len(previous) == 0 {
+			previous = emailstore.LoadFolderEmailsFromCache(msg.FolderName)
+		}
+		// Accounts whose fetch failed keep their known mail instead of vanishing.
+		emails := emailstore.MergeFolderFetch(previous, msg.Emails, msg.Errors)
 		if m.plugins != nil {
-			for _, email := range msg.Emails {
+			// Only mail that actually arrived, not the whole folder on every refresh.
+			for _, email := range emailstore.NewEmails(previous, msg.Emails) {
 				t := m.plugins.EmailToTable(email.UID, email.From, email.To, email.Subject, email.Date, email.IsRead, email.AccountID, msg.FolderName)
 				m.plugins.CallHook(plugin.HookEmailReceived, t)
 			}
 		}
-		m.store.FolderEmails[msg.FolderName] = msg.Emails
-		m.cacheFolderEmailBodies(msg.FolderName, msg.Emails)
-		if m.folderInbox.GetCurrentFolder() != msg.FolderName {
-			return m, nil
+		m.store.FolderEmails[msg.FolderName] = emails
+		m.cacheFolderEmailBodies(msg.FolderName, emails, msg.Errors)
+		var errCmd tea.Cmd
+		if len(msg.Errors) > 0 {
+			errCmd = m.showErrorCmd(fmt.Sprintf("Could not refresh %s for %d account(s); showing cached mail", msg.FolderName, len(msg.Errors)))
 		}
-		m.setFolderInboxEmails(msg.FolderName, msg.Emails)
-		return m, tea.Batch(append(m.pluginFlagCmds(), m.pluginNotifyCmd())...)
+		if m.folderInbox.GetCurrentFolder() != msg.FolderName {
+			return m, errCmd
+		}
+		m.setFolderInboxEmails(msg.FolderName, emails)
+		return m, tea.Batch(append(m.pluginFlagCmds(), m.pluginNotifyCmd(), errCmd)...)
 
 	case tui.FetchFolderMoreEmailsMsg:
 		if msg.AccountID == "" || m.config == nil {
@@ -1264,7 +1527,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}
 		m.folderInbox.Update(msg)
 		m.store.AppendToFolder(msg.FolderName, msg.Emails)
-		m.cacheFolderEmailBodies(msg.FolderName, m.store.FolderEmails[msg.FolderName])
+		m.cacheFolderEmailBodies(msg.FolderName, m.store.FolderEmails[msg.FolderName], nil)
 		m.syncUnreadBadge()
 		return m, nil
 
@@ -1298,6 +1561,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 					BodyMIMEType: cached.BodyMIMEType,
 					Attachments:  attachments,
 					AccountID:    msg.AccountID,
+					Folder:       folderName,
 				}
 			}
 		}
@@ -1315,6 +1579,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.pendingBodyFetchCount = 0
 			return m, nil
 		}
+		previewFolder := msg.Folder
+		if previewFolder == "" {
+			previewFolder = m.folderName()
+		}
+		if previewFolder != m.folderName() {
+			// The user switched folders while this loaded: UIDs are per
+			// folder, so it must not be shown (or cached) as the new folder's.
+			if strings.TrimSpace(msg.Body) != "" {
+				m.cacheEmailBody(previewFolder, msg.UID, msg.AccountID, msg.Body, msg.BodyMIMEType, msg.Attachments)
+			}
+			return m, nil
+		}
 		// If body is empty or whitespace-only, retry the fetch (up to max retries)
 		if strings.TrimSpace(msg.Body) == "" {
 			if m.pendingBodyFetchUID == msg.UID && m.pendingBodyFetchCount >= maxBodyFetchRetries {
@@ -1328,14 +1604,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			log.Printf("preview body empty for UID %d, retrying fetch (%d/%d)", msg.UID, m.pendingBodyFetchCount, maxBodyFetchRetries)
 			return m, tea.Batch(
 				m.current.Init(),
-				fetchcmd.FetchPreviewBodyCmd(m.config, msg.UID, msg.AccountID, m.folderName()),
+				fetchcmd.FetchPreviewBodyCmd(m.config, msg.UID, msg.AccountID, previewFolder),
 			)
 		}
 		// Reset retry counter on successful fetch
 		m.pendingBodyFetchUID = 0
 		m.pendingBodyFetchCount = 0
 		// Cache the valid body
-		m.cacheEmailBody(m.folderName(), msg.UID, msg.AccountID, msg.Body, msg.BodyMIMEType, msg.Attachments)
+		m.cacheEmailBody(previewFolder, msg.UID, msg.AccountID, msg.Body, msg.BodyMIMEType, msg.Attachments)
 		m.current, cmd = m.current.Update(msg)
 		return m, cmd
 
@@ -1383,6 +1659,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
 					daemonCmds = append(daemonCmds, fetchcmd.FetchFolderEmailsCmd(m.config, ev.Folder))
 				}
+			}
+		case daemonrpc.EventSendFailed:
+			var ev daemonrpc.SendFailedEvent
+			if err := json.Unmarshal(msg.Event.Data, &ev); err == nil {
+				daemonCmds = append(daemonCmds, m.showErrorCmd(fmt.Sprintf("Email %q was not sent: %s", ev.Subject, ev.Error)))
 			}
 		case daemonrpc.EventSyncComplete:
 			var ev daemonrpc.SyncCompleteEvent
@@ -1538,7 +1819,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			} else {
 				m.config.SplitPaneOrientation = config.SplitPaneVertical
 			}
-			tui.ClearKittyGraphics()
 			m.folderInbox.SetSplitOrientation(m.config.GetSplitPaneOrientation())
 			m.current, cmd = m.current.Update(m.currentWindowSize())
 			return m, cmd
@@ -1558,7 +1838,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				mailbox = inbox.GetMailbox()
 			}
 			emailIndex := m.store.GetEmailIndex(email.UID, email.AccountID)
-			emailView := tui.NewEmailView(email, emailIndex, m.width, m.height, mailbox, m.config.DisableImages)
+			sz := m.currentWindowSize()
+			emailView := tui.NewEmailView(email, emailIndex, sz.Width, sz.Height, mailbox, m.config.DisableImages)
 			m.current = emailView
 			m.syncPluginStatus()
 			m.syncPluginKeyBindings()
@@ -1610,6 +1891,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}
 		login := tui.NewLogin(hideTips)
 		login.SetEditMode(msg.AccountID, msg.Protocol, msg.Provider, msg.Name, msg.Email, msg.FetchEmail, msg.SendAsEmail, msg.IMAPServer, msg.IMAPPort, msg.SMTPServer, msg.SMTPPort, msg.Insecure, msg.JMAPEndpoint, msg.POP3Server, msg.POP3Port, msg.CatchAll, msg.MaildirPath)
+		if msg.AuthMethod != "" {
+			login.SetAuthMethod(msg.AuthMethod)
+		}
 		m.current = login
 		m.updateCurrentWindowSize()
 		return m, m.current.Init()
@@ -1634,10 +1918,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, m.current.Init()
 
 	case tui.SaveContactMsg:
+		var contactErr error
 		if msg.IsEdit {
-			_ = config.UpdateContact(msg.OriginalEmail, msg.Name, msg.Email)
+			contactErr = config.UpdateContact(msg.OriginalEmail, msg.Name, msg.Email)
 		} else {
-			_ = config.AddContact(msg.Name, msg.Email)
+			contactErr = config.AddContact(msg.Name, msg.Email)
 		}
 		s := m.newSettings()
 		s.RestoreState(tui.SettingsState{
@@ -1646,6 +1931,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		})
 		m.current = s
 		m.updateCurrentWindowSize()
+		if contactErr != nil {
+			return m, tea.Batch(m.current.Init(), m.showErrorCmd(fmt.Sprintf("Could not save contact: %v", contactErr)))
+		}
 		return m, m.current.Init()
 
 	case tui.SaveMailingListMsg:
@@ -1669,9 +1957,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			}
 			if err := config.SaveConfig(m.config); err != nil {
 				log.Printf("could not save config: %v", err)
+				return m, m.showErrorCmd(fmt.Sprintf("Could not save mailing list: %v", err))
 			}
 		}
-		return m, m.setChoiceMenu()
+		s := m.newSettings()
+		s.RestoreState(tui.SettingsState{
+			ActivePane:     tui.PaneContent,
+			ActiveCategory: tui.CategoryMailingLists,
+		})
+		m.current = s
+		m.updateCurrentWindowSize()
+		return m, m.current.Init()
 
 	case tui.GoToSignatureEditorMsg:
 		m.current = tui.NewSignatureEditor(msg.AccountID)
@@ -1707,7 +2003,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.current = tui.NewLogin(false)
 		} else {
 			m.config = cfg
-			if m.mailtoURL != nil {
+			if m.mailtoURL != nil && len(cfg.Accounts) > 0 {
 				to, subject, body := parseMailto(m.mailtoURL)
 				composer := tui.NewComposerWithAccounts(cfg.Accounts, cfg.Accounts[0].ID, to, subject, body, cfg.HideTips)
 				m.applySpellcheckOptions(composer)
@@ -1723,12 +2019,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	case tui.SecureModeEnabledMsg:
 		if msg.Err != nil {
 			log.Printf("Failed to enable encryption: %v", msg.Err)
+			return m, m.showErrorCmd(fmt.Sprintf("Failed to enable encryption: %v", msg.Err))
 		}
 		return m, nil
 
 	case tui.SecureModeDisabledMsg:
 		if msg.Err != nil {
 			log.Printf("Failed to disable encryption: %v", msg.Err)
+			return m, m.showErrorCmd(fmt.Sprintf("Failed to disable encryption: %v", msg.Err))
 		}
 		return m, nil
 
@@ -1742,6 +2040,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			config.MouseEnabled = &enabled
 			if err := config.SaveConfig(m.config); err != nil {
 				log.Printf("could not save mouse-enabled flag: %v", err)
+				return m, m.showErrorCmd(fmt.Sprintf("Could not save settings: %v", err))
 			}
 		}
 		return m, nil
@@ -1751,12 +2050,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.config.HasSeenSetupGuide = true
 			if err := config.SaveConfig(m.config); err != nil {
 				log.Printf("could not save setup-guide flag: %v", err)
+				return m, tea.Batch(m.setChoiceMenu(), m.showErrorCmd(fmt.Sprintf("Could not save settings: %v", err)))
 			}
 		}
 		return m, m.setChoiceMenu()
 
 	case tui.DeleteAccountMsg:
-		m.deleteAccount(msg.AccountID)
+		if err := m.deleteAccount(msg.AccountID); err != nil {
+			return m, tea.Batch(m.current.Init(), m.showErrorCmd(fmt.Sprintf("Could not save settings: %v", err)))
+		}
 		return m, m.current.Init()
 
 	case tui.ViewEmailMsg:
@@ -1794,6 +2096,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 					Attachments:  attachments,
 					AccountID:    msg.AccountID,
 					Mailbox:      msg.Mailbox,
+					Folder:       folderName,
 				}
 			}
 		}
@@ -1814,6 +2117,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			}
 			return m, m.showErrorCmd(msg.Err.Error())
 		}
+		bodyFolder := msg.Folder
+		if bodyFolder == "" {
+			bodyFolder = m.folderName()
+		}
 		// If body is empty or whitespace-only, retry the fetch instead of showing incomplete content
 		if strings.TrimSpace(msg.Body) == "" {
 			if m.pendingBodyFetchUID == msg.UID && m.pendingBodyFetchCount >= maxBodyFetchRetries {
@@ -1830,15 +2137,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			log.Printf("email body empty for UID %d, retrying fetch (%d/%d)", msg.UID, m.pendingBodyFetchCount, maxBodyFetchRetries)
 			m.current = tui.NewStatus("Fetching email content...")
 			return m, tea.Batch(
-				append(m.pluginFlagCmds(), m.current.Init(), fetchcmd.FetchFolderEmailBodyCmd(m.config, msg.UID, msg.AccountID, m.folderName(), msg.Mailbox), m.pluginNotifyCmd())...,
+				append(m.pluginFlagCmds(), m.current.Init(), fetchcmd.FetchFolderEmailBodyCmd(m.config, msg.UID, msg.AccountID, bodyFolder, msg.Mailbox), m.pluginNotifyCmd())...,
 			)
 		}
 		// Reset retry counter on successful fetch
 		m.pendingBodyFetchUID = 0
 		m.pendingBodyFetchCount = 0
 		m.store.UpdateEmailBodyByUID(msg.UID, msg.AccountID, msg.Body, msg.BodyMIMEType, msg.Attachments)
-		folderForCache := m.folderName()
-		m.cacheEmailBody(folderForCache, msg.UID, msg.AccountID, msg.Body, msg.BodyMIMEType, msg.Attachments)
+		m.cacheEmailBody(bodyFolder, msg.UID, msg.AccountID, msg.Body, msg.BodyMIMEType, msg.Attachments)
 		email := m.store.GetEmailByUIDAndAccount(msg.UID, msg.AccountID)
 		if email == nil {
 			if m.folderInbox != nil {
@@ -1852,11 +2158,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.store.MarkEmailAsReadInStores(msg.UID, msg.AccountID)
 			account := m.config.GetAccountByID(msg.AccountID)
 			if account != nil {
-				markReadCmd = fetchcmd.MarkEmailAsReadCmd(account, msg.UID, msg.AccountID, m.folderName())
+				markReadCmd = fetchcmd.MarkEmailAsReadCmd(account, msg.UID, msg.AccountID, bodyFolder)
 			}
 		}
 		emailIndex := m.store.GetEmailIndex(msg.UID, msg.AccountID)
-		emailView := tui.NewEmailView(*email, emailIndex, m.width, m.height, msg.Mailbox, m.config.DisableImages)
+		sz := m.currentWindowSize()
+		emailView := tui.NewEmailView(*email, emailIndex, sz.Width, sz.Height, msg.Mailbox, m.config.DisableImages)
 		m.current = emailView
 		m.syncPluginStatus()
 		m.syncPluginKeyBindings()
@@ -2110,7 +2417,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	case tui.EditorFinishedMsg:
 		if msg.Err != nil {
 			log.Printf("Editor error: %v", msg.Err)
-			return m, nil
+			return m, m.showErrorCmd(fmt.Sprintf("External editor failed: %v", msg.Err))
 		}
 		if composer := getCurrentComposer(m.current); composer != nil {
 			composer.SetBody(msg.Body)
@@ -2227,15 +2534,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.updateSubordinates()
 		}
 		m.sendNotice = m.sendEmailNotice(msg)
-		if _, ok := m.current.(*tui.ReplySplitView); ok {
-			tui.ClearKittyGraphics()
-		}
+		m.pendingDraftID = draftID
 		m.current = tui.NewChoice()
 		m.updateCurrentWindowSize()
-		go func() {
-			m.saveContactsAfterSend(msg)
-			m.deleteDraftAfterSend(draftID)
-		}()
+		go m.saveContactsAfterSend(msg)
 		return m, tea.Batch(m.current.Init(), send.SendEmailCmd(m.sendEmailDependencies(), msg))
 
 	case tui.EmailQueuedMsg:
@@ -2251,15 +2553,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.pendingJobID = ""
 			m.sendNotice = ""
 			m.previousModel = nil
+			m.finishDraftAfterSend()
 			if m.plugins != nil {
 				m.plugins.CallHook(plugin.HookEmailSendAfter)
 			}
-			return m, m.setChoiceMenu()
+			// Stay wherever the user went while the undo window was open.
+			return m, nil
 		}
 		return m, nil
 
 	case tui.UndoSendMsg:
 		m.sendNotice = ""
+		m.pendingDraftID = ""
 		if m.previousModel != nil {
 			m.current = m.previousModel
 			m.previousModel = nil
@@ -2272,11 +2577,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, m.actionManager.OnGracePeriodExpired(msg)
 
 	case clearErrorNotifMsg:
-		m.showErrorNotif = false
+		if msg.gen == m.errorNotifGen {
+			m.showErrorNotif = false
+		}
 		return m, nil
 
 	case clearPluginNotifMsg:
-		m.showPluginNotif = false
+		if msg.gen == m.pluginNotifGen {
+			m.showPluginNotif = false
+		}
 		return m, nil
 
 	case tui.InfoNotifyMsg:
@@ -2284,16 +2593,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if dur <= 0 {
 			dur = 2 * time.Second
 		}
-		col := max(0, m.width-44)
-		m.errorNotification = overlay.NewInfo(
+		m.errorNotification = overlay.NewInfo(m.notificationOptions(
 			overlay.WithMessage(msg.Message),
 			overlay.WithKey(config.Keybinds.Global.DismissNotification),
-			overlay.WithPosition(0, col),
-			overlay.WithDismissMode(overlay.DismissAfterTimer),
-			overlay.WithDuration(dur),
-		)
-		m.showErrorNotif = true
-		return m, tea.Tick(dur, func(time.Time) tea.Msg { return clearErrorNotifMsg{} })
+		)...)
+		return m, m.armErrorNotif(dur)
 
 	case tui.NotifyMsg:
 		return m, m.showErrorCmd(msg.Message)
@@ -2303,30 +2607,41 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if account == nil {
 			return m, m.showErrorCmd("account not found")
 		}
-		m.current = tui.NewStatus("Sending RSVP...")
-		return m, tea.Batch(m.current.Init(), send.SendRSVP(account, msg))
+		return m, tea.Batch(m.showInfoCmd("Sending RSVP…"), send.SendRSVP(account, msg))
 
 	case tui.RSVPResultMsg:
 		if msg.Err != nil {
 			log.Printf("Failed to send RSVP: %v", msg.Err)
-			m.current = tui.NewChoice()
-			m.updateCurrentWindowSize()
-			return m, tea.Batch(m.current.Init(), m.showErrorCmd(msg.Err.Error()))
+			return m, m.showErrorCmd(fmt.Sprintf("Failed to send RSVP: %v", msg.Err))
 		}
 		status := fmt.Sprintf("RSVP sent: %s", msg.Response)
 		if strings.HasSuffix(strings.ToLower(msg.Organizer), "@gmail.com") || strings.HasSuffix(strings.ToLower(msg.Organizer), "@googlemail.com") {
 			status += " (Google Calendar may not auto-update — use Gmail buttons for Google events)"
 		}
-		m.current = tui.NewStatus(status)
-		return m, tea.Tick(3*time.Second, func(t time.Time) tea.Msg { return tui.RestoreViewMsg{} })
+		return m, m.showInfoCmd(status)
 
 	case tui.EmailResultMsg:
 		m.sendNotice = ""
 		if msg.Err != nil {
 			log.Printf("Failed to send email: %v", msg.Err)
+			// Bring the message back so nothing typed is lost.
+			_, wasPatchForm := m.previousModel.(*tui.PatchSend)
+			if getCurrentComposer(m.previousModel) != nil || wasPatchForm {
+				m.current = m.previousModel
+				m.previousModel = nil
+				m.pendingDraftID = ""
+				m.updateCurrentWindowSize()
+				return m, m.showErrorCmd(fmt.Sprintf("Failed to send: %v", msg.Err))
+			}
+			m.previousModel = nil
 			m.current = tui.NewChoice()
 			m.updateCurrentWindowSize()
 			return m, tea.Batch(m.current.Init(), m.showErrorCmd(msg.Err.Error()))
+		}
+		if m.pendingJobID == "" {
+			// Sent directly (no undo window): the draft is no longer needed.
+			m.previousModel = nil
+			m.finishDraftAfterSend()
 		}
 		if msg.Warning != "" {
 			log.Printf("Email send warning: %s", msg.Warning)
@@ -2336,6 +2651,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}
 		if m.plugins != nil {
 			m.plugins.CallHook(plugin.HookEmailSendAfter)
+		}
+		if _, onMenu := m.current.(*tui.Choice); onMenu {
+			return m, nil
 		}
 		return m, m.setChoiceMenu()
 
@@ -2405,7 +2723,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, send.SendRawPatchCmd(m.sendEmailDependencies(), msg.SendPatchMsg, msg.RawPatch)
 
 	case tui.DeleteEmailMsg:
-		tui.ClearKittyGraphics()
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
 			if m.folderInbox != nil {
@@ -2423,7 +2740,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, tea.Batch(flushCmd, m.actionManager.StartActionGracePeriod(pa, notice))
 
 	case tui.ArchiveEmailMsg:
-		tui.ClearKittyGraphics()
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
 			if m.folderInbox != nil {
@@ -2462,7 +2778,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, nil
 
 	case tui.BatchDeleteEmailsMsg:
-		tui.ClearKittyGraphics()
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
 			if m.folderInbox != nil {
@@ -2479,7 +2794,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, tea.Batch(flushCmd, m.actionManager.StartActionGracePeriod(pa, notice))
 
 	case tui.BatchArchiveEmailsMsg:
-		tui.ClearKittyGraphics()
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
 			if m.folderInbox != nil {
@@ -2519,45 +2833,42 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, nil
 
 	case tui.DownloadAttachmentMsg:
-		m.previousModel = m.current
-		m.current = tui.NewStatus(fmt.Sprintf("Downloading %s...", msg.Filename))
 		account := m.config.GetAccountByID(msg.AccountID)
 		if account == nil {
-			m.current = m.previousModel
-			return m, nil
+			return m, m.showErrorCmd("Account not found for this email")
 		}
-		email := m.store.GetEmailByIndex(msg.Index)
+		var email *fetcher.Email
+		if msg.UID != 0 {
+			email = m.store.GetEmailByUIDAndAccount(msg.UID, msg.AccountID)
+		} else {
+			email = m.store.GetEmailByIndex(msg.Index) // legacy: the index can be stale
+		}
 		if email == nil {
-			m.current = m.previousModel
-			return m, nil
+			return m, m.showErrorCmd("Email not found; refresh and try again")
 		}
-		var encoding string
-		for _, att := range email.Attachments {
-			if att.PartID == msg.PartID {
-				encoding = att.Encoding
-				break
+		newMsg := msg
+		newMsg.UID = email.UID
+		if newMsg.Folder == "" {
+			newMsg.Folder = m.folderName()
+		}
+		if newMsg.Encoding == "" {
+			for _, att := range email.Attachments {
+				if att.PartID == msg.PartID {
+					newMsg.Encoding = att.Encoding
+					break
+				}
 			}
 		}
-		newMsg := tui.DownloadAttachmentMsg{
-			Index:     msg.Index,
-			Filename:  msg.Filename,
-			PartID:    msg.PartID,
-			Data:      msg.Data,
-			AccountID: msg.AccountID,
-			Encoding:  encoding,
-			Mailbox:   msg.Mailbox,
-		}
-		return m, tea.Batch(m.current.Init(), exportcmd.DownloadAttachmentCmd(account, email.UID, newMsg))
+		return m, tea.Batch(
+			m.showInfoCmd(fmt.Sprintf("Downloading %s…", msg.Filename)),
+			exportcmd.DownloadAttachmentCmd(account, email.UID, newMsg),
+		)
 
 	case tui.AttachmentDownloadedMsg:
-		var statusMsg string
 		if msg.Err != nil {
-			statusMsg = fmt.Sprintf("Error downloading: %v", msg.Err)
-		} else {
-			statusMsg = fmt.Sprintf("Saved to %s", msg.Path)
+			return m, m.showErrorCmd(fmt.Sprintf("Error downloading: %v", msg.Err))
 		}
-		m.current = tui.NewStatus(statusMsg)
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return tui.RestoreViewMsg{} })
+		return m, m.showInfoCmd(fmt.Sprintf("Saved to %s", msg.Path))
 
 	case tui.RestoreViewMsg:
 		m.restoreView()
@@ -2593,6 +2904,13 @@ func (m *Model) View() tea.View {
 		v.Content = m.pluginNotification.PlaceOn(v.Content)
 	}
 	v.AltScreen = true
+	// Mouse reporting is a global setting; applying it here keeps every
+	// screen consistent (individual views used to forget it).
+	if config.MouseEnabled != nil && *config.MouseEnabled {
+		v.MouseMode = tea.MouseModeCellMotion
+	} else {
+		v.MouseMode = tea.MouseModeNone
+	}
 	return v
 }
 

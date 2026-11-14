@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/url"
 	"os"
@@ -55,6 +56,11 @@ func main() {
 
 	runSubcommand(os.Args)
 
+	// From here on the TUI owns the terminal: anything written to stderr
+	// would be drawn over the interface, so route the standard logger to a
+	// log file (and the in-app panel when --logs is given).
+	logCh, logPanel := setupLogging(showLogPanel)
+
 	if err := config.MigrateCacheFiles(); err != nil {
 		log.Printf("warning: cache migration failed: %v", err)
 	}
@@ -66,7 +72,6 @@ func main() {
 	mailtoURL := parseMailto(os.Args)
 	cfg := loadConfigAndSetup()
 
-	_, logCh, logPanel := setupLogging(showLogPanel)
 	plugins := setupPlugins(cfg)
 
 	// Wire the plugin manager into the TUI layer so that text overrides,
@@ -84,6 +89,7 @@ func main() {
 	setupBodyTransformer(initialModel, plugins)
 	plugins.CallHook(plugin.HookStartup)
 
+	syncNativeTheme(cfg)
 	startMacOSSync(cfg)
 	ensureProtocolHandler()
 
@@ -96,6 +102,7 @@ func main() {
 
 	plugins.CallHook(plugin.HookShutdown)
 	plugins.Close()
+	config.FlushEmailBodyCache()
 	fetcher.CloseDebugFiles()
 }
 
@@ -177,8 +184,15 @@ func runSubcommand(args []string) {
 		}
 		cliutil.Exit(0)
 	case "marketplace":
-		mp := tui.NewMarketplace(true)
-		p := tea.NewProgram(mp)
+		_, _ = setupLogging(false)
+		if cfg, err := config.LoadConfig(); err == nil {
+			config.MouseEnabled = cfg.MouseEnabled
+			if cfg.Theme != "" {
+				theme.SetTheme(cfg.Theme)
+			}
+		}
+		tui.RebuildStyles()
+		p := tea.NewProgram(fullscreenModel{tui.NewMarketplace(true)})
 		if _, err := p.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "marketplace failed: %v\n", err)
 			cliutil.Exit(1)
@@ -258,16 +272,59 @@ func loadConfigAndSetup() *config.Config {
 	return cfg
 }
 
-func setupLogging(showLogPanel bool) (*logging.Buffer, <-chan logging.Entry, *tui.LogPanel) {
-	if !showLogPanel {
-		return nil, nil, nil
+// maxLogFileSize is the size at which matcha.log is rotated at startup.
+const maxLogFileSize = 5 << 20
+
+// setupLogging sends the standard logger to the matcha log file and, with
+// --logs, to the in-app log panel. Nothing is written to stdout/stderr while
+// the TUI runs, because that output would corrupt the screen.
+func setupLogging(showLogPanel bool) (<-chan logging.Entry, *tui.LogPanel) {
+	var writers []io.Writer
+	if f := openLogFile(); f != nil {
+		writers = append(writers, f)
 	}
 
-	logger := logging.NewBuffer(logging.DefaultMaxEntries)
-	log.SetOutput(logger)
-	logCh := logger.Subscribe()
-	logPanel := tui.NewLogPanel(logger)
-	return logger, logCh, logPanel
+	var (
+		logCh    <-chan logging.Entry
+		logPanel *tui.LogPanel
+	)
+	if showLogPanel {
+		logger := logging.NewBuffer(logging.DefaultMaxEntries)
+		logCh = logger.Subscribe()
+		logPanel = tui.NewLogPanel(logger)
+		writers = append(writers, logger)
+	}
+
+	switch len(writers) {
+	case 0:
+		log.SetOutput(io.Discard)
+	case 1:
+		log.SetOutput(writers[0])
+	default:
+		log.SetOutput(io.MultiWriter(writers...))
+	}
+	return logCh, logPanel
+}
+
+// openLogFile opens (creating and rotating as needed) the matcha log file in
+// the cache directory. It returns nil when the file cannot be opened.
+func openLogFile() *os.File {
+	dir, err := config.GetCacheDir()
+	if err != nil {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil
+	}
+	path := filepath.Join(dir, "matcha.log")
+	if info, err := os.Stat(path); err == nil && info.Size() > maxLogFileSize {
+		_ = os.Rename(path, path+".1")
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil
+	}
+	return f
 }
 
 func setupPlugins(cfg *config.Config) *plugin.Manager {
@@ -303,15 +360,33 @@ func startMacOSSync(cfg *config.Config) {
 		return
 	}
 
+	var accountIDs []string
+	if cfg != nil {
+		accountIDs = cfg.GetAccountIDs()
+	}
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("panic in macOS sync goroutine: %v", r)
 			}
 		}()
-		_ = config.SyncMacOSContacts()
-		_ = theme.SyncWithMacOS()
+		// Reuse the loaded config: SyncMacOSContacts reloads it, re-running
+		// pass_cmd and keyring lookups while the TUI owns the terminal.
+		_ = config.SyncMacOSContactsForAccounts(accountIDs)
 	}()
+}
+
+// syncNativeTheme applies the macOS appearance before the program starts:
+// the renderer reads theme.ActiveTheme without synchronization, so it must
+// not be written from a background goroutine while the TUI runs.
+func syncNativeTheme(cfg *config.Config) {
+	if runtime.GOOS != "darwin" || (cfg != nil && cfg.DisableNotifications) {
+		return
+	}
+	if t, err := theme.MacOSNativeTheme(); err == nil {
+		theme.SetNative(t)
+		tui.RebuildStyles()
+	}
 }
 
 // ensureProtocolHandler registers the matcha: URL scheme handler once.
@@ -333,9 +408,11 @@ func ensureProtocolHandler() {
 				log.Printf("panic in protocol handler setup: %v", r)
 			}
 		}()
-		if err := matchaCli.SetupProtocolHandler(); err != nil {
+		// The CLI helper prints progress; the TUI owns the screen now.
+		if err := matchaCli.SetupProtocolHandlerTo(io.Discard); err != nil {
+			// Remember the attempt anyway: retrying rebuilds the app bundle on
+			// every launch. `matcha setup-protocol` can be run by hand.
 			log.Printf("warning: could not register matcha: protocol: %v", err)
-			return
 		}
 		_ = os.WriteFile(sentinel, []byte("1"), 0644)
 	}()
@@ -385,4 +462,24 @@ func printVersion() {
 		fmt.Printf(" built on %s", date)
 	}
 	fmt.Println()
+}
+
+// fullscreenModel runs a standalone TUI screen in the alternate screen with
+// the configured mouse mode, like the main application does.
+type fullscreenModel struct {
+	tea.Model
+}
+
+func (m fullscreenModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.Model.Update(msg)
+	return fullscreenModel{next}, cmd
+}
+
+func (m fullscreenModel) View() tea.View {
+	v := m.Model.View()
+	v.AltScreen = true
+	if config.MouseEnabled != nil && *config.MouseEnabled {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
+	return v
 }

@@ -64,19 +64,12 @@ var (
 				Foreground(lipgloss.Color("42")).
 				Bold(true)
 
-	inboxPaneStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderRight(true).
-			PaddingRight(1)
-
+	// Split panes share a single separator: the preview pane's left (or top)
+	// border. Its color shows whether the preview has focus.
 	previewPaneStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.NormalBorder()).
 				BorderLeft(true).
 				PaddingLeft(1)
-
-	inboxPaneVerticalStyle = lipgloss.NewStyle().
-				BorderStyle(lipgloss.NormalBorder()).
-				BorderBottom(true)
 
 	previewPaneVerticalStyle = lipgloss.NewStyle().
 					BorderStyle(lipgloss.NormalBorder()).
@@ -121,6 +114,14 @@ type FolderInbox struct {
 
 	// Image rendering preference, propagated from config.
 	disableImages bool
+
+	// sidebarOffset is the index of the first folder row drawn in the
+	// sidebar when there are more folders than rows.
+	sidebarOffset int
+
+	// overlayHit records where the move/jump overlay drew its items, for
+	// mouse hit-testing.
+	overlayHit overlayListHit
 
 	// Split pane state
 	previewPane        *EmailView
@@ -273,55 +274,10 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 
 	switch msg := msg.(type) {
 	case tea.MouseWheelMsg:
-		if msg.X < sidebarWidth {
-			switch msg.Button {
-			case tea.MouseWheelDown:
-				m.activeFolderIdx = (m.activeFolderIdx + 1) % len(m.folders)
-			case tea.MouseWheelUp:
-				m.activeFolderIdx = (m.activeFolderIdx - 1 + len(m.folders)) % len(m.folders)
-			default:
-			}
-			if len(m.folders) > 0 {
-				return m, m.switchFolder()
-			}
-			return m, nil
-		}
-		if m.previewPane != nil {
-			if m.isVerticalSplit() {
-				if msg.Y < m.calculateInboxHeight() {
-					_, cmd := m.inbox.Update(msg)
-					return m, cmd
-				}
-				_, cmd := m.previewPane.Update(msg)
-				return m, cmd
-			}
-			if msg.X < sidebarWidth+m.calculateInboxWidth() {
-				_, cmd := m.inbox.Update(msg)
-				return m, cmd
-			}
-			_, cmd := m.previewPane.Update(msg)
-			return m, cmd
-		}
-		_, cmd := m.inbox.Update(msg)
-		return m, cmd
+		return m, m.handleMouseWheel(msg)
 
 	case tea.MouseClickMsg:
-		if msg.Button != tea.MouseLeft {
-			return m, nil
-		}
-		if msg.X < sidebarWidth {
-			folderIdx := msg.Y
-			if isUIVisible("header") {
-				folderIdx -= sidebarHeaderRows
-			}
-			if folderIdx >= 0 && folderIdx < len(m.folders) {
-				m.activeFolderIdx = folderIdx
-				return m, m.switchFolder()
-			}
-			return m, nil
-		}
-		_, cmd := m.inbox.Update(msg)
-		return m, cmd
+		return m, m.handleMouseClick(msg)
 
 	case tea.KeyPressMsg:
 		// Don't intercept keys while filtering
@@ -424,38 +380,7 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		if m.previewPane != nil || m.previewedUID != 0 {
-			// Recalculate pane sizes for split mode
-			if m.isVerticalSplit() {
-				paneWidth := m.calculateInboxWidthVertical()
-				m.inbox.SetSize(paneWidth, m.calculateInboxHeight())
-				if m.previewPane != nil {
-					previewMsg := tea.WindowSizeMsg{Width: paneWidth, Height: m.calculatePreviewHeight() - 1}
-					m.previewPane.Update(previewMsg)
-					m.previewPane.SetRowOffset(m.calculateInboxHeight() + 1)
-					m.previewPane.SetColumnOffset(m.effectiveSidebarWidth() + 2)
-				}
-			} else {
-				inboxWidth := m.calculateInboxWidth()
-				previewWidth := m.calculatePreviewWidth()
-				avail := msg.Height - 1
-				m.inbox.SetSize(inboxWidth-2, avail)
-				if m.previewPane != nil {
-					previewMsg := tea.WindowSizeMsg{Width: previewWidth - 2, Height: avail - 2}
-					m.previewPane.Update(previewMsg)
-					m.previewPane.SetRowOffset(0)
-					m.previewPane.SetColumnOffset(m.effectiveSidebarWidth() + 2 + inboxWidth + 2)
-				}
-			}
-		} else {
-			// Original two-pane resize
-			inboxWidth := msg.Width - m.effectiveSidebarWidth() - 3
-			if inboxWidth < 20 {
-				inboxWidth = 20
-			}
-			m.inbox.SetSize(inboxWidth, msg.Height-1)
-		}
-		return m, nil
+		return m, m.layoutPanes()
 
 	case FolderEmailsFetchedMsg:
 		// Ignore stale responses for folders the user has navigated away from
@@ -530,21 +455,10 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 		email.Body = msg.Body
 		email.BodyMIMEType = msg.BodyMIMEType
 		email.Attachments = msg.Attachments
-		// Create preview pane with column/row offsets for image rendering.
-		if m.isVerticalSplit() {
-			previewWidth := m.calculateInboxWidthVertical()
-			previewHeight := m.calculatePreviewHeight()
-			colOffset := sidebarWidth + 2
-			// In vertical split the preview starts below the inbox pane, so
-			// images must be pushed down by the inbox pane height + border row.
-			rowOffset := m.calculateInboxHeight() + 1
-			m.previewPane = NewEmailViewPreview(*email, previewWidth, previewHeight, colOffset, rowOffset, m.disableImages)
-		} else {
-			previewWidth := m.calculatePreviewWidth()
-			inboxWidth := m.calculateInboxWidth()
-			colOffset := sidebarWidth + 2 + inboxWidth + 2 // borders + padding
-			m.previewPane = NewEmailViewPreview(*email, previewWidth, m.height, colOffset, 0, m.disableImages)
-		}
+		// Create the preview at the exact size and screen position of the
+		// preview pane so its images line up with the text.
+		r := m.previewContentRect()
+		m.previewPane = NewEmailViewPreview(*email, r.w, r.h, r.x, r.y, m.disableImages)
 		return m, nil
 	}
 
@@ -586,6 +500,20 @@ func (m *FolderInbox) wrapInboxCmd(cmd tea.Cmd) tea.Cmd {
 
 func (m *FolderInbox) updateMoveOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
 	kb := config.Keybinds
+	if count := len(m.moveFolderChoices()); count > 0 {
+		switch action, idx := m.overlayHit.mouse(msg, m.moveTargetIdx, count); action {
+		case overlayMouseSelect:
+			m.moveTargetIdx = idx
+			return m, nil
+		case overlayMouseActivate:
+			m.moveTargetIdx = idx
+			return m.updateMoveOverlay(tea.KeyPressMsg{Code: tea.KeyEnter})
+		case overlayMouseDismiss:
+			m.movingEmail = false
+			return m, nil
+		case overlayMouseNone:
+		}
+	}
 	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		switch msg.String() {
 		case kb.Global.Cancel:
@@ -647,6 +575,24 @@ func (m *FolderInbox) updateMoveOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *FolderInbox) updateJumpOverlay(msg tea.Msg) (tea.Model, tea.Cmd) {
 	kb := config.Keybinds
+	if count := len(m.getJumpList()); count > 0 {
+		switch action, idx := m.overlayHit.mouse(msg, m.jumpTargetIdx, count); action {
+		case overlayMouseSelect:
+			m.jumpTargetIdx = idx
+			return m, nil
+		case overlayMouseActivate:
+			m.jumpTargetIdx = idx
+			m.jumpFilterInput.Blur()
+			return m.updateJumpOverlay(tea.KeyPressMsg{Code: tea.KeyEnter})
+		case overlayMouseDismiss:
+			m.jumpingToFolder = false
+			m.jumpFilterInput.Blur()
+			m.jumpFilterInput.SetValue("")
+			m.jumpFiltered = nil
+			return m, nil
+		case overlayMouseNone:
+		}
+	}
 
 	// If filter input is focused, route all keys to it
 	if m.jumpFilterInput.Focused() {
@@ -789,67 +735,28 @@ func (m *FolderInbox) switchFolder() tea.Cmd {
 }
 
 func (m *FolderInbox) View() tea.View {
-	// Check plugin visibility toggles for the sidebar. When hidden, the
-	// sidebar is not rendered and the inbox expands to fill the full width.
-	sidebarVisible := isUIVisible("sidebar")
-
-	// Render sidebar only if visible
-	var sidebar string
-	if sidebarVisible {
-		sidebar = m.renderSidebar()
-	}
-
-	var content string
-
-	switch {
-	case m.previewPane != nil:
+	var main string
+	if m.hasSplit() {
 		inboxPane := m.renderInboxPane()
 		previewPane := m.renderPreviewPane()
 		if m.isVerticalSplit() {
 			// Folders | (inbox stacked above preview)
-			stacked := lipgloss.JoinVertical(lipgloss.Left, inboxPane, previewPane)
-			if sidebarVisible {
-				content = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, stacked)
-			} else {
-				content = stacked
-			}
+			main = lipgloss.JoinVertical(lipgloss.Left, inboxPane, previewPane)
 		} else {
 			// Folders | inbox | email preview
-			if sidebarVisible {
-				content = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, inboxPane, previewPane)
-			} else {
-				content = lipgloss.JoinHorizontal(lipgloss.Top, inboxPane, previewPane)
-			}
+			main = lipgloss.JoinHorizontal(lipgloss.Top, inboxPane, previewPane)
 		}
-	case m.previewedUID != 0:
-		// Split pane loading state (body being fetched)
-		inboxPane := m.renderInboxPane()
-		emptyPreview := m.renderEmptyPreview()
-		if m.isVerticalSplit() {
-			// Folders | (inbox stacked above loading preview)
-			stacked := lipgloss.JoinVertical(lipgloss.Left, inboxPane, emptyPreview)
-			if sidebarVisible {
-				content = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, stacked)
-			} else {
-				content = stacked
-			}
-		} else {
-			// Folders | inbox | loading preview
-			if sidebarVisible {
-				content = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, inboxPane, emptyPreview)
-			} else {
-				content = lipgloss.JoinHorizontal(lipgloss.Top, inboxPane, emptyPreview)
-			}
-		}
-	default:
-		// Two-pane layout (original): folders | inbox
-		inboxView := m.inbox.View().Content
-		if sidebarVisible {
-			content = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, inboxView)
-		} else {
-			content = inboxView
-		}
+	} else {
+		main = m.renderInboxPane()
 	}
+
+	content := main
+	// The sidebar is hidden when a plugin toggles it off; the inbox then
+	// expands to the full width (see effectiveSidebarWidth).
+	if m.effectiveSidebarWidth() > 0 {
+		content = lipgloss.JoinHorizontal(lipgloss.Top, m.renderSidebar(), main)
+	}
+	content = fitBox(content, m.width, m.height)
 
 	// If move overlay is active, render it on top
 	if m.movingEmail {
@@ -865,15 +772,36 @@ func (m *FolderInbox) View() tea.View {
 	// anchored blocks) onto the final content.
 	content = renderCustomComponents(content, m.width, m.height)
 
-	v := tea.NewView(content)
-	if config.MouseEnabled != nil && *config.MouseEnabled {
-		v.MouseMode = tea.MouseModeCellMotion
+	return tea.NewView(content)
+}
+
+// sidebarHeaderRowCount is the number of sidebar rows above the first folder.
+func (m *FolderInbox) sidebarHeaderRowCount() int {
+	if isUIVisible("header") {
+		return sidebarHeaderRows
 	}
-	return v
+	return 0
+}
+
+// sidebarFolderRows is how many folder rows fit in the sidebar.
+func (m *FolderInbox) sidebarFolderRows() int {
+	return max(1, m.availableHeight()-m.sidebarHeaderRowCount())
+}
+
+// ensureActiveFolderVisible scrolls the sidebar so the active folder is shown.
+func (m *FolderInbox) ensureActiveFolderVisible() {
+	rows := m.sidebarFolderRows()
+	if m.activeFolderIdx < m.sidebarOffset {
+		m.sidebarOffset = m.activeFolderIdx
+	}
+	if m.activeFolderIdx >= m.sidebarOffset+rows {
+		m.sidebarOffset = m.activeFolderIdx - rows + 1
+	}
+	m.sidebarOffset = max(0, min(m.sidebarOffset, len(m.folders)-rows))
 }
 
 func (m *FolderInbox) renderSidebar() string {
-	contentWidth := sidebarWidth - 2 // sidebarStyle pads one cell on each side
+	contentWidth := max(1, sidebarWidth-sidebarStyle.GetHorizontalFrameSize())
 	var b strings.Builder
 
 	// The sidebar header (account name and address) is part of the "header"
@@ -896,14 +824,17 @@ func (m *FolderInbox) renderSidebar() string {
 		b.WriteString("\n\n")
 	}
 
-	for i, folder := range m.folders {
-		b.WriteString(m.renderFolderRow(folder, i == m.activeFolderIdx, contentWidth))
-		if i < len(m.folders)-1 {
+	m.ensureActiveFolderVisible()
+	end := min(len(m.folders), m.sidebarOffset+m.sidebarFolderRows())
+	for i := m.sidebarOffset; i < end; i++ {
+		b.WriteString(m.renderFolderRow(m.folders[i], i == m.activeFolderIdx, contentWidth))
+		if i < end-1 {
 			b.WriteString("\n")
 		}
 	}
 
-	return sidebarStyle.Height(m.availableHeight()).Render(b.String())
+	height := m.availableHeight()
+	return sidebarStyle.Height(height).MaxHeight(height).Render(b.String())
 }
 
 // sidebarAccount returns the account whose header the sidebar should show. It
@@ -979,12 +910,8 @@ func (m *FolderInbox) formatFolderName(name string) string {
 	// Strip common IMAP prefixes for cleaner display
 	name = strings.TrimPrefix(name, "[Gmail]/")
 	name = strings.TrimPrefix(name, "[Google Mail]/")
-	// Truncate to fit sidebar
-	maxLen := sidebarWidth - 5
-	if len(name) > maxLen {
-		name = name[:maxLen-1] + "\u2026"
-	}
-	return name
+	// Truncate to fit sidebar without splitting multi-byte characters.
+	return ansi.Truncate(name, sidebarWidth-5, "\u2026")
 }
 
 func (m *FolderInbox) renderWithMoveOverlay(content string) string {
@@ -993,32 +920,123 @@ func (m *FolderInbox) renderWithMoveOverlay(content string) string {
 		return content
 	}
 
-	var b strings.Builder
 	title := t("folder_inbox.move_to_folder")
 	if len(m.moveUIDs) > 1 {
 		title = tn("folder_inbox.move_multiple", len(m.moveUIDs), map[string]interface{}{
 			keyCount: len(m.moveUIDs),
 		})
 	}
-	b.WriteString(moveOverlayTitleStyle.Render(title))
-	b.WriteString("\n")
-
+	header := moveOverlayTitleStyle.Render(title) + "\n"
+	footer := "\n\n" + m.overlayHelp(keybindHelp("folder_inbox.help"))
+	names := make([]string, len(choices))
 	for i, folder := range choices {
-		displayName := m.formatFolderName(folder)
-		if i == m.moveTargetIdx {
-			b.WriteString(moveSelectedItemStyle.Render("▌ " + displayName))
-		} else {
-			b.WriteString(moveItemStyle.Render("  " + displayName))
+		names[i] = m.formatFolderName(folder)
+	}
+	return m.renderOverlayList(content, header, names, m.moveTargetIdx, footer)
+}
+
+// overlayHelp wraps an overlay's help line so the box fits the screen width.
+func (m *FolderInbox) overlayHelp(text string) string {
+	inner := max(10, m.width-moveOverlayStyle.GetHorizontalFrameSize())
+	if lipgloss.Width(text) <= inner {
+		return helpStyle.Render(text)
+	}
+	return helpStyle.Width(inner).Render(text)
+}
+
+// overlayListHit is the screen geometry of an overlay's visible items.
+type overlayListHit struct {
+	top, left, width int // first item row and the box's columns
+	first, count     int // list index of the first visible item, item count
+}
+
+type overlayMouseAction int
+
+const (
+	overlayMouseNone overlayMouseAction = iota
+	overlayMouseSelect
+	overlayMouseActivate
+	overlayMouseDismiss
+)
+
+// mouse maps a mouse event on an overlay list to an action. The wheel moves
+// the selection, clicking an item selects it (clicking the selected item
+// activates it) and clicking outside the box dismisses the overlay.
+func (h overlayListHit) mouse(msg tea.Msg, selected, total int) (overlayMouseAction, int) {
+	switch msg := msg.(type) {
+	case tea.MouseWheelMsg:
+		switch msg.Button {
+		case tea.MouseWheelDown:
+			return overlayMouseSelect, min(selected+1, total-1)
+		case tea.MouseWheelUp:
+			return overlayMouseSelect, max(selected-1, 0)
+		default:
 		}
-		if i < len(choices)-1 {
+	case tea.MouseClickMsg:
+		if msg.Button != tea.MouseLeft || h.width == 0 {
+			return overlayMouseNone, selected
+		}
+		if msg.X < h.left || msg.X >= h.left+h.width {
+			return overlayMouseDismiss, selected
+		}
+		row := msg.Y - h.top
+		if row < 0 || row >= h.count {
+			return overlayMouseNone, selected
+		}
+		idx := h.first + row
+		if idx >= total {
+			return overlayMouseNone, selected
+		}
+		if idx == selected {
+			return overlayMouseActivate, idx
+		}
+		return overlayMouseSelect, idx
+	}
+	return overlayMouseNone, selected
+}
+
+// renderOverlayList draws a framed list centered over content, showing a
+// window of items around the selection that fits the screen, and records the
+// item geometry for mouse hit-testing.
+func (m *FolderInbox) renderOverlayList(content, header string, items []string, selected int, footer string) string {
+	// The box holds the header lines, one line per visible item and the
+	// footer lines; keep it within the screen height.
+	room := m.height - moveOverlayStyle.GetVerticalFrameSize() - strings.Count(header, "\n") - strings.Count(footer, "\n")
+	maxVisible := max(1, min(len(items), room))
+	start := 0
+	if selected >= maxVisible {
+		start = selected - maxVisible + 1
+	}
+	end := min(len(items), start+maxVisible)
+	maxName := max(8, m.width-moveOverlayStyle.GetHorizontalFrameSize()-moveItemStyle.GetHorizontalFrameSize()-2)
+
+	var b strings.Builder
+	b.WriteString(header)
+	for i := start; i < end; i++ {
+		name := ansi.Truncate(items[i], maxName, "\u2026")
+		if i == selected {
+			b.WriteString(moveSelectedItemStyle.Render("▌ " + name))
+		} else {
+			b.WriteString(moveItemStyle.Render("  " + name))
+		}
+		if i < end-1 {
 			b.WriteString("\n")
 		}
 	}
-
-	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render(keybindHelp("folder_inbox.help")))
-
+	b.WriteString(footer)
 	box := moveOverlayStyle.Render(b.String())
+
+	// Same placement as overlay.Center.
+	boxW, boxH := lipgloss.Width(box), lipgloss.Height(box)
+	top := max(0, (m.height-boxH)/2)
+	left := max(0, (m.width-boxW)/2)
+	m.overlayHit = overlayListHit{
+		top:   top + moveOverlayStyle.GetBorderTopSize() + moveOverlayStyle.GetPaddingTop() + strings.Count(header, "\n"),
+		left:  left,
+		width: boxW,
+		first: start,
+		count: end - start,
+	}
 
 	// Composite the box as a floating layer centered over the content, the same
 	// way the command palette does. The background is preserved on all sides;
@@ -1031,63 +1049,36 @@ func (m *FolderInbox) renderWithJumpOverlay(content string) string {
 		return content
 	}
 
-	var b strings.Builder
-
+	var header strings.Builder
 	// Show filter input if focused, otherwise just the title
 	if m.jumpFilterInput.Focused() {
-		b.WriteString(moveOverlayTitleStyle.Render("Filter folders:"))
-		b.WriteString("\n")
-		m.jumpFilterInput.SetWidth(40)
-		b.WriteString(m.jumpFilterInput.View())
-		b.WriteString("\n\n")
+		header.WriteString(moveOverlayTitleStyle.Render("Filter folders:"))
+		header.WriteString("\n")
+		m.jumpFilterInput.SetWidth(max(10, min(40, m.width-12)))
+		header.WriteString(m.jumpFilterInput.View())
+		header.WriteString("\n\n")
 	} else {
 		title := t("folder_inbox.jump_to_folder")
 		if m.jumpFilterInput.Value() != "" {
 			title = title + " [" + m.jumpFilterInput.Value() + "]"
 		}
-		b.WriteString(moveOverlayTitleStyle.Render(title))
-		b.WriteString("\n")
+		header.WriteString(moveOverlayTitleStyle.Render(title))
+		header.WriteString("\n")
 	}
 
 	// Get the current list (filtered or all)
-	list := m.getJumpList()
-
-	// Limit visible items to prevent overflow (similar to command palette)
-	maxVisible := 8
-	startIdx := 0
-	if m.jumpTargetIdx >= maxVisible {
-		startIdx = m.jumpTargetIdx - maxVisible + 1
-	}
-	endIdx := startIdx + maxVisible
-	if endIdx > len(list) {
-		endIdx = len(list)
+	indices := m.getJumpList()
+	names := make([]string, len(indices))
+	for i, folderIdx := range indices {
+		names[i] = m.formatFolderName(m.folders[folderIdx])
 	}
 
-	for i := startIdx; i < endIdx; i++ {
-		var folderIdx int
-		if len(m.jumpFiltered) > 0 {
-			folderIdx = m.jumpFiltered[i]
-		} else {
-			folderIdx = i
-		}
-
-		displayName := m.formatFolderName(m.folders[folderIdx])
-		if i == m.jumpTargetIdx {
-			b.WriteString(moveSelectedItemStyle.Render("▌ " + displayName))
-		} else {
-			b.WriteString(moveItemStyle.Render("  " + displayName))
-		}
-		if i < endIdx-1 {
-			b.WriteString("\n")
-		}
-	}
-
+	var footer strings.Builder
 	// Show message if no matches
-	if len(list) == 0 {
-		b.WriteString(lipgloss.NewStyle().Foreground(theme.ActiveTheme.MutedText).Render("No matching folders"))
+	if len(indices) == 0 {
+		footer.WriteString(lipgloss.NewStyle().Foreground(theme.ActiveTheme.MutedText).Render("No matching folders"))
 	}
-
-	b.WriteString("\n\n")
+	footer.WriteString("\n\n")
 
 	// Update help text based on filter state
 	kb := config.Keybinds
@@ -1114,12 +1105,9 @@ func (m *FolderInbox) renderWithJumpOverlay(content string) string {
 			helpItem("", cancel, "cancel"),
 		)
 	}
-	b.WriteString(helpStyle.Render(helpText))
+	footer.WriteString(m.overlayHelp(helpText))
 
-	box := moveOverlayStyle.Render(b.String())
-
-	// Composite the box as a floating layer centered over the content
-	return overlay.Center(content, box, m.width, m.height)
+	return m.renderOverlayList(content, header.String(), names, m.jumpTargetIdx, footer.String())
 }
 
 // SetFolders updates the folder list.
@@ -1240,89 +1228,212 @@ func (m *FolderInbox) GetFolders() []string {
 	return m.folders
 }
 
-// renderInboxPane renders inbox with border for split pane mode
-func (m *FolderInbox) renderInboxPane() string {
-	borderColor := unfocusedBorderColor
-	if m.focusedPane == FocusInbox {
-		borderColor = focusedBorderColor
-	}
-
-	if m.isVerticalSplit() {
-		inboxWidth := m.calculateInboxWidthVertical()
-		inboxHeight := m.calculateInboxHeight()
-		paneStyle := inboxPaneVerticalStyle.
-			BorderForeground(borderColor).
-			Width(inboxWidth).
-			Height(inboxHeight)
-		// Bottom border takes one row; the inbox content fills the rest.
-		m.inbox.SetSize(inboxWidth, inboxHeight)
-		return paneStyle.Render(m.inbox.View().Content)
-	}
-
-	inboxWidth := m.calculateInboxWidth()
-	avail := m.availableHeight()
-	paneStyle := inboxPaneStyle.
-		BorderForeground(borderColor).
-		Width(inboxWidth).
-		Height(avail)
-
-	m.inbox.SetSize(inboxWidth-2, avail)
-	return paneStyle.Render(m.inbox.View().Content)
+// paneRect is a rectangle of screen cells.
+type paneRect struct {
+	x, y, w, h int
 }
 
-// renderPreviewPane renders email preview with border
-func (m *FolderInbox) renderPreviewPane() string {
-	if m.previewPane == nil {
-		return m.renderEmptyPreview()
-	}
+func (r paneRect) contains(x, y int) bool {
+	return x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h
+}
 
+// hasSplit reports whether the split preview (or its loading placeholder) is shown.
+func (m *FolderInbox) hasSplit() bool {
+	return m.previewPane != nil || m.previewedUID != 0
+}
+
+// contentRect is the area right of the sidebar.
+func (m *FolderInbox) contentRect() paneRect {
+	s := m.effectiveSidebarWidth()
+	return paneRect{x: s, y: 0, w: max(1, m.width-s), h: m.availableHeight()}
+}
+
+// inboxPaneRect is the area of the email list.
+func (m *FolderInbox) inboxPaneRect() paneRect {
+	c := m.contentRect()
+	if !m.hasSplit() {
+		return c
+	}
+	if m.isVerticalSplit() {
+		return paneRect{x: c.x, y: c.y, w: c.w, h: splitFirstPaneSize(c.h, 5)}
+	}
+	return paneRect{x: c.x, y: c.y, w: splitFirstPaneSize(c.w, 30), h: c.h}
+}
+
+// previewPaneRect is the whole preview pane, including its separator border.
+func (m *FolderInbox) previewPaneRect() paneRect {
+	c := m.contentRect()
+	in := m.inboxPaneRect()
+	if m.isVerticalSplit() {
+		return paneRect{x: c.x, y: c.y + in.h, w: c.w, h: max(1, c.h-in.h)}
+	}
+	return paneRect{x: c.x + in.w, y: c.y, w: max(1, c.w-in.w), h: c.h}
+}
+
+// previewContentRect is where the email view is drawn inside the preview pane.
+func (m *FolderInbox) previewContentRect() paneRect {
+	p := m.previewPaneRect()
+	if m.isVerticalSplit() {
+		top := previewPaneVerticalStyle.GetBorderTopSize()
+		return paneRect{x: p.x, y: p.y + top, w: p.w, h: max(1, p.h-top)}
+	}
+	left := previewPaneStyle.GetBorderLeftSize() + previewPaneStyle.GetPaddingLeft()
+	return paneRect{x: p.x + left, y: p.y, w: max(1, p.w-left), h: p.h}
+}
+
+// splitFirstPaneSize returns the size of the first (inbox) pane of a split
+// that is total cells long: 40%, but at least minPane, leaving the second
+// pane at least minPane too when possible.
+func splitFirstPaneSize(total, minPane int) int {
+	size := max(total*2/5, minPane)
+	if total-size < minPane {
+		size = total / 2
+	}
+	return max(1, min(size, total-1))
+}
+
+// layoutPanes sizes the inbox and preview to the current layout. It returns
+// the preview's follow-up command, if any (remote image reloads).
+func (m *FolderInbox) layoutPanes() tea.Cmd {
+	in := m.inboxPaneRect()
+	m.inbox.SetSize(in.w, in.h)
+	m.ensureActiveFolderVisible()
+	if m.previewPane == nil {
+		return nil
+	}
+	r := m.previewContentRect()
+	m.previewPane.SetColumnOffset(r.x)
+	m.previewPane.SetRowOffset(r.y)
+	if r.w == m.previewPane.width && r.h == m.previewPane.height {
+		return nil
+	}
+	_, cmd := m.previewPane.Update(tea.WindowSizeMsg{Width: r.w, Height: r.h})
+	return cmd
+}
+
+// renderInboxPane renders the email list at exactly its pane size.
+func (m *FolderInbox) renderInboxPane() string {
+	in := m.inboxPaneRect()
+	return fitBox(m.inbox.View().Content, in.w, in.h)
+}
+
+// renderPreviewPane renders the preview (or its loading placeholder) with the
+// separator border that divides it from the inbox.
+func (m *FolderInbox) renderPreviewPane() string {
+	r := m.previewContentRect()
 	borderColor := unfocusedBorderColor
 	if m.focusedPane == FocusPreview {
 		borderColor = focusedBorderColor
 	}
 
-	if m.isVerticalSplit() {
-		previewWidth := m.calculateInboxWidthVertical()
-		previewHeight := m.calculatePreviewHeight()
-		paneStyle := previewPaneVerticalStyle.
-			BorderForeground(borderColor).
-			Width(previewWidth).
-			Height(previewHeight)
-		return paneStyle.Render(m.previewPane.View().Content)
+	var body string
+	if m.previewPane == nil {
+		body = lipgloss.NewStyle().
+			Width(r.w).
+			Height(r.h).
+			Align(lipgloss.Center, lipgloss.Center).
+			Foreground(theme.ActiveTheme.MutedText).
+			Render("Loading...")
+		body = fitBox(body, r.w, r.h)
+	} else {
+		body = fitBox(m.previewPane.View().Content, r.w, r.h)
 	}
 
-	previewWidth := m.calculatePreviewWidth()
-	paneStyle := previewPaneStyle.
-		BorderForeground(borderColor).
-		Width(previewWidth).
-		Height(m.availableHeight())
-
-	return paneStyle.Render(m.previewPane.View().Content)
+	style := previewPaneStyle
+	if m.isVerticalSplit() {
+		style = previewPaneVerticalStyle
+	}
+	return style.BorderForeground(borderColor).Render(body)
 }
 
-// renderEmptyPreview renders placeholder when no email selected
-func (m *FolderInbox) renderEmptyPreview() string {
-	if m.isVerticalSplit() {
-		previewWidth := m.calculateInboxWidthVertical()
-		previewHeight := m.calculatePreviewHeight()
-		emptyStyle := lipgloss.NewStyle().
-			Width(previewWidth).
-			Height(previewHeight).
-			Align(lipgloss.Center, lipgloss.Center).
-			Foreground(lipgloss.Color("240"))
-		return previewPaneVerticalStyle.
-			BorderForeground(unfocusedBorderColor).
-			Render(emptyStyle.Render("Loading..."))
+// VisibleImages reports the preview's out-of-band images. Images are hidden
+// while an overlay is drawn on top of the preview.
+func (m *FolderInbox) VisibleImages() []ScreenImage {
+	if m.previewPane == nil || m.movingEmail || m.jumpingToFolder || m.inbox.IsSearchOverlayOpen() {
+		return nil
 	}
+	return m.previewPane.VisibleImages()
+}
 
-	previewWidth := m.calculatePreviewWidth()
-	emptyStyle := lipgloss.NewStyle().
-		Width(previewWidth).
-		Height(m.availableHeight()).
-		Align(lipgloss.Center, lipgloss.Center).
-		Foreground(lipgloss.Color("240"))
+// handleMouseWheel scrolls the pane under the pointer. Over the sidebar the
+// wheel moves to the previous/next folder.
+func (m *FolderInbox) handleMouseWheel(msg tea.MouseWheelMsg) tea.Cmd {
+	if msg.X < m.effectiveSidebarWidth() {
+		if len(m.folders) == 0 {
+			return nil
+		}
+		next := m.activeFolderIdx
+		switch msg.Button {
+		case tea.MouseWheelDown:
+			next++
+		case tea.MouseWheelUp:
+			next--
+		default:
+			return nil
+		}
+		if next < 0 || next >= len(m.folders) {
+			return nil
+		}
+		m.activeFolderIdx = next
+		return m.switchFolder()
+	}
+	if m.hasSplit() && m.previewPaneRect().contains(msg.X, msg.Y) {
+		if m.previewPane == nil {
+			return nil
+		}
+		_, cmd := m.previewPane.Update(msg)
+		return cmd
+	}
+	in := m.inboxPaneRect()
+	if !in.contains(msg.X, msg.Y) {
+		return nil
+	}
+	local := msg
+	local.X -= in.x
+	local.Y -= in.y
+	_, cmd := m.inbox.Update(local)
+	return m.wrapInboxCmd(cmd)
+}
 
-	return emptyStyle.Render("Loading...")
+// handleMouseClick routes a click to the folder list, the inbox or the
+// preview, focusing the pane that was clicked.
+func (m *FolderInbox) handleMouseClick(msg tea.MouseClickMsg) tea.Cmd {
+	if msg.Button != tea.MouseLeft {
+		return nil
+	}
+	if msg.X < m.effectiveSidebarWidth() {
+		row := msg.Y - m.sidebarHeaderRowCount()
+		if row < 0 || row >= m.sidebarFolderRows() {
+			return nil
+		}
+		idx := m.sidebarOffset + row
+		if idx >= len(m.folders) || idx == m.activeFolderIdx {
+			return nil
+		}
+		m.activeFolderIdx = idx
+		return m.switchFolder()
+	}
+	if m.hasSplit() && m.previewPaneRect().contains(msg.X, msg.Y) {
+		m.focusedPane = FocusPreview
+		if m.previewPane == nil {
+			return nil
+		}
+		// The email view maps clicks with its own screen offset.
+		_, cmd := m.previewPane.Update(msg)
+		return cmd
+	}
+	in := m.inboxPaneRect()
+	if !in.contains(msg.X, msg.Y) {
+		return nil
+	}
+	if m.hasSplit() {
+		m.focusedPane = FocusInbox
+	}
+	local := msg
+	local.X -= in.x
+	local.Y -= in.y
+	_, cmd := m.inbox.Update(local)
+	return m.wrapInboxCmd(cmd)
 }
 
 // OpenSplitPreview opens the split preview pane for a specific email.
@@ -1335,30 +1446,18 @@ func (m *FolderInbox) OpenSplitPreview(uid uint32, accountID string, email *fetc
 	m.previewedAccountID = accountID
 	m.previewSearchEmail = email
 	m.focusedPane = FocusPreview
-	// Recalculate inbox sizing for split mode
-	if m.isVerticalSplit() {
-		m.inbox.SetSize(m.calculateInboxWidthVertical(), m.calculateInboxHeight())
-	} else {
-		inboxWidth := m.calculateInboxWidth()
-		m.inbox.SetSize(inboxWidth-2, m.availableHeight())
-	}
+	m.layoutPanes()
 	m.updateHelpKeys()
 }
 
 // closeSplitPreview closes the preview pane and returns to inbox-only
 func (m *FolderInbox) closeSplitPreview() {
-	ClearKittyGraphics()
 	m.previewPane = nil
 	m.previewedUID = 0
 	m.previewedAccountID = ""
 	m.previewSearchEmail = nil
 	m.focusedPane = FocusInbox
-	// Restore full inbox width
-	inboxWidth := m.width - m.effectiveSidebarWidth() - 3
-	if inboxWidth < 20 {
-		inboxWidth = 20
-	}
-	m.inbox.SetSize(inboxWidth, m.availableHeight())
+	m.layoutPanes()
 	m.updateHelpKeys()
 }
 
@@ -1387,78 +1486,42 @@ func (m *FolderInbox) effectiveSidebarWidth() int {
 	if !isUIVisible("sidebar") {
 		return 0
 	}
+	// Leave the inbox some room on very narrow terminals.
+	if m.width > 0 && m.width < sidebarWidth+20 {
+		return 0
+	}
 	return sidebarWidth
 }
 
-// calculatePreviewWidth calculates width for preview pane
-func (m *FolderInbox) calculatePreviewWidth() int {
-	remainingWidth := m.width - m.effectiveSidebarWidth() - 4 // 4 for borders
-	inboxWidth := int(float64(remainingWidth) * 0.4)
-	if inboxWidth < 30 {
-		inboxWidth = 30
-	}
-	previewWidth := remainingWidth - inboxWidth
-	if previewWidth < 40 {
-		previewWidth = 40
-	}
-	return previewWidth
-}
-
-// calculateInboxWidth calculates width for inbox pane in horizontal split mode
-func (m *FolderInbox) calculateInboxWidth() int {
-	remainingWidth := m.width - m.effectiveSidebarWidth() - 4
-	inboxWidth := int(float64(remainingWidth) * 0.4)
-	if inboxWidth < 30 {
-		inboxWidth = 30
-	}
-	return inboxWidth
-}
-
-// calculateInboxWidthVertical returns the column width used by both the inbox
-// and preview panes when the split is stacked vertically. They share whatever
-// horizontal space is left after the sidebar.
-func (m *FolderInbox) calculateInboxWidthVertical() int {
-	w := m.width - m.effectiveSidebarWidth() - 3
-	if w < 20 {
-		w = 20
-	}
-	return w
-}
-
-// calculateInboxHeight returns the inbox pane height in vertical split mode
-// (40% of available vertical space, mirroring the horizontal width ratio).
-func (m *FolderInbox) calculateInboxHeight() int {
-	h := int(float64(m.availableHeight()) * 0.4)
-	if h < 5 {
-		h = 5
-	}
-	if h > m.availableHeight()-3 {
-		h = m.availableHeight() - 3
-	}
-	return h
-}
-
-// calculatePreviewHeight returns the preview pane height in vertical split mode.
-func (m *FolderInbox) calculatePreviewHeight() int {
-	h := m.availableHeight() - m.calculateInboxHeight() - 1 // border row between them
-	if h < 5 {
-		h = 5
-	}
-	return h
-}
-
-// availableHeight returns the vertical space reserved for the main content
-// area. By default it is the total screen height minus one row for the bottom
-// help bar (status bar). When a plugin hides the status bar via
-// matcha.ui.set_visible("status_bar", false), that row is returned to the
-// main content area.
+// availableHeight returns the number of rows the folder inbox may use. The
+// inbox draws its own help bar on its last row, so this is the full height.
 func (m *FolderInbox) availableHeight() int {
-	h := m.height
-	if isUIVisible("status_bar") {
-		h-- // reserve one row for the bottom help bar
+	return max(1, m.height)
+}
+
+// fitBox pads or truncates s so that it is exactly width cells wide and
+// height lines tall. It keeps panes from pushing their neighbours around.
+func fitBox(s string, width, height int) string {
+	if width <= 0 || height <= 0 {
+		return ""
 	}
-	if h < 1 {
-		h = 1
+	lines := strings.Split(s, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
 	}
-	return h
+	for i, line := range lines {
+		w := ansi.StringWidth(line)
+		if w > width {
+			lines[i] = ansi.Truncate(line, width, "")
+			w = ansi.StringWidth(lines[i])
+		}
+		if w < width {
+			lines[i] += strings.Repeat(" ", width-w)
+		}
+	}
+	blank := strings.Repeat(" ", width)
+	for len(lines) < height {
+		lines = append(lines, blank)
+	}
+	return strings.Join(lines, "\n")
 }

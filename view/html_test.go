@@ -845,7 +845,8 @@ func TestProcessBodyDoesNotHyperlinkNonRemoteImageFallbacks(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"[Image: data image, data:image/png;base64,iVBORw0KGgo=]",
+		// Only the media type of a data: URI is shown, never its payload.
+		"[Image: data image, data:image/png]",
 		"[Image: cid image, cid:test-image@example.com]",
 	} {
 		if !strings.Contains(processed, want) {
@@ -933,7 +934,9 @@ func TestProcessBodyWithImageProtocol(t *testing.T) {
 			expectPlacements:    true,
 		},
 		{
-			name: "Data URI image with iTerm2 support returns placement",
+			// iTerm2 has no Kitty/Sixel support here, so the image is drawn
+			// inline with half-block characters instead of out-of-band.
+			name: "Data URI image with iTerm2 support renders inline half-blocks",
 			setupImageProtocol: func() {
 				os.Setenv("TERM", "xterm")
 				os.Setenv("TERM_PROGRAM", "iterm.app")
@@ -945,8 +948,8 @@ func TestProcessBodyWithImageProtocol(t *testing.T) {
 				os.Unsetenv("WEZTERM_EXECUTABLE")
 			},
 			input:               `<img src="data:image/png;base64,` + testBase64PNG + `" alt="test image">`,
+			expectedContains:    "▀",
 			expectedNotContains: "[Image: test image,",
-			expectPlacements:    true,
 		},
 		{
 			name: "Data URI image without protocol support",

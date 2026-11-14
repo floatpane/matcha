@@ -1,7 +1,6 @@
 package view
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -16,11 +15,11 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/floatpane/matcha/clib"
 	"github.com/floatpane/matcha/internal/htmlsanitizer"
 	"github.com/floatpane/matcha/internal/loglevel"
 	"github.com/floatpane/matcha/theme"
-	"github.com/floatpane/termimage"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"golang.org/x/term"
 )
@@ -221,8 +220,10 @@ func decodeQuotedPrintable(s string) (string, error) {
 }
 
 // markdownToHTML converts a Markdown string to an HTML string using md4c (C).
+// Single newlines are kept as line breaks: in email bodies they are part of
+// the message (signatures, addresses, short lines), not soft wraps.
 func markdownToHTML(md []byte) []byte {
-	return clib.MarkdownToHTML(md)
+	return clib.MarkdownToHTMLHardBreaks(md)
 }
 
 func kittySupported() bool {
@@ -450,58 +451,20 @@ func dataURIBase64(uri string) string {
 const imageRowPlaceholderPrefix = "[[MATCHA_IMG_ROWS:"
 const imageRowPlaceholderSuffix = "]]"
 
-// prerenderImage decodes and renders an image via termimage at layout time,
-// returning the cached escape sequence and the exact number of terminal rows
-// the rendered image will occupy. Both are stored on the ImagePlacement so
-// (a) text below the image is offset by the correct row count and (b) the
-// paint stage in RenderImageToStdout is a plain stdout write with no decode.
-func prerenderImage(payload string) (string, int) {
-	src := "data:image/png;base64," + payload
-	var buf bytes.Buffer
-
-	// Ask termimage to cap the rendered image so it can never exceed the
-	// terminal viewport. This prevents oversized/tall images from covering the
-	// whole screen or overlapping other content on scroll. We always pass a
-	// maximum in cells and let termimage convert to pixels for the active
-	// protocol.
-	_, rows, err := termimage.DisplayWithSize(&buf, src, termimage.Options{
-		Protocol:  termimage.Auto,
-		Sandboxed: true,
-		MaxWidth:  maxImageCellWidth(),
-		MaxHeight: maxImageCellHeight(),
-	})
-	if err != nil {
-		debugImageProtocol("termimage.DisplayWithSize error: %v", err)
-		return "", 1
-	}
-	if rows < 1 {
-		rows = 1
-	}
-	debugImageProtocol("termimage: prerendered rows=%d bytes=%d", rows, buf.Len())
-	return buf.String(), rows
-}
-
-// maxImageCellHeight returns the maximum number of terminal rows an inline
-// image is allowed to occupy. It is always capped to a fraction of the viewport
-// so images cannot monopolize the screen during scrolling.
+// maxImageCellHeight returns the default maximum number of terminal rows an
+// inline image may occupy when the caller does not pass explicit bounds: 80%
+// of the terminal height, so the image can always be seen in full.
 func maxImageCellHeight() int {
 	const defaultRows = 25
 	_, rows, ok := getTerminalSize()
 	if !ok || rows < 1 {
 		return defaultRows
 	}
-	limit := rows * 8 / 10
-	if limit < 1 {
-		return 1
-	}
-	if limit > defaultRows {
-		return limit
-	}
-	return defaultRows
+	return max(1, rows*8/10)
 }
 
-// maxImageCellWidth returns the maximum number of terminal columns an inline
-// image is allowed to occupy.
+// maxImageCellWidth returns the default maximum number of terminal columns
+// an inline image may occupy when the caller does not pass explicit bounds.
 func maxImageCellWidth() int {
 	const defaultCols = 80
 	cols, _, ok := getTerminalSize()
@@ -511,23 +474,17 @@ func maxImageCellWidth() int {
 	if cols > 4 {
 		cols -= 4
 	}
-	if cols < 1 {
-		cols = 1
-	}
-	if cols > defaultCols {
-		return cols
-	}
-	return defaultCols
+	return max(1, cols)
 }
 
-// terminalSize caches the most recent terminal dimensions to avoid repeated
-// syscalls. It is refreshed on demand if the dimensions are unknown.
+// terminalSize overrides the detected terminal size when ok is set (tests).
 var terminalSize struct {
 	cols, rows int
 	ok         bool
 }
 
-// getTerminalSize returns the current terminal size in columns and rows.
+// getTerminalSize returns the current terminal size in columns and rows. The
+// size is queried on every call so that it follows window resizes.
 func getTerminalSize() (cols, rows int, ok bool) {
 	if terminalSize.ok {
 		return terminalSize.cols, terminalSize.rows, true
@@ -539,7 +496,6 @@ func getTerminalSize() (cols, rows int, ok bool) {
 	if !ok || size.cols < 1 || size.rows < 1 {
 		return 0, 0, false
 	}
-	terminalSize.cols, terminalSize.rows, terminalSize.ok = size.cols, size.rows, true
 	return size.cols, size.rows, true
 }
 
@@ -554,28 +510,6 @@ func terminalSizeFrom(f *os.File) (termSize, bool) {
 		return termSize{}, false
 	}
 	return termSize{cols: cols, rows: rows}, true
-}
-
-// RenderImageToStdout writes an image directly to stdout at the given screen
-// row using cursor positioning. This bypasses bubbletea's cell-based renderer
-// which cannot handle graphics protocol escape sequences.
-//
-// The escape sequence and row count were captured at HTML processing time by
-// prerenderImage, so this call is a plain stdout write with no decode.
-func RenderImageToStdout(placement *ImagePlacement, screenRow int, screenCol ...int) {
-	if placement.Encoded == "" {
-		return
-	}
-
-	col := 1
-	if len(screenCol) > 0 && screenCol[0] > 0 {
-		col = screenCol[0]
-	}
-
-	debugImageProtocol("termimage: rendering %d bytes at row=%d col=%d", len(placement.Encoded), screenRow+1, col)
-	fmt.Fprintf(os.Stdout, "\x1b[s\x1b[%d;%dH%s\x1b[u", //nolint:errcheck
-		screenRow+1, col, placement.Encoded)
-	os.Stdout.Sync() //nolint:errcheck,gosec
 }
 
 // expandImageRowPlaceholders replaces image row placeholders with actual newlines.
@@ -599,18 +533,18 @@ type InlineImage struct {
 	Base64 string
 }
 
-// ImagePlacement holds the data needed to render an image at a specific
-// line in the email body. Images are rendered directly to stdout (bypassing
-// bubbletea's cell-based renderer which cannot handle graphics protocols).
-//
-// Encoded and Rows are populated at HTML processing time by prerenderImage
-// using termimage.DisplayWithSize, so paint-stage rendering is a plain
-// stdout write and layout-stage row reservation matches the rendered output
-// exactly.
+// ImagePlacement describes an inline image that is painted out-of-band
+// (Kitty or Sixel) at a line of the rendered body. Half-block images are part
+// of the body text and therefore never produce a placement.
 type ImagePlacement struct {
-	Line    int    // Line number in the processed body text where the image starts
-	Rows    int    // Number of terminal rows the rendered image occupies (from termimage)
-	Encoded string // Cached terminal escape sequence from termimage (rendered once at layout time)
+	Line     int           // Line in the rendered body where the image starts
+	Rows     int           // Number of terminal rows the image occupies
+	Cols     int           // Number of terminal columns the image occupies
+	Encoded  string        // Kitty transmit sequence or Sixel sequence
+	ID       uint32        // Kitty image id (0 for Sixel)
+	Protocol ImageProtocol // Protocol Encoded is written in
+	PixelW   int           // Pixel size of the encoded image
+	PixelH   int
 }
 
 // BodyMIMEType values understood by ProcessBody/ProcessBodyWithInline. Empty
@@ -633,6 +567,49 @@ func ProcessBodyWithInline(rawBody, mimeType string, inline []InlineImage, h1Sty
 // fetches remote images referenced by the email. The permission is scoped to
 // the caller's current message view.
 func ProcessBodyWithInlineRemote(rawBody, mimeType string, inline []InlineImage, h1Style, h2Style, bodyStyle lipgloss.Style, disableImages, allowRemoteImages bool) (string, []ImagePlacement, error) {
+	rendered, err := RenderBody(rawBody, mimeType, inline, h1Style, h2Style, bodyStyle, RenderOptions{
+		DisableImages:     disableImages,
+		AllowRemoteImages: allowRemoteImages,
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	text, placements := rendered.Finalize(rendered.Text)
+	return text, placements, nil
+}
+
+// ProcessBody takes a raw email body, decodes it, and formats it as plain
+// text with terminal hyperlinks.
+// mimeType is "text/html", "text/plain", or "" (unknown — falls back to legacy markdown→HTML pre-pass).
+func ProcessBody(rawBody, mimeType string, h1Style, h2Style, bodyStyle lipgloss.Style, disableImages bool) (string, []ImagePlacement, error) {
+	return ProcessBodyWithInlineRemote(rawBody, mimeType, nil, h1Style, h2Style, bodyStyle, disableImages, false)
+}
+
+// RenderOptions controls how RenderBody treats images.
+type RenderOptions struct {
+	DisableImages     bool
+	AllowRemoteImages bool
+	// Bounds limits inline images, in cells. Zero values derive limits from
+	// the terminal size; views should pass their own viewport size.
+	Bounds ImageBounds
+}
+
+// RenderedBody is a processed email body that still carries image markers.
+// Wrap Text to the display width first and then call Finalize, so image
+// positions are computed against the final line layout.
+type RenderedBody struct {
+	Text   string
+	images map[int]*preparedImage
+}
+
+// HasImages reports whether the body contains rendered inline images.
+func (r *RenderedBody) HasImages() bool {
+	return r != nil && len(r.images) > 0
+}
+
+// RenderBody renders rawBody to styled terminal text, keeping image markers
+// in place. See RenderedBody.Finalize.
+func RenderBody(rawBody, mimeType string, inline []InlineImage, h1Style, h2Style, bodyStyle lipgloss.Style, opts RenderOptions) (*RenderedBody, error) {
 	inlineMap := make(map[string]string, len(inline))
 	for _, img := range inline {
 		cid := strings.TrimSpace(img.CID)
@@ -644,17 +621,57 @@ func ProcessBodyWithInlineRemote(rawBody, mimeType string, inline []InlineImage,
 		}
 		inlineMap[cid] = img.Base64
 	}
-	return processBody(rawBody, mimeType, inlineMap, h1Style, h2Style, bodyStyle, disableImages, allowRemoteImages)
+	return processBody(rawBody, mimeType, inlineMap, h1Style, h2Style, bodyStyle, opts)
 }
 
-// ProcessBody takes a raw email body, decodes it, and formats it as plain
-// text with terminal hyperlinks.
-// mimeType is "text/html", "text/plain", or "" (unknown — falls back to legacy markdown→HTML pre-pass).
-func ProcessBody(rawBody, mimeType string, h1Style, h2Style, bodyStyle lipgloss.Style, disableImages bool) (string, []ImagePlacement, error) {
-	return processBody(rawBody, mimeType, nil, h1Style, h2Style, bodyStyle, disableImages, false)
+// Finalize removes the image markers from text, which must be derived from
+// r.Text (for example by word-wrapping it). Half-block images are drawn into
+// the text; Kitty and Sixel images are returned as placements whose Line is
+// relative to the returned text.
+func (r *RenderedBody) Finalize(text string) (string, []ImagePlacement) {
+	if r == nil || !strings.Contains(text, imageMarkerPrefix) {
+		return text, nil
+	}
+	lines := strings.Split(text, "\n")
+	var placements []ImagePlacement
+	for i := 0; i < len(lines); i++ {
+		match := imageMarkerRegex.FindStringSubmatchIndex(lines[i])
+		if match == nil {
+			continue
+		}
+		idx, _ := strconv.Atoi(lines[i][match[2]:match[3]])
+		lines[i] = lines[i][:match[0]] + lines[i][match[1]:]
+		img := r.images[idx]
+		if img == nil {
+			continue
+		}
+		switch img.protocol {
+		case ImageProtocolHalfBlock:
+			for j, row := range strings.Split(img.data, "\n") {
+				if i+j >= len(lines) {
+					lines = append(lines, row)
+					continue
+				}
+				lines[i+j] = row
+			}
+		case ImageProtocolKitty, ImageProtocolSixel:
+			placements = append(placements, ImagePlacement{
+				Line:     i,
+				Rows:     img.rows,
+				Cols:     img.cols,
+				Encoded:  img.data,
+				ID:       img.id,
+				Protocol: img.protocol,
+				PixelW:   img.pixelW,
+				PixelH:   img.pixelH,
+			})
+		case ImageProtocolNone:
+		}
+	}
+	return strings.Join(lines, "\n"), placements
 }
 
-func processBody(rawBody, mimeType string, inline map[string]string, h1Style, h2Style, bodyStyle lipgloss.Style, disableImages, allowRemoteImages bool) (string, []ImagePlacement, error) {
+func processBody(rawBody, mimeType string, inline map[string]string, h1Style, h2Style, bodyStyle lipgloss.Style, opts RenderOptions) (*RenderedBody, error) {
 	decodedBody, err := decodeQuotedPrintable(rawBody)
 	if err != nil {
 		decodedBody = rawBody
@@ -672,9 +689,9 @@ func processBody(rawBody, mimeType string, inline map[string]string, h1Style, h2
 	}
 	htmlBody = htmlSanitizer.SanitizeBytes(htmlBody)
 
-	result, placements, err := renderHTMLToText(htmlBody, inline, h1Style, h2Style, disableImages, allowRemoteImages)
+	result, images, err := renderHTMLToText(htmlBody, inline, h1Style, h2Style, opts)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	// Some real-world HTML emails (newsletters with table-only layouts and no
@@ -684,33 +701,36 @@ func processBody(rawBody, mimeType string, inline map[string]string, h1Style, h2
 	// HTML path produces nothing.
 	if directHTML && strings.TrimSpace(result) == "" {
 		fallbackHTML := htmlSanitizer.SanitizeBytes(markdownToHTML([]byte(decodedBody)))
-		result, placements, err = renderHTMLToText(fallbackHTML, inline, h1Style, h2Style, disableImages, allowRemoteImages)
+		result, images, err = renderHTMLToText(fallbackHTML, inline, h1Style, h2Style, opts)
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 	}
 
 	result = styleQuotedReplies(result)
-	return bodyStyle.Render(result), placements, nil
+	return &RenderedBody{Text: bodyStyle.Render(result), images: images}, nil
 }
 
-type pendingImage struct {
-	index   int
-	encoded string
-	rows    int
-}
+// imageMarkerPrefix starts the marker line that records where an inline
+// image begins. Markers survive wrapping and are removed by Finalize.
+const imageMarkerPrefix = "[[MATCHA_IMG:"
 
-func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Style lipgloss.Style, disableImages, allowRemoteImages bool) (string, []ImagePlacement, error) {
+var imageMarkerRegex = regexp.MustCompile(`\[\[MATCHA_IMG:(\d+)\]\]`)
+
+func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Style lipgloss.Style, opts RenderOptions) (string, map[int]*preparedImage, error) {
 	// Parse HTML into structured elements using C parser.
 	elements, ok := clib.HTMLToElements(string(htmlBody))
 	if !ok {
 		return "", nil, fmt.Errorf("could not parse email body")
 	}
 
-	// Process elements: apply styles and collect image placements.
+	// Process elements: apply styles and collect image markers.
 	var text strings.Builder
-	var imgIndex int
-	var pendingImages []pendingImage
+	images := make(map[int]*preparedImage)
+	protocol := ImageProtocolNone
+	if !opts.DisableImages {
+		protocol = ActiveImageProtocol()
+	}
 
 	onWroteRegex := regexp.MustCompile(`On\s+(.+?),\s+(.+?)\s+wrote:`)
 
@@ -751,7 +771,7 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 			}
 
 		case clib.HElemImage:
-			renderImageElement(&text, &imgIndex, &pendingImages, elem, inline, disableImages, allowRemoteImages)
+			renderImageElement(&text, images, elem, inline, protocol, opts)
 
 		case clib.HElemTable:
 			headerRows := 0
@@ -797,34 +817,33 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 	// Now expand the image row placeholders to actual newlines
 	result = expandImageRowPlaceholders(result)
 
-	placements, result := buildImagePlacements(result, pendingImages)
-
-	return result, placements, nil
+	return result, images, nil
 }
 
-func renderImageElement(text *strings.Builder, imgIndex *int, pendingImages *[]pendingImage, elem clib.HTMLElement, inline map[string]string, disableImages, allowRemoteImages bool) {
+func renderImageElement(text *strings.Builder, images map[int]*preparedImage, elem clib.HTMLElement, inline map[string]string, protocol ImageProtocol, opts RenderOptions) {
 	src := strings.TrimSpace(elem.Attr1)
 	alt := stripTerminalControls(elem.Attr2)
 	if hasTerminalControls(src) {
 		return
 	}
 
-	if !disableImages && imageProtocolSupported() && (allowRemoteImages || !isRemoteImageURL(src)) {
+	if protocol != ImageProtocolNone && (opts.AllowRemoteImages || !isRemoteImageURL(src)) {
 		payload := resolveImagePayload(src, inline)
 
 		if payload != "" {
-			encoded, rows := prerenderImage(payload)
-			if encoded == "" {
-				debugImageProtocol("prerender failed for src=%s", src)
+			img, err := prepareImage(payload, protocol, opts.Bounds)
+			if err != nil {
+				debugImageProtocol("prepare failed for src=%s: %v", src, err)
 			} else {
-				debugImageProtocol("collected image placement src=%s rows=%d", src, rows)
+				debugImageProtocol("collected image src=%s protocol=%s cols=%d rows=%d", src, protocol, img.cols, img.rows)
 
-				idx := *imgIndex
-				*imgIndex++
-				*pendingImages = append(*pendingImages, pendingImage{idx, encoded, rows})
+				idx := len(images)
+				images[idx] = img
 
-				fmt.Fprintf(text, "\n[[MATCHA_IMG:%d]]", idx)
-				fmt.Fprintf(text, "\n%s%d%s\n", imageRowPlaceholderPrefix, rows, imageRowPlaceholderSuffix)
+				// The marker line is the image's first row; the placeholder
+				// expands to the remaining rows plus one blank spacer line.
+				fmt.Fprintf(text, "\n%s%d]]", imageMarkerPrefix, idx)
+				fmt.Fprintf(text, "\n%s%d%s\n", imageRowPlaceholderPrefix, img.rows, imageRowPlaceholderSuffix)
 				return
 			}
 		}
@@ -833,39 +852,26 @@ func renderImageElement(text *strings.Builder, imgIndex *int, pendingImages *[]p
 	if isRemoteImageURL(src) && hyperlinkSupported() {
 		fmt.Fprintf(text, "\n %s \n", hyperlink(src, fmt.Sprintf("[Click here to view image: %s]", alt)))
 	} else {
-		fmt.Fprintf(text, "\n %s \n", linkStyle().Render(fmt.Sprintf("[Image: %s, %s]", alt, src)))
+		fmt.Fprintf(text, "\n %s \n", linkStyle().Render(fmt.Sprintf("[Image: %s, %s]", alt, imageSourceLabel(src))))
 	}
 }
 
-func buildImagePlacements(result string, pendingImages []pendingImage) ([]ImagePlacement, string) {
-	if len(pendingImages) == 0 {
-		return nil, result
-	}
-
-	var placements []ImagePlacement
-	lines := strings.Split(result, "\n")
-	imgMarkerRegex := regexp.MustCompile(`\[\[MATCHA_IMG:(\d+)\]\]`)
-	for lineNum, line := range lines {
-		if matches := imgMarkerRegex.FindStringSubmatch(line); matches != nil {
-			var idx int
-			fmt.Sscanf(matches[1], "%d", &idx) //nolint:errcheck,gosec
-			for _, pi := range pendingImages {
-				if pi.index == idx {
-					placements = append(placements, ImagePlacement{
-						Line:    lineNum,
-						Encoded: pi.encoded,
-						Rows:    pi.rows,
-					})
-					break
-				}
-			}
+// imageSourceLabel describes an image source for the text fallback. Inline
+// data: URIs carry the whole image as base64, which must never be printed
+// into the body, so only their media type is shown; long URLs are shortened.
+func imageSourceLabel(src string) string {
+	if strings.HasPrefix(strings.ToLower(src), "data:") {
+		rest := src[len("data:"):]
+		if end := strings.IndexAny(rest, ";,"); end >= 0 {
+			rest = rest[:end]
 		}
+		return "data:" + ansi.Truncate(rest, 40, "…")
 	}
-
-	// Remove the image markers from the text (leave the spacing)
-	result = imgMarkerRegex.ReplaceAllString(result, "")
-
-	return placements, result
+	const maxSourceLen = 80
+	if len(src) > maxSourceLen {
+		return ansi.Truncate(src, maxSourceLen, "…")
+	}
+	return src
 }
 
 func resolveImagePayload(src string, inline map[string]string) string {

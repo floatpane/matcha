@@ -115,6 +115,12 @@ away. The keys themselves still work even when they're not printed on the bar.
 
 The same key can appear in different areas without conflict — `d` is delete in both `inbox` and `email`, that's intentional. Conflicts only matter within one area.
 
+When the original email is shown next to a reply (`show_original_on_reply`), the
+composer keeps every printable key — including `[` and `]` — so typing can never
+trigger an action on the original message. Press `ctrl+]` (or click a pane) to
+move focus between the reply and the original; the original only scrolls and
+toggles images, and `esc` returns to the reply.
+
 ## Key syntax
 
 Standard [bubbletea](https://charm.land/bubbletea) key strings:
