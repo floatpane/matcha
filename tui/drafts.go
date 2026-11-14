@@ -121,6 +121,7 @@ func (m *Drafts) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.list.CursorDown()
 		case tea.MouseWheelUp:
 			m.list.CursorUp()
+		default:
 		}
 		return m, nil
 

@@ -164,6 +164,7 @@ func (m Marketplace) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.offset = m.cursor
 				}
 			}
+		default:
 		}
 		return m, nil
 

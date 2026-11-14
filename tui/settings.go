@@ -209,6 +209,7 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.menuCursor--
 					m.activeCategory = SettingsCategory(m.menuCursor)
 				}
+			default:
 			}
 		}
 		return m, tea.Batch(cmds...)

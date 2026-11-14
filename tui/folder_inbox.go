@@ -279,6 +279,7 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 				m.activeFolderIdx = (m.activeFolderIdx + 1) % len(m.folders)
 			case tea.MouseWheelUp:
 				m.activeFolderIdx = (m.activeFolderIdx - 1 + len(m.folders)) % len(m.folders)
+			default:
 			}
 			if len(m.folders) > 0 {
 				return m, m.switchFolder()

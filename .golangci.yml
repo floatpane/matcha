@@ -46,6 +46,8 @@ linters:
     - whitespace
 
   settings:
+    exhaustive:
+      default-signifies-exhaustive: true
     gocyclo:
       min-complexity: 30
     goconst:

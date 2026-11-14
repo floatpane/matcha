@@ -77,6 +77,7 @@ func (p *CommandPalette) Update(msg tea.Msg) tea.Cmd {
 			p.moveCursor(1)
 		case tea.MouseWheelUp:
 			p.moveCursor(-1)
+		default:
 		}
 		return nil
 	}

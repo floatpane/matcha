@@ -924,6 +924,7 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			m.list.CursorDown()
 		case tea.MouseWheelUp:
 			m.list.CursorUp()
+		default:
 		}
 		return m, nil
 

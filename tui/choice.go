@@ -112,6 +112,7 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = (m.cursor + 1) % len(m.choices)
 		case tea.MouseWheelUp:
 			m.cursor = (m.cursor - 1 + len(m.choices)) % len(m.choices)
+		default:
 		}
 		return m, nil
 
