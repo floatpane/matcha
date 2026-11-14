@@ -45,7 +45,6 @@ func RebuildStyles() {
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(t.Accent)
 	menuItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(t.SubtleText)
 	menuSelectedStyle = lipgloss.NewStyle().PaddingLeft(2).Background(t.Accent).Foreground(t.Contrast).Bold(true)
-	menuSectionStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(t.MutedText)
 	menuHintStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(t.SubtleText)
 	menuNoticeStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(t.Warning)
 
