@@ -19,7 +19,6 @@ var (
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("42"))
 	menuItemStyle     = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("245"))
 	menuSelectedStyle = lipgloss.NewStyle().PaddingLeft(2).Background(lipgloss.Color("42")).Foreground(lipgloss.Color("#000000")).Bold(true)
-	menuSectionStyle  = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("241"))
 	menuHintStyle     = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("245"))
 	menuNoticeStyle   = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("214"))
 )
