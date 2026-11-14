@@ -880,8 +880,7 @@ func (m *FolderInbox) renderSidebar() string {
 	if isUIVisible("header") {
 		title := t("folder_inbox.folders_title")
 		subtitle := ""
-		if len(m.accounts) > 0 {
-			acc := m.accounts[0]
+		if acc, ok := m.sidebarAccount(); ok {
 			switch {
 			case acc.Name != "":
 				title = acc.Name
@@ -904,6 +903,25 @@ func (m *FolderInbox) renderSidebar() string {
 	}
 
 	return sidebarStyle.Height(m.availableHeight()).Render(b.String())
+}
+
+// sidebarAccount returns the account whose header the sidebar should show. It
+// follows the inbox's active account tab; the "ALL" tab has no single account,
+// so the header falls back to the generic folders title.
+func (m *FolderInbox) sidebarAccount() (config.Account, bool) {
+	if len(m.accounts) == 0 {
+		return config.Account{}, false
+	}
+	id := m.inbox.currentAccountID
+	if id == "" && len(m.accounts) > 1 {
+		return config.Account{}, false
+	}
+	for _, acc := range m.accounts {
+		if acc.ID == id {
+			return acc, true
+		}
+	}
+	return m.accounts[0], true
 }
 
 // renderFolderRow draws one sidebar row: icon, name, and a right-aligned
