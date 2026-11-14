@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -53,6 +54,12 @@ const goosDarwin = "darwin"
 
 // goosLinux is the runtime.GOOS value for Linux.
 const goosLinux = "linux"
+
+// keyCtrlC is the key string for ctrl+c, which always quits.
+const keyCtrlC = "ctrl+c"
+
+// keySpace is the key string for the space bar.
+const keySpace = "space"
 
 type logEntryMsg struct {
 	entry logging.Entry
@@ -210,6 +217,88 @@ func (m *Model) newSettings() *tui.Settings {
 		s.SetPlugins(m.plugins)
 	}
 	return s
+}
+
+// isTypeableKey reports whether k is a key that types text: a single
+// character or "space". Names like "esc" and modified or function keys
+// ("ctrl+q", "f10") are not typeable.
+func isTypeableKey(k string) bool {
+	return k == keySpace || utf8.RuneCountInString(k) == 1
+}
+
+// quitKeyAllowed reports whether a typeable configured quit key may quit on
+// the given screen. Screens with text inputs are excluded so typing the key
+// doesn't quit. Inbox and FolderInbox allow it only while no search, filter or
+// folder-jump filter is active. Composer, ContactEditor and MailingListEditor
+// already quit on the key in their own Update, so they are allowed here to keep
+// the draft save and service shutdown below.
+func quitKeyAllowed(current tea.Model) bool {
+	switch v := current.(type) {
+	case tui.Choice, tui.Status, tui.Marketplace, *tui.EmailView, *tui.Drafts, *tui.SetupGuide,
+		*tui.Composer, *tui.ContactEditor, *tui.MailingListEditor:
+		return true
+	case *tui.Inbox:
+		return !v.IsSearchActive() && !v.IsFilterActive()
+	case *tui.FolderInbox:
+		if v.IsJumpFilterActive() {
+			return false
+		}
+		if inbox := v.GetInbox(); inbox != nil {
+			return !inbox.IsSearchActive() && !inbox.IsFilterActive()
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+// cancelKeyAllowed reports whether a typeable configured cancel key may act on
+// the given screen. Login and the file picker take typed text.
+func cancelKeyAllowed(current tea.Model) bool {
+	switch current.(type) {
+	case *tui.Login, *tui.FilePicker:
+		return false
+	}
+	return true
+}
+
+// isQuitKey reports whether key quits the app: ctrl+c always, or the
+// configured quit key. A typeable configured key (e.g. "q") only quits when
+// screenOK, the pre-Update result of quitKeyAllowed, is true.
+func isQuitKey(key string, screenOK bool) bool {
+	if key == keyCtrlC {
+		return true
+	}
+	q := config.Keybinds.Global.Quit
+	if q == "" || key != q {
+		return false
+	}
+	return !isTypeableKey(key) || screenOK
+}
+
+// isCancelKey reports whether key is the configured cancel/back key. A
+// typeable key only counts when screenOK (see cancelKeyAllowed) is true.
+func isCancelKey(key string, screenOK bool) bool {
+	c := config.Keybinds.Global.Cancel
+	if c == "" || key != c {
+		return false
+	}
+	return !isTypeableKey(key) || screenOK
+}
+
+// isPaletteQuitKey is isQuitKey for the command palette, whose search filter
+// takes typed text. A configured quit key quits there only if it can't be
+// typed: a modified key ("ctrl+q") or a function key ("f10"). Plain
+// characters and names like "space" or "enter" go to the filter/list instead.
+func isPaletteQuitKey(key string) bool {
+	if key == keyCtrlC {
+		return true
+	}
+	q := config.Keybinds.Global.Quit
+	if q == "" || key != q {
+		return false
+	}
+	return strings.Contains(q, "+") || (len(q) > 1 && q[0] == 'f' && strings.Trim(q[1:], "0123456789") == "")
 }
 
 func getCurrentComposer(current tea.Model) *tui.Composer {
@@ -876,14 +965,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	if m.palette.IsOpen() {
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
-			switch keyMsg.String() {
-			case "ctrl+c":
+			k := keyMsg.String()
+			switch {
+			case isPaletteQuitKey(k):
 				m.shutdownService()
 				return m, tea.Quit
-			case config.Keybinds.Global.Cancel:
+			case k == config.Keybinds.Global.Cancel:
 				m.palette.Close()
 				return m, nil
-			case "enter":
+			case k == "enter":
 				actionCmd := m.palette.HandleKey(keyMsg)
 				m.palette.Close()
 				return m, actionCmd
@@ -914,6 +1004,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 			}
 			splitWasOpen = current.HasSplitPreview()
 		}
+	}
+
+	// Judge the screen before it handles the key: Update may close an
+	// overlay or switch screens.
+	quitScreenOK, cancelScreenOK := true, true
+	if _, ok := msg.(tea.KeyPressMsg); ok {
+		quitScreenOK = quitKeyAllowed(m.current)
+		cancelScreenOK = cancelKeyAllowed(m.current)
 	}
 
 	m.current, cmd = m.current.Update(msg)
@@ -959,14 +1057,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				}
 			}
 		}
-		if msg.String() == "ctrl+c" {
+		if isQuitKey(msg.String(), quitScreenOK) {
 			if composer := getCurrentComposer(m.current); composer != nil && composer.HasContent() {
 				m.saveDraftOnQuit(composer)
 			}
 			m.shutdownService()
 			return m, tea.Quit
 		}
-		if msg.String() == "esc" {
+		if isCancelKey(msg.String(), cancelScreenOK) {
 			switch m.current.(type) {
 			case *tui.FilePicker:
 				return m, func() tea.Msg { return tui.CancelFilePickerMsg{} }
