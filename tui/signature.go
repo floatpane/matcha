@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -62,14 +64,22 @@ func (m *SignatureEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keyCtrlC:
 			return m, tea.Quit
 		case "esc":
-			// Save and go back to settings
+			// Save, then go back to settings. A failed save is reported and
+			// keeps the editor open so the text isn't lost.
 			signature := m.textarea.Value()
-			if m.accountID != "" {
-				go config.SaveSignatureForAccount(m.accountID, signature) //nolint:errcheck
-			} else {
-				go config.SaveSignature(signature) //nolint:errcheck
+			accountID := m.accountID
+			return m, func() tea.Msg {
+				var err error
+				if accountID != "" {
+					err = config.SaveSignatureForAccount(accountID, signature)
+				} else {
+					err = config.SaveSignature(signature)
+				}
+				if err != nil {
+					return NotifyMsg{Message: fmt.Sprintf("Could not save signature: %v", err)}
+				}
+				return GoToSettingsMsg{}
 			}
-			return m, func() tea.Msg { return GoToSettingsMsg{} }
 		}
 	}
 

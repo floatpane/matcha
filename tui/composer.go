@@ -5,6 +5,7 @@ import (
 	"net/mail"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -12,6 +13,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	overlay "github.com/floatpane/bubble-overlay"
 	shortcode "github.com/floatpane/go-emoji-shortcode"
 	"github.com/floatpane/matcha/config"
@@ -63,6 +65,162 @@ const (
 	focusSend
 )
 
+// keySpaceBar is how Bubble Tea v2 reports the space bar in KeyPressMsg.String().
+const keySpaceBar = "space"
+
+// composerHit describes what a mouse click on part of one rendered row
+// targets. Hits are recorded while rendering, so hit-testing always matches
+// the frame that is actually on screen.
+type composerHit struct {
+	minX, maxX int // clickable column span [minX, maxX)
+	focus      int // focus target, or -1 when the span is inert
+	attachment int // attachment index, or -1
+	suggestion int // contact suggestion index, or -1
+	account    int // account picker index, or -1
+}
+
+// composerBlock is one rendered piece of the composer form together with the
+// focus target its rows map to.
+type composerBlock struct {
+	text       string
+	focus      int // -1 when the rows are inert
+	attachment int // attachment index for attachment rows, -1 otherwise
+}
+
+func composerInert(text string) composerBlock {
+	return composerBlock{text: text, focus: -1, attachment: -1}
+}
+
+func composerField(text string, focus int) composerBlock {
+	return composerBlock{text: text, focus: focus, attachment: -1}
+}
+
+// composerFrame accumulates rendered rows together with their mouse targets.
+type composerFrame struct {
+	lines []string
+	hits  [][]composerHit
+}
+
+func (f *composerFrame) add(b composerBlock) {
+	for _, line := range strings.Split(b.text, "\n") {
+		f.lines = append(f.lines, line)
+		f.hits = append(f.hits, []composerHit{{
+			maxX: lipgloss.Width(line), focus: b.focus, attachment: b.attachment,
+			suggestion: -1, account: -1,
+		}})
+	}
+}
+
+// composerFit tracks which optional rows of the form are shown and how tall
+// the body and signature editors are while the layout is squeezed to fit.
+type composerFit struct {
+	bodyH, sigH                            int
+	showSig, showTip, attachGap, buttonGap bool
+	keepSig                                bool // the signature is focused, so it must stay visible
+}
+
+// rows returns the total rendered height for the given number of rows that
+// are always shown.
+func (f composerFit) rows(fixed int) int {
+	n := fixed + f.bodyH
+	for _, on := range []bool{f.showTip, f.attachGap, f.buttonGap} {
+		if on {
+			n++
+		}
+	}
+	if f.showSig {
+		n += 1 + f.sigH // label + editor
+	}
+	return n
+}
+
+// shrink frees one row, returning false when nothing is left to give up.
+func (f *composerFit) shrink() bool {
+	switch {
+	case f.bodyH > 3:
+		f.bodyH--
+	case f.showSig && f.sigH > 1:
+		f.sigH--
+	case f.showTip:
+		f.showTip = false
+	case f.buttonGap:
+		f.buttonGap = false
+	case f.attachGap:
+		f.attachGap = false
+	case f.showSig && !f.keepSig:
+		f.showSig = false
+	case f.bodyH > 1:
+		f.bodyH--
+	default:
+		return false
+	}
+	return true
+}
+
+// splitComposerHeights returns the preferred body and signature heights for
+// the rows left over by the default layout.
+func splitComposerHeights(avail int) (bodyH, sigH int) {
+	return max(avail*55/100, 3), max(avail*15/100, 2)
+}
+
+// truncateLines clips every line of s to at most w cells (no-op when w <= 0).
+func truncateLines(s string, w int) string {
+	if w <= 0 {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		if lipgloss.Width(l) > w {
+			lines[i] = ansi.Truncate(l, w, "…")
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// clampRendered guarantees a rendered view never exceeds w columns or h rows
+// (a non-positive limit is ignored).
+func clampRendered(s string, w, h int) string {
+	lines := strings.Split(s, "\n")
+	if h > 0 && len(lines) > h {
+		lines = lines[:h]
+	}
+	if w > 0 {
+		for i, l := range lines {
+			if lipgloss.Width(l) > w {
+				lines[i] = ansi.Truncate(l, w, "")
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// centerInArea centers block in a w×h area without ever growing the result
+// beyond it, and returns the block's top-left offset within the area.
+func centerInArea(block string, w, h int) (view string, top, left int) {
+	if w <= 0 || h <= 0 {
+		return block, 0, 0
+	}
+	lines := strings.Split(block, "\n")
+	bw := 0
+	for _, l := range lines {
+		bw = max(bw, lipgloss.Width(l))
+	}
+	top = max(0, (h-len(lines))/2)
+	left = max(0, (w-bw)/2)
+	pad := strings.Repeat(" ", left)
+	out := make([]string, 0, h)
+	for range top {
+		out = append(out, "")
+	}
+	for _, l := range lines {
+		out = append(out, pad+l)
+	}
+	for len(out) < h {
+		out = append(out, "")
+	}
+	return clampRendered(strings.Join(out, "\n"), w, h), top, left
+}
+
 // Composer model holds the state of the email composition UI.
 type Composer struct {
 	focusIndex       int
@@ -89,10 +247,16 @@ type Composer struct {
 	hideTips         bool
 
 	// Multi-account support
-	accounts           []config.Account
-	selectedAccountIdx int
-	showAccountPicker  bool
-	fromInput          textinput.Model // editable From when account is catch-all
+	accounts            []config.Account
+	selectedAccountIdx  int
+	showAccountPicker   bool
+	accountPickerCursor int             // highlighted picker row; applied on enter/click, dropped on esc
+	fromInput           textinput.Model // editable From when account is catch-all
+
+	// Mouse hit map of the last rendered frame (one entry per row, relative to
+	// the composer's top-left corner) and the row the body editor starts on.
+	rowHits [][]composerHit
+	bodyRow int
 
 	// Contact suggestions
 	suggestions        []config.Contact
@@ -146,7 +310,8 @@ type Composer struct {
 	disableSpellSuggestions bool
 
 	// WKD key download confirmation
-	wkdConfirmRecipients []string // recipients missing local keys, awaiting confirmation
+	wkdConfirmRecipients  []string // recipients missing local keys, awaiting confirmation
+	enablePGPAfterInstall bool     // turn PGP encryption on once the confirmed keys are installed
 
 	// PGP keys discovered for recipients (local or WKD). Used to decide when to
 	// show the PGP encryption toggle.
@@ -421,31 +586,42 @@ type pgpKeyFoundMsg struct {
 	entity interface{}
 }
 
+// pgpKeyInstalledMsg reports the outcome of a confirmed WKD key download.
+type pgpKeyInstalledMsg struct {
+	email  string
+	ok     bool
+	notice tea.Msg // notification to surface to the user
+}
+
 func (m *Composer) installPGPKeyCmd(email string) tea.Cmd {
 	return func() tea.Msg {
 		cfgDir, err := config.GetConfigDir()
 		if err != nil {
-			return NotifyMsg{Message: "PGP: could not determine config directory"}
+			return pgpKeyInstalledMsg{email: email, notice: NotifyMsg{Message: "PGP: could not determine config directory"}}
 		}
 		pgpDir := cfgDir + "/pgp"
 		entity, err := pgp.LookupWKD(email)
 		if err != nil {
-			return NotifyMsg{Message: fmt.Sprintf("PGP: could not download key for %s", email)}
+			return pgpKeyInstalledMsg{email: email, notice: NotifyMsg{Message: fmt.Sprintf("PGP: could not download key for %s", email)}}
 		}
 		if err := pgp.CacheWKDKey(pgpDir, email, entity); err != nil {
-			return NotifyMsg{Message: fmt.Sprintf("PGP: could not save key for %s", email)}
+			return pgpKeyInstalledMsg{email: email, notice: NotifyMsg{Message: fmt.Sprintf("PGP: could not save key for %s", email)}}
 		}
-		return InfoNotifyMsg{Message: fmt.Sprintf("PGP key downloaded for %s", email), Duration: 2}
+		return pgpKeyInstalledMsg{email: email, ok: true, notice: InfoNotifyMsg{Message: fmt.Sprintf("PGP key downloaded for %s", email), Duration: 2}}
 	}
 }
 
+// visibleCryptoToggles lists the crypto toggles shown for the current
+// account and recipients, in display order. An enabled encryption toggle stays
+// visible even when it no longer applies (e.g. the recipient with a key was
+// removed), so the user can always see it and turn it off.
 func (m *Composer) visibleCryptoToggles() []int {
 	selAcc := m.getSelectedAccount()
 	hasSMIME := pgp.HasSMIMESetup(selAcc)
 	hasPGP := pgp.HasPGPSetup(selAcc)
 
 	var toggles []int
-	if hasSMIME && m.hasSMIMECertForAnyRecipient() {
+	if m.encryptSMIME || (hasSMIME && m.hasSMIMECertForAnyRecipient()) {
 		toggles = append(toggles, focusEncryptSMIME)
 	}
 	if hasSMIME {
@@ -454,10 +630,18 @@ func (m *Composer) visibleCryptoToggles() []int {
 	if hasPGP {
 		toggles = append(toggles, focusSignPGP)
 	}
-	if hasPGP && m.hasPGPKeyAvailable() {
+	if m.encryptPGP || (hasPGP && m.hasPGPKeyAvailable()) {
 		toggles = append(toggles, focusEncryptPGP)
 	}
 	return toggles
+}
+
+// ccBccVisible reports whether the Cc/Bcc rows are shown. They are always
+// shown when they hold recipients, so nobody is ever mailed invisibly.
+func (m *Composer) ccBccVisible() bool {
+	return m.showCcBcc ||
+		strings.TrimSpace(m.ccInput.Value()) != "" ||
+		strings.TrimSpace(m.bccInput.Value()) != ""
 }
 
 func (m *Composer) orderedFocusIndices() []int {
@@ -472,7 +656,7 @@ func (m *Composer) orderedFocusIndices() []int {
 		focusFrom,
 		focusTo,
 	)
-	if m.showCcBcc {
+	if m.ccBccVisible() {
 		indices = append(indices, focusCc, focusBcc)
 	}
 	indices = append(indices,
@@ -643,10 +827,11 @@ func (m *Composer) updateSpellSuggestions() {
 	for start < end && !isLetter(lineRunes[start]) {
 		start++
 	}
-	// Trim trailing connectors so we don't suggest replacements while the
-	// user is still mid-apostrophe.
-	for end > start && !isLetter(lineRunes[end-1]) {
-		end--
+	// Don't suggest replacements while the user is still mid-apostrophe or
+	// mid-hyphen: the word isn't finished, and accepting requires the cursor
+	// to sit right at the end of the word.
+	if end > start && !isLetter(lineRunes[end-1]) {
+		return
 	}
 	if end-start < 2 {
 		return
@@ -762,7 +947,9 @@ func (m *Composer) acceptEmojiSuggestion() {
 	row := m.bodyInput.Line()
 	col := m.bodyInput.Column()
 	lines := strings.Split(m.bodyInput.Value(), "\n")
-	if row != m.emojiShortcodeLine || row >= len(lines) {
+	// The offsets were recorded when the popup opened; if the body changed
+	// since (e.g. via the external editor) they may no longer fit the line.
+	if row != m.emojiShortcodeLine || row >= len(lines) || m.emojiShortcodeEnd > len(lines[row]) {
 		m.emojiShow = false
 		m.emojiSuggestions = nil
 		return
@@ -814,7 +1001,9 @@ func (m *Composer) acceptSpellSuggestion() {
 	row := m.bodyInput.Line()
 	col := m.bodyInput.Column()
 	lines := strings.Split(m.bodyInput.Value(), "\n")
-	if row != m.spellWordOnLine || row >= len(lines) {
+	// The offsets were recorded when the popup opened; if the body changed
+	// since (e.g. via the external editor) they may no longer fit the line.
+	if row != m.spellWordOnLine || row >= len(lines) || m.spellWordLineEnd > len(lines[row]) {
 		m.spellShow = false
 		m.spellSuggestions = nil
 		return
@@ -921,11 +1110,13 @@ func suggestionDisplay(s config.Contact, suggestionWidth int) string {
 	return display
 }
 
+// suggestionDisplayWidth is the text width available to a contact suggestion
+// inside the suggestion box (border, padding and "> " marker take 6 cells).
 func suggestionDisplayWidth(width int) int {
-	if width > 12 {
-		return width - 6
+	if width <= 0 {
+		return 40
 	}
-	return 40
+	return max(width-6, 1)
 }
 
 func truncateSuggestionDisplay(s string, maxLen int) string {
@@ -954,6 +1145,12 @@ func (m *Composer) setFocusTo(focus int) tea.Cmd {
 	m.signatureInput.Blur()
 	m.spellShow = false
 	m.spellSuggestions = nil
+	if focus != focusTo {
+		// Contact suggestions belong to the To field; leaving it must not
+		// leave them armed (Enter would otherwise rewrite To).
+		m.showSuggestions = false
+		m.suggestions = nil
+	}
 	m.focusIndex = focus
 	switch focus {
 	case focusFrom:
@@ -982,69 +1179,31 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	switch msg := msg.(type) {
 	case ToggleCcBccMsg:
-		m.ToggleCcBcc()
-		return m, nil
+		return m, m.toggleCcBcc()
 
 	case tea.MouseClickMsg:
-		if msg.Button == tea.MouseLeft && !m.confirmingExit && !m.showAccountPicker && !m.showPluginPrompt {
-			bodyH := m.bodyInput.Height()
-			sigH := m.signatureInput.Height()
-			var newFocus int
-			ccBccOffset := 0
-			if m.showCcBcc {
-				ccBccOffset = 2
-			}
-			switch {
-			case msg.Y == 1:
-				newFocus = focusFrom
-			case msg.Y == 2:
-				newFocus = focusTo
-			case msg.Y == 3 && m.showCcBcc:
-				newFocus = focusCc
-			case msg.Y == 4 && m.showCcBcc:
-				newFocus = focusBcc
-			case msg.Y == 3+ccBccOffset:
-				newFocus = focusSubject
-			case msg.Y >= 4+ccBccOffset && msg.Y < 4+ccBccOffset+bodyH:
-				newFocus = focusBody
-			case msg.Y >= 4+ccBccOffset+bodyH+1 && msg.Y < 4+ccBccOffset+bodyH+1+sigH:
-				newFocus = focusSignature
-			default:
-				return m, tea.Batch(cmds...)
-			}
-			cmds = append(cmds, m.setFocusTo(newFocus))
-		}
-		return m, tea.Batch(cmds...)
+		return m, m.handleMouseClick(msg)
+
+	case tea.MouseWheelMsg:
+		m.handleMouseWheel(msg)
+		return m, nil
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		inputWidth := msg.Width - 6
+		// Never hand the inputs a negative width: bubbles' textinput panics
+		// rendering its placeholder on tiny terminals otherwise.
+		inputWidth := max(msg.Width-6, 1)
 		m.toInput.SetWidth(inputWidth)
 		m.ccInput.SetWidth(inputWidth)
 		m.bccInput.SetWidth(inputWidth)
 		m.subjectInput.SetWidth(inputWidth)
 		m.bodyInput.SetWidth(inputWidth)
 		m.signatureInput.SetWidth(inputWidth)
-		if msg.Height > 0 {
-			// Fixed rows: title, from, to, cc, bcc, subject, sig label,
-			// attachment, smime, button, blank, tip, help = 13
-			const fixedRows = 13
-			available := msg.Height - fixedRows
-			if available < 6 {
-				available = 6
-			}
-			bodyHeight := (available * 55) / 100
-			sigHeight := (available * 15) / 100
-			if bodyHeight < 3 {
-				bodyHeight = 3
-			}
-			if sigHeight < 2 {
-				sigHeight = 2
-			}
-			m.bodyInput.SetHeight(bodyHeight)
-			m.signatureInput.SetHeight(sigHeight)
-		}
+		// Size the body and signature editors to the rows the rest of the
+		// form leaves free.
+		_ = m.renderForm()
+		return m, nil
 
 	case spellcheckReadyMsg:
 		if msg.checker != nil {
@@ -1064,364 +1223,16 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}
 		return m, nil
 
+	case pgpKeyInstalledMsg:
+		return m, m.handleKeyInstalled(msg)
+
 	case FileSelectedMsg:
-		// Avoid duplicates and add all selected paths
-		for _, newPath := range msg.Paths {
-			exists := false
-			for _, p := range m.attachmentPaths {
-				if p == newPath {
-					exists = true
-					break
-				}
-			}
-			if !exists {
-				m.attachmentPaths = append(m.attachmentPaths, newPath)
-				m.attachmentNames[newPath] = formatAttachmentName(newPath)
-			}
-		}
-		m.clampAttachmentCursor()
+		m.addAttachments(msg.Paths)
 		return m, nil
 
 	case tea.KeyPressMsg:
-		// Handle contact suggestions mode
-		if m.showSuggestions && len(m.suggestions) > 0 {
-			switch msg.String() {
-			case "up", "ctrl+p":
-				if m.selectedSuggestion > 0 {
-					m.selectedSuggestion--
-				}
-				return m, nil
-			case keyDown, "ctrl+n":
-				if m.selectedSuggestion < len(m.suggestions)-1 {
-					m.selectedSuggestion++
-				}
-				return m, nil
-			case "tab", keyEnter:
-				// Select the suggestion
-				selected := m.suggestions[m.selectedSuggestion]
-
-				var newEmail string
-				switch {
-				case len(selected.Addresses) > 0:
-					// Mailing list: emit just the addresses to maintain valid email formatting
-					newEmail = strings.Join(selected.Addresses, ", ")
-				case selected.Name != "" && selected.Name != selected.Email:
-					newEmail = fmt.Sprintf("%s <%s>", selected.Name, selected.Email)
-				default:
-					newEmail = selected.Email
-				}
-
-				parts := strings.Split(m.toInput.Value(), ",")
-				if len(parts) > 0 {
-					if len(parts) == 1 {
-						parts[0] = newEmail
-					} else {
-						parts[len(parts)-1] = " " + newEmail
-					}
-				} else {
-					parts = []string{newEmail}
-				}
-
-				finalValue := strings.Join(parts, ",")
-				if !strings.HasSuffix(finalValue, ", ") {
-					finalValue += ", "
-				}
-
-				m.toInput.SetValue(finalValue)
-				m.toInput.SetCursor(len(finalValue))
-				m.toError = ""
-				m.lastToValue = m.toInput.Value()
-				m.showSuggestions = false
-				m.suggestions = nil
-				return m, nil
-			case "esc":
-				m.showSuggestions = false
-				m.suggestions = nil
-				return m, nil
-			}
-			// For prev-field key, close suggestions and let it fall through to normal handling
-			if msg.String() == config.Keybinds.Composer.PrevField {
-				m.showSuggestions = false
-				m.suggestions = nil
-			}
-		}
-
-		// Handle plugin prompt overlay
-		if m.showPluginPrompt {
-			switch msg.String() {
-			case keyEnter:
-				value := m.pluginPromptInput.Value()
-				m.showPluginPrompt = false
-				return m, func() tea.Msg { return PluginPromptSubmitMsg{Value: value} }
-			case "esc":
-				m.showPluginPrompt = false
-				return m, func() tea.Msg { return PluginPromptCancelMsg{} }
-			default:
-				m.pluginPromptInput, cmd = m.pluginPromptInput.Update(msg)
-				return m, cmd
-			}
-		}
-
-		// Handle account picker mode
-		if m.showAccountPicker {
-			switch msg.String() {
-			case "up", "k":
-				if m.selectedAccountIdx > 0 {
-					m.selectedAccountIdx--
-					m.updateSignature()
-					m.updatePGPDefaults()
-				}
-			case keyDown, "j":
-				if m.selectedAccountIdx < len(m.accounts)-1 {
-					m.selectedAccountIdx++
-					m.updateSignature()
-					m.updatePGPDefaults()
-				}
-			case keyEnter:
-				m.showAccountPicker = false
-			case "esc":
-				m.showAccountPicker = false
-			}
-			return m, nil
-		}
-
-		if m.confirmingExit {
-			switch msg.String() {
-			case "y", "Y":
-				return m, func() tea.Msg { return DiscardDraftMsg{ComposerState: m} }
-			case "n", "N", "esc":
-				m.confirmingExit = false
-				return m, nil
-			default:
-				return m, nil
-			}
-		}
-
-		if len(m.wkdConfirmRecipients) > 0 {
-			switch msg.String() {
-			case "y", "Y":
-				recipient := m.wkdConfirmRecipients[0]
-				m.wkdConfirmRecipients = nil
-				return m, m.installPGPKeyCmd(recipient)
-			case "n", "N", "esc":
-				m.wkdConfirmRecipients = nil
-				return m, nil
-			default:
-				return m, nil
-			}
-		}
-
-		// Spellcheck suggestion popup (only while body is focused).
-		if m.focusIndex == focusBody && m.spellShow && len(m.spellSuggestions) > 0 {
-			sk := config.Keybinds.Composer
-			switch msg.String() {
-			case sk.SpellPrev:
-				if m.spellSelected > 0 {
-					m.spellSelected--
-				}
-				return m, nil
-			case sk.SpellNext:
-				if m.spellSelected < len(m.spellSuggestions)-1 {
-					m.spellSelected++
-				}
-				return m, nil
-			case sk.SpellAccept:
-				m.acceptSpellSuggestion()
-				return m, nil
-			case sk.SpellDismiss, "esc":
-				m.spellShow = false
-				m.spellSuggestions = nil
-				return m, nil
-			}
-		}
-
-		// Emoji shortcode suggestion popup (only while body is focused).
-		if m.focusIndex == focusBody && m.emojiShow && len(m.emojiSuggestions) > 0 {
-			sk := config.Keybinds.Composer
-			switch msg.String() {
-			case sk.SpellPrev:
-				if m.emojiSelected > 0 {
-					m.emojiSelected--
-				}
-				return m, nil
-			case sk.SpellNext:
-				if m.emojiSelected < len(m.emojiSuggestions)-1 {
-					m.emojiSelected++
-				}
-				return m, nil
-			case sk.SpellAccept, "tab":
-				m.acceptEmojiSuggestion()
-				return m, nil
-			case sk.SpellDismiss, "esc":
-				m.emojiShow = false
-				m.emojiSuggestions = nil
-				return m, nil
-			}
-		}
-
-		kb := config.Keybinds
-		attachmentPathSize := len(m.attachmentPaths)
-		if m.focusIndex == focusAttachment && attachmentPathSize > 0 {
-			switch msg.String() {
-			case "up", kb.Global.NavUp:
-				m.attachmentCursor = (m.attachmentCursor - 1 + attachmentPathSize) % attachmentPathSize
-				return m, nil
-			case keyDown, kb.Global.NavDown:
-				m.attachmentCursor = (m.attachmentCursor + 1) % attachmentPathSize
-				return m, nil
-			}
-		}
-
-		switch msg.String() {
-		case kb.Global.Quit:
-			return m, tea.Quit
-		case kb.Composer.ExternalEditor:
-			return m, func() tea.Msg { return OpenEditorMsg{} }
-		case kb.Global.Cancel:
-			m.confirmingExit = true
-			return m, nil
-
-		case kb.Composer.NextField, kb.Composer.PrevField:
-			previousFocus := m.focusIndex
-			focusList := m.orderedFocusIndices()
-			if msg.String() == kb.Composer.PrevField {
-				m.retreatFocus(focusList)
-			} else {
-				m.advanceFocus(focusList)
-			}
-
-			if previousFocus == focusFrom {
-				m.validateFromField()
-			} else if previousFocus != m.focusIndex {
-				m.validateEmailField(previousFocus)
-			}
-
-			m.fromInput.Blur()
-			m.toInput.Blur()
-			m.ccInput.Blur()
-			m.bccInput.Blur()
-			m.subjectInput.Blur()
-			m.bodyInput.Blur()
-			m.signatureInput.Blur()
-			m.spellShow = false
-			m.spellSuggestions = nil
-
-			switch m.focusIndex {
-			case focusFrom:
-				if m.isCatchAllAccount() {
-					cmds = append(cmds, m.fromInput.Focus())
-				}
-			case focusTo:
-				cmds = append(cmds, m.toInput.Focus())
-			case focusCc:
-				cmds = append(cmds, m.ccInput.Focus())
-			case focusBcc:
-				cmds = append(cmds, m.bccInput.Focus())
-			case focusSubject:
-				cmds = append(cmds, m.subjectInput.Focus())
-			case focusBody:
-				cmds = append(cmds, m.bodyInput.Focus())
-				m.updateSpellSuggestions()
-				m.updateEmojiSuggestions()
-			case focusSignature:
-				cmds = append(cmds, m.signatureInput.Focus())
-			}
-			return m, tea.Batch(cmds...)
-
-		case kb.Composer.Delete:
-			if m.focusIndex == focusAttachment && len(m.attachmentPaths) > 0 {
-				m.removeSelectedAttachment()
-				return m, nil
-			}
-
-		case keyEnter, " ":
-			switch m.focusIndex {
-			case focusFrom:
-				if msg.String() == keyEnter && len(m.accounts) > 1 {
-					m.showAccountPicker = true
-					return m, nil
-				}
-				if m.isCatchAllAccount() && msg.String() == " " {
-					break
-				}
-				return m, nil
-			case focusAttachment:
-				if msg.String() == keyEnter {
-					return m, func() tea.Msg { return GoToFilePickerMsg{} }
-				}
-			case focusEncryptSMIME:
-				if msg.String() == keyEnter || msg.String() == " " {
-					m.encryptSMIME = !m.encryptSMIME
-				}
-				return m, nil
-
-			case focusSignSMIME:
-				if msg.String() == keyEnter || msg.String() == " " {
-					m.signSMIME = !m.signSMIME
-				}
-				return m, nil
-
-			case focusSignPGP:
-				if msg.String() == keyEnter || msg.String() == " " {
-					m.signPGP = !m.signPGP
-				}
-				return m, nil
-
-			case focusEncryptPGP:
-				if msg.String() == keyEnter || msg.String() == " " {
-					if !m.encryptPGP {
-						// Turning encryption ON — check for missing recipient keys
-						missing := m.missingRecipientKeys()
-						if len(missing) > 0 {
-							m.wkdConfirmRecipients = missing
-							return m, nil
-						}
-					}
-					m.encryptPGP = !m.encryptPGP
-				}
-				return m, nil
-
-			case focusSend:
-				if msg.String() == keyEnter {
-					if !m.canSendEmail() {
-						msg := t("composer.invalid_email_fields")
-						return m, func() tea.Msg { return NotifyMsg{Message: msg} }
-					}
-					if !m.hasAnyRecipient() {
-						msg := t("composer.recipient_required")
-						return m, func() tea.Msg { return NotifyMsg{Message: msg} }
-					}
-					acc := m.getSelectedAccount()
-					accountID := ""
-					if acc != nil {
-						accountID = acc.ID
-					}
-					fromOverride := ""
-					if m.isCatchAllAccount() {
-						fromOverride = m.fromInput.Value()
-					}
-					return m, func() tea.Msg {
-						return SendEmailMsg{
-							To:              m.toInput.Value(),
-							Cc:              m.ccInput.Value(),
-							Bcc:             m.bccInput.Value(),
-							Subject:         m.subjectInput.Value(),
-							Body:            m.bodyInput.Value(),
-							AttachmentPaths: m.attachmentPaths,
-							AccountID:       accountID,
-							FromOverride:    fromOverride,
-							QuotedText:      m.quotedText,
-							InReplyTo:       m.inReplyTo,
-							References:      m.references,
-							Signature:       m.signatureInput.Value(),
-							SignSMIME:       m.signSMIMEEnabled(),
-							EncryptSMIME:    m.encryptSMIME,
-							SignPGP:         m.signPGP,
-							EncryptPGP:      m.encryptPGP,
-						}
-					}
-				}
-			}
+		if handled, cmd := m.handleKeyPress(msg); handled {
+			return m, cmd
 		}
 	}
 
@@ -1516,331 +1327,511 @@ func (m *Composer) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	return m, tea.Batch(cmds...)
 }
 
-func (m *Composer) View() tea.View { //nolint:gocyclo
-	var composerView strings.Builder
-	var button string
-	ck := config.Keybinds.Composer
-
-	if m.focusIndex == focusSend {
-		button = focusedStyle.Render("[ " + t("composer.send") + " ]")
-	} else {
-		button = blurredStyle.Render("[ " + t("composer.send") + " ]")
+// addAttachments appends newly picked files, skipping ones already attached.
+func (m *Composer) addAttachments(paths []string) {
+	for _, newPath := range paths {
+		if slices.Contains(m.attachmentPaths, newPath) {
+			continue
+		}
+		m.attachmentPaths = append(m.attachmentPaths, newPath)
+		m.attachmentNames[newPath] = formatAttachmentName(newPath)
 	}
+	m.clampAttachmentCursor()
+}
 
-	// From field with account selector
-	fromAddr := m.getFromAddress()
-	var fromField string
-	if m.isCatchAllAccount() { //nolint:gocritic
-		fromAddrView := m.fromInput.View()
-		if len(m.accounts) > 1 {
-			if m.focusIndex == focusFrom {
-				fromField = focusedStyle.Render(fmt.Sprintf("> %s ", t("composer.from"))) + fromAddrView + " " + blurredStyle.Render("["+t("composer.enter_to_switch")+"]")
-			} else {
-				fromField = blurredStyle.Render(fmt.Sprintf("  %s ", t("composer.from"))) + fromAddrView + " " + blurredStyle.Render("["+t("composer.switchable")+"]")
+// handleKeyInstalled records a key downloaded after the WKD confirmation and
+// turns encryption on once every confirmed recipient has a key.
+func (m *Composer) handleKeyInstalled(msg pgpKeyInstalledMsg) tea.Cmd {
+	if msg.ok {
+		m.pgpKeysAvailable[msg.email] = true
+	} else {
+		m.enablePGPAfterInstall = false
+	}
+	if m.enablePGPAfterInstall && len(m.missingRecipientKeys()) == 0 {
+		m.encryptPGP = true
+		m.enablePGPAfterInstall = false
+	}
+	if msg.notice == nil {
+		return nil
+	}
+	notice := msg.notice
+	return func() tea.Msg { return notice }
+}
+
+// handleKeyPress processes keys for dialogs, popups and form navigation. It
+// reports false when the key should go to the focused input instead.
+func (m *Composer) handleKeyPress(msg tea.KeyPressMsg) (bool, tea.Cmd) {
+	if handled, cmd := m.handleDialogKey(msg); handled {
+		return true, cmd
+	}
+	if m.handlePopupKey(msg) {
+		return true, nil
+	}
+	return m.handleFormKey(msg)
+}
+
+// handleDialogKey routes keys to whichever modal dialog is open.
+func (m *Composer) handleDialogKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
+	switch {
+	case m.showPluginPrompt:
+		switch msg.String() {
+		case keyEnter:
+			value := m.pluginPromptInput.Value()
+			m.showPluginPrompt = false
+			return true, func() tea.Msg { return PluginPromptSubmitMsg{Value: value} }
+		case "esc":
+			m.showPluginPrompt = false
+			return true, func() tea.Msg { return PluginPromptCancelMsg{} }
+		}
+		var cmd tea.Cmd
+		m.pluginPromptInput, cmd = m.pluginPromptInput.Update(msg)
+		return true, cmd
+
+	case m.showAccountPicker:
+		switch msg.String() {
+		case "up", "k":
+			if m.accountPickerCursor > 0 {
+				m.accountPickerCursor--
 			}
-		} else {
-			fromField = "  " + t("composer.from") + " " + fromAddrView
-		}
-		if m.fromError != "" {
-			fromField += "\n" + composerErrorStyle.Render(m.fromError)
-		}
-	} else if len(m.accounts) > 1 {
-		if m.focusIndex == focusFrom {
-			fromField = focusedStyle.Render(fmt.Sprintf("> %s %s [%s]", t("composer.from"), fromAddr, t("composer.enter_to_switch")))
-		} else {
-			fromField = blurredStyle.Render(fmt.Sprintf("  %s %s [%s]", t("composer.from"), fromAddr, t("composer.switchable")))
-		}
-	} else if fromAddr != "" {
-		fromField = "  " + t("composer.from") + " " + emailRecipientStyle.Render(fromAddr)
-	} else {
-		fromField = blurredStyle.Render(fmt.Sprintf("  %s (%s)", t("composer.from"), t("composer.no_account")))
-	}
-
-	var attachmentField string
-	if len(m.attachmentPaths) == 0 {
-		attachmentText := fmt.Sprintf("%s (%s)", t("composer.attachments_none"), t("composer.enter_to_add"))
-		if m.focusIndex == focusAttachment {
-			attachmentField = focusedStyle.Render(fmt.Sprintf("> %s %s", t("composer.attachments"), attachmentText))
-		} else {
-			attachmentField = blurredStyle.Render(fmt.Sprintf("  %s %s", t("composer.attachments"), attachmentText))
-		}
-	} else {
-		var b strings.Builder
-		headerPrefix := "  "
-		headerStyle := blurredStyle
-		if m.focusIndex == focusAttachment {
-			headerPrefix = "> "
-			headerStyle = focusedStyle
-		}
-		b.WriteString(headerStyle.Render(fmt.Sprintf("%s%s (%d):", headerPrefix, t("composer.attachments"), len(m.attachmentPaths))))
-		for i, p := range m.attachmentPaths {
-			cursor := "    "
-			style := blurredStyle
-			if m.focusIndex == focusAttachment && i == m.attachmentCursor {
-				cursor = "  > "
-				style = focusedStyle
+		case keyDown, "j":
+			if m.accountPickerCursor < len(m.accounts)-1 {
+				m.accountPickerCursor++
 			}
-			b.WriteString("\n")
-			b.WriteString(style.Render(fmt.Sprintf("%s%s", cursor, m.attachmentDisplayName(p))))
+		case keyEnter:
+			m.selectAccount(m.accountPickerCursor)
+			m.showAccountPicker = false
+		case "esc":
+			// Cancel: the selection is only applied on enter.
+			m.showAccountPicker = false
 		}
-		attachmentField = b.String()
-	}
+		return true, nil
 
-	acc := m.getSelectedAccount()
-	hasSMIME := pgp.HasSMIMESetup(acc)
-	hasPGP := pgp.HasPGPSetup(acc)
+	case m.confirmingExit:
+		switch msg.String() {
+		case "y", "Y":
+			return true, func() tea.Msg { return DiscardDraftMsg{ComposerState: m} }
+		case "n", "N", "esc":
+			m.confirmingExit = false
+		}
+		return true, nil
 
-	encSMIMEToggle := "[ ]"
-	if m.encryptSMIME {
-		encSMIMEToggle = "[x]"
-	}
-	encSMIMEField := blurredStyle.Render(fmt.Sprintf("  %s %s", t("composer.encrypt_smime"), encSMIMEToggle))
-	if m.focusIndex == focusEncryptSMIME {
-		encSMIMEField = focusedStyle.Render(fmt.Sprintf("> %s %s", t("composer.encrypt_smime"), encSMIMEToggle))
-	}
-
-	signSMIMEToggle := "[ ]"
-	if m.signSMIME {
-		signSMIMEToggle = "[x]"
-	}
-	signSMIMEField := blurredStyle.Render(fmt.Sprintf("  %s %s", t("composer.sign_smime"), signSMIMEToggle))
-	if m.focusIndex == focusSignSMIME {
-		signSMIMEField = focusedStyle.Render(fmt.Sprintf("> %s %s", t("composer.sign_smime"), signSMIMEToggle))
-	}
-
-	signPGPToggle := "[ ]"
-	if m.signPGP {
-		signPGPToggle = "[x]"
-	}
-	signPGPField := blurredStyle.Render(fmt.Sprintf("  %s %s", t("composer.sign_pgp"), signPGPToggle))
-	if m.focusIndex == focusSignPGP {
-		signPGPField = focusedStyle.Render(fmt.Sprintf("> %s %s", t("composer.sign_pgp"), signPGPToggle))
-	}
-
-	encPGPToggle := "[ ]"
-	if m.encryptPGP {
-		encPGPToggle = "[x]"
-	}
-	encPGPField := blurredStyle.Render(fmt.Sprintf("  %s %s", t("composer.encrypt_pgp"), encPGPToggle))
-	if m.focusIndex == focusEncryptPGP {
-		encPGPField = focusedStyle.Render(fmt.Sprintf("> %s %s", t("composer.encrypt_pgp"), encPGPToggle))
-	}
-
-	// Build To field with suggestions
-	toFieldView := m.toInput.View()
-	if m.toError != "" {
-		toFieldView += "\n" + composerErrorStyle.Render(m.toError)
-	}
-	if m.showSuggestions && len(m.suggestions) > 0 {
-		var suggestionsBuilder strings.Builder
-		suggestionWidth := suggestionDisplayWidth(m.width)
-		for i, s := range m.suggestions {
-			display := suggestionDisplay(s, suggestionWidth)
-			if i == m.selectedSuggestion {
-				suggestionsBuilder.WriteString(selectedSuggestionStyle.Render("> "+display) + "\n")
-			} else {
-				suggestionsBuilder.WriteString(suggestionStyle.Render("  "+display) + "\n")
+	case len(m.wkdConfirmRecipients) > 0:
+		switch msg.String() {
+		case "y", "Y":
+			recipients := m.wkdConfirmRecipients
+			m.wkdConfirmRecipients = nil
+			m.enablePGPAfterInstall = true
+			cmds := make([]tea.Cmd, 0, len(recipients))
+			for _, r := range recipients {
+				cmds = append(cmds, m.installPGPKeyCmd(r))
 			}
+			return true, tea.Batch(cmds...)
+		case "n", "N", "esc":
+			m.wkdConfirmRecipients = nil
 		}
-		toFieldView = toFieldView + "\n" + suggestionBoxStyle.Render(strings.TrimSuffix(suggestionsBuilder.String(), "\n"))
+		return true, nil
+	}
+	return false, nil
+}
+
+// handlePopupKey handles the contact, spelling and emoji suggestion popups.
+// Each popup only reacts while the field it belongs to has focus.
+func (m *Composer) handlePopupKey(msg tea.KeyPressMsg) bool {
+	sk := config.Keybinds.Composer
+	if m.focusIndex == focusTo && m.showSuggestions && len(m.suggestions) > 0 {
+		switch msg.String() {
+		case "up", "ctrl+p":
+			if m.selectedSuggestion > 0 {
+				m.selectedSuggestion--
+			}
+			return true
+		case keyDown, "ctrl+n":
+			if m.selectedSuggestion < len(m.suggestions)-1 {
+				m.selectedSuggestion++
+			}
+			return true
+		case "tab", keyEnter:
+			m.acceptContactSuggestion(m.selectedSuggestion)
+			return true
+		case "esc":
+			m.showSuggestions = false
+			m.suggestions = nil
+			return true
+		}
+		// The prev-field key closes the suggestions and then moves focus.
+		if msg.String() == sk.PrevField {
+			m.showSuggestions = false
+			m.suggestions = nil
+		}
 	}
 
-	ccFieldView := m.ccInput.View()
-	if m.ccError != "" {
-		ccFieldView += "\n" + composerErrorStyle.Render(m.ccError)
+	if m.focusIndex == focusBody && m.spellShow && len(m.spellSuggestions) > 0 {
+		switch msg.String() {
+		case sk.SpellPrev:
+			if m.spellSelected > 0 {
+				m.spellSelected--
+			}
+			return true
+		case sk.SpellNext:
+			if m.spellSelected < len(m.spellSuggestions)-1 {
+				m.spellSelected++
+			}
+			return true
+		case sk.SpellAccept:
+			m.acceptSpellSuggestion()
+			return true
+		case sk.SpellDismiss, "esc":
+			m.spellShow = false
+			m.spellSuggestions = nil
+			return true
+		}
 	}
 
-	bccFieldView := m.bccInput.View()
-	if m.bccError != "" {
-		bccFieldView += "\n" + composerErrorStyle.Render(m.bccError)
+	if m.focusIndex == focusBody && m.emojiShow && len(m.emojiSuggestions) > 0 {
+		switch msg.String() {
+		case sk.SpellPrev:
+			if m.emojiSelected > 0 {
+				m.emojiSelected--
+			}
+			return true
+		case sk.SpellNext:
+			if m.emojiSelected < len(m.emojiSuggestions)-1 {
+				m.emojiSelected++
+			}
+			return true
+		case sk.SpellAccept, "tab":
+			m.acceptEmojiSuggestion()
+			return true
+		case sk.SpellDismiss, "esc":
+			m.emojiShow = false
+			m.emojiSuggestions = nil
+			return true
+		}
+	}
+	return false
+}
+
+// handleFormKey handles navigation and activation keys of the form itself.
+func (m *Composer) handleFormKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
+	kb := config.Keybinds
+	if n := len(m.attachmentPaths); m.focusIndex == focusAttachment && n > 0 {
+		switch msg.String() {
+		case "up", kb.Global.NavUp:
+			m.attachmentCursor = (m.attachmentCursor - 1 + n) % n
+			return true, nil
+		case keyDown, kb.Global.NavDown:
+			m.attachmentCursor = (m.attachmentCursor + 1) % n
+			return true, nil
+		}
 	}
 
-	// Signature field label
-	var signatureLabel string
-	if m.focusIndex == focusSignature {
-		signatureLabel = focusedStyle.Render(t("composer.signature") + ":")
+	switch msg.String() {
+	case kb.Global.Quit:
+		return true, tea.Quit
+	case kb.Composer.ExternalEditor:
+		return true, func() tea.Msg { return OpenEditorMsg{} }
+	case kb.Global.Cancel:
+		m.confirmingExit = true
+		return true, nil
+	case kb.Composer.NextField, kb.Composer.PrevField:
+		return true, m.cycleFieldFocus(msg.String() == kb.Composer.PrevField)
+	case kb.Composer.Delete:
+		if m.focusIndex == focusAttachment && len(m.attachmentPaths) > 0 {
+			m.removeSelectedAttachment()
+			return true, nil
+		}
+	case keyEnter, keySpaceBar:
+		return m.activateFocused(msg.String() == keyEnter)
+	}
+	return false, nil
+}
+
+// cycleFieldFocus moves focus to the next (or previous) field, validating the
+// address field being left.
+func (m *Composer) cycleFieldFocus(backwards bool) tea.Cmd {
+	previousFocus := m.focusIndex
+	focusList := m.orderedFocusIndices()
+	if backwards {
+		m.retreatFocus(focusList)
 	} else {
-		signatureLabel = blurredStyle.Render(t("composer.signature") + ":")
+		m.advanceFocus(focusList)
 	}
 
-	tip := ""
+	if previousFocus == focusFrom {
+		m.validateFromField()
+	} else if previousFocus != m.focusIndex {
+		m.validateEmailField(previousFocus)
+	}
+
+	cmd := m.setFocusTo(m.focusIndex)
+	if m.focusIndex == focusBody {
+		m.updateSpellSuggestions()
+		m.updateEmojiSuggestions()
+	}
+	return cmd
+}
+
+// activateFocused handles enter/space on the focused element. It reports
+// false when the key should reach the focused input instead (e.g. a space
+// typed into a text field).
+func (m *Composer) activateFocused(isEnter bool) (bool, tea.Cmd) {
 	switch m.focusIndex {
 	case focusFrom:
-		tip = "Select the account to send from."
-	case focusTo:
-		tip = "Enter recipient email addresses."
-	case focusCc:
-		tip = "Carbon copy recipients."
-	case focusBcc:
-		tip = "Blind carbon copy recipients."
-	case focusSubject:
-		tip = "The subject line of your email."
-	case focusBody:
-		if m.spellShow && len(m.spellSuggestions) > 0 {
-			sk := config.Keybinds.Composer
-			tip = fmt.Sprintf("Spelling: %s accept • %s/%s navigate • %s dismiss",
-				sk.SpellAccept, sk.SpellNext, sk.SpellPrev, sk.SpellDismiss)
-		} else {
-			tip = "The main content of your email. Markdown and HTML are supported."
+		if isEnter && len(m.accounts) > 1 {
+			m.accountPickerCursor = m.selectedAccountIdx
+			m.showAccountPicker = true
+			return true, nil
 		}
-	case focusSignature:
-		tip = "Your email signature. This will be appended to the end of the email."
+		// A space belongs to the editable From field of catch-all accounts.
+		return isEnter || !m.isCatchAllAccount(), nil
 	case focusAttachment:
-		tip = fmt.Sprintf("Enter: add file • up/down: select attachment • %s: remove selected", ck.Delete)
-	case focusEncryptSMIME:
-		tip = "Press Space or Enter to toggle S/MIME encryption on or off."
-	case focusSignSMIME:
-		tip = "Press Space or Enter to toggle S/MIME signing on or off."
-	case focusSignPGP:
-		tip = "Press Space or Enter to toggle PGP signing on or off."
-	case focusEncryptPGP:
-		tip = "Press Space or Enter to toggle PGP encryption on or off."
+		if isEnter {
+			return true, func() tea.Msg { return GoToFilePickerMsg{} }
+		}
+	case focusEncryptSMIME, focusSignSMIME, focusSignPGP, focusEncryptPGP:
+		m.toggleCrypto(m.focusIndex)
+		return true, nil
 	case focusSend:
-		tip = "Press Enter to send the email."
-	}
-
-	bodyView := m.bodyInput.View()
-	if !m.disableSpellcheck && m.spellChecker != nil && m.spellChecker.Loaded() {
-		bodyView = spellcheck.Highlight(bodyView, m.spellChecker, -1)
-	}
-
-	composerViewElements := []string{
-		t("composer.title"),
-		fromField,
-		toFieldView,
-	}
-	if m.showCcBcc {
-		composerViewElements = append(composerViewElements, ccFieldView)
-		composerViewElements = append(composerViewElements, bccFieldView)
-	}
-	composerViewElements = append(composerViewElements,
-		m.subjectInput.View(),
-		bodyView,
-		signatureLabel,
-		m.signatureInput.View(),
-		attachmentStyle.Render(attachmentField),
-	)
-	if len(m.attachmentPaths) > 0 {
-		composerViewElements = append(composerViewElements, "")
-	}
-	showSMIMEEnc := hasSMIME && m.hasSMIMECertForAnyRecipient()
-	if showSMIMEEnc {
-		composerViewElements = append(composerViewElements,
-			smimeToggleStyle.Render(encSMIMEField),
-		)
-	}
-	if hasSMIME {
-		composerViewElements = append(composerViewElements, smimeToggleStyle.Render(signSMIMEField))
-	}
-	if hasPGP {
-		composerViewElements = append(composerViewElements, smimeToggleStyle.Render(signPGPField))
-		if m.hasPGPKeyAvailable() {
-			composerViewElements = append(composerViewElements, smimeToggleStyle.Render(encPGPField))
+		if isEnter {
+			return true, m.sendCmd()
 		}
 	}
-	composerViewElements = append(composerViewElements,
-		button,
-		"",
-	)
+	return false, nil
+}
 
-	if !m.hideTips && tip != "" {
-		composerViewElements = append(composerViewElements, TipStyle.Render("Tip: "+tip))
-	}
-
-	mainContent := lipgloss.JoinVertical(lipgloss.Left, composerViewElements...)
-	helpText := keybindHelp("composer.help")
-	for _, pk := range m.pluginKeyBindings {
-		helpText += " • " + pk.Key + ": " + pk.Description
-	}
-	if m.pluginStatus != "" {
-		helpText += " • " + m.pluginStatus
-	}
-	helpView := helpStyle.Render(helpText)
-
-	if m.height > 0 {
-		currentHeight := lipgloss.Height(mainContent) + lipgloss.Height(helpView)
-		gap := m.height - currentHeight
-		if gap >= 0 {
-			mainContent += strings.Repeat("\n", gap+1)
-		} else {
-			mainContent += "\n"
+// toggleCrypto flips one of the S/MIME / PGP toggles. Turning PGP encryption
+// on first asks to fetch any recipient keys that are missing.
+func (m *Composer) toggleCrypto(focus int) {
+	switch focus {
+	case focusEncryptSMIME:
+		m.encryptSMIME = !m.encryptSMIME
+	case focusSignSMIME:
+		m.signSMIME = !m.signSMIME
+	case focusSignPGP:
+		m.signPGP = !m.signPGP
+	case focusEncryptPGP:
+		if !m.encryptPGP {
+			if missing := m.missingRecipientKeys(); len(missing) > 0 {
+				m.wkdConfirmRecipients = missing
+				return
+			}
 		}
+		m.encryptPGP = !m.encryptPGP
+	}
+}
+
+// sendCmd validates the form and returns the command that sends it.
+func (m *Composer) sendCmd() tea.Cmd {
+	if !m.canSendEmail() {
+		msg := t("composer.invalid_email_fields")
+		return func() tea.Msg { return NotifyMsg{Message: msg} }
+	}
+	if !m.hasAnyRecipient() {
+		msg := t("composer.recipient_required")
+		return func() tea.Msg { return NotifyMsg{Message: msg} }
+	}
+	acc := m.getSelectedAccount()
+	accountID := ""
+	if acc != nil {
+		accountID = acc.ID
+	}
+	fromOverride := ""
+	if m.isCatchAllAccount() {
+		fromOverride = m.fromInput.Value()
+	}
+	// Like S/MIME signing, PGP signing only applies when the account has a key.
+	signPGP := m.signPGP && pgp.HasPGPSetup(acc)
+	return func() tea.Msg {
+		return SendEmailMsg{
+			To:              m.toInput.Value(),
+			Cc:              m.ccInput.Value(),
+			Bcc:             m.bccInput.Value(),
+			Subject:         m.subjectInput.Value(),
+			Body:            m.bodyInput.Value(),
+			AttachmentPaths: m.attachmentPaths,
+			AccountID:       accountID,
+			FromOverride:    fromOverride,
+			QuotedText:      m.quotedText,
+			InReplyTo:       m.inReplyTo,
+			References:      m.references,
+			Signature:       m.signatureInput.Value(),
+			SignSMIME:       m.signSMIMEEnabled(),
+			EncryptSMIME:    m.encryptSMIME,
+			SignPGP:         signPGP,
+			EncryptPGP:      m.encryptPGP,
+		}
+	}
+}
+
+// acceptContactSuggestion replaces the address being typed in To with the
+// suggestion at index i.
+func (m *Composer) acceptContactSuggestion(i int) {
+	if i < 0 || i >= len(m.suggestions) {
+		return
+	}
+	selected := m.suggestions[i]
+
+	var newEmail string
+	switch {
+	case len(selected.Addresses) > 0:
+		// Mailing list: emit just the addresses to maintain valid email formatting
+		newEmail = strings.Join(selected.Addresses, ", ")
+	case selected.Name != "" && selected.Name != selected.Email:
+		newEmail = fmt.Sprintf("%s <%s>", selected.Name, selected.Email)
+	default:
+		newEmail = selected.Email
+	}
+
+	parts := strings.Split(m.toInput.Value(), ",")
+	if len(parts) == 1 {
+		parts[0] = newEmail
 	} else {
-		mainContent += "\n\n"
+		parts[len(parts)-1] = " " + newEmail
 	}
 
-	composerView.WriteString(mainContent)
-	composerView.WriteString(helpView)
-
-	// Plugin prompt overlay
-	if m.showPluginPrompt {
-		dialog := DialogBoxStyle.Render(
-			lipgloss.JoinVertical(lipgloss.Left,
-				m.pluginPromptPlaceholder,
-				"",
-				m.pluginPromptInput.View(),
-				"",
-				HelpStyle.Render("enter: submit • esc: cancel"),
-			),
-		)
-		return tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
+	finalValue := strings.Join(parts, ",")
+	if !strings.HasSuffix(finalValue, ", ") {
+		finalValue += ", "
 	}
 
-	// Account picker overlay
-	if m.showAccountPicker {
-		var accountList strings.Builder
-		accountList.WriteString("Select Account:\n\n")
-		for i, acc := range m.accounts {
-			display := acc.GetSendAsEmail()
-			if acc.Name != "" {
-				display = fmt.Sprintf("%s (%s)", acc.Name, acc.GetSendAsEmail())
-			}
-			if i == m.selectedAccountIdx {
-				accountList.WriteString(selectedItemStyle.Render(fmt.Sprintf("> %s", display)))
-			} else {
-				accountList.WriteString(itemStyle.Render(fmt.Sprintf("  %s", display)))
-			}
-			accountList.WriteString("\n")
+	m.toInput.SetValue(finalValue)
+	m.toInput.SetCursor(len(finalValue))
+	m.toError = ""
+	m.lastToValue = m.toInput.Value()
+	m.showSuggestions = false
+	m.suggestions = nil
+}
+
+// selectAccount switches the sending account and reloads its defaults.
+func (m *Composer) selectAccount(i int) {
+	if i < 0 || i >= len(m.accounts) || i == m.selectedAccountIdx {
+		return
+	}
+	m.selectedAccountIdx = i
+	m.updateSignature()
+	m.updatePGPDefaults()
+	m.updateSMIMEDefaults()
+}
+
+// dialogOpen reports whether a modal dialog currently replaces the form.
+func (m *Composer) dialogOpen() bool {
+	return m.showPluginPrompt || m.showAccountPicker || m.confirmingExit || len(m.wkdConfirmRecipients) > 0
+}
+
+// hitAt returns the mouse target rendered at (x, y) in the last frame.
+func (m *Composer) hitAt(x, y int) (composerHit, bool) {
+	if y < 0 || y >= len(m.rowHits) {
+		return composerHit{}, false
+	}
+	for _, h := range m.rowHits[y] {
+		if x >= h.minX && x < h.maxX {
+			return h, true
 		}
-		accountList.WriteString("\n")
-		accountList.WriteString(HelpStyle.Render("↑/↓: navigate • enter: select • esc: cancel"))
-
-		dialog := DialogBoxStyle.Render(accountList.String())
-		return tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
 	}
+	return composerHit{}, false
+}
 
-	if m.confirmingExit {
-		dialog := DialogBoxStyle.Render(
-			lipgloss.JoinVertical(lipgloss.Center,
-				t("composer.exit_confirm"),
-				HelpStyle.Render("\n(y/n)"),
-			),
-		)
-		return tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
+// handleMouseClick maps a left click (relative to the composer's top-left
+// corner) onto the element rendered there in the last frame.
+func (m *Composer) handleMouseClick(msg tea.MouseClickMsg) tea.Cmd {
+	if msg.Button != tea.MouseLeft {
+		return nil
 	}
-
-	if len(m.wkdConfirmRecipients) > 0 {
-		var msg strings.Builder
-		msg.WriteString("Missing PGP keys for:\n\n")
-		for _, r := range m.wkdConfirmRecipients {
-			fmt.Fprintf(&msg, "  • %s\n", r)
+	hit, ok := m.hitAt(msg.X, msg.Y)
+	switch {
+	case m.showAccountPicker:
+		if ok && hit.account >= 0 {
+			m.selectAccount(hit.account)
+			m.showAccountPicker = false
 		}
-		msg.WriteString("\nDownload from WKD?")
-		dialog := DialogBoxStyle.Render(
-			lipgloss.JoinVertical(lipgloss.Center,
-				msg.String(),
-				HelpStyle.Render("\n(y/n)"),
-			),
-		)
-		return tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog))
+		return nil
+	case m.dialogOpen(), !ok:
+		// Other dialogs only take keyboard input.
+		return nil
+	case hit.suggestion >= 0:
+		m.acceptContactSuggestion(hit.suggestion)
+		return nil
+	case hit.focus < 0 || !slices.Contains(m.orderedFocusIndices(), hit.focus):
+		// Inert row, or a field that can't take focus (e.g. From with a
+		// single account).
+		return nil
 	}
 
-	out := composerView.String()
-	if m.spellShow && len(m.spellSuggestions) > 0 && m.focusIndex == focusBody {
-		out = m.overlaySpellPopup(out, composerViewElements)
+	prev := m.focusIndex
+	if prev == focusFrom && hit.focus != focusFrom {
+		m.validateFromField()
+	} else if prev != hit.focus {
+		m.validateEmailField(prev)
 	}
-	if m.emojiShow && len(m.emojiSuggestions) > 0 && m.focusIndex == focusBody {
-		out = m.overlayEmojiPopup(out, composerViewElements)
+	cmd := m.setFocusTo(hit.focus)
+	switch hit.focus {
+	case focusAttachment:
+		if hit.attachment >= 0 {
+			m.attachmentCursor = hit.attachment
+		}
+	case focusEncryptSMIME, focusSignSMIME, focusSignPGP, focusEncryptPGP:
+		m.toggleCrypto(hit.focus)
+	case focusBody:
+		m.updateSpellSuggestions()
+		m.updateEmojiSuggestions()
+	}
+	return cmd
+}
+
+// handleMouseWheel scrolls the body or signature editor under the pointer
+// (falling back to the focused one) by moving its cursor, which keeps the
+// editor's viewport in sync.
+func (m *Composer) handleMouseWheel(msg tea.MouseWheelMsg) {
+	if m.dialogOpen() {
+		return
+	}
+	target := m.focusIndex
+	if hit, ok := m.hitAt(msg.X, msg.Y); ok && (hit.focus == focusBody || hit.focus == focusSignature) {
+		target = hit.focus
+	}
+	var ta *textarea.Model
+	switch target {
+	case focusBody:
+		ta = &m.bodyInput
+	case focusSignature:
+		ta = &m.signatureInput
+	default:
+		return
+	}
+	var move func()
+	switch msg.Button {
+	case tea.MouseWheelUp:
+		move = ta.CursorUp
+	case tea.MouseWheelDown:
+		move = ta.CursorDown
+	default:
+		return
+	}
+	const wheelLines = 3
+	for range wheelLines {
+		move()
+	}
+	if target == focusBody && m.focusIndex == focusBody {
+		m.updateSpellSuggestions()
+		m.updateEmojiSuggestions()
+	}
+}
+
+// View renders the composer. Whenever the size is known it fits exactly
+// inside the last tea.WindowSizeMsg, so it can also be embedded as a pane.
+func (m *Composer) View() tea.View {
+	var out string
+	switch {
+	case m.showPluginPrompt:
+		out = m.renderPluginPrompt()
+	case m.showAccountPicker:
+		out = m.renderAccountPicker()
+	case m.confirmingExit:
+		out = m.renderConfirmExit()
+	case len(m.wkdConfirmRecipients) > 0:
+		out = m.renderWKDConfirm()
+	default:
+		out = m.renderForm()
 	}
 	v := tea.NewView(out)
 	if config.MouseEnabled != nil && *config.MouseEnabled {
@@ -1849,43 +1840,411 @@ func (m *Composer) View() tea.View { //nolint:gocyclo
 	return v
 }
 
-// overlaySpellPopup floats the suggestion box at the body cursor position
-// in the rendered composer view. It returns the view unchanged when the
-// cursor can't be located.
-func (m *Composer) overlaySpellPopup(view string, elementsBeforeBody []string) string {
-	// Body is the 7th element (index 6) of composerViewElements: title,
-	// from, to, cc, bcc, subject, body, ...
-	const bodyIdx = 6
-	if bodyIdx > len(elementsBeforeBody) {
+// baseFixedRows is the number of non-editor rows in the default layout (no
+// errors, attachments or crypto toggles). The editors are sized from what
+// remains, so transient rows eat into the spare gap before the editors shrink.
+func (m *Composer) baseFixedRows() int {
+	n := 9 // title, from, to, subject, signature label, attachments, send, blank, help
+	if m.ccBccVisible() {
+		n += 2
+	}
+	if !m.hideTips {
+		n++
+	}
+	return n
+}
+
+func blocksHeight(blocks []composerBlock) int {
+	n := 0
+	for _, b := range blocks {
+		n += lipgloss.Height(b.text)
+	}
+	return n
+}
+
+// renderForm renders the compose form and records the mouse hit map. When
+// the window size is known, the result is exactly m.height rows of at most
+// m.width cells: optional rows are dropped and the editors shrink as needed.
+func (m *Composer) renderForm() string {
+	w, h := m.width, m.height
+	header, toEnd := m.headerBlocks()
+	attachments := m.attachmentBlocks()
+	toggles := make([]composerBlock, 0, 4)
+	for _, f := range m.visibleCryptoToggles() {
+		toggles = append(toggles, composerField(truncateLines(m.toggleView(f), w), f))
+	}
+	tip := m.tipView()
+	help := m.helpView()
+
+	fit := composerFit{
+		bodyH:     m.bodyInput.Height(),
+		sigH:      m.signatureInput.Height(),
+		showSig:   true,
+		showTip:   tip != "",
+		attachGap: len(m.attachmentPaths) > 0,
+		buttonGap: true,
+		keepSig:   m.focusIndex == focusSignature,
+	}
+	if h > 0 {
+		fixed := blocksHeight(header) + blocksHeight(attachments) + len(toggles) + 1 + lipgloss.Height(help)
+		fit.bodyH, fit.sigH = splitComposerHeights(h - m.baseFixedRows())
+		for fit.rows(fixed) > h {
+			if !fit.shrink() {
+				break
+			}
+		}
+		m.bodyInput.SetHeight(fit.bodyH)
+		if fit.showSig {
+			m.signatureInput.SetHeight(fit.sigH)
+		}
+	}
+
+	var fr composerFrame
+	anchorRow := 0
+	for i, b := range header {
+		fr.add(b)
+		if i == toEnd-1 {
+			anchorRow = len(fr.lines)
+		}
+	}
+
+	bodyView := m.bodyInput.View()
+	if !m.disableSpellcheck && m.spellChecker != nil && m.spellChecker.Loaded() {
+		bodyView = spellcheck.Highlight(bodyView, m.spellChecker, -1)
+	}
+	m.bodyRow = len(fr.lines)
+	fr.add(composerField(truncateLines(bodyView, w), focusBody))
+	if fit.showSig {
+		fr.add(composerField(truncateLines(m.signatureLabelView(), w), focusSignature))
+		fr.add(composerField(truncateLines(m.signatureInput.View(), w), focusSignature))
+	}
+	for _, b := range attachments {
+		fr.add(b)
+	}
+	if fit.attachGap {
+		fr.add(composerInert(""))
+	}
+	for _, b := range toggles {
+		fr.add(b)
+	}
+	fr.add(composerField(m.sendButtonView(), focusSend))
+	if fit.buttonGap {
+		fr.add(composerInert(""))
+	}
+	if fit.showTip {
+		fr.add(composerInert(tip))
+	}
+	if h > 0 {
+		for len(fr.lines) < h-lipgloss.Height(help) {
+			fr.add(composerInert(""))
+		}
+	} else {
+		fr.add(composerInert(""))
+	}
+	fr.add(composerInert(help))
+
+	m.rowHits = fr.hits
+	out := strings.Join(fr.lines, "\n")
+	if m.focusIndex == focusTo && m.showSuggestions && len(m.suggestions) > 0 {
+		out = m.overlaySuggestions(out, anchorRow)
+	}
+	if m.focusIndex == focusBody && m.spellShow && len(m.spellSuggestions) > 0 {
+		out = m.overlayBodyPopup(out, m.renderSpellPopupLines())
+	}
+	if m.focusIndex == focusBody && m.emojiShow && len(m.emojiSuggestions) > 0 {
+		out = m.overlayBodyPopup(out, m.renderEmojiPopupLines())
+	}
+	return clampRendered(out, w, h)
+}
+
+// headerBlocks renders the address and subject rows. toEnd is the number of
+// blocks up to and including the To field (and its error), i.e. where the
+// contact suggestion dropdown attaches.
+func (m *Composer) headerBlocks() (blocks []composerBlock, toEnd int) {
+	w := m.width
+	blocks = append(blocks,
+		composerInert(truncateLines(t("composer.title"), w)),
+		composerField(m.fromFieldView(), focusFrom),
+	)
+	if m.isCatchAllAccount() && m.fromError != "" {
+		blocks = append(blocks, composerField(truncateLines(composerErrorStyle.Render(m.fromError), w), focusFrom))
+	}
+	blocks = append(blocks, m.inputBlocks(m.toInput.View(), m.toError, focusTo)...)
+	toEnd = len(blocks)
+	if m.ccBccVisible() {
+		blocks = append(blocks, m.inputBlocks(m.ccInput.View(), m.ccError, focusCc)...)
+		blocks = append(blocks, m.inputBlocks(m.bccInput.View(), m.bccError, focusBcc)...)
+	}
+	blocks = append(blocks, composerField(truncateLines(m.subjectInput.View(), w), focusSubject))
+	return blocks, toEnd
+}
+
+// inputBlocks renders an address input plus its validation error, if any.
+func (m *Composer) inputBlocks(view, errText string, focus int) []composerBlock {
+	blocks := []composerBlock{composerField(truncateLines(view, m.width), focus)}
+	if errText != "" {
+		blocks = append(blocks, composerField(truncateLines(composerErrorStyle.Render(errText), m.width), focus))
+	}
+	return blocks
+}
+
+// fromFieldView renders the From row, shortening the address (not the hint)
+// so the row fits the width.
+func (m *Composer) fromFieldView() string {
+	w := m.width
+	from := t("composer.from")
+	if m.isCatchAllAccount() {
+		prefix := "  " + from + " "
+		suffix := ""
+		if len(m.accounts) > 1 {
+			if m.focusIndex == focusFrom {
+				prefix = focusedStyle.Render(fmt.Sprintf("> %s ", from))
+				suffix = " " + blurredStyle.Render("["+t("composer.enter_to_switch")+"]")
+			} else {
+				prefix = blurredStyle.Render(fmt.Sprintf("  %s ", from))
+				suffix = " " + blurredStyle.Render("["+t("composer.switchable")+"]")
+			}
+		}
+		if w > 0 {
+			// Let the editable address scroll inside the row.
+			avail := w - lipgloss.Width(prefix) - lipgloss.Width(suffix) - lipgloss.Width(m.fromInput.Prompt) - 1
+			m.fromInput.SetWidth(max(avail, 1))
+		}
+		return truncateLines(prefix+m.fromInput.View()+suffix, w)
+	}
+
+	addr := m.getFromAddress()
+	shorten := func(reserved int) string {
+		if w <= 0 {
+			return addr
+		}
+		return ansi.Truncate(addr, max(w-reserved, 1), "…")
+	}
+	switch {
+	case len(m.accounts) > 1:
+		marker, style, hint := "  ", blurredStyle, t("composer.switchable")
+		if m.focusIndex == focusFrom {
+			marker, style, hint = "> ", focusedStyle, t("composer.enter_to_switch")
+		}
+		prefix := marker + from + " "
+		suffix := " [" + hint + "]"
+		return truncateLines(style.Render(prefix+shorten(lipgloss.Width(prefix)+lipgloss.Width(suffix))+suffix), w)
+	case addr != "":
+		prefix := "  " + from + " "
+		return truncateLines(prefix+emailRecipientStyle.Render(shorten(lipgloss.Width(prefix))), w)
+	default:
+		return truncateLines(blurredStyle.Render(fmt.Sprintf("  %s (%s)", from, t("composer.no_account"))), w)
+	}
+}
+
+// attachmentBlocks renders the attachment header and one row per attachment.
+func (m *Composer) attachmentBlocks() []composerBlock {
+	w := m.width
+	focused := m.focusIndex == focusAttachment
+	if len(m.attachmentPaths) == 0 {
+		text := fmt.Sprintf("%s %s (%s)", t("composer.attachments"), t("composer.attachments_none"), t("composer.enter_to_add"))
+		line := blurredStyle.Render("  " + text)
+		if focused {
+			line = focusedStyle.Render("> " + text)
+		}
+		return []composerBlock{composerField(truncateLines(attachmentStyle.Render(line), w), focusAttachment)}
+	}
+
+	headerPrefix, headerStyle := "  ", blurredStyle
+	if focused {
+		headerPrefix, headerStyle = "> ", focusedStyle
+	}
+	header := headerStyle.Render(fmt.Sprintf("%s%s (%d):", headerPrefix, t("composer.attachments"), len(m.attachmentPaths)))
+	blocks := []composerBlock{composerField(truncateLines(attachmentStyle.Render(header), w), focusAttachment)}
+	for i, p := range m.attachmentPaths {
+		cursor, style := "    ", blurredStyle
+		if focused && i == m.attachmentCursor {
+			cursor, style = "  > ", focusedStyle
+		}
+		line := attachmentStyle.Render(style.Render(cursor + m.attachmentDisplayName(p)))
+		blocks = append(blocks, composerBlock{text: truncateLines(line, w), focus: focusAttachment, attachment: i})
+	}
+	return blocks
+}
+
+// toggleView renders one crypto toggle row.
+func (m *Composer) toggleView(focus int) string {
+	var label string
+	var on bool
+	switch focus {
+	case focusEncryptSMIME:
+		label, on = t("composer.encrypt_smime"), m.encryptSMIME
+	case focusSignSMIME:
+		label, on = t("composer.sign_smime"), m.signSMIME
+	case focusSignPGP:
+		label, on = t("composer.sign_pgp"), m.signPGP
+	case focusEncryptPGP:
+		label, on = t("composer.encrypt_pgp"), m.encryptPGP
+	}
+	box := "[ ]"
+	if on {
+		box = "[x]"
+	}
+	if m.focusIndex == focus {
+		return smimeToggleStyle.Render(focusedStyle.Render(fmt.Sprintf("> %s %s", label, box)))
+	}
+	return smimeToggleStyle.Render(blurredStyle.Render(fmt.Sprintf("  %s %s", label, box)))
+}
+
+func (m *Composer) sendButtonView() string {
+	label := "[ " + t("composer.send") + " ]"
+	if m.focusIndex == focusSend {
+		return focusedStyle.Render(label)
+	}
+	return blurredStyle.Render(label)
+}
+
+func (m *Composer) signatureLabelView() string {
+	if m.focusIndex == focusSignature {
+		return focusedStyle.Render(t("composer.signature") + ":")
+	}
+	return blurredStyle.Render(t("composer.signature") + ":")
+}
+
+// tipText is the contextual tip for the focused element.
+func (m *Composer) tipText() string {
+	switch m.focusIndex {
+	case focusFrom:
+		return "Select the account to send from."
+	case focusTo:
+		return "Enter recipient email addresses."
+	case focusCc:
+		return "Carbon copy recipients."
+	case focusBcc:
+		return "Blind carbon copy recipients."
+	case focusSubject:
+		return "The subject line of your email."
+	case focusBody:
+		if m.spellShow && len(m.spellSuggestions) > 0 {
+			sk := config.Keybinds.Composer
+			return fmt.Sprintf("Spelling: %s accept • %s/%s navigate • %s dismiss",
+				sk.SpellAccept, sk.SpellNext, sk.SpellPrev, sk.SpellDismiss)
+		}
+		return "The main content of your email. Markdown and HTML are supported."
+	case focusSignature:
+		return "Your email signature. This will be appended to the end of the email."
+	case focusAttachment:
+		return fmt.Sprintf("Enter: add file • up/down: select attachment • %s: remove selected", config.Keybinds.Composer.Delete)
+	case focusEncryptSMIME:
+		return "Press Space or Enter to toggle S/MIME encryption on or off."
+	case focusSignSMIME:
+		return "Press Space or Enter to toggle S/MIME signing on or off."
+	case focusSignPGP:
+		return "Press Space or Enter to toggle PGP signing on or off."
+	case focusEncryptPGP:
+		return "Press Space or Enter to toggle PGP encryption on or off."
+	case focusSend:
+		return "Press Enter to send the email."
+	}
+	return ""
+}
+
+// tipView renders the tip as a single row, or "" when tips are hidden.
+func (m *Composer) tipView() string {
+	tip := m.tipText()
+	if m.hideTips || tip == "" {
+		return ""
+	}
+	return truncateLines(TipStyle.Render("Tip: "+tip), m.width)
+}
+
+// helpView renders the help bar, wrapped to the width and capped at two rows.
+func (m *Composer) helpView() string {
+	helpText := keybindHelp("composer.help")
+	for _, pk := range m.pluginKeyBindings {
+		helpText += " • " + pk.Key + ": " + pk.Description
+	}
+	if m.pluginStatus != "" {
+		helpText += " • " + m.pluginStatus
+	}
+	if m.width <= 0 {
+		return helpStyle.Render(helpText)
+	}
+	const maxHelpRows = 2
+	lines := strings.Split(lipgloss.Wrap(helpText, m.width, ""), "\n")
+	if len(lines) > maxHelpRows {
+		lines = lines[:maxHelpRows]
+		last := lines[maxHelpRows-1]
+		lines[maxHelpRows-1] = ansi.Truncate(last, max(m.width-1, 0), "") + "…"
+	}
+	return helpStyle.Render(strings.Join(lines, "\n"))
+}
+
+// suggestionBoxLines renders the contact suggestion dropdown, fitted to the
+// width.
+func (m *Composer) suggestionBoxLines() []string {
+	sw := suggestionDisplayWidth(m.width)
+	rows := make([]string, 0, len(m.suggestions))
+	for i, s := range m.suggestions {
+		display := suggestionDisplay(s, sw)
+		if m.width > 0 {
+			display = ansi.Truncate(display, sw, "…")
+		}
+		if i == m.selectedSuggestion {
+			rows = append(rows, selectedSuggestionStyle.Render("> "+display))
+		} else {
+			rows = append(rows, suggestionStyle.Render("  "+display))
+		}
+	}
+	return strings.Split(suggestionBoxStyle.Render(strings.Join(rows, "\n")), "\n")
+}
+
+// overlaySuggestions draws the contact suggestion dropdown over the rows
+// below the To field and makes its entries clickable.
+func (m *Composer) overlaySuggestions(view string, row int) string {
+	box := m.suggestionBoxLines()
+	boxW := 0
+	for _, l := range box {
+		boxW = max(boxW, lipgloss.Width(l))
+	}
+	for i := range box {
+		r := row + i
+		if r >= len(m.rowHits) {
+			break
+		}
+		hit := composerHit{maxX: boxW, focus: -1, attachment: -1, suggestion: -1, account: -1}
+		if i > 0 && i < len(box)-1 {
+			hit.suggestion = i - 1 // first and last rows are the box border
+		}
+		m.rowHits[r] = append([]composerHit{hit}, m.rowHits[r]...)
+	}
+	return overlay.Block(view, box, row, 0)
+}
+
+// overlayBodyPopup floats popup at the body cursor: below it when there is
+// room above the help row, otherwise above it.
+func (m *Composer) overlayBodyPopup(view string, popup []string) string {
+	if len(popup) == 0 || m.bodyRow < 0 {
 		return view
 	}
-	bodyStartRow := 0
-	for i := 0; i < bodyIdx; i++ {
-		bodyStartRow += lipgloss.Height(elementsBeforeBody[i])
-	}
-
-	li := m.bodyInput.LineInfo()
-	const promptWidth = 2 // "> "
-	cursorRow := bodyStartRow + li.RowOffset
-	cursorCol := li.CharOffset + promptWidth
-
-	popup := m.renderSpellPopupLines()
-	if len(popup) == 0 {
+	// The textarea knows where its cursor really is (wrapped lines, scroll
+	// offset, prompt and line-number gutter); it only reports it for a real
+	// terminal cursor, so ask a copy configured for one.
+	ta := m.bodyInput
+	ta.SetVirtualCursor(false)
+	c := ta.Cursor()
+	if c == nil {
 		return view
 	}
+	cursorRow := m.bodyRow + c.Y
 
-	// Anchor below cursor. If popup would clip the bottom, raise it above
-	// the cursor row instead.
 	anchorRow := cursorRow + 1
-	if m.height > 0 && anchorRow+len(popup) > m.height-1 && cursorRow-len(popup) >= 0 {
-		anchorRow = cursorRow - len(popup)
+	if m.height > 0 && anchorRow+len(popup) > m.height-1 {
+		if cursorRow-len(popup) >= 0 {
+			anchorRow = cursorRow - len(popup)
+		} else {
+			anchorRow = max(m.height-1-len(popup), 0)
+		}
 	}
-	anchorCol := cursorCol
-	popupWidth := lipgloss.Width(popup[0])
-	if m.width > 0 && anchorCol+popupWidth > m.width {
-		anchorCol = max(0, m.width-popupWidth)
+	anchorCol := c.X
+	if popupW := lipgloss.Width(popup[0]); m.width > 0 && anchorCol+popupW > m.width {
+		anchorCol = max(m.width-popupW, 0)
 	}
-
 	return overlay.Block(view, popup, anchorRow, anchorCol)
 }
 
@@ -1898,9 +2257,7 @@ func (m *Composer) renderSpellPopupLines() []string {
 	}
 	maxWidth := 0
 	for _, s := range m.spellSuggestions {
-		if w := len(s); w > maxWidth {
-			maxWidth = w
-		}
+		maxWidth = max(maxWidth, lipgloss.Width(s))
 	}
 	rowWidth := maxWidth + 6 // " abc " badge + word + trailing space
 
@@ -1908,14 +2265,10 @@ func (m *Composer) renderSpellPopupLines() []string {
 	rowStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	selStyle := lipgloss.NewStyle().Background(lipgloss.Color("24")).Foreground(lipgloss.Color("231"))
 
-	var rows []string
+	rows := make([]string, 0, len(m.spellSuggestions))
 	for i, s := range m.spellSuggestions {
 		text := " " + iconStyle.Render("abc") + " " + s
-		pad := rowWidth - lipgloss.Width(text)
-		if pad < 0 {
-			pad = 0
-		}
-		text += strings.Repeat(" ", pad)
+		text += strings.Repeat(" ", max(rowWidth-lipgloss.Width(text), 0))
 		if i == m.spellSelected {
 			rows = append(rows, selStyle.Render(text))
 		} else {
@@ -1926,41 +2279,6 @@ func (m *Composer) renderSpellPopupLines() []string {
 	return strings.Split(box, "\n")
 }
 
-// overlayEmojiPopup floats the emoji shortcode suggestion box at the body
-// cursor position. It mirrors overlaySpellPopup but renders emoji rows.
-func (m *Composer) overlayEmojiPopup(view string, elementsBeforeBody []string) string {
-	const bodyIdx = 6
-	if bodyIdx > len(elementsBeforeBody) {
-		return view
-	}
-	bodyStartRow := 0
-	for i := 0; i < bodyIdx; i++ {
-		bodyStartRow += lipgloss.Height(elementsBeforeBody[i])
-	}
-
-	li := m.bodyInput.LineInfo()
-	const promptWidth = 2 // "> "
-	cursorRow := bodyStartRow + li.RowOffset
-	cursorCol := li.CharOffset + promptWidth
-
-	popup := m.renderEmojiPopupLines()
-	if len(popup) == 0 {
-		return view
-	}
-
-	anchorRow := cursorRow + 1
-	if m.height > 0 && anchorRow+len(popup) > m.height-1 && cursorRow-len(popup) >= 0 {
-		anchorRow = cursorRow - len(popup)
-	}
-	anchorCol := cursorCol
-	popupWidth := lipgloss.Width(popup[0])
-	if m.width > 0 && anchorCol+popupWidth > m.width {
-		anchorCol = max(0, m.width-popupWidth)
-	}
-
-	return overlay.Block(view, popup, anchorRow, anchorCol)
-}
-
 // renderEmojiPopupLines builds the styled, bordered emoji suggestion box and
 // returns its rendered lines. Each row shows the shortcode and its preview.
 func (m *Composer) renderEmojiPopupLines() []string {
@@ -1969,23 +2287,17 @@ func (m *Composer) renderEmojiPopupLines() []string {
 	}
 	maxWidth := 0
 	for _, s := range m.emojiSuggestions {
-		if w := lipgloss.Width(s); w > maxWidth {
-			maxWidth = w
-		}
+		maxWidth = max(maxWidth, lipgloss.Width(s))
 	}
 	rowWidth := maxWidth + 2
 
 	rowStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	selStyle := lipgloss.NewStyle().Background(lipgloss.Color("24")).Foreground(lipgloss.Color("231"))
 
-	var rows []string
+	rows := make([]string, 0, len(m.emojiSuggestions))
 	for i, s := range m.emojiSuggestions {
 		text := " " + s
-		pad := rowWidth - lipgloss.Width(text)
-		if pad < 0 {
-			pad = 0
-		}
-		text += strings.Repeat(" ", pad)
+		text += strings.Repeat(" ", max(rowWidth-lipgloss.Width(text), 0))
 		if i == m.emojiSelected {
 			rows = append(rows, selStyle.Render(text))
 		} else {
@@ -1994,6 +2306,113 @@ func (m *Composer) renderEmojiPopupLines() []string {
 	}
 	box := suggestionBoxStyle.Render(strings.Join(rows, "\n"))
 	return strings.Split(box, "\n")
+}
+
+// dialogContentWidth is the widest content a dialog can hold inside the
+// composer, or 0 while the size is unknown.
+func (m *Composer) dialogContentWidth() int {
+	if m.width <= 0 {
+		return 0
+	}
+	return max(m.width-DialogBoxStyle.GetHorizontalFrameSize(), 1)
+}
+
+// dialogView boxes content (wrapping it to the composer width when needed)
+// and centers it in the composer area.
+func (m *Composer) dialogView(content string) string {
+	box := DialogBoxStyle
+	if m.width > 0 && lipgloss.Width(content)+box.GetHorizontalFrameSize() > m.width {
+		box = box.Width(m.width)
+	}
+	view, _, _ := centerInArea(box.Render(content), m.width, m.height)
+	return view
+}
+
+func (m *Composer) renderPluginPrompt() string {
+	m.rowHits = nil
+	if maxW := m.dialogContentWidth(); maxW > 0 {
+		inputW := min(max(lipgloss.Width(m.pluginPromptPlaceholder), 20), maxW)
+		m.pluginPromptInput.SetWidth(max(inputW-lipgloss.Width(m.pluginPromptInput.Prompt)-1, 1))
+	}
+	return m.dialogView(lipgloss.JoinVertical(lipgloss.Left,
+		m.pluginPromptPlaceholder,
+		"",
+		m.pluginPromptInput.View(),
+		"",
+		HelpStyle.Render("enter: submit • esc: cancel"),
+	))
+}
+
+// renderAccountPicker renders the account picker dialog and makes its rows
+// clickable.
+func (m *Composer) renderAccountPicker() string {
+	maxW := m.dialogContentWidth()
+	fitText := func(s string, reserved int) string {
+		if maxW <= 0 {
+			return s
+		}
+		return ansi.Truncate(s, max(maxW-reserved, 1), "…")
+	}
+	const marker = 4 // item padding + "> "
+	lines := []string{fitText("Select Account:", 0), ""}
+	for i := range m.accounts {
+		acc := &m.accounts[i]
+		display := acc.GetSendAsEmail()
+		if acc.Name != "" {
+			display = fmt.Sprintf("%s (%s)", acc.Name, display)
+		}
+		if i == m.accountPickerCursor {
+			lines = append(lines, selectedItemStyle.Render("> "+fitText(display, marker)))
+		} else {
+			lines = append(lines, itemStyle.Render("  "+fitText(display, marker)))
+		}
+	}
+	lines = append(lines, "", HelpStyle.Render(fitText("↑/↓: navigate • enter: select • esc: cancel", 0)))
+
+	dialog := DialogBoxStyle.Render(strings.Join(lines, "\n"))
+	view, top, left := centerInArea(dialog, m.width, m.height)
+	dialogW := lipgloss.Width(dialog)
+	firstRow := top + DialogBoxStyle.GetBorderTopSize() + DialogBoxStyle.GetPaddingTop() + 2
+	m.rowHits = nil
+	for i := range m.accounts {
+		row := firstRow + i
+		for len(m.rowHits) <= row {
+			m.rowHits = append(m.rowHits, nil)
+		}
+		m.rowHits[row] = []composerHit{{minX: left, maxX: left + dialogW, focus: -1, attachment: -1, suggestion: -1, account: i}}
+	}
+	return view
+}
+
+func (m *Composer) renderConfirmExit() string {
+	m.rowHits = nil
+	text := t("composer.exit_confirm")
+	if maxW := m.dialogContentWidth(); maxW > 0 && lipgloss.Width(text) > maxW {
+		text = lipgloss.Wrap(text, maxW, "")
+	}
+	return m.dialogView(lipgloss.JoinVertical(lipgloss.Center,
+		text,
+		HelpStyle.Render("\n(y/n)"),
+	))
+}
+
+func (m *Composer) renderWKDConfirm() string {
+	m.rowHits = nil
+	maxW := m.dialogContentWidth()
+	var msg strings.Builder
+	msg.WriteString("Missing PGP keys for:\n\n")
+	for _, r := range m.wkdConfirmRecipients {
+		line := "  • " + r
+		if maxW > 0 {
+			line = ansi.Truncate(line, maxW, "…")
+		}
+		msg.WriteString(line + "\n")
+	}
+	msg.WriteString("\nDownload from WKD?")
+	return m.dialogView(lipgloss.JoinVertical(lipgloss.Center,
+		msg.String(),
+		HelpStyle.Render("\n(y/n)"),
+	))
 }
 
 // SetAccounts sets the available accounts for sending.
@@ -2066,12 +2485,27 @@ func (m *Composer) SetBcc(bcc string) {
 
 // ToggleCcBcc toggles the visibility of CC/BCC fields.
 func (m *Composer) ToggleCcBcc() {
+	m.toggleCcBcc()
+}
+
+func (m *Composer) toggleCcBcc() tea.Cmd {
 	m.showCcBcc = !m.showCcBcc
+	return m.leaveHiddenCcBcc()
 }
 
 // SetShowCcBcc sets the visibility of CC/BCC fields.
 func (m *Composer) SetShowCcBcc(show bool) {
 	m.showCcBcc = show
+	m.leaveHiddenCcBcc()
+}
+
+// leaveHiddenCcBcc moves focus off Cc/Bcc once those rows are hidden, so
+// typing never goes into an invisible field.
+func (m *Composer) leaveHiddenCcBcc() tea.Cmd {
+	if m.ccBccVisible() || (m.focusIndex != focusCc && m.focusIndex != focusBcc) {
+		return nil
+	}
+	return m.setFocusTo(focusSubject)
 }
 
 // GetShowCcBcc returns whether CC/BCC fields are visible.
@@ -2097,6 +2531,13 @@ func (m *Composer) GetBody() string {
 // SetBody updates the Body field with new content.
 func (m *Composer) SetBody(body string) {
 	m.bodyInput.SetValue(body)
+	// Open spelling/emoji popups hold offsets into the previous text.
+	m.spellShow = false
+	m.spellSuggestions = nil
+	m.spellWord = ""
+	m.emojiShow = false
+	m.emojiSuggestions = nil
+	m.emojiShortcode = ""
 }
 
 // GetAttachmentPaths returns the current attachment paths.
@@ -2152,6 +2593,7 @@ func (m *Composer) ShowPluginPrompt(placeholder string) {
 	m.pluginPromptInput.Placeholder = placeholder
 	m.pluginPromptInput.Prompt = "> "
 	m.pluginPromptInput.CharLimit = 256
+	m.pluginPromptInput.SetWidth(40) // refitted to the window when rendered
 	m.pluginPromptInput.Focus()
 	m.showPluginPrompt = true
 }
