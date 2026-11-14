@@ -6,7 +6,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/theme"
 )
@@ -171,11 +170,7 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // the top of the body) of every menu entry, so mouse clicks map to items.
 func (m Choice) menuContent() (string, []int) {
 	var lines []string
-	logo := strings.Split(renderLogo(choiceLogo), "\n")
-	for len(logo) > 0 && strings.TrimSpace(ansi.Strip(logo[len(logo)-1])) == "" {
-		logo = logo[:len(logo)-1]
-	}
-	lines = append(lines, logo...)
+	lines = append(lines, strings.Split(strings.TrimRight(renderLogo(choiceLogo), "\n"), "\n")...)
 	lines = append(lines, "")
 
 	if len(m.keybindWarnings) > 0 {
@@ -200,15 +195,8 @@ func (m Choice) menuContent() (string, []int) {
 
 	lines = append(lines, menuHintStyle.Render(t("choice.what_to_do")), "")
 
-	marketplaceIdx := m.marketplaceIndex()
 	rows := make([]int, len(m.choices))
 	for i, choice := range m.choices {
-		if i == 0 {
-			lines = append(lines, menuSectionStyle.Render(t("choice.section_mail")))
-		}
-		if i == marketplaceIdx {
-			lines = append(lines, "", menuSectionStyle.Render(t("choice.section_tools")))
-		}
 		rows[i] = len(lines)
 		if i == m.cursor {
 			lines = append(lines, menuSelectedStyle.Width(menuWidth).Render(choice))
@@ -217,15 +205,6 @@ func (m Choice) menuContent() (string, []int) {
 		}
 	}
 	return strings.Join(lines, "\n"), rows
-}
-
-// marketplaceIndex is the first entry of the "Tools" section. Drafts shifts it
-// down by one when there are saved drafts.
-func (m Choice) marketplaceIndex() int {
-	if m.hasSavedDrafts {
-		return 3
-	}
-	return 2
 }
 
 func (m Choice) View() tea.View {
