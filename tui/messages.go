@@ -138,6 +138,10 @@ type PatchStagedMsg struct {
 	Files         []string
 	NothingStaged bool
 	Err           error
+	// StagedPaths are the paths the patch touched (including the old side of
+	// renames). When set, the commit is limited to them so unrelated changes
+	// the user had staged are not swept into the patch commit.
+	StagedPaths []string
 }
 
 // PatchApplyResultMsg signals the result of a patch apply operation.
@@ -203,6 +207,10 @@ type PreviewBodyFetchedMsg struct {
 	BodyMIMEType string
 	Attachments  []fetcher.Attachment
 	Err          error
+	// Folder is the folder the body was fetched from. UIDs are only unique
+	// per folder, so cache writes and staleness checks must key on it rather
+	// than on whatever folder is current when the result arrives.
+	Folder string
 }
 
 type FetchErr error
@@ -349,6 +357,11 @@ type DownloadAttachmentMsg struct {
 	AccountID string
 	Encoding  string
 	Mailbox   MailboxKind
+	// UID and Folder identify the email the attachment belongs to. When set
+	// they take precedence over Index/Mailbox, which can go stale (the store
+	// is re-sorted on refresh) or name the wrong mailbox for custom folders.
+	UID    uint32
+	Folder string
 }
 
 type AttachmentDownloadedMsg struct {
@@ -426,6 +439,8 @@ type EmailBodyFetchedMsg struct {
 	Err          error
 	AccountID    string
 	Mailbox      MailboxKind
+	// Folder is the folder the body was fetched from (see PreviewBodyFetchedMsg).
+	Folder string
 }
 
 // --- Multi-Account Messages ---
@@ -455,6 +470,9 @@ type GoToEditAccountMsg struct {
 	POP3Server   string
 	POP3Port     int
 	MaildirPath  string
+	// AuthMethod is the account's authentication method ("password",
+	// "oauth2", …); editing must keep it, or OAuth accounts lose access.
+	AuthMethod string
 }
 
 // GoToEditMailingListMsg signals navigation to edit an existing mailing list.
@@ -586,6 +604,9 @@ type RefreshingEmailsMsg struct {
 type EmailsRefreshedMsg struct {
 	EmailsByAccount map[string][]fetcher.Email
 	Mailbox         MailboxKind
+	// Errors holds per-account fetch failures; failed accounts are absent
+	// from EmailsByAccount.
+	Errors map[string]error
 }
 
 // RequestRefreshMsg signals a request to refresh emails from the server.
@@ -625,6 +646,10 @@ type FolderEmailsFetchedMsg struct {
 	Emails     []fetcher.Email
 	AccountID  string
 	FolderName string
+	// Errors holds per-account fetch failures (offline, auth error, ...).
+	// Failed accounts contribute no emails, so callers must keep their
+	// previously known emails and must not persist or prune caches for them.
+	Errors map[string]error
 }
 
 // FolderEmailsAppendedMsg signals that more emails from a folder have been fetched (pagination).

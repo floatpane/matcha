@@ -601,16 +601,28 @@ func (d *Daemon) processOutbox(ctx context.Context) {
 	}
 }
 
+// reportSendFailure logs a failed outbox delivery and tells connected
+// clients, which otherwise keep showing the email as sent.
+func (d *Daemon) reportSendFailure(entry *OutboxEntry, err error) {
+	log.Printf("daemon: outbox send failed for %s: %v", entry.ID, err)
+	d.broadcastEvent(daemonrpc.EventSendFailed, daemonrpc.SendFailedEvent{
+		JobID:     entry.ID,
+		AccountID: entry.Params.AccountID,
+		Subject:   entry.Params.Subject,
+		Error:     err.Error(),
+	})
+}
+
 func (d *Daemon) sendOutboxEntry(entry *OutboxEntry) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("daemon: panic sending outbox entry %s: %v", entry.ID, r)
+			d.reportSendFailure(entry, fmt.Errorf("panic: %v", r))
 		}
 	}()
 
 	acct := d.getAccount(entry.Params.AccountID)
 	if acct == nil {
-		log.Printf("daemon: outbox send failed, no account for %s", entry.Params.AccountID)
+		d.reportSendFailure(entry, fmt.Errorf("no account for %s", entry.Params.AccountID))
 		return
 	}
 
@@ -620,7 +632,7 @@ func (d *Daemon) sendOutboxEntry(entry *OutboxEntry) {
 		// Message was pre-built (e.g. PGP-signed) in the client process; just deliver.
 		allRecipients := append(append([]string{}, entry.Params.To...), append(entry.Params.Cc, entry.Params.Bcc...)...)
 		if err := sender.DeliverRaw(acct, allRecipients, entry.Params.PrebuiltRaw); err != nil {
-			log.Printf("daemon: outbox deliver failed for %s: %v", entry.ID, err)
+			d.reportSendFailure(entry, err)
 			return
 		}
 		rawMsg = entry.Params.PrebuiltRaw
@@ -644,7 +656,7 @@ func (d *Daemon) sendOutboxEntry(entry *OutboxEntry) {
 			entry.Params.EncryptPGP,
 		)
 		if err != nil {
-			log.Printf("daemon: outbox send failed for %s: %v", entry.ID, err)
+			d.reportSendFailure(entry, err)
 			return
 		}
 	}

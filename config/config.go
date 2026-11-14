@@ -548,6 +548,7 @@ type secureDiskAccount struct {
 	POP3Port           int    `json:"pop3_port,omitempty"`
 	MaildirPath        string `json:"maildir_path,omitempty"`
 	CatchAll           bool   `json:"catch_all,omitempty"`
+	Signature          string `json:"signature,omitempty"`
 }
 
 type secureDiskConfig struct {
@@ -566,6 +567,8 @@ type secureDiskConfig struct {
 	MailingLists            []MailingList                     `json:"mailing_lists,omitempty"`
 	DateFormat              string                            `json:"date_format,omitempty"`
 	Language                string                            `json:"language,omitempty"`
+	BodyCacheThresholdMB    int                               `json:"body_cache_threshold_mb,omitempty"`
+	UndoDelaySeconds        int                               `json:"undo_delay_seconds,omitempty"`
 	PluginSettings          map[string]map[string]interface{} `json:"plugin_settings,omitempty"`
 	HasSeenSetupGuide       bool                              `json:"has_seen_setup_guide,omitempty"`
 	MouseEnabled            *bool                             `json:"mouse_enabled,omitempty"`
@@ -627,8 +630,11 @@ func SaveConfig(config *Config) error {
 			MailingLists:            config.MailingLists,
 			DateFormat:              config.DateFormat,
 			Language:                config.Language,
+			BodyCacheThresholdMB:    config.BodyCacheThresholdMB,
+			UndoDelaySeconds:        config.UndoDelaySeconds,
 			PluginSettings:          config.PluginSettings,
 			HasSeenSetupGuide:       config.HasSeenSetupGuide,
+			MouseEnabled:            config.MouseEnabled,
 			ShowOriginalOnReply:     config.ShowOriginalOnReply,
 			ShowCcBccByDefault:      config.ShowCcBccByDefault,
 		}
@@ -668,6 +674,7 @@ func SaveConfig(config *Config) error {
 				POP3Port:           acc.POP3Port,
 				MaildirPath:        acc.MaildirPath,
 				CatchAll:           acc.CatchAll,
+				Signature:          acc.Signature,
 			})
 		}
 		data, err = json.MarshalIndent(sdc, "", "  ")
@@ -734,6 +741,7 @@ func LoadConfig() (*Config, error) {
 		POP3Port           int    `json:"pop3_port,omitempty"`
 		MaildirPath        string `json:"maildir_path,omitempty"`
 		CatchAll           bool   `json:"catch_all,omitempty"`
+		Signature          string `json:"signature,omitempty"`
 	}
 	type diskConfig struct {
 		Accounts                []rawAccount                      `json:"accounts"`
@@ -837,6 +845,7 @@ func LoadConfig() (*Config, error) {
 			POP3Port:           rawAcc.POP3Port,
 			MaildirPath:        rawAcc.MaildirPath,
 			CatchAll:           rawAcc.CatchAll,
+			Signature:          rawAcc.Signature,
 			SC:                 &SessionCache{},
 		}
 

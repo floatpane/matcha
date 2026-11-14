@@ -3,7 +3,6 @@ package daemonclient
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,7 +13,7 @@ import (
 
 func mockDaemon(t *testing.T) (*Client, *daemonrpc.Conn) {
 	t.Helper()
-	serverConn, clientConn := net.Pipe()
+	serverConn, clientConn := connPair(t)
 
 	server := daemonrpc.NewConn(serverConn)
 	client := &Client{
@@ -174,7 +173,7 @@ func TestClient_CloseWhileReadLoopErrors(t *testing.T) {
 				}
 			}()
 
-			serverConn, clientConn := net.Pipe()
+			serverConn, clientConn := connPair(t)
 			client := &Client{
 				conn:    daemonrpc.NewConn(clientConn),
 				pending: make(map[uint64]chan *daemonrpc.Response),
@@ -244,7 +243,7 @@ func TestDaemonService_Reconnect(t *testing.T) {
 	// we build the daemonService manually with a mock client.
 
 	// Create first connection pair (original daemon).
-	serverConn1, clientConn1 := net.Pipe()
+	serverConn1, clientConn1 := connPair(t)
 	server1 := daemonrpc.NewConn(serverConn1)
 	client1 := &Client{
 		conn:    daemonrpc.NewConn(clientConn1),
@@ -281,7 +280,7 @@ func TestDaemonService_Reconnect(t *testing.T) {
 
 	// Now set up a "reconnected" daemon by replacing the client.
 	// We simulate a successful reconnect by directly swapping the client.
-	serverConn2, clientConn2 := net.Pipe()
+	serverConn2, clientConn2 := connPair(t)
 	server2 := daemonrpc.NewConn(serverConn2)
 	client2 := &Client{
 		conn:    daemonrpc.NewConn(clientConn2),

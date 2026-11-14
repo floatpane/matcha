@@ -4,14 +4,25 @@ import (
 	"github.com/floatpane/matcha/backend"
 	_ "github.com/floatpane/matcha/backend/jmap"    // register jmap backend
 	_ "github.com/floatpane/matcha/backend/maildir" // register maildir backend
+	_ "github.com/floatpane/matcha/backend/pop3"    // register pop3 backend
 	"github.com/floatpane/matcha/config"
 )
 
 // hasBackendProvider reports whether the account is served by a non-IMAP
-// backend (currently only "maildir" and "jmap") and should be routed through
-// the backend.Provider abstraction instead of the legacy IMAP code path.
+// backend ("maildir", "jmap" or "pop3") and should be routed through the
+// backend.Provider abstraction instead of the legacy IMAP code path. POP3 was
+// missing, so POP3 accounts were fetched over IMAP with an empty server name
+// and always showed an empty inbox.
 func hasBackendProvider(account *config.Account) bool {
-	return account != nil && (account.Protocol == "maildir" || account.Protocol == "jmap")
+	if account == nil {
+		return false
+	}
+	switch account.Protocol {
+	case "maildir", "jmap", "pop3":
+		return true
+	default:
+		return false
+	}
 }
 
 // newBackendProvider builds the backend.Provider for the account. Callers

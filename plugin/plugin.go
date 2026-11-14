@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/floatpane/matcha/internal/loglevel"
 	lua "github.com/yuin/gopher-lua"
@@ -72,7 +73,24 @@ type Manager struct {
 	// component visibility toggles, custom injected components, and the
 	// startup banner override. See ui.go for details.
 	ui uiState
+
+	// hookDepth is > 0 while a hook callback runs. Hooks fire implicitly on
+	// the UI goroutine (some once per fetched email), so slow calls made from
+	// them (matcha.http) are bounded by httpBudget.
+	hookDepth int
+	// httpBudget limits wall time spent in matcha.http from hooks.
+	httpBudget httpBudget
+	// lastErrorAt rate-limits runtime error notifications per plugin+source.
+	lastErrorAt map[string]time.Time
 }
+
+// maxQueuedNotifications bounds the notification queue so a misbehaving
+// plugin cannot grow it without limit.
+const maxQueuedNotifications = 8
+
+// runtimeErrorInterval is the minimum time between two notifications for the
+// same plugin and hook/key binding.
+const runtimeErrorInterval = 30 * time.Second
 
 // NewManager creates a new plugin manager with a Lua VM.
 func NewManager() *Manager {
@@ -105,10 +123,65 @@ func NewManager() *Manager {
 		L.Call(1, 0)
 	}
 
+	// The base library's print writes straight to os.Stdout and
+	// dofile()/loadfile() without a file name read os.Stdin. While the TUI
+	// owns the terminal the former corrupts the screen and the latter steals
+	// keystrokes, so route print through the logger and require file names.
+	L.SetGlobal("print", L.NewFunction(m.luaPrint))
+	L.SetGlobal("dofile", L.NewFunction(luaDoFile))
+	L.SetGlobal("loadfile", L.NewFunction(luaLoadFile))
+
 	m.state = L
 	m.registerAPI()
 
 	return m
+}
+
+// luaPrint replaces Lua's print: arguments are tab-joined like the original
+// but go to the application log (the log panel) instead of stdout.
+func (m *Manager) luaPrint(L *lua.LState) int { //nolint:gocritic
+	top := L.GetTop()
+	parts := make([]string, 0, top)
+	for i := 1; i <= top; i++ {
+		parts = append(parts, L.ToStringMeta(L.Get(i)).String())
+	}
+	log.Printf("[plugin %s] %s", m.currentPlugin, strings.Join(parts, "\t"))
+	return 0
+}
+
+// luaDoFile is dofile(path) without the implicit stdin fallback.
+func luaDoFile(L *lua.LState) int { //nolint:gocritic
+	path := L.CheckString(1)
+	if path == "" {
+		L.ArgError(1, "file name required")
+		return 0
+	}
+	top := L.GetTop()
+	fn, err := L.LoadFile(path)
+	if err != nil {
+		L.RaiseError("%s", err.Error())
+		return 0
+	}
+	L.Push(fn)
+	L.Call(0, lua.MultRet)
+	return L.GetTop() - top
+}
+
+// luaLoadFile is loadfile(path) without the implicit stdin fallback.
+func luaLoadFile(L *lua.LState) int { //nolint:gocritic
+	path := L.CheckString(1)
+	if path == "" {
+		L.ArgError(1, "file name required")
+		return 0
+	}
+	fn, err := L.LoadFile(path)
+	if err != nil {
+		L.Push(lua.LNil)
+		L.Push(lua.LString(err.Error()))
+		return 2
+	}
+	L.Push(fn)
+	return 1
 }
 
 // LoadPlugins discovers and loads plugins from ~/.config/matcha/plugins/.
@@ -201,9 +274,39 @@ func (m *Manager) TakePendingNotification() (*PendingNotification, bool) {
 // bubble-overlay notification system. Multiple failures are queued and
 // drained one-at-a-time by TakePendingNotification.
 func (m *Manager) queueLoadNotification(name string, err error) {
-	m.pendingLoadNotifications = append(m.pendingLoadNotifications, &PendingNotification{
+	m.queueNotification(&PendingNotification{
 		Title:    "Plugin load error",
 		Message:  fmt.Sprintf("%s: %v", name, err),
+		Duration: 6,
+		Kind:     NotifyKindError,
+		Closable: true,
+	})
+}
+
+func (m *Manager) queueNotification(n *PendingNotification) {
+	if len(m.pendingLoadNotifications) >= maxQueuedNotifications {
+		return
+	}
+	m.pendingLoadNotifications = append(m.pendingLoadNotifications, n)
+}
+
+// reportRuntimeError logs a plugin callback failure and surfaces it as an
+// in-app notification, at most once per runtimeErrorInterval for the same
+// plugin and source (hooks such as composer_updated fire on every keystroke).
+func (m *Manager) reportRuntimeError(source string, err error) {
+	log.Printf("plugin %q %s error: %v", m.currentPlugin, source, err)
+	key := m.currentPlugin + "\x00" + source
+	now := time.Now()
+	if last, ok := m.lastErrorAt[key]; ok && now.Sub(last) < runtimeErrorInterval {
+		return
+	}
+	if m.lastErrorAt == nil {
+		m.lastErrorAt = make(map[string]time.Time)
+	}
+	m.lastErrorAt[key] = now
+	m.queueNotification(&PendingNotification{
+		Title:    "Plugin error",
+		Message:  fmt.Sprintf("%s (%s): %v", m.currentPlugin, source, err),
 		Duration: 6,
 		Kind:     NotifyKindError,
 		Closable: true,

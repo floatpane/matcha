@@ -1,10 +1,12 @@
 package plugin
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	lua "github.com/yuin/gopher-lua"
 
@@ -14,6 +16,32 @@ import (
 const httpMaxBodySize = 1 << 20 // 1 MB
 
 var httpClient = httpclient.New(httpclient.PluginCallTimeout)
+
+// Hooks run synchronously on the UI goroutine, and some fire once per fetched
+// email (email_received), so matcha.http calls made from hooks share a time
+// budget: at most hookHTTPBudget of request time per hookHTTPWindow. Once it
+// is spent, calls from hooks fail immediately instead of freezing the UI.
+// Calls from key bindings and prompts (explicit user actions) are exempt.
+const (
+	hookHTTPBudget = 2 * time.Second
+	hookHTTPWindow = 10 * time.Second
+)
+
+type httpBudget struct {
+	windowStart time.Time
+	spent       time.Duration
+}
+
+// remaining returns the budget left in the current window.
+func (b *httpBudget) remaining(now time.Time) time.Duration {
+	if now.Sub(b.windowStart) >= hookHTTPWindow {
+		b.windowStart = now
+		b.spent = 0
+	}
+	return hookHTTPBudget - b.spent
+}
+
+func (b *httpBudget) charge(d time.Duration) { b.spent += d }
 
 // luaHTTP implements matcha.http(options) — make an HTTP request.
 //
@@ -64,7 +92,25 @@ func (m *Manager) luaHTTP(L *lua.LState) int { //nolint:gocritic
 		bodyReader = strings.NewReader(v.String())
 	}
 
-	req, err := http.NewRequest(method, rawURL, bodyReader) //nolint:noctx
+	timeout := httpclient.PluginCallTimeout
+	inHook := m.hookDepth > 0
+	if inHook {
+		left := m.httpBudget.remaining(time.Now())
+		if left <= 0 {
+			L.Push(lua.LNil)
+			L.Push(lua.LString("matcha.http: time budget for hooks exhausted (hooks run on the UI thread; use a key binding for slow requests)"))
+			return 2
+		}
+		timeout = min(timeout, left)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if inHook {
+		start := time.Now()
+		defer func() { m.httpBudget.charge(time.Since(start)) }()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, bodyReader)
 	if err != nil {
 		L.Push(lua.LNil)
 		L.Push(lua.LString(err.Error()))
