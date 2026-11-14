@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	overlay "github.com/floatpane/bubble-overlay"
 	"github.com/floatpane/matcha/plugin"
 	"github.com/floatpane/matcha/theme"
@@ -83,10 +84,13 @@ func isUIVisible(name string) bool {
 // --- Custom component rendering -------------------------------------------
 
 // renderCustomComponents composites plugin-injected components onto the main
-// content string. Components with PosFloating are placed as overlays using the
-// bubble-overlay library (same mechanism as the move/jump overlays). Anchored
-// components (PosTopLeft, PosTopRight, PosBottomLeft, PosBottomRight) are
-// joined into the content flow.
+// content string. Every component is painted as an overlay using the
+// bubble-overlay library (same mechanism as the move/jump overlays), so the
+// view keeps its height and mouse rows keep their meaning:
+//
+//   - PosTopLeft / PosTopRight cover the first rows, left- or right-aligned.
+//   - PosBottomLeft / PosBottomRight cover the last rows of the screen.
+//   - PosFloating is centered.
 //
 // width and height are the current terminal dimensions, used for overlay
 // placement calculations.
@@ -118,55 +122,43 @@ func renderCustomComponents(content string, width, height int) string {
 		}
 	}
 
-	// --- Anchored components: join into content flow ---
+	// --- Anchored components: paint over the first / last rows ---
 	//
-	// Top-anchored components are stacked above the main content; bottom-
-	// anchored components are stacked below. Left and right at the same
-	// vertical anchor are placed side by side with a gap that fills the
-	// full terminal width, so a lone "top_right" component is properly
-	// right-aligned and a lone "top_left" is left-aligned.
-
-	if len(topLeft) > 0 || len(topRight) > 0 {
-		leftBlock := ""
-		if len(topLeft) > 0 {
-			leftBlock = joinComponentBlocks(topLeft)
-		}
-		rightBlock := ""
-		if len(topRight) > 0 {
-			rightBlock = joinComponentBlocks(topRight)
-		}
-		gap := width - lipgloss.Width(leftBlock) - lipgloss.Width(rightBlock)
-		if gap < 0 {
-			gap = 0
-		}
-		topBar := lipgloss.JoinHorizontal(lipgloss.Top,
-			leftBlock,
-			strings.Repeat(" ", gap),
-			rightBlock,
-		)
-		content = lipgloss.JoinVertical(lipgloss.Left, topBar, content)
+	// Stacking them above or below the content would make a full-height view
+	// taller than the screen (cutting off its last row and shifting every
+	// mouse row), so they are painted over the content instead. Only the
+	// component's own cells are replaced; the rest of each row stays.
+	screenW := width
+	if screenW <= 0 {
+		screenW = lipgloss.Width(content)
+	}
+	screenH := height
+	if screenH <= 0 {
+		screenH = lipgloss.Height(content)
 	}
 
-	if len(bottomLeft) > 0 || len(bottomRight) > 0 {
-		leftBlock := ""
-		if len(bottomLeft) > 0 {
-			leftBlock = joinComponentBlocks(bottomLeft)
+	paint := func(blocks []plugin.CustomComponent, bottom, right bool) {
+		if len(blocks) == 0 {
+			return
 		}
-		rightBlock := ""
-		if len(bottomRight) > 0 {
-			rightBlock = joinComponentBlocks(bottomRight)
+		block := strings.Split(joinComponentBlocks(blocks), "\n")
+		for i, line := range block {
+			block[i] = ansi.Truncate(line, screenW, "")
 		}
-		gap := width - lipgloss.Width(leftBlock) - lipgloss.Width(rightBlock)
-		if gap < 0 {
-			gap = 0
+		row := 0
+		if bottom {
+			row = max(0, screenH-len(block))
 		}
-		bottomBar := lipgloss.JoinHorizontal(lipgloss.Bottom,
-			leftBlock,
-			strings.Repeat(" ", gap),
-			rightBlock,
-		)
-		content = lipgloss.JoinVertical(lipgloss.Left, content, bottomBar)
+		col := 0
+		if right {
+			col = max(0, screenW-lipgloss.Width(strings.Join(block, "\n")))
+		}
+		content = overlay.Block(content, block, row, col)
 	}
+	paint(topLeft, false, false)
+	paint(topRight, false, true)
+	paint(bottomLeft, true, false)
+	paint(bottomRight, true, true)
 
 	// --- Floating components: overlay on top of content ---
 	//

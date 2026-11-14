@@ -2,10 +2,13 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+	overlay "github.com/floatpane/bubble-overlay"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/internal/passwordstrength"
 	"github.com/floatpane/matcha/plugin"
@@ -22,6 +25,10 @@ var (
 	settingsFocusedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 	settingsBlurredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
+
+// settingsDoubleClick is the longest gap between two clicks on the same row
+// that still counts as a double click.
+const settingsDoubleClick = 500 * time.Millisecond
 
 type SettingsPane int
 
@@ -42,6 +49,9 @@ const (
 	CategoryContacts
 )
 
+// settingsCategoryCount is the number of entries in the settings menu.
+const settingsCategoryCount = int(CategoryContacts) + 1
+
 type Settings struct {
 	cfg    *config.Config
 	width  int
@@ -54,11 +64,14 @@ type Settings struct {
 	menuCursor int
 
 	// Sub-components states
-	generalCursor    int
-	accountsCursor   int
-	themeCursor      int
-	listsCursor      int
-	confirmingDelete bool
+	generalCursor  int
+	accountsCursor int
+	themeCursor    int
+	listsCursor    int
+	// Pending delete prompts. Each category owns its own flag so a prompt can
+	// never leak into (and index) another category's list.
+	accountsConfirmingDelete bool
+	listsConfirmingDelete    bool
 
 	// Contacts state
 	contactsCursor     int
@@ -81,7 +94,8 @@ type Settings struct {
 	encConfirmInput     textinput.Model
 	encFocusIndex       int
 	encError            string
-	encEnabling         bool
+	encEnabling         bool // EnableSecureMode is running
+	encDisabling        bool // DisableSecureMode is running
 	confirmingDisable   bool
 	passwordMeter       passwordstrength.Meter
 	encPasswordStrength passwordstrength.Strength
@@ -95,6 +109,14 @@ type Settings struct {
 	pluginEditingKey    string
 	pluginEditingType   plugin.SettingType
 	pluginInput         textinput.Model
+
+	// scroll holds the first visible body row of each scrollable page.
+	scroll map[string]int
+
+	// Double-click detection for content rows.
+	lastClickTime time.Time
+	lastClickKey  string
+	lastClickIdx  int
 }
 
 type SettingsState struct {
@@ -133,6 +155,7 @@ func NewSettings(cfg *config.Config) *Settings {
 		cfg:                cfg,
 		activePane:         PaneMenu,
 		activeCategory:     CategoryGeneral,
+		contactsList:       config.GetNamedContacts(),
 		smimeCertInput:     newInput("/path/to/cert.pem", "> ", false),
 		smimeKeyInput:      newInput("/path/to/private_key.pem", "> ", false),
 		pgpPublicKeyInput:  newInput("/path/to/public_key.asc", "> ", false),
@@ -143,6 +166,7 @@ func NewSettings(cfg *config.Config) *Settings {
 		encConfirmInput:    newInput("Confirm Password", "> ", true),
 		passwordMeter:      passwordstrength.NewLibMeter(),
 		pluginInput:        newInput("", "> ", false),
+		scroll:             make(map[string]int),
 	}
 }
 
@@ -170,6 +194,11 @@ func (m *Settings) RestoreState(state SettingsState) {
 	m.activePane = state.ActivePane
 	m.activeCategory = state.ActiveCategory
 	m.menuCursor = state.MenuCursor
+	// The highlighted menu entry always names the category on screen; a
+	// state that only sets ActiveCategory must not leave "General" selected.
+	if cat := int(state.ActiveCategory); cat >= 0 && cat < settingsCategoryCount {
+		m.menuCursor = cat
+	}
 	m.generalCursor = state.GeneralCursor
 	m.accountsCursor = state.AccountsCursor
 	m.themeCursor = state.ThemeCursor
@@ -179,16 +208,17 @@ func (m *Settings) RestoreState(state SettingsState) {
 	if state.ActiveCategory == CategoryContacts {
 		m.contactsList = config.GetNamedContacts()
 	}
+	m.clearPrompts()
 }
 
 func (m *Settings) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-// categoriesStartY returns the screen row where the first settings category appears.
-// Layout: docStyle top margin (1) + title row (1) + \n\n (2) = 4.
+// categoriesStartY returns the screen row where the first settings category
+// appears, derived from the rendered menu header.
 func (m *Settings) categoriesStartY() int {
-	return 4
+	return docStyle.GetMarginTop() + blockHeight(m.menuHeader())
 }
 
 func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -197,50 +227,16 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.MouseWheelMsg:
-		if m.activePane == PaneMenu {
-			switch msg.Button {
-			case tea.MouseWheelDown:
-				if m.menuCursor < 6 {
-					m.menuCursor++
-					m.activeCategory = SettingsCategory(m.menuCursor)
-				}
-			case tea.MouseWheelUp:
-				if m.menuCursor > 0 {
-					m.menuCursor--
-					m.activeCategory = SettingsCategory(m.menuCursor)
-				}
-			default:
-			}
-		}
-		return m, tea.Batch(cmds...)
+		m.handleWheel(msg)
+		return m, nil
 
 	case tea.MouseClickMsg:
-		if msg.Button == tea.MouseLeft {
-			// Left pane: docStyle left margin (2) through left pane width (30) + margin = x < 32
-			if msg.X >= 2 && msg.X < 32 {
-				catIdx := msg.Y - m.categoriesStartY()
-				if catIdx >= 0 && catIdx < 7 {
-					m.menuCursor = catIdx
-					m.activeCategory = SettingsCategory(catIdx)
-					m.activePane = PaneContent
-				}
-			}
-		}
-		return m, tea.Batch(cmds...)
+		return m, m.handleClick(msg)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		inputWidth := (m.width - 30) - 6 // left pane is 30
-		if inputWidth < 20 {
-			inputWidth = 20
-		}
-		m.smimeCertInput.SetWidth(inputWidth)
-		m.smimeKeyInput.SetWidth(inputWidth)
-		m.pgpPublicKeyInput.SetWidth(inputWidth)
-		m.pgpPrivateKeyInput.SetWidth(inputWidth)
-		m.pgpPINInput.SetWidth(inputWidth)
-		m.pluginInput.SetWidth(inputWidth)
+		m.resizeInputs()
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -252,16 +248,28 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.encError = msg.Err.Error()
 			return m, nil
 		}
-		m.activePane = PaneMenu
+		m.encError = ""
+		m.encPasswordInput.SetValue("")
+		m.encConfirmInput.SetValue("")
+		m.encPasswordStrength = ""
+		m.encPasswordInput.Blur()
+		m.encConfirmInput.Blur()
+		if m.activeCategory == CategoryEncryption {
+			m.leaveContent()
+		}
 		return m, nil
 
 	case SecureModeDisabledMsg:
+		m.encDisabling = false
 		if msg.Err != nil {
 			m.encError = msg.Err.Error()
 			return m, nil
 		}
+		m.encError = ""
 		m.confirmingDisable = false
-		m.activePane = PaneMenu
+		if m.activeCategory == CategoryEncryption {
+			m.leaveContent()
+		}
 		return m, nil
 	}
 
@@ -293,21 +301,38 @@ func (m *Settings) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *Settings) updateKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	// Global shortcut to return to menu from content pane
-	if m.activePane == PaneContent && msg.String() == "esc" {
-		// unless we are in crypto config or encryption editing which have their own esc logic
-		if (m.activeCategory != CategoryAccounts || !m.isCryptoConfig) &&
-			(m.activeCategory != CategoryEncryption || m.encFocusIndex <= -1) &&
-			(m.activeCategory != CategoryPlugins || (!m.pluginEditing && m.pluginSelected == "")) {
-			m.activePane = PaneMenu
-			return m, nil
-		}
+// resizeInputs sizes every text input to the content pane. A textinput
+// renders its prompt plus one extra cell for the cursor next to the value,
+// so both are subtracted to keep a full field from wrapping.
+func (m *Settings) resizeInputs() {
+	width := m.contentWidth()
+	if width <= 0 {
+		return
 	}
+	for _, in := range []*textinput.Model{
+		&m.smimeCertInput, &m.smimeKeyInput, &m.pgpPublicKeyInput,
+		&m.pgpPrivateKeyInput, &m.pgpPINInput, &m.pluginInput,
+		&m.encPasswordInput, &m.encConfirmInput,
+	} {
+		in.SetWidth(max(1, width-lipgloss.Width(in.Prompt)-1))
+	}
+}
 
-	if m.activePane == PaneContent && msg.String() == keyLeft && m.canFocusSettingsMenuWithLeft() {
-		m.activePane = PaneMenu
-		return m, nil
+func (m *Settings) updateKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.activePane == PaneContent {
+		switch msg.String() {
+		case "esc":
+			// Pages with their own esc handling (prompts, sub-forms) keep it.
+			if !m.contentHandlesEsc() {
+				m.leaveContent()
+				return m, nil
+			}
+		case keyLeft:
+			if m.canFocusSettingsMenuWithLeft() {
+				m.leaveContent()
+				return m, nil
+			}
+		}
 	}
 
 	if m.activePane == PaneMenu {
@@ -333,21 +358,107 @@ func (m *Settings) updateKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// contentHandlesEsc reports whether the active page consumes esc itself
+// (cancelling a prompt, closing a sub-form or input) instead of returning to
+// the menu.
+func (m *Settings) contentHandlesEsc() bool {
+	switch m.activeCategory {
+	case CategoryAccounts:
+		return m.isCryptoConfig || m.accountsConfirmingDelete
+	case CategoryMailingLists:
+		return m.listsConfirmingDelete
+	case CategoryContacts:
+		return m.contactsConfirming
+	case CategoryEncryption:
+		// The password form clears its inputs on esc; the enabled page only
+		// keeps esc while its disable prompt is open.
+		return !config.IsSecureModeEnabled() || m.confirmingDisable
+	case CategoryPlugins:
+		return m.pluginEditing || m.pluginSelected != ""
+	case CategoryGeneral, CategoryTheme:
+		return false
+	default:
+		return false
+	}
+}
+
 func (m *Settings) canFocusSettingsMenuWithLeft() bool {
 	switch m.activeCategory {
 	case CategoryAccounts:
-		return !m.isCryptoConfig && !m.confirmingDelete
+		return !m.isCryptoConfig && !m.accountsConfirmingDelete
+	case CategoryMailingLists:
+		return !m.listsConfirmingDelete
 	case CategoryEncryption:
 		return config.IsSecureModeEnabled() && !m.confirmingDisable
 	case CategoryPlugins:
 		return !m.pluginEditing && m.pluginSelected == ""
 	case CategoryContacts:
 		return !m.contactsConfirming
-	case CategoryGeneral, CategoryTheme, CategoryMailingLists:
+	case CategoryGeneral, CategoryTheme:
 		return true
 	default:
 		return true
 	}
+}
+
+// clearPrompts cancels every pending confirmation prompt.
+func (m *Settings) clearPrompts() {
+	m.accountsConfirmingDelete = false
+	m.listsConfirmingDelete = false
+	m.contactsConfirming = false
+	m.confirmingDisable = false
+}
+
+// leaveContent returns focus to the menu, dropping any pending prompt so it
+// cannot resurface (or act) on another category.
+func (m *Settings) leaveContent() {
+	m.clearPrompts()
+	m.activePane = PaneMenu
+}
+
+// openCategory focuses the content pane of cat, resetting the transient state
+// a fresh visit starts from. Keyboard (enter/right) and mouse clicks share it.
+func (m *Settings) openCategory(cat SettingsCategory) tea.Cmd {
+	m.menuCursor = int(cat)
+	m.activeCategory = cat
+	m.activePane = PaneContent
+	m.clearPrompts()
+	m.isCryptoConfig = false
+	m.pluginSelected = ""
+	m.pluginEditing = false
+	m.pluginInput.Blur()
+
+	switch cat {
+	case CategoryGeneral, CategoryAccounts, CategoryMailingLists, CategoryPlugins:
+		// no extra reset needed
+	case CategoryContacts:
+		m.contactsList = config.GetNamedContacts()
+		m.contactsCursor = min(m.contactsCursor, len(m.contactsList))
+	case CategoryTheme:
+		// Find current theme index
+		themes := theme.AllThemes()
+		for i, t := range themes {
+			if t.Name == theme.ActiveTheme.Name {
+				m.themeCursor = i
+				break
+			}
+		}
+	case CategoryEncryption:
+		m.encError = ""
+		m.encPasswordInput.SetValue("")
+		m.encConfirmInput.SetValue("")
+		m.encPasswordStrength = ""
+		m.encFocusIndex = 0
+		// encEnabling/encDisabling are left alone: an operation that is
+		// still running must keep blocking a second submit.
+		m.encPasswordInput.Blur()
+		m.encConfirmInput.Blur()
+		if !config.IsSecureModeEnabled() {
+			m.encPasswordInput.Focus()
+		}
+	}
+
+	return textinput.Blink
 }
 
 func (m *Settings) contentItemStyle(selected bool) lipgloss.Style {
@@ -372,49 +483,13 @@ func (m *Settings) contentFocusStyle() lipgloss.Style {
 }
 
 func (m *Settings) updateMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	categoryCount := int(CategoryContacts) + 1
-
 	switch msg.String() {
 	case "up", "k":
-		m.menuCursor = (m.menuCursor - 1 + categoryCount) % categoryCount
+		m.menuCursor = (m.menuCursor - 1 + settingsCategoryCount) % settingsCategoryCount
 	case keyDown, "j":
-		m.menuCursor = (m.menuCursor + 1) % categoryCount
+		m.menuCursor = (m.menuCursor + 1) % settingsCategoryCount
 	case keyRight, "l", keyEnter:
-		m.activeCategory = SettingsCategory(m.menuCursor)
-		m.activePane = PaneContent
-
-		// Reset states
-		m.confirmingDelete = false
-		switch m.activeCategory {
-		case CategoryGeneral, CategoryAccounts, CategoryMailingLists, CategoryPlugins:
-			// no extra reset needed
-		case CategoryContacts:
-			m.contactsConfirming = false
-			m.contactsList = config.GetNamedContacts()
-		case CategoryTheme:
-			// Find current theme index
-			themes := theme.AllThemes()
-			for i, t := range themes {
-				if t.Name == theme.ActiveTheme.Name {
-					m.themeCursor = i
-					break
-				}
-			}
-		case CategoryEncryption:
-			m.encError = ""
-			m.encPasswordInput.SetValue("")
-			m.encConfirmInput.SetValue("")
-			m.encPasswordStrength = ""
-			m.encFocusIndex = 0
-			m.confirmingDisable = false
-			m.encEnabling = false
-			if !config.IsSecureModeEnabled() {
-				m.encPasswordInput.Focus()
-				m.encConfirmInput.Blur()
-			}
-		}
-
-		return m, textinput.Blink
+		return m, m.openCategory(SettingsCategory(m.menuCursor))
 	case "esc":
 		return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
 	}
@@ -422,11 +497,164 @@ func (m *Settings) updateMenu(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Settings) View() tea.View {
-	// Left pane
-	var left strings.Builder
-	left.WriteString(titleStyle.Render(t("settings.title")) + "\n\n")
+// --- Mouse -------------------------------------------------------------------
 
+// handleWheel scrolls whichever pane has focus.
+func (m *Settings) handleWheel(msg tea.MouseWheelMsg) {
+	if m.dialogOpen() {
+		return
+	}
+	var delta int
+	switch msg.Button {
+	case tea.MouseWheelDown:
+		delta = 1
+	case tea.MouseWheelUp:
+		delta = -1
+	default:
+		return
+	}
+	if m.activePane == PaneMenu {
+		m.menuCursor = max(0, min(settingsCategoryCount-1, m.menuCursor+delta))
+		m.activeCategory = SettingsCategory(m.menuCursor)
+		return
+	}
+	if cur, n := m.listCursor(); cur != nil && n > 0 {
+		*cur = max(0, min(n-1, *cur+delta))
+	}
+}
+
+// handleClick opens a category clicked in the menu, and selects (click) or
+// activates (double click) a row clicked in the content pane.
+func (m *Settings) handleClick(msg tea.MouseClickMsg) tea.Cmd {
+	if msg.Button != tea.MouseLeft || m.dialogOpen() {
+		return nil
+	}
+	menuLeft := docStyle.GetMarginLeft()
+	contentLeft := menuLeft + settingsMenuWidth
+	if msg.X >= menuLeft && msg.X < contentLeft {
+		idx := msg.Y - m.categoriesStartY()
+		if idx >= 0 && idx < settingsCategoryCount {
+			return m.openCategory(SettingsCategory(idx))
+		}
+		return nil
+	}
+	if msg.X < contentLeft || (m.width > 0 && msg.X >= m.width-docStyle.GetMarginRight()) {
+		return nil
+	}
+	row := msg.Y - docStyle.GetMarginTop()
+	if maxH := m.contentMaxHeight(); row < 0 || (maxH > 0 && row >= maxH) {
+		return nil
+	}
+	if m.activePane == PaneMenu {
+		// A click on the previewed page focuses it, like enter.
+		return m.openCategory(m.activeCategory)
+	}
+	return m.clickContentRow(row)
+}
+
+// clickContentRow maps a content-relative row to a list entry of the active
+// page using the same layout the view renders.
+func (m *Settings) clickContentRow(row int) tea.Cmd {
+	page := m.currentPage()
+	if !page.rows {
+		return nil
+	}
+	_, layout := m.layoutPage(page, m.contentWidth(), m.contentMaxHeight())
+	rel := row - layout.bodyTop
+	if rel < 0 || rel >= layout.end-layout.start {
+		return nil
+	}
+	idx := layout.start + rel
+	cur, n := m.listCursor()
+	if cur == nil || idx >= n {
+		return nil
+	}
+
+	now := time.Now()
+	double := page.key == m.lastClickKey && idx == m.lastClickIdx &&
+		now.Sub(m.lastClickTime) < settingsDoubleClick
+	m.lastClickTime, m.lastClickKey, m.lastClickIdx = now, page.key, idx
+	*cur = idx
+	if !double {
+		return nil
+	}
+	m.lastClickTime = time.Time{} // a third click starts a new pair
+	_, cmd := m.updateKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+	return cmd
+}
+
+// listCursor returns the cursor of the active list page and its entry count,
+// or nil for pages that are forms rather than lists.
+func (m *Settings) listCursor() (*int, int) {
+	switch m.activeCategory {
+	case CategoryGeneral:
+		return &m.generalCursor, len(m.buildGeneralOptions())
+	case CategoryAccounts:
+		if m.isCryptoConfig {
+			return nil, 0
+		}
+		return &m.accountsCursor, len(m.cfg.Accounts) + 1
+	case CategoryTheme:
+		return &m.themeCursor, len(theme.AllThemes())
+	case CategoryMailingLists:
+		return &m.listsCursor, len(m.cfg.MailingLists) + 1
+	case CategoryContacts:
+		return &m.contactsCursor, len(m.contactsList) + 1
+	case CategoryPlugins:
+		if m.plugins == nil || m.pluginEditing {
+			return nil, 0
+		}
+		if m.pluginSelected == "" {
+			return &m.pluginListCursor, len(m.plugins.Schemas())
+		}
+		return &m.pluginSettingCursor, len(m.plugins.Schema(m.pluginSelected))
+	case CategoryEncryption:
+		return nil, 0
+	}
+	return nil, 0
+}
+
+// --- Layout ------------------------------------------------------------------
+
+// contentWidth is the usable width of the content pane (0 before the first
+// WindowSizeMsg).
+func (m *Settings) contentWidth() int {
+	if m.width <= 0 {
+		return 0
+	}
+	return max(1, m.width-docStyle.GetHorizontalMargins()-settingsMenuWidth-settingsContentPad)
+}
+
+// contentMaxHeight is how many rows the menu and content panes may use, which
+// keeps the help bar (and a blank line above it) on screen (0 = unknown).
+func (m *Settings) contentMaxHeight() int {
+	if m.height <= 0 {
+		return 0
+	}
+	return max(1, m.height-docStyle.GetVerticalMargins()-blockHeight(m.helpBar())-1)
+}
+
+// helpBar renders the bottom help line, wrapped to the screen.
+func (m *Settings) helpBar() string {
+	text := t("settings.help_content")
+	if m.activePane == PaneMenu {
+		text = t("settings.help_menu")
+	}
+	return helpStyle.Render(wrapBlock(text, m.width-docStyle.GetHorizontalMargins()))
+}
+
+// menuHeader is the block drawn above the category list (title plus a blank
+// line).
+func (m *Settings) menuHeader() string {
+	return titleStyle.Render(ansi.Truncate(t("settings.title"), m.menuInnerWidth(), "…")) + "\n"
+}
+
+// menuInnerWidth is the menu's width minus its right padding and border.
+func (m *Settings) menuInnerWidth() int {
+	return settingsMenuWidth - settingsMenuPadRight - 1
+}
+
+func (m *Settings) renderMenu() string {
 	categories := []string{
 		t("settings.category_general"),
 		t("settings.category_accounts"),
@@ -436,87 +664,170 @@ func (m *Settings) View() tea.View {
 		t("settings.category_plugins"),
 		t("settings.category_contacts"),
 	}
+
+	lines := make([]string, 0, len(categories)+1)
+	lines = append(lines, m.menuHeader())
 	for i, c := range categories {
 		cursor := "  "
-		if m.menuCursor == i {
-			if m.activePane == PaneMenu {
-				cursor = "▌ "
-			} else {
-				cursor = "• "
-			}
-		}
-
 		style := accountItemStyle
 		if m.menuCursor == i {
 			if m.activePane == PaneMenu {
+				cursor = "▌ "
 				style = selectedAccountItemStyle
 			} else {
+				cursor = "• "
 				style = selectedAccountItemStyle.UnsetBold()
 			}
 		}
-
-		left.WriteString(style.Render(cursor+c) + "\n")
+		// One row per category keeps clicks mapped to the right entry.
+		label := ansi.Truncate(cursor+c, m.menuInnerWidth()-style.GetHorizontalPadding(), "…")
+		lines = append(lines, style.Render(label))
 	}
 
-	leftPanel := lipgloss.NewStyle().
-		Width(30).
-		PaddingRight(2).
+	return lipgloss.NewStyle().
+		Width(settingsMenuWidth).
+		PaddingRight(settingsMenuPadRight).
 		Border(lipgloss.NormalBorder(), false, true, false, false).
 		BorderForeground(theme.ActiveTheme.Secondary).
-		Render(left.String())
+		Render(strings.Join(lines, "\n"))
+}
 
-	// Right pane
-	var right string
+// currentPage builds the content page of the active category.
+func (m *Settings) currentPage() settingsPage {
 	switch m.activeCategory {
 	case CategoryGeneral:
-		right = m.viewGeneral()
+		return m.generalPage()
 	case CategoryAccounts:
-		right = m.viewAccounts()
+		return m.accountsPage()
 	case CategoryTheme:
-		right = m.viewTheme()
+		return m.themePage()
 	case CategoryMailingLists:
-		right = m.viewMailingLists()
+		return m.mailingListsPage()
 	case CategoryEncryption:
-		right = m.viewEncryption()
+		return m.encryptionPage()
 	case CategoryPlugins:
-		right = m.viewPlugins()
+		return m.pluginsPage()
 	case CategoryContacts:
-		right = m.viewContacts()
+		return m.contactsPage()
 	}
+	return settingsPage{focusTop: -1, focusBot: -1}
+}
 
-	rightPanel := lipgloss.NewStyle().
-		PaddingLeft(2).
-		Width(m.width - 34). // 30 (left) + 2 (border) + 2 (padding)
-		Render(right)
-
-	content := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
-
-	helpText := t("settings.help_content")
-	if m.activePane == PaneMenu {
-		helpText = t("settings.help_menu")
+// pendingConfirm describes the confirmation prompt of the active page, if any.
+func (m *Settings) pendingConfirm() (title, detail string, ok bool) {
+	if m.activePane != PaneContent {
+		return "", "", false
 	}
-	helpView := helpStyle.Render(helpText)
-
-	if m.height > 0 {
-		currentHeight := lipgloss.Height(content + "\n\n" + helpView)
-		gap := m.height - currentHeight
-		if gap > 0 {
-			content += strings.Repeat("\n", gap)
+	switch m.activeCategory {
+	case CategoryAccounts:
+		if m.accountsConfirmingDelete && m.accountsCursor < len(m.cfg.Accounts) {
+			return "Delete account?", m.cfg.Accounts[m.accountsCursor].Email, true
 		}
-	} else {
-		content += "\n\n"
+	case CategoryMailingLists:
+		if m.listsConfirmingDelete && m.listsCursor < len(m.cfg.MailingLists) {
+			return t("settings_mailing_lists.delete_confirm"), m.cfg.MailingLists[m.listsCursor].Name, true
+		}
+	case CategoryContacts:
+		if m.contactsConfirming && m.contactsCursor < len(m.contactsList) {
+			return t("settings_contacts.delete_confirm"), m.contactsList[m.contactsCursor].Name, true
+		}
+	case CategoryEncryption:
+		if m.confirmingDisable {
+			return t("settings_encryption.disable_confirm"), t("settings_encryption.disable_warning"), true
+		}
+	case CategoryGeneral, CategoryTheme, CategoryPlugins:
+	}
+	return "", "", false
+}
+
+// dialogOpen reports whether a confirmation prompt is on screen; it is modal,
+// so mouse input behind it is ignored.
+func (m *Settings) dialogOpen() bool {
+	_, _, ok := m.pendingConfirm()
+	return ok
+}
+
+// renderDialog draws a centered y/n confirmation box that fits the screen.
+func (m *Settings) renderDialog(title, detail string) string {
+	lines := []string{
+		dangerStyle.Render(title),
+		accountEmailStyle.Render(detail),
+		HelpStyle.Render("\n(y/n)"),
+	}
+	if m.width > 0 {
+		inner := max(1, m.width-DialogBoxStyle.GetHorizontalFrameSize()-2)
+		for i, line := range lines {
+			if lipgloss.Width(line) > inner {
+				lines[i] = wrapBlock(line, inner)
+			}
+		}
+	}
+	return DialogBoxStyle.Render(lipgloss.JoinVertical(lipgloss.Center, lines...))
+}
+
+func (m *Settings) View() tea.View {
+	maxH := m.contentMaxHeight()
+
+	right, _ := m.layoutPage(m.currentPage(), m.contentWidth(), maxH)
+	rightPanel := lipgloss.NewStyle().PaddingLeft(settingsContentPad).Render(right)
+	content := clipLines(lipgloss.JoinHorizontal(lipgloss.Top, m.renderMenu(), rightPanel), maxH)
+
+	help := m.helpBar()
+	gap := 2 // newlines between content and help: one blank line
+	if m.height > 0 {
+		gap = max(1, m.height-docStyle.GetVerticalMargins()-blockHeight(content)-blockHeight(help)+1)
+	}
+	screen := content + strings.Repeat("\n", gap) + help
+	if m.width > 0 {
+		screen = truncateLines(screen, m.width-docStyle.GetHorizontalMargins())
+	}
+	rendered := docStyle.Render(screen)
+
+	if title, detail, ok := m.pendingConfirm(); ok {
+		dialog := m.renderDialog(title, detail)
+		if m.width > 0 && m.height > 0 {
+			rendered = overlay.Center(rendered, dialog, m.width, m.height)
+		} else {
+			rendered += "\n\n" + dialog
+		}
 	}
 
-	v := tea.NewView(docStyle.Render(content + helpView))
+	v := tea.NewView(rendered)
 	if config.MouseEnabled != nil && *config.MouseEnabled {
 		v.MouseMode = tea.MouseModeCellMotion
 	}
 	return v
 }
 
+// saveConfig persists the settings and, when that fails, returns a command
+// that surfaces the error instead of silently dropping it.
+func (m *Settings) saveConfig() tea.Cmd {
+	if err := config.SaveConfig(m.cfg); err != nil {
+		return settingsErrorCmd("Could not save settings", err)
+	}
+	return nil
+}
+
+// settingsErrorCmd reports err to the user through the app's notification.
+func settingsErrorCmd(what string, err error) tea.Cmd {
+	text := what + ": " + err.Error()
+	return func() tea.Msg { return NotifyMsg{Message: text} }
+}
+
 func (m *Settings) UpdateConfig(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
 	m.cfg = cfg
-	if m.activeCategory == CategoryAccounts && m.accountsCursor >= len(cfg.Accounts) {
-		m.accountsCursor = len(cfg.Accounts)
+	m.accountsCursor = min(m.accountsCursor, len(cfg.Accounts))
+	m.listsCursor = min(m.listsCursor, len(cfg.MailingLists))
+	if m.accountsCursor >= len(cfg.Accounts) {
+		m.accountsConfirmingDelete = false
+	}
+	if m.listsCursor >= len(cfg.MailingLists) {
+		m.listsConfirmingDelete = false
+	}
+	if m.editingAccountIdx >= len(cfg.Accounts) {
+		m.isCryptoConfig = false
 	}
 }

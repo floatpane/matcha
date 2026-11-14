@@ -5,8 +5,14 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/theme"
+)
+
+const (
+	// themePreviewMaxWidth caps the preview box width.
+	themePreviewMaxWidth = 60
+	// themePreviewMinWidth is the narrowest pane that still gets a preview.
+	themePreviewMinWidth = 24
 )
 
 func (m *Settings) updateTheme(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -27,63 +33,68 @@ func (m *Settings) updateTheme(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			theme.SetTheme(selected.Name)
 			RebuildStyles()
 			m.cfg.Theme = selected.Name
-			_ = config.SaveConfig(m.cfg)
+			return m, m.saveConfig()
 		}
 	}
 	return m, nil
 }
 
-func (m *Settings) viewTheme() string {
+// themePage lists the themes, previewing the highlighted one when there is
+// room for it.
+func (m *Settings) themePage() settingsPage {
 	themes := theme.AllThemes()
-	var b strings.Builder
 
-	b.WriteString(titleStyle.Render(t("settings_theme.title")) + "\n\n")
-
+	body := make([]string, len(themes))
 	for i, thm := range themes {
-		isActive := thm.Name == theme.ActiveTheme.Name
 		label := thm.Name
-		if isActive {
+		if thm.Name == theme.ActiveTheme.Name {
 			label += " (" + t("settings_theme.current") + ")"
 		}
-
 		selected := m.themeCursor == i
-		cursor := m.contentCursor(selected)
-		style := m.contentItemStyle(selected)
-
-		b.WriteString(style.Render(cursor+label) + "\n")
+		body[i] = m.contentItemStyle(selected).Render(m.contentCursor(selected) + label)
 	}
 
-	b.WriteString("\n")
+	page := settingsPage{
+		key:      "theme",
+		header:   titleStyle.Render(t("settings_theme.title")) + "\n",
+		body:     body,
+		focusTop: m.themeCursor,
+		focusBot: m.themeCursor,
+		rows:     true,
+	}
 
-	// Preview
-	var previewTheme theme.Theme
-	if m.themeCursor < len(themes) {
+	previewTheme := theme.ActiveTheme
+	if m.themeCursor >= 0 && m.themeCursor < len(themes) {
 		previewTheme = themes[m.themeCursor]
-	} else {
-		previewTheme = theme.ActiveTheme
+	}
+	previewWidth := themePreviewMaxWidth
+	if w := m.contentWidth(); w > 0 {
+		previewWidth = min(w, themePreviewMaxWidth)
+	}
+	if previewWidth >= themePreviewMinWidth {
+		page.extra = "\n" + renderThemePreview(previewTheme, previewWidth)
 	}
 
-	previewWidth := m.width - 34 - 4
-	if previewWidth < 30 {
-		previewWidth = 30
-	}
-
-	b.WriteString(renderThemePreview(previewTheme, previewWidth) + "\n\n")
-
+	var footer strings.Builder
 	if !m.cfg.HideTips {
-		b.WriteString(TipStyle.Render("Tip: Custom themes can be added as JSON files in ~/.config/matcha/themes/") + "\n\n")
+		footer.WriteString("\n" + TipStyle.Render("Tip: Custom themes can be added as JSON files in ~/.config/matcha/themes/") + "\n")
 	}
-
-	b.WriteString(helpStyle.Render(t("settings_theme.help")))
-
-	return b.String()
+	footer.WriteString("\n" + helpStyle.Render(t("settings_theme.help")))
+	page.footer = footer.String()
+	return page
 }
 
-// renderThemePreview renders a small mockup showing how a theme looks.
+// renderThemePreview renders a small mockup showing how a theme looks. The
+// box is previewWidth cells wide in total (border and padding included).
 func renderThemePreview(t theme.Theme, previewWidth int) string {
-	if previewWidth > 60 {
-		previewWidth = 60
-	}
+	previewWidth = min(previewWidth, themePreviewMaxWidth)
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(t.AccentDark).
+		Padding(1, 2).
+		Width(previewWidth)
+	inner := max(1, previewWidth-box.GetHorizontalFrameSize())
 
 	accent := lipgloss.NewStyle().Foreground(t.Accent)
 	accentBold := lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
@@ -102,7 +113,7 @@ func renderThemePreview(t theme.Theme, previewWidth int) string {
 
 	b.WriteString(title.Render("Preview: "+t.Name) + "\n\n")
 	b.WriteString(activeTab.Render("Inbox") + "  " + secondary.Render("Sent") + "  " + secondary.Render("Drafts") + "\n")
-	b.WriteString(secondary.Render(strings.Repeat("─", previewWidth)) + "\n")
+	b.WriteString(secondary.Render(strings.Repeat("─", inner)) + "\n")
 
 	b.WriteString(accentBold.Render("▌ ") + dim.Render("Alice  ") + accent.Render("Meeting tomorrow") + "  " + muted.Render("2m ago") + "\n")
 	b.WriteString("  " + dim.Render("Bob    ") + secondary.Render("Re: Project update") + "  " + muted.Render("1h ago") + "\n")
@@ -115,14 +126,9 @@ func renderThemePreview(t theme.Theme, previewWidth int) string {
 	b.WriteString(danger.Render("Error: ") + danger.Render("Connection failed") + "\n")
 	b.WriteString(warn.Render("Update available: v2.0") + "\n")
 	b.WriteString(tip.Render("Tip: Press ? for help") + "\n")
-	b.WriteString(link.Render("https://example.com") + "\n")
+	b.WriteString(link.Render("https://example.com"))
 
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(t.AccentDark).
-		Padding(1, 2).
-		Width(previewWidth).
-		Render(b.String())
-
-	return box
+	// Truncate instead of wrapping so the mockup keeps its shape (and height)
+	// in narrow panes.
+	return box.Render(truncateLines(b.String(), inner))
 }

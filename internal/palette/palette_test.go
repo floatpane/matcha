@@ -1,9 +1,12 @@
 package palette
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/floatpane/matcha/tui"
 )
 
 // TestKeyMsgFromBindingRoundTrips verifies that a synthetic key press built
@@ -60,15 +63,72 @@ func TestBuildPaletteCommandsAlwaysHasNav(t *testing.T) {
 	}
 }
 
-func TestQuitCommandEmitsQuit(t *testing.T) {
+// TestQuitCommandReplaysCtrlC guards against data loss: quitting from the
+// palette must take the same path as pressing ctrl+c (which saves an open
+// draft and shuts the service down) instead of emitting tea.QuitMsg directly.
+func TestQuitCommandReplaysCtrlC(t *testing.T) {
 	for _, c := range BuildCommands(nil, nil, nil) {
 		if c.Title != "Quit Matcha" {
 			continue
 		}
-		if _, ok := c.Action().(tea.QuitMsg); !ok {
-			t.Errorf("Quit command should emit tea.QuitMsg, got %T", c.Action())
+		msg := c.Action()
+		if _, ok := msg.(tea.QuitMsg); ok {
+			t.Fatal("Quit command must not emit tea.QuitMsg directly (skips draft saving)")
+		}
+		key, ok := msg.(tea.KeyPressMsg)
+		if !ok {
+			t.Fatalf("Quit command should replay a key press, got %T", msg)
+		}
+		if key.String() != "ctrl+c" {
+			t.Fatalf("Quit command should replay ctrl+c, got %q", key.String())
 		}
 		return
 	}
 	t.Fatal("Quit command not found")
+}
+
+// TestHandleMouseClickRunsCommand clicks a command row of the centered
+// palette and expects its action to run and the palette to close.
+func TestHandleMouseClickRunsCommand(t *testing.T) {
+	const screenW, screenH = 100, 30
+	p := New()
+	p.Open([]tui.PaletteCommand{
+		{Title: "First", Action: func() tea.Msg { return "first" }},
+		{Title: "Second", Action: func() tea.Msg { return "second" }},
+	}, screenW, screenH)
+
+	box := strings.Split(ansi.Strip(p.Render("", screenW, screenH)), "\n")
+	clickX, clickY := -1, -1
+	for y, line := range box {
+		if x := strings.Index(line, "Second"); x >= 0 {
+			clickX, clickY = len([]rune(line[:x])), y
+		}
+	}
+	if clickY < 0 {
+		t.Fatal("rendered palette has no \"Second\" row")
+	}
+
+	cmd := p.HandleMouse(tea.MouseClickMsg{X: clickX, Y: clickY, Button: tea.MouseLeft})
+	if cmd == nil {
+		t.Fatal("clicking a command row should return its action")
+	}
+	if got := cmd(); got != "second" {
+		t.Fatalf("clicked row ran %v, want \"second\"", got)
+	}
+	if p.IsOpen() {
+		t.Fatal("palette should close after running a clicked command")
+	}
+}
+
+// TestHandleMouseClickOutsideCloses dismisses the palette on a click outside
+// its box without running anything.
+func TestHandleMouseClickOutsideCloses(t *testing.T) {
+	p := New()
+	p.Open([]tui.PaletteCommand{{Title: "Only", Action: func() tea.Msg { return "only" }}}, 100, 30)
+	if cmd := p.HandleMouse(tea.MouseClickMsg{X: 0, Y: 0, Button: tea.MouseLeft}); cmd != nil {
+		t.Fatal("a click outside the palette must not run a command")
+	}
+	if p.IsOpen() {
+		t.Fatal("a click outside the palette should close it")
+	}
 }

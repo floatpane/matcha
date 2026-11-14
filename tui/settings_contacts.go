@@ -2,10 +2,8 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
 )
 
@@ -13,13 +11,17 @@ func (m *Settings) updateContacts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.contactsConfirming {
 		switch msg.String() {
 		case "y", "Y":
+			m.contactsConfirming = false
 			if m.contactsCursor < len(m.contactsList) {
-				_ = config.DeleteContact(m.contactsList[m.contactsCursor].Email)
+				var cmd tea.Cmd
+				if err := config.DeleteContact(m.contactsList[m.contactsCursor].Email); err != nil {
+					cmd = settingsErrorCmd("Could not delete contact", err)
+				}
 				m.contactsList = config.GetNamedContacts()
 				if m.contactsCursor >= len(m.contactsList) && m.contactsCursor > 0 {
 					m.contactsCursor--
 				}
-				m.contactsConfirming = false
+				return m, cmd
 			}
 		case "n", "N", "esc":
 			m.contactsConfirming = false
@@ -35,7 +37,7 @@ func (m *Settings) updateContacts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case keyDown, "j":
 		m.contactsCursor = (m.contactsCursor + 1) % itemCount
 	case "d":
-		if m.contactsCursor < len(m.contactsList) && len(m.contactsList) > 0 {
+		if m.contactsCursor < len(m.contactsList) {
 			m.contactsConfirming = true
 		}
 	case "e":
@@ -67,41 +69,30 @@ func (m *Settings) updateContacts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Settings) viewContacts() string {
-	var b strings.Builder
-
-	b.WriteString(titleStyle.Render(t("settings_contacts.title")) + "\n\n")
-
+// contactsPage lists the named contacts followed by "Add New Contact".
+func (m *Settings) contactsPage() settingsPage {
+	header := titleStyle.Render(t("settings_contacts.title")) + "\n"
 	if len(m.contactsList) == 0 {
-		b.WriteString(accountEmailStyle.Render("  "+t("settings_contacts.no_contacts")) + "\n\n")
+		header += "\n" + accountEmailStyle.Render("  "+t("settings_contacts.no_contacts")) + "\n"
 	}
 
+	body := make([]string, 0, len(m.contactsList)+1)
 	for i, c := range m.contactsList {
 		line := fmt.Sprintf("%s  %s", c.Name, accountEmailStyle.Render("<"+c.Email+">"))
 		selected := m.contactsCursor == i
-		cursor := m.contentCursor(selected)
-		style := m.contentItemStyle(selected)
-		b.WriteString(style.Render(cursor+line) + "\n")
+		body = append(body, m.contentItemStyle(selected).Render(m.contentCursor(selected)+line))
 	}
 
 	selected := m.contactsCursor == len(m.contactsList)
-	cursor := m.contentCursor(selected)
-	style := m.contentItemStyle(selected)
-	b.WriteString(style.Render(cursor+t("settings_contacts.add_contact")) + "\n\n")
+	body = append(body, m.contentItemStyle(selected).Render(m.contentCursor(selected)+t("settings_contacts.add_contact")))
 
-	b.WriteString(helpStyle.Render(t("settings_contacts.help")))
-
-	if m.contactsConfirming && m.contactsCursor < len(m.contactsList) {
-		contactName := m.contactsList[m.contactsCursor].Name
-		dialog := DialogBoxStyle.Render(
-			lipgloss.JoinVertical(lipgloss.Center,
-				dangerStyle.Render(t("settings_contacts.delete_confirm")),
-				accountEmailStyle.Render(contactName),
-				HelpStyle.Render("\n(y/n)"),
-			),
-		)
-		b.WriteString("\n\n" + dialog)
+	return settingsPage{
+		key:      "contacts",
+		header:   header,
+		body:     body,
+		focusTop: m.contactsCursor,
+		focusBot: m.contactsCursor,
+		footer:   "\n" + helpStyle.Render(t("settings_contacts.help")),
+		rows:     true,
 	}
-
-	return b.String()
 }

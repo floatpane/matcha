@@ -9,6 +9,10 @@ import (
 	"github.com/floatpane/matcha/tui"
 )
 
+// quitBinding is the key the app treats as "quit" (saving any open draft
+// first); the Quit command replays it.
+const quitBinding = "ctrl+c"
+
 // New creates a new, closed Palette wrapper.
 func New() *Palette {
 	return &Palette{}
@@ -63,6 +67,36 @@ func (p *Palette) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	default:
 		return p.Update(msg)
 	}
+}
+
+// HandleMouse routes a mouse event to the open palette. The wheel moves the
+// selection; a left click on a command row runs that command and closes the
+// palette (like enter); a left click outside the palette box closes it. The
+// palette is modal, so callers should not forward the event any further
+// while it is open. The geometry matches Render with the size last passed to
+// Open/UpdateSize.
+func (p *Palette) HandleMouse(msg tea.MouseMsg) tea.Cmd {
+	if p.CommandPalette == nil {
+		return nil
+	}
+	switch msg := msg.(type) {
+	case tea.MouseWheelMsg:
+		return p.Update(msg)
+	case tea.MouseClickMsg:
+		if msg.Button != tea.MouseLeft {
+			return nil
+		}
+		hit, inside := p.ClickAt(msg.X, msg.Y)
+		if hit {
+			action := p.SelectedCmd()
+			p.Close()
+			return action
+		}
+		if !inside {
+			p.Close()
+		}
+	}
+	return nil
 }
 
 // Allowed reports whether the command palette may be opened for the active view.
@@ -151,7 +185,9 @@ func BuildCommands(current tea.Model, folderInbox *tui.FolderInbox, cfg *config.
 		tui.PaletteCommand{Title: "Plugin marketplace", Keywords: "plugins install extensions", Action: func() tea.Msg { return tui.GoToMarketplaceMsg{} }},
 		tui.PaletteCommand{Title: "Settings", Keywords: "preferences config accounts theme", Action: func() tea.Msg { return tui.GoToSettingsMsg{} }},
 		tui.PaletteCommand{Title: "Main menu", Keywords: "home start choice", Action: func() tea.Msg { return tui.GoToChoiceMenuMsg{} }},
-		tui.PaletteCommand{Title: "Quit Matcha", Keywords: "exit close", Action: tea.Quit},
+		// Quit replays ctrl+c so it takes the app's normal quit path, which
+		// saves an open draft and shuts the service down before exiting.
+		tui.PaletteCommand{Title: "Quit Matcha", Hint: quitBinding, Keywords: "exit close", Action: KeyAction(quitBinding)},
 	)
 	return cmds
 }

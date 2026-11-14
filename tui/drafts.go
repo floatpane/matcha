@@ -67,16 +67,21 @@ func formatTimeAgo(t time.Time) string {
 	}
 }
 
+// draftsDoubleClick is the longest gap between two clicks on the same draft
+// that still counts as a double click.
+const draftsDoubleClick = 500 * time.Millisecond
+
 // Drafts is the model for the drafts list view
 type Drafts struct {
 	list          list.Model
+	delegate      list.DefaultDelegate
 	drafts        []config.Draft
 	width         int
 	height        int
 	confirmDelete bool
 	selectedDraft *config.Draft
 	lastClickTime time.Time
-	lastClickY    int
+	lastClickIdx  int
 }
 
 // NewDrafts creates a new drafts list view
@@ -86,7 +91,8 @@ func NewDrafts(drafts []config.Draft) *Drafts {
 		items[i] = draftItem{draft: d}
 	}
 
-	l := list.New(items, list.NewDefaultDelegate(), 0, 0)
+	delegate := list.NewDefaultDelegate()
+	l := list.New(items, delegate, 0, 0)
 	l.Title = "Drafts"
 	l.Styles.Title = lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Bold(true)
 	l.SetShowStatusBar(true)
@@ -104,8 +110,10 @@ func NewDrafts(drafts []config.Draft) *Drafts {
 	l.KeyMap.Quit.SetEnabled(false)
 
 	return &Drafts{
-		list:   l,
-		drafts: drafts,
+		list:         l,
+		delegate:     delegate,
+		drafts:       drafts,
+		lastClickIdx: -1,
 	}
 }
 
@@ -113,9 +121,71 @@ func (m *Drafts) Init() tea.Cmd {
 	return nil
 }
 
+// listHeaderHeight is the number of rows the list draws above its first
+// item, measured from the list's own title and status bar styles.
+func (m *Drafts) listHeaderHeight() int {
+	h := 0
+	if m.list.ShowTitle() || (m.list.ShowFilter() && m.list.FilteringEnabled()) {
+		h += lipgloss.Height(m.list.Styles.TitleBar.Render(m.list.Title))
+	}
+	if m.list.ShowStatusBar() {
+		h += lipgloss.Height(m.list.Styles.StatusBar.Render("status"))
+	}
+	return h
+}
+
+// itemAt maps a screen row to the index (among the visible, possibly
+// filtered, items) of the draft drawn there. Rows between items, below the
+// last item on the page, or on the pagination and help lines map to nothing.
+func (m *Drafts) itemAt(y int) (int, bool) {
+	row := y - m.listHeaderHeight()
+	if row < 0 {
+		return 0, false
+	}
+	itemH := m.delegate.Height()
+	slot, within := row/(itemH+m.delegate.Spacing()), row%(itemH+m.delegate.Spacing())
+	if within >= itemH {
+		return 0, false
+	}
+	total := len(m.list.VisibleItems())
+	if slot >= m.list.Paginator.ItemsOnPage(total) {
+		return 0, false
+	}
+	start, _ := m.list.Paginator.GetSliceBounds(total)
+	return start + slot, true
+}
+
+// handleClick selects the clicked draft; a double click opens it.
+func (m *Drafts) handleClick(msg tea.MouseClickMsg) tea.Cmd {
+	if msg.Button != tea.MouseLeft || m.confirmDelete || m.list.FilterState() == list.Filtering {
+		return nil
+	}
+	idx, ok := m.itemAt(msg.Y)
+	if !ok {
+		return nil
+	}
+	m.list.Select(idx)
+	now := time.Now()
+	isDoubleClick := idx == m.lastClickIdx && now.Sub(m.lastClickTime) < draftsDoubleClick
+	m.lastClickTime = now
+	m.lastClickIdx = idx
+	if !isDoubleClick {
+		return nil
+	}
+	m.lastClickIdx = -1 // a third click starts a new pair
+	if draftItm, ok := m.list.SelectedItem().(draftItem); ok {
+		d := draftItm.draft
+		return func() tea.Msg { return OpenDraftMsg{Draft: d} }
+	}
+	return nil
+}
+
 func (m *Drafts) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.MouseWheelMsg:
+		if m.confirmDelete {
+			return m, nil
+		}
 		switch msg.Button {
 		case tea.MouseWheelDown:
 			m.list.CursorDown()
@@ -126,31 +196,7 @@ func (m *Drafts) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseClickMsg:
-		if msg.Button != tea.MouseLeft || m.confirmDelete {
-			return m, nil
-		}
-		// Default delegate: Height()=2, Spacing()=1 → 3 rows per item
-		// List header: title row + status row + 1 padding = 3 rows
-		const listHeaderH = 3
-		const itemH = 3
-		cursorInPage := (msg.Y - listHeaderH) / itemH
-		if cursorInPage >= 0 {
-			idx := m.list.Paginator.Page*m.list.Paginator.PerPage + cursorInPage
-			if idx >= 0 && idx < len(m.list.Items()) {
-				m.list.Select(idx)
-				now := time.Now()
-				isDoubleClick := msg.Y == m.lastClickY && now.Sub(m.lastClickTime) < 500*time.Millisecond
-				m.lastClickTime = now
-				m.lastClickY = msg.Y
-				if isDoubleClick {
-					if draftItm, ok := m.list.SelectedItem().(draftItem); ok {
-						d := draftItm.draft
-						return m, func() tea.Msg { return OpenDraftMsg{Draft: d} }
-					}
-				}
-			}
-		}
-		return m, nil
+		return m, m.handleClick(msg)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -187,6 +233,12 @@ func (m *Drafts) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		kb := config.Keybinds
 		switch msg.String() {
 		case kb.Global.Cancel:
+			// With a filter applied, the first cancel clears the filter;
+			// only an unfiltered list leaves Drafts.
+			if m.list.FilterState() == list.FilterApplied {
+				m.list.ResetFilter()
+				return m, nil
+			}
 			return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
 		case kb.Drafts.Open:
 			if item, ok := m.list.SelectedItem().(draftItem); ok {

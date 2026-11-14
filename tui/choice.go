@@ -120,10 +120,15 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Button != tea.MouseLeft {
 			return m, nil
 		}
-		// The body starts one row below the top margin of docStyle.
+		// Entries are only clickable inside the menu column (the width of
+		// the selection bar), not anywhere on their row.
+		left := docStyle.GetMarginLeft()
+		if msg.X < left || msg.X >= left+menuWidth {
+			return m, nil
+		}
 		_, rows := m.menuContent()
 		for i, row := range rows {
-			if row == msg.Y-1 {
+			if row == msg.Y-docStyle.GetMarginTop() {
 				m.cursor = i
 				return m.handleSelect()
 			}
@@ -166,17 +171,39 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// innerWidth is the width inside docStyle's margins (0 = unknown).
+func (m Choice) innerWidth() int {
+	if m.width <= 0 {
+		return 0
+	}
+	return max(1, m.width-docStyle.GetHorizontalMargins())
+}
+
+// fitLines renders text with style, wrapped to the screen, as separate lines
+// so every one of them is counted when mapping clicks to rows.
+func (m Choice) fitLines(style lipgloss.Style, text string) []string {
+	if w := m.innerWidth(); w > 0 && style.GetHorizontalFrameSize() < w {
+		style = style.Width(w)
+	}
+	return strings.Split(style.Render(text), "\n")
+}
+
+// helpView renders the bottom help line, wrapped to the screen.
+func (m Choice) helpView() string {
+	return helpStyle.Render(wrapBlock(keybindHelp("choice.help"), m.innerWidth()))
+}
+
 // menuContent renders the home screen body and returns the row (relative to
 // the top of the body) of every menu entry, so mouse clicks map to items.
 func (m Choice) menuContent() (string, []int) {
-	var lines []string
-	lines = append(lines, strings.Split(strings.TrimRight(renderLogo(choiceLogo), "\n"), "\n")...)
-	lines = append(lines, "")
+	logo := strings.Split(strings.TrimRight(renderLogo(choiceLogo), "\n"), "\n")
+	logo = append(logo, "")
 
+	var lines []string
 	if len(m.keybindWarnings) > 0 {
 		warnStyle := lipgloss.NewStyle().Foreground(theme.ActiveTheme.Warning).PaddingLeft(2)
 		for _, w := range m.keybindWarnings {
-			lines = append(lines, warnStyle.Render("⚠ keybind "+w))
+			lines = append(lines, m.fitLines(warnStyle, "⚠ keybind "+w)...)
 		}
 		lines = append(lines, "")
 	}
@@ -190,10 +217,18 @@ func (m Choice) menuContent() (string, []int) {
 			"latest":  m.LatestVersion,
 			"current": cur,
 		})
-		lines = append(lines, menuNoticeStyle.Render(msg), "")
+		lines = append(lines, m.fitLines(menuNoticeStyle, msg)...)
+		lines = append(lines, "")
 	}
 
-	lines = append(lines, menuHintStyle.Render(t("choice.what_to_do")), "")
+	lines = append(lines, m.fitLines(menuHintStyle, t("choice.what_to_do"))...)
+	lines = append(lines, "")
+
+	// The logo is decoration: drop it when the menu would not fit otherwise.
+	needed := len(logo) + len(lines) + len(m.choices) + blockHeight(m.helpView()) + docStyle.GetVerticalMargins() + 1
+	if m.height <= 0 || needed <= m.height {
+		lines = append(logo, lines...)
+	}
 
 	rows := make([]int, len(m.choices))
 	for i, choice := range m.choices {
@@ -209,7 +244,7 @@ func (m Choice) menuContent() (string, []int) {
 
 func (m Choice) View() tea.View {
 	content, _ := m.menuContent()
-	helpView := helpStyle.Render(keybindHelp("choice.help"))
+	helpView := m.helpView()
 
 	mainContent := content
 	if m.height > 0 {
