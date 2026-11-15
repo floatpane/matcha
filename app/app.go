@@ -110,7 +110,7 @@ type Model struct {
 	width         int
 	height        int
 
-	idleWatcher *fetcher.IdleWatcher
+	idleWatcher idleWatching
 	idleUpdates chan fetcher.IdleUpdate
 
 	providers   map[string]backend.Provider
@@ -178,6 +178,14 @@ type Model struct {
 	// Track body fetch retries to prevent infinite loops
 	pendingBodyFetchUID   uint32
 	pendingBodyFetchCount int
+}
+
+// idleWatching keeps direct IMAP IDLE connections (no daemon); a seam for
+// tests over *fetcher.IdleWatcher.
+type idleWatching interface {
+	Watch(account *config.Account, folder string)
+	Stop(accountID string)
+	StopAll()
 }
 
 // NewModel creates the initial TUI model.
@@ -829,6 +837,10 @@ func (m *Model) deleteDraftAfterSend(draftID string) {
 func (m *Model) finishDraftAfterSend() {
 	if id := m.pendingDraftID; id != "" {
 		m.pendingDraftID = ""
+		if m.quitAfterSend {
+			m.deleteDraftAfterSend(id) // the program is about to exit
+			return
+		}
 		go m.deleteDraftAfterSend(id)
 	}
 }
@@ -1256,7 +1268,9 @@ func (m *Model) trackSend(composer *tui.Composer, sendCmd tea.Cmd) tea.Cmd {
 // to quitSendWait). Asking again quits at once and keeps them as drafts.
 func (m *Model) requestQuit() tea.Cmd {
 	if m.quitting {
-		return nil
+		// Asked again while quitting (a pending delete/archive/move may be
+		// stuck talking to the server): exit now.
+		return tea.Quit
 	}
 	if len(m.sendsInFlight) > 0 && !m.quitAfterSend {
 		m.quitAfterSend = true
@@ -1283,6 +1297,12 @@ func (m *Model) saveUnsentDrafts() {
 func (m *Model) quit() tea.Cmd {
 	if composer := getCurrentComposer(m.current); composer != nil && composer.HasContent() {
 		m.saveDraftOnQuit(composer)
+	}
+	if m.pendingJobID != "" && m.pendingDraftID != "" {
+		// The email in its undo window is sent anyway once matcha is gone,
+		// so its draft goes now (EmailDelayExpiredMsg will never arrive).
+		m.deleteDraftAfterSend(m.pendingDraftID)
+		m.pendingDraftID = ""
 	}
 	flush := m.batchActionCmd()
 	m.shutdownService()
@@ -2782,6 +2802,10 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	case sendFinishedMsg:
 		delete(m.sendsInFlight, msg.id)
+		if failed, ok := msg.result.(tui.EmailResultMsg); ok && failed.Err != nil && m.quitAfterSend {
+			// Stay to show why it failed; the email is back in the composer.
+			m.quitAfterSend = false
+		}
 		model, resultCmd := m.update(msg.result)
 		if m.quitAfterSend && len(m.sendsInFlight) == 0 && !m.quitting {
 			return model, tea.Batch(resultCmd, m.quit())

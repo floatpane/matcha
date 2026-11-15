@@ -163,6 +163,7 @@ type fakeService struct {
 	mu           sync.Mutex
 	gate         chan struct{} // when set, Subscribe/Unsubscribe wait for it
 	subscribeErr error
+	queueErr     error
 	subs         []string
 	unsubs       []string
 	closed       int
@@ -208,6 +209,9 @@ func (f *fakeService) Unsubscribe(account, folder string) error {
 func (f *fakeService) QueueEmail(string, []string, []string, []string, string, string, string, map[string][]byte, map[string][]byte, string, []string, bool, bool, bool, bool, int, []byte) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.queueErr != nil {
+		return "", f.queueErr
+	}
 	f.queued++
 	return "job", nil
 }
@@ -603,30 +607,42 @@ func TestFailedSubscribeIsStillUnsubscribed(t *testing.T) {
 	}
 }
 
+// recordingIdle records the direct IDLE watches the app starts.
+type recordingIdle struct{ watched []string }
+
+func (r *recordingIdle) Watch(account *config.Account, folder string) {
+	r.watched = append(r.watched, account.ID+"/"+folder)
+}
+func (r *recordingIdle) Stop(string) {}
+func (r *recordingIdle) StopAll()    {}
+
 func TestDirectIdleRestartsWhenSettingsChangeOrInboxReopens(t *testing.T) {
 	fake := newFakeService(false) // no daemon: IDLE runs in the app
 	useSlowService(t, fake)()
-	m := newConfiguredModel(t) // a Maildir account: IdleWatcher.Watch is a no-op
+	m := newConfiguredModel(t)
+	idle := &recordingIdle{}
+	m.idleWatcher = idle
 	m.Update(tui.GoToInboxMsg{})
 	<-m.service.(*daemonclient.StartingService).Ready()
 	m.Update(serviceReadyMsg{svc: m.service})
-	if m.directWatch["acct"] != "INBOX" {
-		t.Fatalf("direct watch = %q, want INBOX", m.directWatch["acct"])
+	if len(idle.watched) != 1 || idle.watched[0] != "acct/INBOX" {
+		t.Fatalf("IDLE watches after opening the inbox = %v, want [acct/INBOX]", idle.watched)
 	}
 
-	m.directWatch["acct"] = "watch on the old settings"
-	m.reloadService() // an account was edited
-	if m.directWatch["acct"] != "INBOX" {
-		t.Fatalf("after a config reload the watch is %q, want INBOX restarted", m.directWatch["acct"])
+	m.Update(serviceReadyMsg{svc: m.service}) // nothing changed: no reconnect
+	if len(idle.watched) != 1 {
+		t.Fatalf("IDLE reconnected without a reason: %v", idle.watched)
+	}
+
+	m.reloadService() // an account was edited: IDLE holds the old settings
+	if len(idle.watched) != 2 {
+		t.Fatalf("IDLE watches after a config reload = %v, want a restart", idle.watched)
 	}
 
 	m.Update(tui.GoToInboxMsg{}) // back to the inbox without esc
-	if m.directWatch["acct"] != staleWatch {
-		t.Fatalf("re-entering the inbox kept the old IDLE watch %q", m.directWatch["acct"])
-	}
 	m.Update(serviceReadyMsg{svc: m.service})
-	if m.directWatch["acct"] != "INBOX" {
-		t.Fatalf("direct watch after re-entering = %q, want INBOX", m.directWatch["acct"])
+	if len(idle.watched) != 3 {
+		t.Fatalf("IDLE watches after re-entering the inbox = %v, want a restart", idle.watched)
 	}
 }
 
@@ -717,3 +733,68 @@ func (v *imageView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (v *imageView) VisibleImages() []tui.ScreenImage { return v.images }
+
+func hasQuit(cmd tea.Cmd) bool {
+	for _, msg := range runBatch(cmd) {
+		if _, ok := msg.(tea.QuitMsg); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func TestCtrlCWhileQuittingExitsAtOnce(t *testing.T) {
+	m := newConfiguredModel(t)
+	m.quitCmd() // a quit is under way, e.g. stuck flushing a pending delete
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if !hasQuit(cmd) {
+		t.Fatal("ctrl+c during a quit that is taking long did not exit")
+	}
+}
+
+func TestFailedSendDuringQuitWaitCancelsTheQuit(t *testing.T) {
+	fake := newFakeService(true)
+	fake.queueErr = fmt.Errorf("550 mailbox unavailable")
+	release := useSlowService(t, fake)
+	m := newConfiguredModel(t)
+	msgs := startCmds(sendFromComposer(t, m))
+	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	release()
+	done := awaitMsg[sendFinishedMsg](t, msgs, nil)
+	_, cmd := m.Update(done)
+	if m.quitting || hasQuit(cmd) {
+		t.Fatal("matcha quit over a failed send, so the user never saw the error")
+	}
+	if _, ok := m.current.(*tui.Composer); !ok || !m.showErrorNotif {
+		t.Fatalf("after the failed send current is %T (error shown: %v); want the composer back with the error", m.current, m.showErrorNotif)
+	}
+}
+
+func TestQuitAfterHandoffDropsTheDraft(t *testing.T) {
+	fake := newFakeService(true)
+	release := useSlowService(t, fake)
+	m := newConfiguredModel(t)
+	composer := tui.NewComposerWithAccounts(m.config.Accounts, "acct", "you@example.com", "Hi", "Body", true)
+	draft := composer.ToDraft()
+	if err := config.SaveDraft(draft); err != nil {
+		t.Fatal(err)
+	}
+	composer.SetDraftID(draft.ID)
+	m.current = composer
+	msgs := startCmds(updateQuickly(t, m, tui.SendEmailMsg{To: "you@example.com", Subject: "Hi", Body: "Body", AccountID: "acct"}))
+	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	release()
+	m.Update(awaitMsg[sendFinishedMsg](t, msgs, nil))
+	if !m.quitting {
+		t.Fatal("the program did not quit once the email was handed off")
+	}
+	cache, err := config.LoadDraftsCache()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range cache.Drafts {
+		if d.ID == draft.ID {
+			t.Fatal("the draft of an email that was sent survived the quit")
+		}
+	}
+}
