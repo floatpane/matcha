@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/floatpane/matcha/clib"
+	"github.com/floatpane/matcha/internal/httpclient"
 	"github.com/hashicorp/golang-lru/v2/simplelru"
 )
 
@@ -30,12 +31,16 @@ const (
 	// remoteImageWorkers downloads run at once; remoteImageDeadline bounds a
 	// whole load, so many slow hosts cannot keep the view waiting.
 	remoteImageWorkers  = 6
-	remoteImageDeadline = 15 * time.Second
+	remoteImageDeadline = 30 * time.Second
 
 	// Some hosts (e.g. upload.wikimedia.org) refuse Go's default agent.
 	remoteImageUserAgent = "matcha (+https://github.com/floatpane/matcha)"
 	remoteImageAccept    = "image/png,image/jpeg,image/gif,image/webp,image/bmp;q=0.9,*/*;q=0.5"
 )
+
+// remoteImageStall is how long a download may go without progress (a
+// variable so tests can shorten it).
+var remoteImageStall = httpclient.RemoteImageTimeout
 
 // remoteImageCache maps image URLs to base64 payloads ready for
 // prepareImage. Failures are not cached, so a retry fetches them again.
@@ -155,6 +160,13 @@ func fetchRemoteImage(ctx context.Context, rawURL string) (string, error) {
 		return cached, nil
 	}
 
+	// Give up on a download that stops making progress: no connection,
+	// no response, or no body data for remoteImageStall.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stalled := time.AfterFunc(remoteImageStall, cancel)
+	defer stalled.Stop()
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return "", err
@@ -169,7 +181,8 @@ func fetchRemoteImage(ctx context.Context, rawURL string) (string, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("HTTP status %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxRemoteImageBytes+1))
+	body := progressReader{r: resp.Body, progress: func() { stalled.Reset(remoteImageStall) }}
+	data, err := io.ReadAll(io.LimitReader(body, maxRemoteImageBytes+1))
 	if err != nil {
 		return "", err
 	}
@@ -183,6 +196,20 @@ func fetchRemoteImage(ctx context.Context, rawURL string) (string, error) {
 	debugImageProtocol("remote fetch ok url=%s len=%d", rawURL, len(payload))
 	cacheRemoteImage(rawURL, payload)
 	return payload, nil
+}
+
+// progressReader calls progress after every read that returned data.
+type progressReader struct {
+	r        io.Reader
+	progress func()
+}
+
+func (p progressReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	if n > 0 {
+		p.progress()
+	}
+	return n, err
 }
 
 // remoteImagePayload checks downloaded bytes and encodes them for

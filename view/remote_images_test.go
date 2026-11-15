@@ -5,7 +5,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
+	"image"
+	"image/png"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -235,5 +239,77 @@ func TestRemoteImageCacheIsBoundedBySize(t *testing.T) {
 	remoteImageCache.Purge()
 	if total := remoteImageCache.Bytes(); total != 0 {
 		t.Fatalf("an empty cache accounts for %d bytes", total)
+	}
+}
+
+// useRemoteImageStall shortens the no-progress timeout; call it before
+// useRemoteImageServer, which builds the client.
+func useRemoteImageStall(t *testing.T, d time.Duration) {
+	t.Helper()
+	previous := remoteImageStall
+	remoteImageStall = d
+	t.Cleanup(func() { remoteImageStall = previous })
+}
+
+func noisyPNG(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	r := rand.New(rand.NewPCG(1, 2))
+	for i := range img.Pix {
+		img.Pix[i] = byte(r.IntN(256))
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestSlowButSteadyDownloadsAreNotCutOff(t *testing.T) {
+	useRemoteImageStall(t, 250*time.Millisecond)
+	data := noisyPNG(t, 128, 128)
+	useRemoteImageServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Each download takes ~0.5 s, twice the stall timeout, but never
+		// pauses for long: a fixed per-request limit would cut it off.
+		chunk := len(data)/8 + 1
+		for i := 0; i < len(data); i += chunk {
+			_, _ = w.Write(data[i:min(i+chunk, len(data))])
+			w.(http.Flusher).Flush()
+			time.Sleep(60 * time.Millisecond)
+		}
+	}))
+	var body strings.Builder
+	for i := range 6 {
+		fmt.Fprintf(&body, `<img src="http://img%d.example/a.png">`, i)
+	}
+	start := time.Now()
+	rendered, placements := renderRemote(t, body.String(), RenderOptions{})
+	if len(placements) != 6 || len(rendered.FailedRemoteImages) != 0 {
+		t.Fatalf("%d of 6 slow images shown, failed %v", len(placements), rendered.FailedRemoteImages)
+	}
+	if elapsed := time.Since(start); elapsed < remoteImageStall+100*time.Millisecond {
+		t.Fatalf("the downloads took %v; the test needs them slower than the stall timeout", elapsed)
+	}
+}
+
+func TestStalledDownloadFailsQuickly(t *testing.T) {
+	useRemoteImageStall(t, 200*time.Millisecond)
+	data := noisyPNG(t, 64, 64)
+	release := make(chan struct{})
+	useRemoteImageServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(data[:len(data)/2])
+		w.(http.Flusher).Flush()
+		<-release // the server hangs mid-body
+	}))
+	// Registered after the server, so it runs first: closing the server
+	// waits for this handler.
+	t.Cleanup(func() { close(release) })
+	start := time.Now()
+	rendered, _ := renderRemote(t, `<img src="http://stuck.example/a.png">`, RenderOptions{})
+	if len(rendered.FailedRemoteImages) != 1 {
+		t.Fatal("a download that stopped mid-body did not fail")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("the stalled download took %v to fail", elapsed)
 	}
 }
