@@ -476,25 +476,45 @@ func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocycl
 }
 
 // wrapInboxCmd intercepts messages from the inbox and adds folder context.
+// Many inbox updates (most clicks, for one) return no command, so a nil cmd
+// stays nil.
 func (m *FolderInbox) wrapInboxCmd(cmd tea.Cmd) tea.Cmd {
+	// Capture the folder now: the command runs later, on another goroutine,
+	// by which time the user may have switched folders.
+	return withFolderContext(cmd, m.currentFolder)
+}
+
+func withFolderContext(cmd tea.Cmd, folder string) tea.Cmd {
+	if cmd == nil {
+		return nil
+	}
 	return func() tea.Msg {
-		msg := cmd()
-		switch inner := msg.(type) {
+		switch inner := cmd().(type) {
 		case FetchMoreEmailsMsg:
 			return FetchFolderMoreEmailsMsg{
 				Offset:     inner.Offset,
 				AccountID:  inner.AccountID,
-				FolderName: m.currentFolder,
+				FolderName: folder,
 				Limit:      inner.Limit,
 			}
 		case RequestRefreshMsg:
-			inner.FolderName = m.currentFolder
+			inner.FolderName = folder
 			return inner
 		case SearchRequestedMsg:
-			inner.FolderName = m.currentFolder
+			inner.FolderName = folder
+			return inner
+		case tea.BatchMsg:
+			// The ALL tab requests more mail for each account in a batch.
+			wrapped := make(tea.BatchMsg, 0, len(inner))
+			for _, c := range inner {
+				if c != nil {
+					wrapped = append(wrapped, withFolderContext(c, folder))
+				}
+			}
+			return wrapped
+		default:
 			return inner
 		}
-		return msg
 	}
 }
 

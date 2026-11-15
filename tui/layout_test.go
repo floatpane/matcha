@@ -201,7 +201,11 @@ func TestInboxDoubleClickOpensEmail(t *testing.T) {
 	fi := newLayoutFolderInbox(t, []string{"INBOX"}, one, emails, 120, 30)
 	row := rowOf(fi.View().Content, "Subject number 3")
 	click := tea.MouseClickMsg{X: sidebarWidth + 6, Y: row, Button: tea.MouseLeft}
-	fi.Update(click)
+	// Run every command, as Bubble Tea does: the first click's command
+	// used to be a wrapped nil that panicked when run.
+	if _, first := fi.Update(click); first != nil {
+		first()
+	}
 	_, cmd := fi.Update(click)
 	if cmd == nil {
 		t.Fatal("double-click did not open the email")
@@ -210,6 +214,82 @@ func TestInboxDoubleClickOpensEmail(t *testing.T) {
 	view, ok := msg.(ViewEmailMsg)
 	if !ok || view.UID != 3 {
 		t.Fatalf("double-click produced %#v, want ViewEmailMsg for UID 3", msg)
+	}
+}
+
+// runAll runs cmd and any batches it returns, the way Bubble Tea would.
+func runAll(t *testing.T, cmd tea.Cmd) []tea.Msg {
+	t.Helper()
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		var msgs []tea.Msg
+		for _, c := range batch {
+			msgs = append(msgs, runAll(t, c)...)
+		}
+		return msgs
+	}
+	return []tea.Msg{msg}
+}
+
+func TestFolderInboxMouseCmdsAreRunnable(t *testing.T) {
+	one := []config.Account{{ID: "a1", Email: "me@example.com"}}
+	for _, split := range []bool{false, true} {
+		t.Run(fmt.Sprintf("split=%v", split), func(t *testing.T) {
+			emails := layoutTestEmails(100, "a1")
+			fi := newLayoutFolderInbox(t, []string{"INBOX", "Archive"}, one, emails, 140, 30)
+			if split {
+				openLayoutPreview(fi, emails[0], "body")
+			}
+			row := rowOf(fi.View().Content, "Sender 3 ·")
+			if row < 0 {
+				t.Fatalf("item not rendered:\n%s", ansi.Strip(fi.View().Content))
+			}
+			x := sidebarWidth + 6
+			for _, msg := range []tea.Msg{
+				tea.MouseClickMsg{X: x, Y: row, Button: tea.MouseLeft},      // first half of a double-click
+				tea.MouseClickMsg{X: x, Y: 29, Button: tea.MouseLeft},       // help row
+				tea.MouseClickMsg{X: x, Y: row, Button: tea.MouseRight},     // ignored button
+				tea.MouseWheelMsg{X: x, Y: row, Button: tea.MouseWheelDown}, // scroll the list
+				tea.MouseWheelMsg{X: x, Y: row, Button: tea.MouseWheelUp},
+				tea.MouseWheelMsg{X: 2, Y: 3, Button: tea.MouseWheelDown}, // folder sidebar
+				tea.MouseClickMsg{X: 135, Y: 10, Button: tea.MouseLeft},   // right edge (preview when split)
+				tea.MouseWheelMsg{X: 135, Y: 10, Button: tea.MouseWheelDown},
+			} {
+				_, cmd := fi.Update(msg)
+				runAll(t, cmd) // used to panic: wrapInboxCmd wrapped a nil Cmd
+			}
+		})
+	}
+}
+
+func TestFolderInboxFetchMoreKeepsFolderOfTheScroll(t *testing.T) {
+	one := []config.Account{{ID: "a1", Email: "me@example.com"}}
+	fi := newLayoutFolderInbox(t, []string{"INBOX", "Archive"}, one, layoutTestEmails(3, "a1"), 120, 30)
+	row := rowOf(fi.View().Content, "Subject number 1")
+	var cmd tea.Cmd
+	for range 5 {
+		if _, c := fi.Update(tea.MouseWheelMsg{X: sidebarWidth + 6, Y: row, Button: tea.MouseWheelDown}); c != nil {
+			cmd = c
+		}
+	}
+	if cmd == nil {
+		t.Fatal("scrolling to the end did not request more emails")
+	}
+	fi.currentFolder = "Archive" // the user switched folders before the command ran
+	var found bool
+	for _, msg := range runAll(t, cmd) {
+		if more, ok := msg.(FetchFolderMoreEmailsMsg); ok {
+			found = true
+			if more.FolderName != "INBOX" {
+				t.Fatalf("fetch-more for the INBOX scroll asked for folder %q", more.FolderName)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("the fetch-more request was not turned into a folder-aware request")
 	}
 }
 
