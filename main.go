@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	matchaCli "github.com/floatpane/matcha/cli"
@@ -97,7 +99,14 @@ func main() {
 	p := tea.NewProgram(initialModel)
 	if _, err := p.Run(); err != nil {
 		plugins.Close()
-		fmt.Printf("Alas, there's been an error: %v", err)
+		if errors.Is(err, tea.ErrProgramPanic) {
+			// Bubble Tea may still be printing the panic report from the
+			// goroutine that panicked; let it finish.
+			time.Sleep(200 * time.Millisecond)
+			fmt.Fprintf(os.Stderr, "\nmatcha crashed. The details are in %s; please include them in a bug report.\n", logFilePath())
+		} else {
+			fmt.Fprintf(os.Stderr, "Alas, there's been an error: %v\n", err)
+		}
 		cliutil.Exit(1)
 	}
 
@@ -307,6 +316,15 @@ func setupLogging(showLogPanel bool) (<-chan logging.Entry, *tui.LogPanel) {
 	return logCh, logPanel
 }
 
+// logFilePath returns where the matcha log is written.
+func logFilePath() string {
+	dir, err := config.GetCacheDir()
+	if err != nil {
+		return "matcha.log"
+	}
+	return filepath.Join(dir, "matcha.log")
+}
+
 // openLogFile opens (creating and rotating as needed) the matcha log file in
 // the cache directory. It returns nil when the file cannot be opened.
 func openLogFile() *os.File {
@@ -317,7 +335,7 @@ func openLogFile() *os.File {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil
 	}
-	path := filepath.Join(dir, "matcha.log")
+	path := logFilePath()
 	if info, err := os.Stat(path); err == nil && info.Size() > maxLogFileSize {
 		_ = os.Rename(path, path+".1")
 	}

@@ -68,6 +68,35 @@ type clearPluginNotifMsg struct{ gen int }
 // badgeSyncMsg triggers a debounced unread-badge update.
 type badgeSyncMsg struct{ gen int }
 
+// serviceReadyMsg reports that a mail service started in the background has
+// connected.
+type serviceReadyMsg struct{ svc daemonclient.Service }
+
+// serviceEventMsg carries one daemon event, tagged with the service it came
+// from so that events from a service that was shut down are ignored.
+type serviceEventMsg struct {
+	svc    daemonclient.Service
+	event  *daemonrpc.Event
+	closed bool
+}
+
+// sendFinishedMsg wraps the result of a send command (EmailQueuedMsg or
+// EmailResultMsg) so the email can be crossed off the in-flight list.
+type sendFinishedMsg struct {
+	id     uint64
+	result tea.Msg
+}
+
+// quitWaitExpiredMsg ends the wait for in-flight sends after a quit.
+type quitWaitExpiredMsg struct{}
+
+// quitSendWait bounds how long quitting waits for emails still being handed
+// to the mail service (or, without the daemon, sent over SMTP).
+const quitSendWait = 15 * time.Second
+
+// staleWatch marks a direct IDLE connection that must be restarted.
+const staleWatch = "\x00stale"
+
 const maxBodyFetchRetries = 3
 
 // Model is the main Bubble Tea application model that orchestrates the TUI.
@@ -115,6 +144,8 @@ type Model struct {
 
 	// graphics keeps out-of-band (Kitty/Sixel) images in sync with the view.
 	graphics *tui.GraphicsPainter
+	// quitting is set once quitCmd has removed the images for good.
+	quitting bool
 
 	// pendingDraftID is the draft to delete once the email being sent is
 	// confirmed; a failed send keeps it.
@@ -122,6 +153,27 @@ type Model struct {
 
 	badgeGen   int
 	badgeDirty bool
+
+	// subs tracks the daemon's new-mail subscriptions for the open folder.
+	subs *folderSubscriptions
+	// eventsListening is set while a command waits on the service's events.
+	eventsListening bool
+	// idleListening is set once a command waits on direct IDLE updates.
+	idleListening bool
+	// directWatch is the folder each account's direct IDLE connection
+	// watches (no daemon), to avoid reconnecting for an unchanged folder.
+	directWatch map[string]string
+	// inboxOpen is set from entering the inbox until the service is shut
+	// down (esc to the menu); only then do folders get watched.
+	inboxOpen bool
+
+	// sendsInFlight holds, by send id, the composer of each email whose
+	// send command has not reported back yet (nil for other senders).
+	sendsInFlight map[uint64]*tui.Composer
+	nextSendID    uint64
+	// quitAfterSend is set when the user quit while emails were in flight;
+	// the program quits as soon as they have been handed off.
+	quitAfterSend bool
 
 	// Track body fetch retries to prevent infinite loops
 	pendingBodyFetchUID   uint32
@@ -146,6 +198,7 @@ func NewModel(cfg *config.Config, mailtoURL *url.URL, plugins *plugin.Manager, s
 		logPanel:      logPanel,
 		palette:       palette.New(),
 		graphics:      tui.NewGraphicsPainter(),
+		subs:          newFolderSubscriptions(),
 		actionManager: emailactions.NewManager(emailactions.Dependencies{Config: cfg}, store, nil),
 		pluginBridge:  pluginbridge.NewManager(plugins, store, cfg, nil),
 	}
@@ -267,9 +320,9 @@ func (m *Model) resolveProvider(acct *config.Account) backend.Provider {
 func (m *Model) Init() tea.Cmd {
 	cmd := m.current.Init()
 	if m.showLogPanel && m.logCh != nil {
-		return tea.Batch(cmd, waitForLogEntry(m.logCh))
+		cmd = tea.Batch(cmd, waitForLogEntry(m.logCh))
 	}
-	return cmd
+	return guardCmd(cmd)
 }
 
 func waitForLogEntry(ch <-chan logging.Entry) tea.Cmd {
@@ -507,23 +560,154 @@ func (m *Model) notifyNewMail(accountID, folderName string) {
 	}
 }
 
-func (m *Model) unsubscribeFolder(accountID, folderName string) {
-	if m.service != nil && m.service.IsDaemon() {
-		_ = m.service.Unsubscribe(accountID, folderName)
-	} else {
-		m.idleWatcher.Stop(accountID)
+// startService starts the mail service in the background (a seam for tests).
+var startService = daemonclient.StartService
+
+// ensureService starts the mail service in the background when there is
+// none and returns a command that reports when it is ready. Connecting can
+// take seconds (the daemon may have to be started first), so it never runs
+// on the UI goroutine; operations issued meanwhile wait inside their
+// commands.
+func (m *Model) ensureService() tea.Cmd {
+	if m.config == nil {
+		return nil
+	}
+	if m.service == nil {
+		m.service = startService(m.config)
+		m.updateSubordinates()
+	}
+	svc := m.service
+	if starting, ok := svc.(*daemonclient.StartingService); ok && !starting.IsReady() {
+		return func() tea.Msg {
+			<-starting.Ready()
+			return serviceReadyMsg{svc: svc}
+		}
+	}
+	return func() tea.Msg { return serviceReadyMsg{svc: svc} }
+}
+
+// serviceReady reports whether the mail service exists and has connected.
+func (m *Model) serviceReady() bool {
+	if m.service == nil {
+		return false
+	}
+	if starting, ok := m.service.(*daemonclient.StartingService); ok {
+		return starting.IsReady()
+	}
+	return true
+}
+
+// listenForServiceEvents waits for the next daemon event of svc.
+func listenForServiceEvents(svc daemonclient.Service) tea.Cmd {
+	ch := svc.Events()
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		ev, ok := <-ch
+		if !ok {
+			return serviceEventMsg{svc: svc, closed: true}
+		}
+		return serviceEventMsg{svc: svc, event: ev}
 	}
 }
 
-func (m *Model) subscribeFolder(accountID, folderName string) {
-	if m.service != nil && m.service.IsDaemon() {
-		_ = m.service.Subscribe(accountID, folderName)
-	} else {
-		acc := m.config.GetAccountByID(accountID)
-		if acc != nil {
-			m.idleWatcher.Watch(acc, folderName)
+// wantedSubscriptions maps every account that has folder to it. INBOX is
+// assumed to exist everywhere, since the folder list may not be cached yet.
+func (m *Model) wantedSubscriptions(folder string) map[string]string {
+	want := make(map[string]string, len(m.config.Accounts))
+	for _, acct := range m.config.Accounts {
+		if folder == emailstore.FolderInbox {
+			want[acct.ID] = folder
+			continue
+		}
+		if folders, _ := config.GetCachedFolders(acct.ID); slices.Contains(folders, folder) {
+			want[acct.ID] = folder
 		}
 	}
+	return want
+}
+
+// watchFolder points new-mail notifications at folder: daemon subscriptions
+// (applied in a command), or direct IDLE connections without a daemon. It
+// does nothing until the service has connected; serviceReadyMsg calls it
+// again then.
+func (m *Model) watchFolder(folder string) tea.Cmd {
+	if m.config == nil || !m.serviceReady() {
+		return nil
+	}
+	want := m.wantedSubscriptions(folder)
+	if m.service.IsDaemon() {
+		m.subs.set(want)
+		return tea.Batch(m.subs.syncCmd(m.service), m.listenForEvents())
+	}
+	if m.directWatch == nil {
+		m.directWatch = make(map[string]string)
+	}
+	for i := range m.config.Accounts {
+		acct := &m.config.Accounts[i]
+		folderFor := want[acct.ID]
+		if m.directWatch[acct.ID] == folderFor {
+			continue
+		}
+		if folderFor == "" {
+			m.idleWatcher.Stop(acct.ID)
+			delete(m.directWatch, acct.ID)
+			continue
+		}
+		m.idleWatcher.Watch(acct, folderFor)
+		m.directWatch[acct.ID] = folderFor
+	}
+	return nil
+}
+
+// listenForEvents starts the (single) listener for the daemon's events.
+func (m *Model) listenForEvents() tea.Cmd {
+	if m.eventsListening || !m.serviceReady() || !m.service.IsDaemon() {
+		return nil
+	}
+	listen := listenForServiceEvents(m.service)
+	if listen != nil {
+		m.eventsListening = true
+	}
+	return listen
+}
+
+// forgetDirectWatches makes the next watchFolder restart every direct IDLE
+// connection. They keep a copy of the account settings, and one that hit an
+// authentication error has stopped for good.
+func (m *Model) forgetDirectWatches() {
+	for id := range m.directWatch {
+		m.directWatch[id] = staleWatch
+	}
+}
+
+// handleDaemonEvent reacts to one event pushed by the daemon.
+func (m *Model) handleDaemonEvent(event *daemonrpc.Event) []tea.Cmd {
+	var cmds []tea.Cmd
+	switch event.Type {
+	case daemonrpc.EventNewMail:
+		var ev daemonrpc.NewMailEvent
+		if err := json.Unmarshal(event.Data, &ev); err == nil {
+			m.notifyNewMail(ev.AccountID, ev.Folder)
+			if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
+				cmds = append(cmds, fetchcmd.FetchFolderEmailsCmd(m.config, ev.Folder))
+			}
+		}
+	case daemonrpc.EventSendFailed:
+		var ev daemonrpc.SendFailedEvent
+		if err := json.Unmarshal(event.Data, &ev); err == nil {
+			cmds = append(cmds, m.showErrorCmd(fmt.Sprintf("Email %q was not sent: %s", ev.Subject, ev.Error)))
+		}
+	case daemonrpc.EventSyncComplete:
+		var ev daemonrpc.SyncCompleteEvent
+		if err := json.Unmarshal(event.Data, &ev); err == nil {
+			if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
+				cmds = append(cmds, fetchcmd.FetchFolderEmailsCmd(m.config, ev.Folder))
+			}
+		}
+	}
+	return cmds
 }
 
 func (m *Model) cachedAttachmentsToFetcher(cached []config.CachedAttachment) []fetcher.Attachment {
@@ -676,13 +860,20 @@ func (m *Model) sendEmailNotice(msg tui.SendEmailMsg) string {
 
 func (m *Model) shutdownService() {
 	m.idleWatcher.StopAll()
+	m.directWatch = nil
+	m.inboxOpen = false
 	if m.service != nil {
-		m.service.Close() //nolint:errcheck,gosec
-		// Drop the closed service so a later shutdown (e.g. ctrl+c after
-		// esc-ing back to the menu) doesn't close it twice and panic, and
+		// Close does not block (a service still starting is closed once it
+		// is ready). Drop it so a later shutdown doesn't close it twice and
 		// re-entering the inbox builds a fresh one.
+		m.service.Close() //nolint:errcheck,gosec
 		m.service = nil
 	}
+	// The subscriptions and event stream belonged to the closed connection;
+	// in-flight commands still hold the old tracker, so replace it instead
+	// of waiting on them.
+	m.subs = newFolderSubscriptions()
+	m.eventsListening = false
 }
 
 func (m *Model) saveConfigAfterCredentials() bool {
@@ -722,6 +913,11 @@ func (m *Model) reloadService() {
 				log.Printf("config reload: %v", err)
 			}
 		}()
+	}
+	// Without the daemon, IDLE runs here on a copy of the old settings.
+	m.forgetDirectWatches()
+	if m.inboxOpen && m.folderInbox != nil && m.serviceReady() && !m.service.IsDaemon() {
+		m.watchFolder(m.folderInbox.GetCurrentFolder()) // direct mode returns no command
 	}
 }
 
@@ -831,21 +1027,6 @@ func (m *Model) fetchCurrentFolderEmails(folderName string) tea.Cmd {
 	}
 	m.folderInbox.SetLoadingEmails(true)
 	return tea.Batch(fetchcmd.FetchFolderEmailsCmd(m.config, folderName), m.pluginNotifyCmd())
-}
-
-func (m *Model) updateDaemonSubscriptions(previousFolder, newFolder string) {
-	for i := range m.config.Accounts {
-		accID := m.config.Accounts[i].ID
-		folders, _ := config.GetCachedFolders(accID)
-		if !slices.Contains(folders, newFolder) {
-			m.unsubscribeFolder(accID, previousFolder)
-			continue
-		}
-		if previousFolder != "" {
-			m.unsubscribeFolder(accID, previousFolder)
-		}
-		m.subscribeFolder(accID, newFolder)
-	}
 }
 
 func (m *Model) markEmailReadAndQueue(accountID string, uid uint32, suppress bool) tea.Cmd {
@@ -998,6 +1179,14 @@ func (m *Model) restoreView() {
 // After every message it reconciles out-of-band images with the new screen
 // and schedules background chores that the handlers flagged.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	defer logPanic("update")
+	model, cmd := m.reconcile(msg)
+	return model, guardCmd(cmd)
+}
+
+// reconcile runs update and then reconciles out-of-band images with the new
+// screen and schedules the background chores the handlers flagged.
+func (m *Model) reconcile(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var pre tea.Cmd
 	switch msg := msg.(type) {
 	case tui.GraphicsPaintMsg:
@@ -1031,7 +1220,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.badgeDirty = false
 		cmds = append(cmds, m.syncUnreadBadgeCmd())
 	}
-	cmds = append(cmds, m.graphics.Sync(m.visibleImages()))
+	if !m.quitting {
+		// After quitCmd removed the images, placing them again would leave
+		// them drawn on the user's shell.
+		cmds = append(cmds, m.graphics.Sync(m.visibleImages()))
+	}
 	return model, tea.Batch(cmds...)
 }
 
@@ -1039,11 +1232,64 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // the quit waits one frame so the removal reaches the terminal (the program
 // does not flush pending output when it shuts down).
 func (m *Model) quitCmd() tea.Cmd {
+	m.quitting = true
 	clearImages := m.graphics.Reset(false)
 	if clearImages == nil {
 		return tea.Quit
 	}
 	return tea.Sequence(clearImages, tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return tea.QuitMsg{} }))
+}
+
+// trackSend records an email as in flight until sendCmd reports back.
+func (m *Model) trackSend(composer *tui.Composer, sendCmd tea.Cmd) tea.Cmd {
+	m.nextSendID++
+	id := m.nextSendID
+	if m.sendsInFlight == nil {
+		m.sendsInFlight = make(map[uint64]*tui.Composer)
+	}
+	m.sendsInFlight[id] = composer
+	return func() tea.Msg { return sendFinishedMsg{id: id, result: sendCmd()} }
+}
+
+// requestQuit quits, unless emails are still being handed to the mail
+// service: closing it then would lose them, so the quit waits for them (up
+// to quitSendWait). Asking again quits at once and keeps them as drafts.
+func (m *Model) requestQuit() tea.Cmd {
+	if m.quitting {
+		return nil
+	}
+	if len(m.sendsInFlight) > 0 && !m.quitAfterSend {
+		m.quitAfterSend = true
+		m.palette.Close()
+		m.sendNotice = "Finishing sending before quitting… (ctrl+c again to quit now)"
+		return tea.Tick(quitSendWait, func(time.Time) tea.Msg { return quitWaitExpiredMsg{} })
+	}
+	m.saveUnsentDrafts()
+	return m.quit()
+}
+
+// saveUnsentDrafts keeps emails that are still in flight as drafts.
+func (m *Model) saveUnsentDrafts() {
+	for id, composer := range m.sendsInFlight {
+		if composer != nil && composer.HasContent() {
+			m.saveDraftOnQuit(composer)
+		}
+		delete(m.sendsInFlight, id)
+	}
+}
+
+// quit saves the message being written, commits a delete/archive/move that
+// is still in its undo window, shuts the mail service down and quits.
+func (m *Model) quit() tea.Cmd {
+	if composer := getCurrentComposer(m.current); composer != nil && composer.HasContent() {
+		m.saveDraftOnQuit(composer)
+	}
+	flush := m.batchActionCmd()
+	m.shutdownService()
+	if flush != nil {
+		return tea.Sequence(flush, m.quitCmd())
+	}
+	return m.quitCmd()
 }
 
 // viewChanged reports whether the active view is a different model. Views
@@ -1062,6 +1308,18 @@ func viewChanged(a, b tea.Model) bool {
 		return false
 	}
 	return reflect.ValueOf(a).Pointer() != reflect.ValueOf(b).Pointer()
+}
+
+// selfRouted reports messages whose handler in update decides whether and
+// where to deliver them. Passing them to the current view first as well
+// would apply them twice (an appended page listed twice, a preview rendered
+// twice) and bypass the handler's checks (a body from another folder shown).
+func selfRouted(msg tea.Msg) bool {
+	switch msg.(type) {
+	case tui.PreviewBodyFetchedMsg, tui.FolderEmailsAppendedMsg:
+		return true
+	}
+	return false
 }
 
 // update is the message handler behind Update.
@@ -1109,8 +1367,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 			switch keyMsg.String() {
 			case "ctrl+c":
-				m.shutdownService()
-				return m, m.quitCmd()
+				return m, m.requestQuit()
 			case config.Keybinds.Global.Cancel:
 				m.palette.Close()
 				return m, nil
@@ -1148,8 +1405,17 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}
 	}
 
-	m.current, cmd = m.current.Update(msg)
-	cmds = append(cmds, cmd)
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == "ctrl+c" {
+		// Quit here rather than in the view: views answer ctrl+c with
+		// tea.Quit, which would exit before drafts, pending actions and
+		// in-flight sends are taken care of.
+		return m, m.requestQuit()
+	}
+
+	if !selfRouted(msg) {
+		m.current, cmd = m.current.Update(msg)
+		cmds = append(cmds, cmd)
+	}
 
 	if keyMsg, isKey := msg.(tea.KeyPressMsg); isKey {
 		if composer := getCurrentComposer(m.current); composer != nil && m.plugins != nil {
@@ -1192,19 +1458,6 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 					return tui.UndoSendMsg{JobID: jobID}
 				}
 			}
-		}
-		if msg.String() == "ctrl+c" {
-			if composer := getCurrentComposer(m.current); composer != nil && composer.HasContent() {
-				m.saveDraftOnQuit(composer)
-			}
-			// Commit a delete/archive/move that is still in its undo window
-			// instead of silently dropping it.
-			flush := m.batchActionCmd()
-			m.shutdownService()
-			if flush != nil {
-				return m, tea.Sequence(flush, m.quitCmd())
-			}
-			return m, m.quitCmd()
 		}
 		if msg.String() == "esc" {
 			switch m.current.(type) {
@@ -1315,27 +1568,44 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		m.loadFolderInboxCache(emailstore.FolderInbox)
 		m.current = m.folderInbox
 		m.updateCurrentWindowSize()
-		if m.service == nil {
-			m.service = daemonclient.NewService(m.config)
-			m.updateSubordinates()
-		}
+		m.inboxOpen = true
+		// Entering the inbox restarts direct IDLE with the current settings.
+		m.forgetDirectWatches()
 		batchCmds := []tea.Cmd{
 			m.current.Init(),
 			fetchcmd.FetchFoldersCmd(m.config),
 			fetchcmd.FetchFolderEmailsCmd(m.config, emailstore.FolderInbox),
-			idledaemon.ListenForIdleUpdates(m.idleUpdates),
+			// Connecting to the mail service can take seconds; mail loads
+			// meanwhile and new-mail notifications start once it is ready.
+			m.ensureService(),
 		}
-		if m.service.IsDaemon() {
-			for _, acct := range m.config.Accounts {
-				_ = m.service.Subscribe(acct.ID, emailstore.FolderInbox)
-			}
-			batchCmds = append(batchCmds, idledaemon.ListenForDaemonEvents(m.service.Events()))
-		} else {
-			for i := range m.config.Accounts {
-				m.idleWatcher.Watch(&m.config.Accounts[i], emailstore.FolderInbox)
-			}
+		if !m.idleListening {
+			m.idleListening = true
+			batchCmds = append(batchCmds, idledaemon.ListenForIdleUpdates(m.idleUpdates))
 		}
 		return m, tea.Batch(batchCmds...)
+
+	case serviceReadyMsg:
+		if msg.svc != m.service {
+			return m, nil // shut down while it was starting
+		}
+		if m.inboxOpen && m.folderInbox != nil {
+			return m, m.watchFolder(m.folderInbox.GetCurrentFolder())
+		}
+		// No folder to watch (e.g. sending from the menu), but a failed
+		// send is still reported through the daemon's events.
+		return m, m.listenForEvents()
+
+	case serviceEventMsg:
+		if msg.svc != m.service {
+			return m, nil // from a service that was shut down
+		}
+		if msg.closed {
+			m.eventsListening = false
+			return m, nil
+		}
+		eventCmds := m.handleDaemonEvent(msg.event)
+		return m, tea.Batch(append(eventCmds, listenForServiceEvents(m.service))...)
 
 	case tui.FoldersFetchedMsg:
 		if m.folderInbox == nil {
@@ -1408,13 +1678,13 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		if m.config == nil {
 			return m, nil
 		}
-		m.updateDaemonSubscriptions(msg.PreviousFolder, msg.FolderName)
+		watchCmd := m.watchFolder(msg.FolderName)
 		if m.plugins != nil {
 			m.plugins.CallFolderHook(plugin.HookFolderChanged, msg.FolderName)
 			m.syncPluginStatus()
 			m.syncPluginKeyBindings()
 		}
-		return m, m.fetchCurrentFolderEmails(msg.FolderName)
+		return m, tea.Batch(watchCmd, m.fetchCurrentFolderEmails(msg.FolderName))
 
 	case tui.PluginNotifyMsg:
 		// Build a non-blocking overlay notification instead of swapping the
@@ -1639,41 +1909,12 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return m, idledaemon.ListenForIdleUpdates(m.idleUpdates)
 
 	case tui.DaemonEventMsg:
+		// Daemon events arrive as serviceEventMsg; handle a stray one
+		// without starting another listener.
 		if msg.Event == nil {
-			// Events channel closed — daemon may have reconnected with a
-			// fresh channel. Re-subscribe if still in daemon mode.
-			if m.service != nil && m.service.IsDaemon() {
-				return m, idledaemon.ListenForDaemonEvents(m.service.Events())
-			}
 			return m, nil
 		}
-		var daemonCmds []tea.Cmd
-		if m.service != nil && m.service.IsDaemon() {
-			daemonCmds = append(daemonCmds, idledaemon.ListenForDaemonEvents(m.service.Events()))
-		}
-		switch msg.Event.Type {
-		case daemonrpc.EventNewMail:
-			var ev daemonrpc.NewMailEvent
-			if err := json.Unmarshal(msg.Event.Data, &ev); err == nil {
-				m.notifyNewMail(ev.AccountID, ev.Folder)
-				if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
-					daemonCmds = append(daemonCmds, fetchcmd.FetchFolderEmailsCmd(m.config, ev.Folder))
-				}
-			}
-		case daemonrpc.EventSendFailed:
-			var ev daemonrpc.SendFailedEvent
-			if err := json.Unmarshal(msg.Event.Data, &ev); err == nil {
-				daemonCmds = append(daemonCmds, m.showErrorCmd(fmt.Sprintf("Email %q was not sent: %s", ev.Subject, ev.Error)))
-			}
-		case daemonrpc.EventSyncComplete:
-			var ev daemonrpc.SyncCompleteEvent
-			if err := json.Unmarshal(msg.Event.Data, &ev); err == nil {
-				if m.folderInbox != nil && m.folderInbox.GetCurrentFolder() == ev.Folder {
-					daemonCmds = append(daemonCmds, fetchcmd.FetchFolderEmailsCmd(m.config, ev.Folder))
-				}
-			}
-		}
-		return m, tea.Batch(daemonCmds...)
+		return m, tea.Batch(m.handleDaemonEvent(msg.Event)...)
 
 	case tui.RequestRefreshMsg:
 		if msg.FolderName != "" && m.config != nil {
@@ -2526,19 +2767,33 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		}
 		m.previousModel = m.current
 		var draftID string
-		if composer := getCurrentComposer(m.current); composer != nil {
+		composer := getCurrentComposer(m.current)
+		if composer != nil {
 			draftID = composer.GetDraftID()
 		}
-		if m.service == nil && m.config != nil {
-			m.service = daemonclient.NewService(m.config)
-			m.updateSubordinates()
-		}
+		// The send command waits for the service; starting it never blocks.
+		serviceCmd := m.ensureService()
 		m.sendNotice = m.sendEmailNotice(msg)
 		m.pendingDraftID = draftID
 		m.current = tui.NewChoice()
 		m.updateCurrentWindowSize()
 		go m.saveContactsAfterSend(msg)
-		return m, tea.Batch(m.current.Init(), send.SendEmailCmd(m.sendEmailDependencies(), msg))
+		return m, tea.Batch(m.current.Init(), serviceCmd, m.trackSend(composer, send.SendEmailCmd(m.sendEmailDependencies(), msg)))
+
+	case sendFinishedMsg:
+		delete(m.sendsInFlight, msg.id)
+		model, resultCmd := m.update(msg.result)
+		if m.quitAfterSend && len(m.sendsInFlight) == 0 && !m.quitting {
+			return model, tea.Batch(resultCmd, m.quit())
+		}
+		return model, resultCmd
+
+	case quitWaitExpiredMsg:
+		if !m.quitAfterSend || m.quitting {
+			return m, nil
+		}
+		m.saveUnsentDrafts()
+		return m, m.quit()
 
 	case tui.EmailQueuedMsg:
 		m.pendingJobID = msg.JobID
@@ -2884,6 +3139,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 // View renders the current TUI view with overlays.
 func (m *Model) View() tea.View {
+	defer logPanic("view")
 	v := m.current.View()
 	if m.showLogPanel {
 		v.Content = m.renderWithLogPanel(v.Content)

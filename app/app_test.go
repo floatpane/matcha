@@ -1,14 +1,22 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
+	"sync"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/config"
+	"github.com/floatpane/matcha/daemonclient"
+	"github.com/floatpane/matcha/daemonrpc"
+	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/internal/palette"
 	"github.com/floatpane/matcha/tui"
+	"github.com/floatpane/matcha/view"
 )
 
 // TestMain keeps the tests away from the developer's real matcha config and
@@ -149,3 +157,567 @@ func TestViewChangedHandlesValueViews(t *testing.T) {
 		t.Fatal("different view types must count as a change")
 	}
 }
+
+// fakeService is a mail service whose calls are recorded.
+type fakeService struct {
+	daemonclient.Service
+	daemon bool
+	events chan *daemonrpc.Event
+
+	mu           sync.Mutex
+	gate         chan struct{} // when set, Subscribe/Unsubscribe wait for it
+	subscribeErr error
+	subs         []string
+	unsubs       []string
+	closed       int
+	queued       int
+	listens      int
+}
+
+func newFakeService(daemon bool) *fakeService {
+	return &fakeService{daemon: daemon, events: make(chan *daemonrpc.Event, 4)}
+}
+
+func (f *fakeService) IsDaemon() bool { return f.daemon }
+func (f *fakeService) Events() <-chan *daemonrpc.Event {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listens++
+	return f.events
+}
+
+func (f *fakeService) waitGate() {
+	f.mu.Lock()
+	gate := f.gate
+	f.mu.Unlock()
+	if gate != nil {
+		<-gate
+	}
+}
+
+func (f *fakeService) Subscribe(account, folder string) error {
+	f.waitGate()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.subs = append(f.subs, account+"/"+folder)
+	return f.subscribeErr
+}
+func (f *fakeService) Unsubscribe(account, folder string) error {
+	f.waitGate()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.unsubs = append(f.unsubs, account+"/"+folder)
+	return nil
+}
+func (f *fakeService) QueueEmail(string, []string, []string, []string, string, string, string, map[string][]byte, map[string][]byte, string, []string, bool, bool, bool, bool, int, []byte) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.queued++
+	return "job", nil
+}
+func (f *fakeService) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closed++
+	return nil
+}
+func (f *fakeService) ReloadConfig() error { return nil }
+
+func (f *fakeService) snapshot() (subs, unsubs []string, closed int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.subs...), append([]string(nil), f.unsubs...), f.closed
+}
+
+func (f *fakeService) counts() (queued, listens int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.queued, f.listens
+}
+
+// useSlowServices makes the app's successive service starts return fakes
+// in order, each connecting only when its release function is called.
+func useSlowServices(t *testing.T, fakes ...*fakeService) (release []func()) {
+	t.Helper()
+	gates := make([]chan struct{}, len(fakes))
+	release = make([]func(), len(fakes))
+	for i := range fakes {
+		gates[i] = make(chan struct{})
+		var once sync.Once
+		gate := gates[i]
+		release[i] = func() { once.Do(func() { close(gate) }) }
+	}
+	var mu sync.Mutex
+	next := 0
+	previous := startService
+	startService = func(*config.Config) *daemonclient.StartingService {
+		mu.Lock()
+		i := next
+		next++
+		mu.Unlock()
+		if i >= len(fakes) {
+			t.Errorf("unexpected service start #%d", i+1)
+			i = len(fakes) - 1
+		}
+		return daemonclient.StartServiceFunc(func() daemonclient.Service {
+			<-gates[i]
+			return fakes[i]
+		})
+	}
+	t.Cleanup(func() {
+		for _, r := range release {
+			r()
+		}
+		startService = previous
+	})
+	return release
+}
+
+func useSlowService(t *testing.T, fake *fakeService) (release func()) {
+	t.Helper()
+	return useSlowServices(t, fake)[0]
+}
+
+func newConfiguredModel(t *testing.T) *Model {
+	t.Helper()
+	cfg := &config.Config{
+		Accounts:          []config.Account{{ID: "acct", Email: "me@example.com", Protocol: "maildir", MaildirPath: t.TempDir()}},
+		HasSeenSetupGuide: true,
+		DisableDaemon:     false,
+	}
+	m := NewModel(cfg, nil, nil, false, nil, nil)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	return m
+}
+
+// runBatch executes cmd (and nested batches) and returns the messages,
+// skipping commands that do not finish quickly (such as event listeners).
+func runBatch(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	done := make(chan tea.Msg, 1)
+	go func() { done <- cmd() }()
+	select {
+	case msg := <-done:
+		if cmds, ok := nestedCmds(msg); ok {
+			var msgs []tea.Msg
+			for _, c := range cmds {
+				msgs = append(msgs, runBatch(c)...)
+			}
+			return msgs
+		}
+		if msg == nil {
+			return nil
+		}
+		return []tea.Msg{msg}
+	case <-time.After(300 * time.Millisecond):
+		return nil
+	}
+}
+
+// nestedCmds returns the commands of a tea.Batch or tea.Sequence message
+// (the latter's type is unexported, hence the reflection).
+func nestedCmds(msg tea.Msg) ([]tea.Cmd, bool) {
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		return batch, true
+	}
+	v := reflect.ValueOf(msg)
+	if !v.IsValid() || v.Kind() != reflect.Slice || v.Type().Elem() != reflect.TypeOf(tea.Cmd(nil)) {
+		return nil, false
+	}
+	cmds := make([]tea.Cmd, v.Len())
+	for i := range cmds {
+		cmds[i] = v.Index(i).Interface().(tea.Cmd)
+	}
+	return cmds, true
+}
+
+// startCmds runs every command of cmd concurrently, as Bubble Tea does, and
+// delivers their messages on the returned channel.
+func startCmds(cmd tea.Cmd) <-chan tea.Msg {
+	out := make(chan tea.Msg, 64)
+	var run func(tea.Cmd)
+	run = func(c tea.Cmd) {
+		if c == nil {
+			return
+		}
+		go func() {
+			msg := c()
+			if cmds, ok := nestedCmds(msg); ok {
+				for _, inner := range cmds {
+					run(inner)
+				}
+				return
+			}
+			if msg != nil {
+				out <- msg
+			}
+		}()
+	}
+	run(cmd)
+	return out
+}
+
+// awaitMsg returns the first message on msgs that match accepts.
+func awaitMsg[T tea.Msg](t *testing.T, msgs <-chan tea.Msg, match func(T) bool) T {
+	t.Helper()
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case msg := <-msgs:
+			if v, ok := msg.(T); ok && (match == nil || match(v)) {
+				return v
+			}
+		case <-deadline:
+			var zero T
+			t.Fatalf("no %T arrived", zero)
+			return zero
+		}
+	}
+}
+
+// updateQuickly runs m.Update(msg) and fails if it blocks.
+func updateQuickly(t *testing.T, m *Model, msg tea.Msg) tea.Cmd {
+	t.Helper()
+	returned := make(chan tea.Cmd, 1)
+	go func() {
+		_, cmd := m.Update(msg)
+		returned <- cmd
+	}()
+	select {
+	case cmd := <-returned:
+		return cmd
+	case <-time.After(time.Second):
+		t.Fatalf("Update(%T) waited for the mail service", msg)
+		return nil
+	}
+}
+
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting until %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestOpeningInboxDoesNotWaitForTheService(t *testing.T) {
+	fake := newFakeService(true)
+	release := useSlowService(t, fake)
+	m := newConfiguredModel(t)
+
+	cmd := updateQuickly(t, m, tui.GoToInboxMsg{})
+	if _, ok := m.current.(*tui.FolderInbox); !ok {
+		t.Fatalf("current view is %T, want the folder inbox", m.current)
+	}
+	if m.service == nil || m.serviceReady() {
+		t.Fatal("the service should exist and still be connecting")
+	}
+
+	// The inbox's own commands report when the service has connected.
+	msgs := startCmds(cmd)
+	release()
+	ready := awaitMsg[serviceReadyMsg](t, msgs, nil)
+	if ready.svc != m.service {
+		t.Fatal("serviceReadyMsg is for another service")
+	}
+	_, cmd = m.Update(ready)
+	startCmds(cmd)
+	eventually(t, "INBOX is subscribed", func() bool {
+		subs, _, _ := fake.snapshot()
+		return len(subs) == 1 && subs[0] == "acct/INBOX"
+	})
+	if _, listens := fake.counts(); listens != 1 {
+		t.Fatalf("%d event listeners started, want 1", listens)
+	}
+
+	// Switching folders moves the subscription without waiting on the
+	// daemon's RPCs.
+	gate := make(chan struct{})
+	fake.mu.Lock()
+	fake.gate = gate
+	fake.mu.Unlock()
+	cmd = updateQuickly(t, m, tui.SwitchFolderMsg{FolderName: "Archive", PreviousFolder: "INBOX"})
+	startCmds(cmd)
+	close(gate)
+	eventually(t, "INBOX is unsubscribed", func() bool {
+		_, unsubs, _ := fake.snapshot()
+		return len(unsubs) == 1 && unsubs[0] == "acct/INBOX"
+	})
+
+	// A repeated ready message does not start a second listener.
+	m.Update(serviceReadyMsg{svc: m.service})
+	if _, listens := fake.counts(); listens != 1 {
+		t.Fatalf("%d event listeners after a second ready message, want 1", listens)
+	}
+}
+
+func TestServiceShutDownWhileStartingIsDiscarded(t *testing.T) {
+	first, second := newFakeService(true), newFakeService(true)
+	releases := useSlowServices(t, first, second)
+	m := newConfiguredModel(t)
+	m.Update(tui.GoToInboxMsg{})
+	old := m.service
+
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape}) // back to the menu while connecting
+	if m.service != nil {
+		t.Fatal("esc did not shut the service down")
+	}
+	releases[0]()
+	<-old.(*daemonclient.StartingService).Ready()
+	m.Update(serviceReadyMsg{svc: old})
+	eventually(t, "the discarded service is closed", func() bool {
+		_, _, closed := first.snapshot()
+		return closed == 1
+	})
+
+	// Re-enter with a new service; the old one's messages must not disturb it.
+	m.Update(tui.GoToInboxMsg{})
+	releases[1]()
+	<-m.service.(*daemonclient.StartingService).Ready()
+	_, cmd := m.Update(serviceReadyMsg{svc: m.service})
+	startCmds(cmd)
+	m.Update(serviceReadyMsg{svc: old})
+	m.Update(serviceEventMsg{svc: old, event: &daemonrpc.Event{Type: daemonrpc.EventNewMail}})
+	m.Update(serviceEventMsg{svc: old, closed: true})
+	if _, listens := second.counts(); listens != 1 || !m.eventsListening {
+		t.Fatalf("new service has %d listeners (eventsListening=%v), want exactly 1", listens, m.eventsListening)
+	}
+	if subs, _, _ := first.snapshot(); len(subs) != 0 {
+		t.Fatalf("a discarded service was subscribed: %v", subs)
+	}
+}
+
+func sendFromComposer(t *testing.T, m *Model) tea.Cmd {
+	t.Helper()
+	m.current = tui.NewComposerWithAccounts(m.config.Accounts, "acct", "you@example.com", "Hi", "Body", true)
+	return updateQuickly(t, m, tui.SendEmailMsg{To: "you@example.com", Subject: "Hi", Body: "Body", AccountID: "acct"})
+}
+
+func TestSendingDoesNotWaitForTheService(t *testing.T) {
+	fake := newFakeService(true)
+	release := useSlowService(t, fake)
+	m := newConfiguredModel(t)
+	msgs := startCmds(sendFromComposer(t, m))
+	if m.service == nil {
+		t.Fatal("sending should start the mail service")
+	}
+	release()
+	done := awaitMsg[sendFinishedMsg](t, msgs, nil)
+	if _, ok := done.result.(tui.EmailQueuedMsg); !ok {
+		t.Fatalf("send finished with %#v, want the queued email", done.result)
+	}
+	if queued, _ := fake.counts(); queued != 1 {
+		t.Fatalf("%d emails queued, want 1", queued)
+	}
+}
+
+func TestQuitWaitsForEmailsBeingSent(t *testing.T) {
+	fake := newFakeService(true)
+	release := useSlowService(t, fake)
+	m := newConfiguredModel(t)
+	msgs := startCmds(sendFromComposer(t, m))
+
+	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if m.quitting || m.service == nil {
+		t.Fatal("ctrl+c quit while the email was still waiting for the service")
+	}
+	release()
+	done := awaitMsg[sendFinishedMsg](t, msgs, nil)
+	m.Update(done)
+	if !m.quitting {
+		t.Fatal("the program did not quit once the email was handed off")
+	}
+	if queued, _ := fake.counts(); queued != 1 {
+		t.Fatalf("%d emails queued, want 1", queued)
+	}
+}
+
+func TestSecondQuitKeepsUnsentEmailAsDraft(t *testing.T) {
+	useSlowService(t, newFakeService(true)) // never connects
+	m := newConfiguredModel(t)
+	sendFromComposer(t, m)
+	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if !m.quitting {
+		t.Fatal("a second ctrl+c did not quit")
+	}
+	cache, err := config.LoadDraftsCache()
+	if err != nil || len(cache.Drafts) != 1 || cache.Drafts[0].Subject != "Hi" {
+		t.Fatalf("drafts after quitting with an unsent email: %+v, %v", cache, err)
+	}
+	t.Cleanup(func() { _ = config.DeleteDraft(cache.Drafts[0].ID) })
+}
+
+func TestSendFailureIsReportedWithoutTheInbox(t *testing.T) {
+	fake := newFakeService(true)
+	release := useSlowService(t, fake)
+	m := newConfiguredModel(t)
+	msgs := startCmds(sendFromComposer(t, m))
+	release()
+	ready := awaitMsg[serviceReadyMsg](t, msgs, nil)
+	_, cmd := m.Update(ready)
+	if _, listens := fake.counts(); listens != 1 {
+		t.Fatalf("%d event listeners after sending from the menu, want 1", listens)
+	}
+	if subs, _, _ := fake.snapshot(); len(subs) != 0 {
+		t.Fatalf("sending from the menu subscribed to %v", subs)
+	}
+	data, _ := json.Marshal(daemonrpc.SendFailedEvent{Subject: "Hi", Error: "550 rejected"})
+	fake.events <- &daemonrpc.Event{Type: daemonrpc.EventSendFailed, Data: data}
+	event := awaitMsg[serviceEventMsg](t, startCmds(cmd), nil)
+	m.Update(event)
+	if !m.showErrorNotif {
+		t.Fatal("the failed send was not reported")
+	}
+}
+
+func TestSendingAfterLeavingTheInboxDoesNotWatchIt(t *testing.T) {
+	first, second := newFakeService(true), newFakeService(true)
+	releases := useSlowServices(t, first, second)
+	releases[0]()
+	m := newConfiguredModel(t)
+	m.Update(tui.GoToInboxMsg{})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+
+	msgs := startCmds(sendFromComposer(t, m))
+	releases[1]()
+	ready := awaitMsg[serviceReadyMsg](t, msgs, func(r serviceReadyMsg) bool { return r.svc == m.service })
+	_, cmd := m.Update(ready)
+	runBatch(cmd)
+	if subs, _, _ := second.snapshot(); len(subs) != 0 {
+		t.Fatalf("a send from the menu re-subscribed the closed inbox: %v", subs)
+	}
+}
+
+func TestFailedSubscribeIsStillUnsubscribed(t *testing.T) {
+	fake := newFakeService(true)
+	fake.subscribeErr = fmt.Errorf("daemon connection lost")
+	subs := newFolderSubscriptions()
+	subs.set(map[string]string{"acct": "INBOX"})
+	subs.apply(fake)
+	subs.set(map[string]string{"acct": "Archive"})
+	subs.apply(fake)
+	if _, unsubs, _ := fake.snapshot(); len(unsubs) != 1 || unsubs[0] != "acct/INBOX" {
+		t.Fatalf("unsubscriptions = %v; the daemon client replays a failed subscribe, so it must be undone", unsubs)
+	}
+}
+
+func TestDirectIdleRestartsWhenSettingsChangeOrInboxReopens(t *testing.T) {
+	fake := newFakeService(false) // no daemon: IDLE runs in the app
+	useSlowService(t, fake)()
+	m := newConfiguredModel(t) // a Maildir account: IdleWatcher.Watch is a no-op
+	m.Update(tui.GoToInboxMsg{})
+	<-m.service.(*daemonclient.StartingService).Ready()
+	m.Update(serviceReadyMsg{svc: m.service})
+	if m.directWatch["acct"] != "INBOX" {
+		t.Fatalf("direct watch = %q, want INBOX", m.directWatch["acct"])
+	}
+
+	m.directWatch["acct"] = "watch on the old settings"
+	m.reloadService() // an account was edited
+	if m.directWatch["acct"] != "INBOX" {
+		t.Fatalf("after a config reload the watch is %q, want INBOX restarted", m.directWatch["acct"])
+	}
+
+	m.Update(tui.GoToInboxMsg{}) // back to the inbox without esc
+	if m.directWatch["acct"] != staleWatch {
+		t.Fatalf("re-entering the inbox kept the old IDLE watch %q", m.directWatch["acct"])
+	}
+	m.Update(serviceReadyMsg{svc: m.service})
+	if m.directWatch["acct"] != "INBOX" {
+		t.Fatalf("direct watch after re-entering = %q, want INBOX", m.directWatch["acct"])
+	}
+}
+
+func countPreviewBodies(rec *recordingView) int {
+	n := 0
+	for _, msg := range rec.msgs {
+		if _, ok := msg.(tui.PreviewBodyFetchedMsg); ok {
+			n++
+		}
+	}
+	return n
+}
+
+func TestPreviewBodyReachesTheViewOnceAndOnlyForItsFolder(t *testing.T) {
+	m := newTestModel(t)
+	m.config = &config.Config{}
+	m.folderInbox = tui.NewFolderInbox([]string{"INBOX", "Archive"}, nil)
+	rec := &recordingView{}
+	m.current = rec
+
+	m.Update(tui.PreviewBodyFetchedMsg{UID: 1, AccountID: "a", Body: "hello", Folder: "INBOX"})
+	if n := countPreviewBodies(rec); n != 1 {
+		t.Fatalf("the preview body reached the view %d times, want once", n)
+	}
+	// A body fetched for a folder the user has since left must not be shown.
+	m.Update(tui.PreviewBodyFetchedMsg{UID: 1, AccountID: "a", Body: "other", Folder: "Archive"})
+	if n := countPreviewBodies(rec); n != 1 {
+		t.Fatal("a preview body from another folder reached the view")
+	}
+}
+
+func inboxEmailCount(fi *tui.FolderInbox) int {
+	n := 0
+	for fi.GetInbox().GetEmailAtIndex(n) != nil {
+		n++
+	}
+	return n
+}
+
+func TestAppendedPageIsAddedOnce(t *testing.T) {
+	m := newTestModel(t)
+	accounts := []config.Account{{ID: "a", Email: "me@example.com"}}
+	m.config = &config.Config{Accounts: accounts}
+	fi := tui.NewFolderInbox([]string{"INBOX"}, accounts)
+	emails := make([]fetcher.Email, 12)
+	for i := range emails {
+		emails[i] = fetcher.Email{UID: uint32(i + 1), AccountID: "a", Subject: fmt.Sprintf("mail %d", i+1), Date: time.Now().Add(-time.Duration(i) * time.Hour)}
+	}
+	fi.SetEmails(emails[:10], accounts)
+	m.folderInbox = fi
+	m.current = fi
+	m.Update(tui.FolderEmailsAppendedMsg{FolderName: "INBOX", AccountID: "a", Emails: emails[10:]})
+	if n := inboxEmailCount(fi); n != 12 {
+		t.Fatalf("after appending 2 emails to 10 the inbox lists %d", n)
+	}
+}
+
+func schedulesPaint(cmd tea.Cmd) bool {
+	for _, msg := range runBatch(cmd) {
+		if _, ok := msg.(tui.GraphicsPaintMsg); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func TestQuitDoesNotPlaceImagesAgain(t *testing.T) {
+	m := newTestModel(t)
+	m.current = &imageView{images: []tui.ScreenImage{{ID: 7, Placement: 1, Protocol: view.ImageProtocolKitty, Row: 1, Col: 1, Rows: 2, Cols: 2}}}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"}); !schedulesPaint(cmd) {
+		t.Fatal("the view's image was never scheduled for painting")
+	}
+	m.quitCmd() // removes every image
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"}); schedulesPaint(cmd) {
+		t.Fatal("an image placement was scheduled after quitting")
+	}
+}
+
+// imageView is a view that shows fixed out-of-band images.
+type imageView struct {
+	recordingView
+	images []tui.ScreenImage
+}
+
+func (v *imageView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	v.recordingView.Update(msg)
+	return v, nil
+}
+
+func (v *imageView) VisibleImages() []tui.ScreenImage { return v.images }
