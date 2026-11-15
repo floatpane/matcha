@@ -15,6 +15,7 @@ import (
 	"github.com/floatpane/matcha/daemonrpc"
 	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/internal/palette"
+	"github.com/floatpane/matcha/internal/testhome"
 	"github.com/floatpane/matcha/tui"
 	"github.com/floatpane/matcha/view"
 )
@@ -22,15 +23,10 @@ import (
 // TestMain keeps the tests away from the developer's real matcha config and
 // caches.
 func TestMain(m *testing.M) {
-	home, err := os.MkdirTemp("", "matcha-app-test-home-*")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "create test home: %v\n", err)
-		os.Exit(1)
-	}
-	_ = os.Setenv("HOME", home)
-	code := m.Run()
-	_ = os.RemoveAll(home)
-	os.Exit(code)
+	// Image protocol detection changes inside tmux.
+	_ = os.Unsetenv("TMUX")
+	_ = os.Unsetenv("TMUX_PANE")
+	testhome.Main(m)
 }
 
 // recordingView is a minimal view that records the messages it receives.
