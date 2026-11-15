@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -181,7 +182,7 @@ func TestAtomicWriteKeepsModeAndSymlink(t *testing.T) {
 	if string(data) != "new" {
 		t.Fatalf("target = %q", data)
 	}
-	if fi, _ := os.Stat(target); fi.Mode().Perm() != 0o640 {
+	if fi, _ := os.Stat(target); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o640 {
 		t.Fatalf("mode = %v, want 0640", fi.Mode().Perm())
 	}
 	entries, _ := os.ReadDir(dir)

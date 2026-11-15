@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -68,7 +69,7 @@ func TestDofileLoadfileRequireName(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	path := dir + "/mod.lua"
+	path := filepath.ToSlash(dir) + "/mod.lua"
 	if err := os.WriteFile(path, []byte(`return 1 + 2`), 0o600); err != nil {
 		t.Fatal(err)
 	}
