@@ -15,6 +15,7 @@ import (
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/i18n"
+	_ "github.com/floatpane/matcha/i18n/languages" // register locale metadata (plural rules, names)
 	"github.com/floatpane/matcha/internal/cliutil"
 	"github.com/floatpane/matcha/internal/daemoncmd"
 	"github.com/floatpane/matcha/internal/logging"

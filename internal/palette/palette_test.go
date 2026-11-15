@@ -132,3 +132,9 @@ func TestHandleMouseClickOutsideCloses(t *testing.T) {
 		t.Fatal("a click outside the palette should close it")
 	}
 }
+
+func TestPaletteIsNotOfferedOnTheLoadingScreen(t *testing.T) {
+	if Allowed(tui.NewStatus("Fetching email content...")) {
+		t.Fatal("the command palette opens over the loading screen")
+	}
+}

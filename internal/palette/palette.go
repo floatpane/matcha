@@ -103,7 +103,7 @@ func (p *Palette) HandleMouse(msg tea.MouseMsg) tea.Cmd {
 func Allowed(current tea.Model) bool {
 	switch v := current.(type) {
 	case *tui.Login, *tui.SignatureEditor, *tui.MailingListEditor, *tui.ContactEditor,
-		*tui.PasswordPrompt, *tui.FilePicker, *tui.SaveFilePicker, *tui.Status:
+		*tui.PasswordPrompt, *tui.FilePicker, *tui.SaveFilePicker, tui.Status, *tui.Status:
 		return false
 	case *tui.Composer:
 		return true

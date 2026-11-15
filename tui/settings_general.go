@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/config"
@@ -89,8 +90,13 @@ func (m *Settings) handleGeneralOption(idx int, key string) (*Settings, tea.Cmd)
 			m.cfg.DateFormat = config.DateFormatEU
 		}
 	case 11: // Language
-		// Cycle through available languages
-		langs := i18n.LanguageCodes()
+		// Cycle through the languages that have translations, in a stable
+		// order (the list comes from a map).
+		langs := i18n.GetManager().AvailableLanguages()
+		if len(langs) == 0 {
+			return m, nil
+		}
+		sort.Strings(langs)
 		currentLang := m.cfg.GetLanguage()
 		currentIdx := -1
 		for i, lang := range langs {

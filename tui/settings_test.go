@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/floatpane/matcha/config"
+	"github.com/floatpane/matcha/i18n"
 )
 
 func settingsKey(s string) tea.KeyPressMsg {
@@ -219,5 +220,22 @@ func TestSettingsRestoreStateSyncsMenu(t *testing.T) {
 	s.RestoreState(SettingsState{ActivePane: PaneContent, ActiveCategory: CategoryContacts})
 	if s.menuCursor != int(CategoryContacts) {
 		t.Fatalf("menu highlights %d while showing contacts", s.menuCursor)
+	}
+}
+
+func TestSettingsLanguageCyclesThroughTranslations(t *testing.T) {
+	t.Cleanup(func() { _ = i18n.GetManager().SetLanguage("en") })
+	cfg := &config.Config{Language: "en"}
+	m := NewSettings(cfg)
+	seen := map[string]bool{}
+	for range 20 {
+		m.handleGeneralOption(11, "enter") // used to divide by zero with no registered languages
+		if cfg.Language == "" || i18n.GetManager().GetLanguage() != cfg.Language {
+			t.Fatalf("language %q was selected but %q is active", cfg.Language, i18n.GetManager().GetLanguage())
+		}
+		seen[cfg.Language] = true
+	}
+	if len(seen) < 2 {
+		t.Fatalf("cycling the language visited only %v", seen)
 	}
 }
