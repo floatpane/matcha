@@ -28,6 +28,7 @@ import (
 	"github.com/floatpane/matcha/plugin"
 	"github.com/floatpane/matcha/theme"
 	"github.com/floatpane/matcha/tui"
+	"github.com/floatpane/matcha/view"
 	"github.com/floatpane/termimage"
 
 	"github.com/floatpane/matcha/app"
@@ -95,6 +96,10 @@ func main() {
 	syncNativeTheme(cfg)
 	startMacOSSync(cfg)
 	ensureProtocolHandler()
+
+	// Inside tmux, image support depends on asking tmux; do it now, off the
+	// UI goroutine, rather than on the first email with images.
+	go view.PrimeImageDetection()
 
 	p := tea.NewProgram(initialModel)
 	if _, err := p.Run(); err != nil {

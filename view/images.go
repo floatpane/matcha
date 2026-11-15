@@ -34,6 +34,10 @@ const (
 	ImageProtocolSixel
 	// ImageProtocolKitty uses the Kitty graphics protocol out-of-band.
 	ImageProtocolKitty
+	// ImageProtocolKittyPlaceholder shows Kitty images inside tmux: each
+	// image is uploaded through tmux passthrough and drawn with Unicode
+	// placeholder cells that are part of the body text, like half-blocks.
+	ImageProtocolKittyPlaceholder
 )
 
 // String returns a short human-readable protocol name.
@@ -45,6 +49,8 @@ func (p ImageProtocol) String() string {
 		return "sixel"
 	case ImageProtocolKitty:
 		return "kitty"
+	case ImageProtocolKittyPlaceholder:
+		return "kitty-placeholder"
 	case ImageProtocolNone:
 		return "none"
 	}
@@ -53,8 +59,15 @@ func (p ImageProtocol) String() string {
 
 // OutOfBand reports whether images of this protocol are painted outside the
 // cell renderer (and must therefore be positioned and cleared explicitly).
+// Placeholder images are uploaded out-of-band but drawn by the text.
 func (p ImageProtocol) OutOfBand() bool {
 	return p == ImageProtocolKitty || p == ImageProtocolSixel
+}
+
+// Uploaded reports whether images of this protocol are transmitted to the
+// terminal and referred to by id afterwards.
+func (p ImageProtocol) Uploaded() bool {
+	return p == ImageProtocolKitty || p == ImageProtocolKittyPlaceholder
 }
 
 // ActiveImageProtocol returns the protocol used to draw inline images in the
@@ -68,6 +81,8 @@ func ActiveImageProtocol() ImageProtocol {
 		// Zellij forwards Sixel but not the Kitty protocol, even when it runs
 		// inside a Kitty-capable terminal.
 		return ImageProtocolSixel
+	case inTmux():
+		return tmuxImageProtocol()
 	case kittySupported(), ghosttySupported(), weztermSupported():
 		return ImageProtocolKitty
 	case sixelSupported():
@@ -213,6 +228,10 @@ func prepareImage(payload string, protocol ImageProtocol, bounds ImageBounds) (*
 	}
 	cellW, cellH := cellPixelSize()
 	sw, sh := src.Bounds().Dx(), src.Bounds().Dy()
+	if protocol == ImageProtocolKittyPlaceholder {
+		bounds.MaxCols = min(bounds.MaxCols, maxPlaceholderCells)
+		bounds.MaxRows = min(bounds.MaxRows, maxPlaceholderCells)
+	}
 	cols, rows := imageCellBox(sw, sh, cellW, cellH, bounds.MaxCols, bounds.MaxRows)
 
 	key := encodedKey{hash: hash, protocol: protocol, cols: cols, rows: rows, cellW: cellW, cellH: cellH}
@@ -234,6 +253,16 @@ func prepareImage(payload string, protocol ImageProtocol, bounds ImageBounds) (*
 		p.id = nextImageID.Add(1)
 		p.pixelW, p.pixelH = tw, th
 		p.data = kittyTransmitSequence(p.id, buf.Bytes())
+	case ImageProtocolKittyPlaceholder:
+		tw, th := fitWithin(sw, sh, cols*cellW, rows*cellH)
+		scaled := scaleImage(src, tw, th)
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, scaled); err != nil {
+			return nil, fmt.Errorf("encode png: %w", err)
+		}
+		p.id = placeholderIDs.id(key)
+		p.pixelW, p.pixelH = tw, th
+		p.data = kittyPlaceholderUpload(p.id, buf.Bytes(), cols, rows)
 	case ImageProtocolSixel:
 		tw, th := fitWithin(sw, sh, cols*cellW, rows*cellH)
 		scaled := scaleImage(src, tw, th)

@@ -328,7 +328,8 @@ func SixelSupported() bool {
 // imageProtocolSupported checks if any supported image protocol terminal is detected.
 func imageProtocolSupported() bool {
 	return sixelSupported() || kittySupported() || ghosttySupported() || iterm2Supported() ||
-		weztermSupported() || waystSupported() || warpSupported() || konsoleSupported()
+		weztermSupported() || waystSupported() || warpSupported() || konsoleSupported() ||
+		(inTmux() && tmuxClientHasPlaceholders())
 }
 
 func debugImageProtocol(format string, args ...interface{}) {
@@ -587,6 +588,16 @@ func (r *RenderedBody) Finalize(text string) (string, []ImagePlacement) {
 				}
 				lines[i+j] = row
 			}
+		case ImageProtocolKittyPlaceholder:
+			// The cells are text; the placement only carries the upload.
+			for j, row := range kittyPlaceholderRows(img.id, img.cols, img.rows) {
+				if i+j >= len(lines) {
+					lines = append(lines, row)
+					continue
+				}
+				lines[i+j] = row
+			}
+			fallthrough
 		case ImageProtocolKitty, ImageProtocolSixel:
 			placements = append(placements, ImagePlacement{
 				Line:     i,

@@ -9,7 +9,8 @@ import (
 )
 
 // ScreenImage is an out-of-band (Kitty or Sixel) image placement expressed in
-// absolute, 0-based screen cells.
+// absolute, 0-based screen cells. Placeholder images (inside tmux) are drawn
+// by the text; they are listed only so that the painter uploads them.
 type ScreenImage struct {
 	ID        uint32 // image identity (Kitty image id)
 	Placement uint32 // placement id, unique per image occurrence
@@ -20,7 +21,8 @@ type ScreenImage struct {
 	// SrcY/SrcW/SrcH select the visible band of a Kitty image in pixels so
 	// images that are partially scrolled out of their pane are clipped.
 	SrcY, SrcW, SrcH int
-	// Data is the Kitty transmit sequence or the Sixel sequence.
+	// Data is the Kitty transmit sequence (wrapped for tmux for placeholder
+	// images) or the Sixel sequence.
 	Data string
 }
 
@@ -33,11 +35,12 @@ func (s ScreenImage) key() screenImageKey {
 }
 
 // sameSpot reports whether two placements draw the same pixels at the same
-// screen position (Data is identified by ID, so it is not compared).
+// screen position. Data is compared too: placeholder image ids are reused
+// for other images (comparing the same string is cheap).
 func (s ScreenImage) sameSpot(o ScreenImage) bool {
 	return s.ID == o.ID && s.Placement == o.Placement && s.Protocol == o.Protocol &&
 		s.Row == o.Row && s.Col == o.Col && s.Cols == o.Cols && s.Rows == o.Rows &&
-		s.SrcY == o.SrcY && s.SrcW == o.SrcW && s.SrcH == o.SrcH
+		s.SrcY == o.SrcY && s.SrcW == o.SrcW && s.SrcH == o.SrcH && s.Data == o.Data
 }
 
 func (s ScreenImage) intersects(row, col, rows, cols int) bool {
@@ -76,15 +79,21 @@ const maxTransmittedImages = 48
 type GraphicsPainter struct {
 	desired     []ScreenImage
 	painted     map[screenImageKey]ScreenImage
-	transmitted map[uint32]bool
+	transmitted map[uint32]upload
 	gen         uint64
+}
+
+// upload is an image the terminal holds under an id.
+type upload struct {
+	data        string
+	placeholder bool // sent through tmux passthrough
 }
 
 // NewGraphicsPainter returns an empty painter.
 func NewGraphicsPainter() *GraphicsPainter {
 	return &GraphicsPainter{
 		painted:     make(map[screenImageKey]ScreenImage),
-		transmitted: make(map[uint32]bool),
+		transmitted: make(map[uint32]upload),
 	}
 }
 
@@ -154,7 +163,7 @@ func (g *GraphicsPainter) plan(desired []ScreenImage) (raw string, clearScreen, 
 			b.WriteString(view.KittyDeletePlacementSequence(p.ID, p.Placement))
 		case view.ImageProtocolSixel:
 			clearScreen = true
-		case view.ImageProtocolNone, view.ImageProtocolHalfBlock:
+		case view.ImageProtocolNone, view.ImageProtocolHalfBlock, view.ImageProtocolKittyPlaceholder:
 		}
 		delete(g.painted, k)
 	}
@@ -169,25 +178,37 @@ func (g *GraphicsPainter) plan(desired []ScreenImage) (raw string, clearScreen, 
 	}
 
 	if len(g.transmitted) > maxTransmittedImages {
-		for id := range g.transmitted {
+		for id, u := range g.transmitted {
 			if !wantIDs[id] {
-				b.WriteString(view.KittyFreeImageSequence(id))
+				b.WriteString(u.free(id))
 				delete(g.transmitted, id)
 			}
 		}
 	}
 	for _, d := range desired {
-		if d.Protocol == view.ImageProtocolKitty && !g.transmitted[d.ID] {
+		if d.Protocol.Uploaded() && g.transmitted[d.ID].data != d.Data {
 			// Uploading does not draw anything, so it can go out right away.
+			// An id given to another image is uploaded again.
 			b.WriteString(d.Data)
-			g.transmitted[d.ID] = true
+			g.transmitted[d.ID] = upload{data: d.Data, placeholder: d.Protocol == view.ImageProtocolKittyPlaceholder}
 		}
 	}
 	return b.String(), clearScreen, g.needsPaint(), true
 }
 
+// free returns the sequence that frees the upload stored under id.
+func (u upload) free(id uint32) string {
+	if u.placeholder {
+		return view.KittyPlaceholderFreeSequence(id)
+	}
+	return view.KittyFreeImageSequence(id)
+}
+
 func (g *GraphicsPainter) needsPaint() bool {
 	for _, d := range g.desired {
+		if !d.Protocol.OutOfBand() {
+			continue // placeholder images are drawn by the text
+		}
 		if p, ok := g.painted[d.key()]; !ok || !p.sameSpot(d) {
 			return true
 		}
@@ -212,7 +233,7 @@ func (g *GraphicsPainter) Paint(msg GraphicsPaintMsg) tea.Cmd {
 			raw.WriteString(view.KittyPlaceSequence(d.ID, d.Placement, d.Row, d.Col, d.Cols, d.Rows, d.SrcY, d.SrcW, d.SrcH))
 		case view.ImageProtocolSixel:
 			raw.WriteString(view.SixelPaintSequence(d.Data, d.Row, d.Col))
-		case view.ImageProtocolNone, view.ImageProtocolHalfBlock:
+		case view.ImageProtocolNone, view.ImageProtocolHalfBlock, view.ImageProtocolKittyPlaceholder:
 			continue
 		}
 		g.painted[k] = d
@@ -239,12 +260,31 @@ func (g *GraphicsPainter) Reset(forgetUploads bool) tea.Cmd {
 	g.desired = nil
 	g.gen++
 	if forgetUploads {
-		g.transmitted = make(map[uint32]bool)
+		g.transmitted = make(map[uint32]upload)
 	}
 	if !hadKitty {
 		return nil
 	}
 	return tea.Raw(view.KittyDeleteAllSequence)
+}
+
+// Shutdown removes matcha's images before the program exits: the visible
+// placements, and the images uploaded for placeholders, which tmux panes
+// would otherwise keep in the terminal (they are freed by id, as other
+// panes may show images of their own).
+func (g *GraphicsPainter) Shutdown() tea.Cmd {
+	var b strings.Builder
+	for id, u := range g.transmitted {
+		if u.placeholder {
+			b.WriteString(u.free(id))
+			delete(g.transmitted, id)
+		}
+	}
+	reset := g.Reset(false)
+	if b.Len() == 0 {
+		return reset
+	}
+	return tea.Sequence(reset, tea.Raw(b.String()))
 }
 
 // HasPainted reports whether any out-of-band image is currently on screen.

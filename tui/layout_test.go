@@ -633,3 +633,54 @@ func TestTruncateEmailKeepsCharactersWhole(t *testing.T) {
 		t.Fatalf("truncateEmail = %q", got)
 	}
 }
+
+func TestGraphicsPainterPlaceholderImagesAreUploadedOnly(t *testing.T) {
+	g := NewGraphicsPainter()
+	img := ScreenImage{ID: 0xF80000FF, Placement: 1, Protocol: view.ImageProtocolKittyPlaceholder, Row: 4, Col: 2, Cols: 10, Rows: 3, Data: "<upload A>"}
+	raw, clearScreen, paint, changed := g.plan([]ScreenImage{img})
+	if !changed || clearScreen || paint || raw != "<upload A>" {
+		t.Fatalf("plan = %q clear:%v paint:%v changed:%v; want only the upload (the text draws the image)", raw, clearScreen, paint, changed)
+	}
+	scrolled := img
+	scrolled.Row = 2
+	if raw, _, paint, _ = g.plan([]ScreenImage{scrolled}); raw != "" || paint {
+		t.Fatalf("scrolling re-sent %q (paint=%v); placeholder cells move with the text", raw, paint)
+	}
+	// The id now names another image: upload it again.
+	other := scrolled
+	other.Data = "<upload B>"
+	if raw, _, _, _ = g.plan([]ScreenImage{other}); raw != "<upload B>" {
+		t.Fatalf("a reused id was not uploaded again: %q", raw)
+	}
+	if g.HasPainted() {
+		t.Fatal("placeholder images are never placed by the painter")
+	}
+
+	// Quitting frees the image through tmux passthrough, by id.
+	msgs := runAll(t, g.Shutdown())
+	var out string
+	for _, msg := range msgs {
+		if raw, ok := msg.(tea.RawMsg); ok {
+			out += fmt.Sprint(raw.Msg)
+		}
+	}
+	if want := view.KittyPlaceholderFreeSequence(img.ID); !strings.Contains(out, want) || strings.Contains(out, "d=a") {
+		t.Fatalf("shutdown wrote %q; want only %q", out, want)
+	}
+}
+
+func TestEmailViewListsPlaceholderImagesForUpload(t *testing.T) {
+	ev := NewEmailView(layoutEmailWithExtras(), 0, 100, 30, MailboxInbox, false)
+	ev.showImages = true
+	ev.imagePlacements = []view.ImagePlacement{
+		{Line: 1, Rows: 4, Cols: 10, ID: 0xF8000080, Protocol: view.ImageProtocolKittyPlaceholder, Encoded: "<upload>"},
+	}
+	images := ev.VisibleImages()
+	if len(images) != 1 || images[0].Protocol != view.ImageProtocolKittyPlaceholder || images[0].Data != "<upload>" {
+		t.Fatalf("visible images = %+v; a placeholder image on screen must be uploaded", images)
+	}
+	ev.viewport.SetYOffset(20) // scrolled past it
+	if len(ev.VisibleImages()) != 0 {
+		t.Fatal("an image scrolled out of view is still listed")
+	}
+}

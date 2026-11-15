@@ -1233,7 +1233,7 @@ func (m *Model) reconcile(msg tea.Msg) (tea.Model, tea.Cmd) {
 // does not flush pending output when it shuts down).
 func (m *Model) quitCmd() tea.Cmd {
 	m.quitting = true
-	clearImages := m.graphics.Reset(false)
+	clearImages := m.graphics.Shutdown()
 	if clearImages == nil {
 		return tea.Quit
 	}

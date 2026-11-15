@@ -759,6 +759,8 @@ func (m *EmailView) VisibleImages() []ScreenImage {
 			if first != p.Line || last != p.Line+p.Rows {
 				continue
 			}
+		case view.ImageProtocolKittyPlaceholder:
+			// Drawn by the body text; listed so that it gets uploaded.
 		case view.ImageProtocolNone, view.ImageProtocolHalfBlock:
 			continue
 		}
