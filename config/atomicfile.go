@@ -7,7 +7,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
+	"time"
 )
 
 // fileLocks holds one mutex per data file. Read-modify-write helpers (contacts,
@@ -66,7 +68,21 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) (err error) {
 	if err = tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	return renameReplacing(tmpName, path)
+}
+
+// renameReplacing retries on Windows, where replacing a file fails with
+// "Access is denied" while a lock-free reader still has it open.
+func renameReplacing(from, to string) error {
+	err := os.Rename(from, to)
+	if runtime.GOOS != "windows" {
+		return err
+	}
+	for delay := time.Millisecond; err != nil && errors.Is(err, fs.ErrPermission) && delay < time.Second; delay *= 2 {
+		time.Sleep(delay)
+		err = os.Rename(from, to)
+	}
+	return err
 }
 
 // loadJSONForUpdate reads and decodes path at the start of a read-modify-write
