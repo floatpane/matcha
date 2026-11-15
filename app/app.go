@@ -88,7 +88,7 @@ type sendFinishedMsg struct {
 }
 
 // quitWaitExpiredMsg ends the wait for in-flight sends after a quit.
-type quitWaitExpiredMsg struct{}
+type quitWaitExpiredMsg struct{ gen int }
 
 // quitSendWait bounds how long quitting waits for emails still being handed
 // to the mail service (or, without the daemon, sent over SMTP).
@@ -144,8 +144,10 @@ type Model struct {
 
 	// graphics keeps out-of-band (Kitty/Sixel) images in sync with the view.
 	graphics *tui.GraphicsPainter
-	// quitting is set once quitCmd has removed the images for good.
-	quitting bool
+	// quitting is set once quitCmd has removed the images for good;
+	// finalQuit is the command it returned, reused to force the quit.
+	quitting  bool
+	finalQuit tea.Cmd
 
 	// pendingDraftID is the draft to delete once the email being sent is
 	// confirmed; a failed send keeps it.
@@ -172,8 +174,10 @@ type Model struct {
 	sendsInFlight map[uint64]*tui.Composer
 	nextSendID    uint64
 	// quitAfterSend is set when the user quit while emails were in flight;
-	// the program quits as soon as they have been handed off.
+	// the program quits as soon as they have been handed off. quitWaitGen
+	// tells the wait's timer from those of earlier, abandoned waits.
 	quitAfterSend bool
+	quitWaitGen   int
 
 	// Track body fetch retries to prevent infinite loops
 	pendingBodyFetchUID   uint32
@@ -1242,14 +1246,19 @@ func (m *Model) reconcile(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // quitCmd quits the program. Kitty images on screen are removed first and
 // the quit waits one frame so the removal reaches the terminal (the program
-// does not flush pending output when it shuts down).
+// does not flush pending output when it shuts down). Called again, it
+// returns the same command: the painter has forgotten the images by then,
+// and the first command may be queued behind a pending action.
 func (m *Model) quitCmd() tea.Cmd {
-	m.quitting = true
-	clearImages := m.graphics.Shutdown()
-	if clearImages == nil {
-		return tea.Quit
+	if m.finalQuit != nil {
+		return m.finalQuit
 	}
-	return tea.Sequence(clearImages, tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return tea.QuitMsg{} }))
+	m.quitting = true
+	m.finalQuit = tea.Quit
+	if clearImages := m.graphics.Shutdown(); clearImages != nil {
+		m.finalQuit = tea.Sequence(clearImages, tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return tea.QuitMsg{} }))
+	}
+	return m.finalQuit
 }
 
 // trackSend records an email as in flight until sendCmd reports back.
@@ -1269,14 +1278,20 @@ func (m *Model) trackSend(composer *tui.Composer, sendCmd tea.Cmd) tea.Cmd {
 func (m *Model) requestQuit() tea.Cmd {
 	if m.quitting {
 		// Asked again while quitting (a pending delete/archive/move may be
-		// stuck talking to the server): exit now.
-		return tea.Quit
+		// stuck talking to the server): exit now, keeping what is being
+		// written (draft ids are stable, so this updates the same draft).
+		if composer := getCurrentComposer(m.current); composer != nil && composer.HasContent() {
+			m.saveDraftOnQuit(composer)
+		}
+		return m.quitCmd()
 	}
 	if len(m.sendsInFlight) > 0 && !m.quitAfterSend {
 		m.quitAfterSend = true
+		m.quitWaitGen++
+		gen := m.quitWaitGen
 		m.palette.Close()
 		m.sendNotice = "Finishing sending before quitting… (ctrl+c again to quit now)"
-		return tea.Tick(quitSendWait, func(time.Time) tea.Msg { return quitWaitExpiredMsg{} })
+		return tea.Tick(quitSendWait, func(time.Time) tea.Msg { return quitWaitExpiredMsg{gen: gen} })
 	}
 	m.saveUnsentDrafts()
 	return m.quit()
@@ -2813,8 +2828,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 		return model, resultCmd
 
 	case quitWaitExpiredMsg:
-		if !m.quitAfterSend || m.quitting {
-			return m, nil
+		if !m.quitAfterSend || m.quitting || msg.gen != m.quitWaitGen {
+			return m, nil // the wait ended, or this timer belongs to an earlier one
 		}
 		m.saveUnsentDrafts()
 		return m, m.quit()

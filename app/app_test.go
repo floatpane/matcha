@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -492,6 +493,14 @@ func TestServiceShutDownWhileStartingIsDiscarded(t *testing.T) {
 	}
 }
 
+// useFreshHome gives a test its own empty home directory (drafts, caches).
+func useFreshHome(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+}
+
 func sendFromComposer(t *testing.T, m *Model) tea.Cmd {
 	t.Helper()
 	m.current = tui.NewComposerWithAccounts(m.config.Accounts, "acct", "you@example.com", "Hi", "Body", true)
@@ -538,6 +547,7 @@ func TestQuitWaitsForEmailsBeingSent(t *testing.T) {
 }
 
 func TestSecondQuitKeepsUnsentEmailAsDraft(t *testing.T) {
+	useFreshHome(t)
 	useSlowService(t, newFakeService(true)) // never connects
 	m := newConfiguredModel(t)
 	sendFromComposer(t, m)
@@ -796,5 +806,67 @@ func TestQuitAfterHandoffDropsTheDraft(t *testing.T) {
 		if d.ID == draft.ID {
 			t.Fatal("the draft of an email that was sent survived the quit")
 		}
+	}
+}
+
+// rawAndQuit runs cmd and returns what it writes raw and whether it quits.
+func rawAndQuit(cmd tea.Cmd) (raw string, quits bool) {
+	for _, msg := range runBatch(cmd) {
+		switch msg := msg.(type) {
+		case tea.RawMsg:
+			raw += fmt.Sprint(msg.Msg)
+		case tea.QuitMsg:
+			quits = true
+		}
+	}
+	return raw, quits
+}
+
+func TestForcedQuitStillRemovesImages(t *testing.T) {
+	m := newTestModel(t)
+	m.current = &imageView{images: []tui.ScreenImage{{ID: 7, Placement: 1, Protocol: view.ImageProtocolKitty, Row: 1, Col: 1, Rows: 2, Cols: 2, Data: "<upload>"}}}
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	for _, msg := range runBatch(cmd) {
+		if paint, ok := msg.(tui.GraphicsPaintMsg); ok {
+			m.Update(paint) // the image is now on screen
+		}
+	}
+	m.quitCmd() // the first quit; in the app it can wait behind a pending action
+	raw, quits := rawAndQuit(m.requestQuit())
+	if !quits || !strings.Contains(raw, view.KittyDeleteAllSequence) {
+		t.Fatalf("forced quit wrote %q (quits=%v); it must still remove the images", raw, quits)
+	}
+}
+
+func TestForcedQuitKeepsTheDraft(t *testing.T) {
+	useFreshHome(t)
+	m := newConfiguredModel(t)
+	m.current = tui.NewComposerWithAccounts(m.config.Accounts, "acct", "you@example.com", "Forced", "Body", true)
+	m.quitCmd()
+	if _, quits := rawAndQuit(m.requestQuit()); !quits {
+		t.Fatal("a second quit request did not quit")
+	}
+	cache, err := config.LoadDraftsCache()
+	if err != nil || len(cache.Drafts) != 1 || cache.Drafts[0].Subject != "Forced" {
+		t.Fatalf("drafts after a forced quit: %+v, %v", cache, err)
+	}
+}
+
+func TestStaleQuitWaitTimerIsIgnored(t *testing.T) {
+	fake := newFakeService(true)
+	release := useSlowService(t, fake)
+	defer release()
+	m := newConfiguredModel(t)
+	startCmds(sendFromComposer(t, m))
+	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}) // first wait
+	m.quitAfterSend = false                                // ended by a failed send
+	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}) // second wait, the email still in flight
+	m.Update(quitWaitExpiredMsg{gen: m.quitWaitGen - 1})   // the first wait's timer
+	if m.quitting {
+		t.Fatal("the first wait's timer ended the second wait early")
+	}
+	m.Update(quitWaitExpiredMsg{gen: m.quitWaitGen})
+	if !m.quitting {
+		t.Fatal("the wait's own timer did not quit")
 	}
 }
