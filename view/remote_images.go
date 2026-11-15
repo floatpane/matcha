@@ -178,6 +178,8 @@ func fetchRemoteImage(ctx context.Context, rawURL string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close() //nolint:errcheck
+	// The headers arrived: the body gets a full stall budget of its own.
+	stalled.Reset(remoteImageStall)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("HTTP status %d", resp.StatusCode)
 	}

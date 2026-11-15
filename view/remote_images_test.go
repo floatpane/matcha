@@ -313,3 +313,24 @@ func TestStalledDownloadFailsQuickly(t *testing.T) {
 		t.Fatalf("the stalled download took %v to fail", elapsed)
 	}
 }
+
+func TestSlowHeadersDoNotUseUpTheBodysBudget(t *testing.T) {
+	useRemoteImageStall(t, 400*time.Millisecond)
+	data := noisyPNG(t, 64, 64)
+	useRemoteImageServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(250 * time.Millisecond) // slow to answer, but within the limit
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		time.Sleep(300 * time.Millisecond) // then slow to start the body
+		chunk := len(data)/4 + 1
+		for i := 0; i < len(data); i += chunk {
+			_, _ = w.Write(data[i:min(i+chunk, len(data))])
+			w.(http.Flusher).Flush()
+			time.Sleep(150 * time.Millisecond)
+		}
+	}))
+	rendered, placements := renderRemote(t, `<img src="http://slow.example/a.png">`, RenderOptions{})
+	if len(placements) != 1 || len(rendered.FailedRemoteImages) != 0 {
+		t.Fatalf("an image that never stalled for the full limit failed: %v", rendered.FailedRemoteImages)
+	}
+}
