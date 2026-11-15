@@ -117,17 +117,17 @@ func (d *Daemon) Run() error {
 		return fmt.Errorf("create runtime dir: %w", err)
 	}
 
-	// Check for existing daemon.
+	// Check for an existing daemon, then claim the PID file (its lock
+	// settles a race between two daemons starting at once).
 	pidPath := daemonrpc.PIDPath()
 	if pid, running := IsRunning(pidPath); running {
 		return fmt.Errorf("daemon already running (PID %d)", pid)
 	}
-
-	// Write PID file.
-	if err := WritePID(pidPath); err != nil {
-		return fmt.Errorf("write PID file: %w", err)
+	release, err := LockPID(pidPath)
+	if err != nil {
+		return err
 	}
-	defer RemovePID(pidPath) //nolint:errcheck
+	defer release()
 
 	// Remove stale socket file.
 	sockPath := daemonrpc.SocketPath()
