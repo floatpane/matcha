@@ -37,6 +37,11 @@ type remoteImagesLoadedMsg struct {
 // preview) to load its remote images.
 type LoadRemoteImagesMsg struct{}
 
+// ImageProtocolChangedMsg tells the email on screen that the terminal's
+// image support may have changed (inside tmux, another terminal may have
+// attached), so that it draws its images again if needed.
+type ImageProtocolChangedMsg struct{}
+
 // BodyTransformer, if set, post-processes the rendered email body before it is
 // placed in the viewport. main.go wires this up to the plugin manager so that
 // plugins registered on the "email_body_render" hook can rewrite, recolor, or
@@ -68,7 +73,8 @@ type EmailView struct {
 	remoteBody          *view.RenderedBody
 	remoteFailed        []string // remote image URLs the last load could not show
 	remoteImageCount    int      // remote images the body refers to
-	resizedWhileLoading bool     // the loading images were sized for an old viewport
+	renderedProtocol    view.ImageProtocol
+	resizedWhileLoading bool // the loading images were sized for an old viewport
 	isSMIME             bool
 	smimeTrusted        bool
 	isEncrypted         bool
@@ -241,6 +247,8 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case LoadRemoteImagesMsg:
 		return m, m.requestRemoteImages()
+	case ImageProtocolChangedMsg:
+		return m, m.redrawForImageProtocol()
 	case remoteImagesLoadedMsg:
 		return m, m.remoteImagesLoaded(msg)
 	}
@@ -391,6 +399,24 @@ func (m *EmailView) loadRemoteImagesCmd(userRequested bool) tea.Cmd {
 		})
 		return remoteImagesLoadedMsg{requestID: requestID, body: rendered, err: err, userRequested: userRequested}
 	}
+}
+
+// redrawForImageProtocol draws the images again when the protocol they were
+// drawn with is no longer the terminal's.
+func (m *EmailView) redrawForImageProtocol() tea.Cmd {
+	if !m.showImages || view.ActiveImageProtocol() == m.renderedProtocol {
+		return nil
+	}
+	if m.showRemoteImages {
+		if !m.remoteImagesLoading {
+			return m.loadRemoteImagesCmd(false) // downloads come from the cache
+		}
+		m.resizedWhileLoading = true // reload once the current load is done
+		return nil
+	}
+	m.regenerateBody()
+	m.syncLayout()
+	return nil
 }
 
 // remoteImagesToSkip returns the remote images a load should not download:
@@ -601,6 +627,7 @@ func (m *EmailView) regenerateBody() {
 		}
 	}
 	rendered := m.renderedBody()
+	m.renderedProtocol = view.ActiveImageProtocol()
 	m.remoteImageCount = rendered.RemoteImages
 	wrapped := wrapBodyToWidth(applyBodyTransform(rendered.Text, m.email), width)
 	text, placements := rendered.Finalize(wrapped)

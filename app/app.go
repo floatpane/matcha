@@ -47,6 +47,7 @@ import (
 	"github.com/floatpane/matcha/plugin"
 	"github.com/floatpane/matcha/theme"
 	"github.com/floatpane/matcha/tui"
+	"github.com/floatpane/matcha/view"
 	"github.com/google/uuid"
 )
 
@@ -1207,6 +1208,27 @@ func (m *Model) reconcile(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tui.GraphicsPaintMsg:
 		return m, m.graphics.Paint(msg)
+	case tui.GraphicsRetryMsg:
+		m.graphics.Retry()
+		if m.quitting {
+			return m, nil
+		}
+		return m, m.graphics.Sync(m.visibleImages())
+	case tea.FocusMsg:
+		// Reported inside tmux, when a terminal attaches (it holds none of
+		// the images, and may support different ones) or, with tmux's
+		// focus-events on, when matcha's window is shown again.
+		view.RefreshImageDetection()
+		m.graphics.ResendPlaceholders()
+		if m.quitting {
+			return m, nil
+		}
+		return m, tea.Batch(
+			m.graphics.Sync(m.visibleImages()),
+			func() tea.Msg { return tui.ImageProtocolChangedMsg{} },
+		)
+	case tea.BlurMsg:
+		return m, nil // focus is only reported for the images
 	case badgeSyncMsg:
 		if msg.gen != m.badgeGen {
 			return m, nil
@@ -3199,6 +3221,8 @@ func (m *Model) View() tea.View {
 		v.Content = m.pluginNotification.PlaceOn(v.Content)
 	}
 	v.AltScreen = true
+	// Inside tmux, focus-in tells that a terminal attached (see reconcile).
+	v.ReportFocus = os.Getenv("TMUX") != ""
 	// Mouse reporting is a global setting; applying it here keeps every
 	// screen consistent (individual views used to forget it).
 	if config.MouseEnabled != nil && *config.MouseEnabled {

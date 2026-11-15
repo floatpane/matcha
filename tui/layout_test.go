@@ -718,3 +718,68 @@ func TestEmailViewListsPlaceholderImagesForUpload(t *testing.T) {
 		t.Fatal("an image scrolled out of view is still listed")
 	}
 }
+
+func TestGraphicsPainterResendsPlaceholdersOnFocus(t *testing.T) {
+	g := NewGraphicsPainter()
+	img := ScreenImage{ID: 0x130000ff, Placement: 1, Protocol: view.ImageProtocolKittyPlaceholder, Row: 4, Col: 2, Cols: 10, Rows: 3, Data: "<upload A>"}
+	other := ScreenImage{ID: 0x130000fe, Placement: 2, Protocol: view.ImageProtocolKittyPlaceholder, Row: 9, Cols: 5, Rows: 2, Data: "<upload B>"}
+	g.plan([]ScreenImage{img, other})
+	g.plan([]ScreenImage{img}) // the other image scrolled out of view
+
+	g.ResendPlaceholders() // a terminal attached
+	if raw, _, _, _ := g.plan([]ScreenImage{img}); raw != "<upload A>" {
+		t.Fatalf("after focus-in: plan = %q, want the visible image uploaded again", raw)
+	}
+	if raw, _, _, _ := g.plan([]ScreenImage{img, other}); raw != "<upload B>" {
+		t.Fatalf("an image coming into view after focus-in: plan = %q, want it uploaded again", raw)
+	}
+	if raw, _, _, _ := g.plan([]ScreenImage{img}); raw != "" {
+		t.Fatalf("uploaded twice: %q", raw)
+	}
+}
+
+func TestGraphicsPainterHoldsUploadsWhileHidden(t *testing.T) {
+	g := NewGraphicsPainter()
+	shown := false
+	g.placeholdersReach = func() bool { return shown }
+	img := ScreenImage{ID: 0x130000ff, Placement: 1, Protocol: view.ImageProtocolKittyPlaceholder, Row: 4, Col: 2, Cols: 10, Rows: 3, Data: "<upload>"}
+	var retry bool
+	for _, msg := range runAll(t, g.Sync([]ScreenImage{img})) {
+		if raw, ok := msg.(tea.RawMsg); ok && strings.Contains(fmt.Sprint(raw.Msg), "<upload>") {
+			t.Fatal("uploaded while tmux would drop it")
+		}
+		if _, ok := msg.(GraphicsRetryMsg); ok {
+			retry = true
+		}
+	}
+	if !retry {
+		t.Fatal("no retry was scheduled for the held-back upload")
+	}
+	g.Retry() // still hidden
+	if raw, _, _, _ := g.plan([]ScreenImage{img}); raw != "" || !g.held {
+		t.Fatalf("hidden retry = %q held=%v", raw, g.held)
+	}
+	shown = true
+	g.Retry()
+	if raw, _, _, _ := g.plan([]ScreenImage{img}); raw != "<upload>" || g.held {
+		t.Fatalf("visible retry = %q held=%v", raw, g.held)
+	}
+}
+
+func TestEmailViewRedrawsWhenTheImageProtocolChanges(t *testing.T) {
+	t.Setenv("TERM", "xterm-kitty")
+	email := fetcher.Email{Body: `<p>hi</p><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==">`, BodyMIMEType: "text/html"}
+	ev := NewEmailView(email, 0, 80, 24, MailboxInbox, false)
+	if !ev.showImages || len(ev.imagePlacements) != 1 {
+		t.Fatalf("setup: showImages=%v placements=%d", ev.showImages, len(ev.imagePlacements))
+	}
+	ev.Update(ImageProtocolChangedMsg{}) // nothing changed
+	if len(ev.imagePlacements) != 1 {
+		t.Fatal("redrew although the protocol is the same")
+	}
+	t.Setenv("TERM", "xterm-256color") // a terminal without images attached
+	ev.Update(ImageProtocolChangedMsg{})
+	if len(ev.imagePlacements) != 0 || ev.renderedProtocol != view.ImageProtocolNone {
+		t.Fatalf("after the change: %d placements drawn with %v", len(ev.imagePlacements), ev.renderedProtocol)
+	}
+}

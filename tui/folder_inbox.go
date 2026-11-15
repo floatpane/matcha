@@ -256,7 +256,7 @@ func (m *FolderInbox) Init() tea.Cmd {
 
 func (m *FolderInbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	switch msg.(type) {
-	case remoteImagesLoadedMsg, LoadRemoteImagesMsg:
+	case remoteImagesLoadedMsg, LoadRemoteImagesMsg, ImageProtocolChangedMsg:
 		if m.previewPane != nil {
 			_, cmd := m.previewPane.Update(msg)
 			return m, cmd

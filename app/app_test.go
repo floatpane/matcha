@@ -870,3 +870,40 @@ func TestStaleQuitWaitTimerIsIgnored(t *testing.T) {
 		t.Fatal("the wait's own timer did not quit")
 	}
 }
+
+func TestFocusInsideTmuxResendsImages(t *testing.T) {
+	m := newTestModel(t)
+	rec := &recordingView{}
+	m.current = rec
+	_, cmd := m.Update(tea.FocusMsg{})
+	m.Update(tea.BlurMsg{})
+	if rec.received(func(msg tea.Msg) bool {
+		switch msg.(type) {
+		case tea.FocusMsg, tea.BlurMsg:
+			return true
+		}
+		return false
+	}) {
+		t.Fatal("focus reports reached the view (text inputs would react to them)")
+	}
+	var redraw bool
+	for _, msg := range runBatch(cmd) {
+		if _, ok := msg.(tui.ImageProtocolChangedMsg); ok {
+			redraw = true
+		}
+	}
+	if !redraw {
+		t.Fatal("focus-in did not ask the view to check its images")
+	}
+}
+
+func TestFocusIsReportedOnlyInsideTmux(t *testing.T) {
+	m := newTestModel(t)
+	if m.View().ReportFocus {
+		t.Fatal("focus reporting is on outside tmux")
+	}
+	t.Setenv("TMUX", "/tmp/tmux-501/default,1,0")
+	if !m.View().ReportFocus {
+		t.Fatal("focus reporting is off inside tmux")
+	}
+}

@@ -81,7 +81,19 @@ type GraphicsPainter struct {
 	painted     map[screenImageKey]ScreenImage
 	transmitted map[uint32]upload
 	gen         uint64
+	// placeholdersReach reports whether a placeholder upload sent now
+	// reaches the terminal (tmux drops it while the pane is not on screen).
+	placeholdersReach func() bool
+	// held: placeholder uploads were held back; retrying: a retry is due.
+	held, retrying bool
 }
+
+// GraphicsRetryMsg asks the painter to send the placeholder uploads it held
+// back because tmux would have dropped them.
+type GraphicsRetryMsg struct{}
+
+// graphicsRetryDelay is how often held-back uploads are tried again.
+const graphicsRetryDelay = time.Second
 
 // upload is an image the terminal holds under an id.
 type upload struct {
@@ -92,8 +104,9 @@ type upload struct {
 // NewGraphicsPainter returns an empty painter.
 func NewGraphicsPainter() *GraphicsPainter {
 	return &GraphicsPainter{
-		painted:     make(map[screenImageKey]ScreenImage),
-		transmitted: make(map[uint32]upload),
+		painted:           make(map[screenImageKey]ScreenImage),
+		transmitted:       make(map[uint32]upload),
+		placeholdersReach: view.PlaceholderUploadsReachTerminal,
 	}
 }
 
@@ -127,6 +140,12 @@ func (g *GraphicsPainter) Sync(desired []ScreenImage) tea.Cmd {
 		gen := g.gen
 		cmds = append(cmds, tea.Tick(graphicsPaintDelay, func(time.Time) tea.Msg {
 			return GraphicsPaintMsg{gen: gen}
+		}))
+	}
+	if g.held && !g.retrying {
+		g.retrying = true
+		cmds = append(cmds, tea.Tick(graphicsRetryDelay, func(time.Time) tea.Msg {
+			return GraphicsRetryMsg{}
 		}))
 	}
 	if len(cmds) == 0 {
@@ -185,8 +204,19 @@ func (g *GraphicsPainter) plan(desired []ScreenImage) (raw string, clearScreen, 
 			}
 		}
 	}
+	g.held = false
+	checked, reach := false, true
 	for _, d := range desired {
 		if d.Protocol.Uploaded() && g.transmitted[d.ID].data != d.Data {
+			if d.Protocol == view.ImageProtocolKittyPlaceholder {
+				if !checked {
+					checked, reach = true, g.placeholdersReach()
+				}
+				if !reach {
+					g.held = true // tmux would drop it; try again later
+					continue
+				}
+			}
 			// Uploading does not draw anything, so it can go out right away.
 			// An id given to another image is uploaded again.
 			b.WriteString(d.Data)
@@ -266,6 +296,29 @@ func (g *GraphicsPainter) Reset(forgetUploads bool) tea.Cmd {
 		return nil
 	}
 	return tea.Raw(view.KittyDeleteAllSequence)
+}
+
+// ResendPlaceholders makes Sync upload the placeholder images again, the
+// visible ones at once and the others when they come into view. Inside tmux
+// the terminal that holds them can change (another terminal attaches). The
+// ids stay tracked so that Shutdown still frees them.
+func (g *GraphicsPainter) ResendPlaceholders() {
+	for id, u := range g.transmitted {
+		if u.placeholder {
+			u.data = ""
+			g.transmitted[id] = u
+		}
+	}
+	g.desired = nil // plan again even if nothing moved
+}
+
+// Retry handles a GraphicsRetryMsg: the next Sync sends the held-back
+// uploads if they can reach the terminal now.
+func (g *GraphicsPainter) Retry() {
+	g.retrying = false
+	if g.held {
+		g.desired = nil
+	}
 }
 
 // Shutdown removes matcha's images before the program exits: the visible

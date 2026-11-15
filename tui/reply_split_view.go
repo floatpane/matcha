@@ -107,7 +107,7 @@ func replySplitFirstPane(total, minFirst, minSecond int) int {
 
 func (m *ReplySplitView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case remoteImagesLoadedMsg, LoadRemoteImagesMsg:
+	case remoteImagesLoadedMsg, LoadRemoteImagesMsg, ImageProtocolChangedMsg:
 		_, cmd := m.emailView.Update(msg)
 		return m, cmd
 
