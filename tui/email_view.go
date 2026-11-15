@@ -615,6 +615,12 @@ func (m *EmailView) setSize(width, height int) {
 	m.viewport.SetWidth(m.width)
 	m.viewport.SetHeight(max(1, m.height-m.chromeHeight()))
 	m.regenerateBody()
+	// The help bar depends on the body (whether it has remote images), so
+	// measure again and fit the body to the final height.
+	if h := max(1, m.height-m.chromeHeight()); h != m.viewport.Height() {
+		m.viewport.SetHeight(h)
+		m.regenerateBody()
+	}
 }
 
 // syncLayout re-applies the viewport height after state changes that alter

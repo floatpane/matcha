@@ -345,3 +345,17 @@ func TestLoadRemoteImagesMsgReachesSplitPreview(t *testing.T) {
 		t.Fatal("the split preview did not start loading remote images")
 	}
 }
+
+func TestFirstLayoutMakesRoomForTheRemoteImagesHint(t *testing.T) {
+	t.Setenv("TERM", "xterm-kitty")
+	email := fetcher.Email{Body: `<p>hi</p><img src="https://example.com/a.png">`, BodyMIMEType: "text/html"}
+	for width := 40; width <= 140; width++ {
+		ev := NewEmailViewPreview(email, width, 30, 0, 0, false)
+		if body, chrome := ev.viewport.Height(), ev.chromeHeight(); body+chrome != 30 {
+			t.Fatalf("width %d: body %d + chrome %d rows, want 30 (the help bar is cut off)", width, body, chrome)
+		}
+		if !strings.Contains(strings.Join(strings.Fields(ansi.Strip(ev.renderHelp())), " "), "load remote images") {
+			t.Fatalf("width %d: the help has no remote images hint", width)
+		}
+	}
+}
