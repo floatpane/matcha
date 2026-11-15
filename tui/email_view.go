@@ -382,13 +382,7 @@ func (m *EmailView) loadRemoteImagesCmd(userRequested bool) tea.Cmd {
 	inline := inlineImagesFromAttachments(m.email.Attachments)
 	requestID := m.remoteLoadID
 	bounds := m.imageBounds()
-	var skip map[string]bool
-	if !userRequested && len(m.remoteFailed) > 0 {
-		skip = make(map[string]bool, len(m.remoteFailed))
-		for _, u := range m.remoteFailed {
-			skip[u] = true
-		}
-	}
+	skip := m.remoteImagesToSkip(userRequested)
 	return func() tea.Msg {
 		rendered, err := view.RenderBody(body, mimeType, inline, H1Style, H2Style, BodyStyle, view.RenderOptions{
 			AllowRemoteImages: true,
@@ -397,6 +391,19 @@ func (m *EmailView) loadRemoteImagesCmd(userRequested bool) tea.Cmd {
 		})
 		return remoteImagesLoadedMsg{requestID: requestID, body: rendered, err: err, userRequested: userRequested}
 	}
+}
+
+// remoteImagesToSkip returns the remote images a load should not download:
+// none when the user asked (a retry), the ones that failed before otherwise.
+func (m *EmailView) remoteImagesToSkip(userRequested bool) map[string]bool {
+	if userRequested || len(m.remoteFailed) == 0 {
+		return nil
+	}
+	skip := make(map[string]bool, len(m.remoteFailed))
+	for _, u := range m.remoteFailed {
+		skip[u] = true
+	}
+	return skip
 }
 
 // remoteImagesLoaded shows the result of a remote image load and, for loads

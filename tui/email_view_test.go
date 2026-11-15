@@ -295,6 +295,12 @@ func TestRemoteImageFailuresAreReportedAndRetryable(t *testing.T) {
 	if resize == nil {
 		t.Fatal("resizing did not re-render the remote images")
 	}
+	if skip := ev.remoteImagesToSkip(false); !skip["http://127.0.0.1:1/x.png"] || len(skip) != 1 {
+		t.Fatalf("a re-render for a new size would download %v again", skip)
+	}
+	if skip := ev.remoteImagesToSkip(true); skip != nil {
+		t.Fatalf("a retry the user asked for skips %v", skip)
+	}
 	reloaded := resize().(remoteImagesLoadedMsg)
 	if reloaded.userRequested || len(reloaded.body.FailedRemoteImages) != 1 {
 		t.Fatalf("resize reload: userRequested=%v failed=%v", reloaded.userRequested, reloaded.body.FailedRemoteImages)

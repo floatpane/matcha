@@ -293,6 +293,40 @@ func TestFolderInboxFetchMoreKeepsFolderOfTheScroll(t *testing.T) {
 	}
 }
 
+func TestFolderInboxFetchMoreForEveryAccountKeepsFolder(t *testing.T) {
+	two := []config.Account{
+		{ID: "a1", Email: "me@example.com"},
+		{ID: "a2", Email: "you@example.com"},
+	}
+	fi := newLayoutFolderInbox(t, []string{"INBOX", "Archive"}, two, append(layoutTestEmails(2, "a1"), layoutTestEmails(2, "a2")...), 120, 30)
+	row := rowOf(fi.View().Content, "Subject number 1")
+	var cmd tea.Cmd
+	for range 8 {
+		if _, c := fi.Update(tea.MouseWheelMsg{X: sidebarWidth + 6, Y: row, Button: tea.MouseWheelDown}); c != nil {
+			cmd = c
+		}
+	}
+	if cmd == nil {
+		t.Fatal("scrolling to the end of the ALL tab did not request more emails")
+	}
+	fi.currentFolder = "Archive" // switched before the batch ran
+	accounts := map[string]bool{}
+	for _, msg := range runAll(t, cmd) {
+		if more, ok := msg.(FetchFolderMoreEmailsMsg); ok {
+			if more.FolderName != "INBOX" {
+				t.Fatalf("fetch-more for %s asked for folder %q", more.AccountID, more.FolderName)
+			}
+			accounts[more.AccountID] = true
+		}
+		if _, ok := msg.(FetchMoreEmailsMsg); ok {
+			t.Fatal("a fetch-more request in the batch lost its folder")
+		}
+	}
+	if !accounts["a1"] || !accounts["a2"] {
+		t.Fatalf("folder-aware fetch-more requests for %v, want both accounts", accounts)
+	}
+}
+
 func TestInboxTabClickSwitchesAccount(t *testing.T) {
 	two := []config.Account{
 		{ID: "a1", Email: "me@example.com"},
