@@ -30,18 +30,34 @@ func inTmux() bool {
 }
 
 // tmuxImageProtocol picks the image protocol inside tmux: Unicode
-// placeholders when the terminal supports them and tmux lets the upload
-// through, half-block text otherwise (it works everywhere tmux does).
+// placeholders when the attached terminal supports them and tmux lets the
+// upload through, half-block text otherwise (it works everywhere tmux does).
 func tmuxImageProtocol() ImageProtocol {
-	if (kittySupported() || ghosttySupported() || tmuxClientHasPlaceholders()) && currentTmux().passthrough {
+	if os.Getenv("NO_COLOR") != "" {
+		// Both placeholders (their colour names the image) and half-blocks
+		// need colours, which the renderer then strips.
+		return ImageProtocolNone
+	}
+	pane := currentTmux()
+	if !pane.passthrough {
+		return ImageProtocolHalfBlock
+	}
+	// The environment describes the terminal that started the tmux server,
+	// which need not be the one attached now; it decides only when tmux
+	// knows of no attached terminal.
+	supported := tmuxClientHasPlaceholders()
+	if !pane.attached {
+		supported = kittySupported() || ghosttySupported()
+	}
+	if supported {
 		return ImageProtocolKittyPlaceholder
 	}
 	return ImageProtocolHalfBlock
 }
 
 // tmuxClientHasPlaceholders reports whether the terminal attached to tmux
-// supports Unicode placeholders. The environment may not say: the tmux
-// server keeps the variables of whatever terminal started it.
+// supports Unicode placeholders, by its TERM or by the name it gave tmux
+// (XTVERSION), which still says ghostty when TERM is xterm-256color.
 func tmuxClientHasPlaceholders() bool {
 	term := currentTmux().clientTerm
 	return strings.Contains(term, "kitty") || strings.Contains(term, termGhostty)
@@ -49,47 +65,93 @@ func tmuxClientHasPlaceholders() bool {
 
 // tmuxPane is what tmux reports about the pane matcha runs in.
 type tmuxPane struct {
-	clientTerm  string // TERM of the attached terminal, such as xterm-ghostty
+	attached    bool   // a terminal is attached to the pane's session
+	clientTerm  string // its TERM and name, such as "xterm-256color ghostty 1.2.3"
 	passthrough bool   // the pane may pass escape sequences through
+	// passthroughHidden: tmux forwards passthrough even while the pane is
+	// not on screen (allow-passthrough all).
+	passthroughHidden bool
 }
 
 var (
-	tmuxOnce  sync.Once
+	tmuxMu    sync.Mutex
 	tmuxState tmuxPane
-	// tmuxQuery asks tmux about the pane (a seam for tests).
-	tmuxQuery = runTmuxQuery
+	tmuxAsked time.Time
+	// tmuxFormat expands a tmux format for matcha's pane (a seam for tests).
+	tmuxFormat = runTmuxFormat
+	// tmuxAnswerTTL is how long an answer is used: another terminal may
+	// attach to the session at any time.
+	tmuxAnswerTTL = time.Second
 )
 
-// currentTmux asks tmux about the pane, once per process.
+// currentTmux asks tmux about the pane, at most once per tmuxAnswerTTL.
 func currentTmux() tmuxPane {
-	tmuxOnce.Do(func() {
-		out, err := tmuxQuery()
-		if err != nil {
-			debugImageProtocol("tmux query failed: %v", err)
-			return
-		}
-		term, passthrough, _ := strings.Cut(strings.TrimSpace(out), "|")
-		tmuxState = tmuxPane{
-			clientTerm: strings.ToLower(term),
-			// tmux before 3.3 has no allow-passthrough option (the format
-			// expands to nothing) and always passes sequences through.
-			passthrough: passthrough == "" || passthrough == "on" || passthrough == "all",
-		}
-		debugImageProtocol("tmux client=%q allow-passthrough=%q", term, passthrough)
-	})
+	tmuxMu.Lock()
+	defer tmuxMu.Unlock()
+	if !tmuxAsked.IsZero() && time.Since(tmuxAsked) < tmuxAnswerTTL {
+		return tmuxState
+	}
+	tmuxAsked = time.Now()
+	tmuxState = tmuxPane{}
+	out, err := tmuxFormat("#{client_termname}|#{allow-passthrough}|#{client_termtype}")
+	if err != nil {
+		debugImageProtocol("tmux query failed: %v", err)
+		return tmuxState
+	}
+	// Formats tmux does not know expand to nothing: allow-passthrough
+	// before 3.3 (which always passed sequences through), client_termtype
+	// in old versions.
+	fields := append(strings.SplitN(strings.TrimSpace(out), "|", 3), "", "")
+	term, passthrough, termType := fields[0], fields[1], fields[2]
+	tmuxState = tmuxPane{
+		attached:   term != "" || termType != "",
+		clientTerm: strings.ToLower(term + " " + termType),
+		// "on", "all", or "1" (a flag in tmux 3.3 and 3.3a).
+		passthrough:       passthrough != "off" && passthrough != "0",
+		passthroughHidden: passthrough == "all" || passthrough == "",
+	}
+	debugImageProtocol("tmux client=%q type=%q allow-passthrough=%q", term, termType, passthrough)
 	return tmuxState
 }
 
-func runTmuxQuery() (string, error) {
+// RefreshImageDetection makes the next image protocol check ask tmux again,
+// for example when another terminal may have attached.
+func RefreshImageDetection() {
+	tmuxMu.Lock()
+	tmuxAsked = time.Time{}
+	tmuxMu.Unlock()
+}
+
+func runTmuxFormat(format string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	args := []string{"display-message", "-p"}
 	if pane := os.Getenv("TMUX_PANE"); pane != "" {
 		args = append(args, "-t", pane)
 	}
-	args = append(args, "#{client_termname}|#{allow-passthrough}")
-	out, err := exec.CommandContext(ctx, "tmux", args...).Output()
+	out, err := exec.CommandContext(ctx, "tmux", append(args, format)...).Output()
 	return string(out), err
+}
+
+// PlaceholderUploadsReachTerminal reports whether an image uploaded through
+// tmux passthrough right now reaches a terminal. tmux drops passthrough
+// while no terminal is attached and, unless allow-passthrough is "all",
+// while matcha's pane is not on screen (another window, or another pane
+// zoomed).
+func PlaceholderUploadsReachTerminal() bool {
+	if !inTmux() {
+		return true
+	}
+	if currentTmux().passthroughHidden {
+		return true
+	}
+	out, err := tmuxFormat("#{session_attached}|#{window_active}|#{window_zoomed_flag}|#{pane_active}")
+	if err != nil {
+		return true // cannot tell; send it anyway
+	}
+	f := append(strings.Split(strings.TrimSpace(out), "|"), "", "", "", "")
+	attached, windowActive, zoomed, paneActive := f[0], f[1], f[2], f[3]
+	return attached != "0" && windowActive == "1" && (zoomed != "1" || paneActive == "1")
 }
 
 // PrimeImageDetection does the slow part of image protocol detection (asking

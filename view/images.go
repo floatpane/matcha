@@ -236,7 +236,12 @@ func prepareImage(payload string, protocol ImageProtocol, bounds ImageBounds) (*
 
 	key := encodedKey{hash: hash, protocol: protocol, cols: cols, rows: rows, cellW: cellW, cellH: cellH}
 	if p, ok := encodedImages.Get(key); ok {
-		return p, nil
+		// A placeholder image keeps its id only while the id pool sees it
+		// in use: count this use, and prepare the image again if its id has
+		// gone to another image meanwhile (the id is part of the upload).
+		if protocol != ImageProtocolKittyPlaceholder || placeholderIDs.id(key) == p.id {
+			return p, nil
+		}
 	}
 
 	p := &preparedImage{protocol: protocol, cols: cols, rows: rows}
