@@ -4,11 +4,13 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/view"
 )
@@ -256,4 +258,84 @@ func TestEmailViewUpdate(t *testing.T) {
 			t.Errorf("Expected reply to have subject '%s', but got '%s'", emailWithAttachments.Subject, replyMsg.Email.Subject)
 		}
 	})
+}
+
+func TestRemoteImageFailuresAreReportedAndRetryable(t *testing.T) {
+	t.Setenv("TERM", "xterm-kitty")
+	// A private address is refused without touching the network.
+	email := fetcher.Email{Body: `<p>hi</p><img src="http://127.0.0.1:1/x.png" alt="pic">`, BodyMIMEType: "text/html"}
+	ev := NewEmailView(email, 0, 80, 24, MailboxInbox, false)
+	_, cmd := ev.Update(tea.KeyPressMsg{Code: 'I', Text: "I"})
+	if cmd == nil {
+		t.Fatal("I did not start loading remote images")
+	}
+	_, notice := ev.Update(cmd())
+	if notice == nil {
+		t.Fatal("a failed remote image load was not reported")
+	}
+	if msg, ok := notice().(NotifyMsg); !ok || msg.Message != "The remote image could not be loaded" {
+		t.Fatalf("failure notice = %#v", notice())
+	}
+	if help := ev.renderHelp(); !strings.Contains(ansi.Strip(help), "I: retry remote") {
+		t.Fatalf("help does not offer a retry: %q", help)
+	}
+
+	_, retry := ev.Update(tea.KeyPressMsg{Code: 'I', Text: "I"})
+	if retry == nil || !ev.remoteImagesLoading {
+		t.Fatal("I did not retry the failed remote images")
+	}
+	retried := retry().(remoteImagesLoadedMsg)
+	if !retried.userRequested {
+		t.Fatal("a retry is a load the user asked for")
+	}
+	ev.Update(retried)
+
+	// Re-rendering for a new size skips the known failure and says nothing.
+	_, resize := ev.Update(tea.WindowSizeMsg{Width: 90, Height: 24})
+	if resize == nil {
+		t.Fatal("resizing did not re-render the remote images")
+	}
+	reloaded := resize().(remoteImagesLoadedMsg)
+	if reloaded.userRequested || len(reloaded.body.FailedRemoteImages) != 1 {
+		t.Fatalf("resize reload: userRequested=%v failed=%v", reloaded.userRequested, reloaded.body.FailedRemoteImages)
+	}
+	if _, cmd := ev.Update(reloaded); cmd != nil {
+		t.Fatalf("a resize reload reported something: %#v", cmd())
+	}
+
+	// A resize during a load re-renders once the load is done.
+	_, cmd = ev.Update(tea.KeyPressMsg{Code: 'I', Text: "I"})
+	ev.Update(tea.WindowSizeMsg{Width: 70, Height: 24})
+	_, after := ev.Update(cmd())
+	if after == nil || !ev.remoteImagesLoading {
+		t.Fatal("images loaded for the old size were not re-rendered after a resize")
+	}
+}
+
+func TestLoadingRemoteImagesOfEmailWithoutAnySaysSo(t *testing.T) {
+	t.Setenv("TERM", "xterm-kitty")
+	ev := NewEmailView(fetcher.Email{Body: "plain", BodyMIMEType: "text/plain"}, 0, 80, 24, MailboxInbox, false)
+	_, cmd := ev.Update(LoadRemoteImagesMsg{})
+	if cmd == nil {
+		t.Fatal("LoadRemoteImagesMsg did not start a load")
+	}
+	_, notice := ev.Update(cmd())
+	if notice == nil {
+		t.Fatal("no notice for an email without remote images")
+	}
+	if msg, ok := notice().(InfoNotifyMsg); !ok || !strings.Contains(msg.Message, "no remote images") {
+		t.Fatalf("notice = %#v", notice())
+	}
+	if _, cmd := ev.Update(LoadRemoteImagesMsg{}); cmd != nil {
+		t.Fatal("loading again after a complete load should do nothing")
+	}
+}
+
+func TestLoadRemoteImagesMsgReachesSplitPreview(t *testing.T) {
+	t.Setenv("TERM", "xterm-kitty")
+	preview := NewEmailView(fetcher.Email{Body: "x", BodyMIMEType: "text/plain"}, 0, 80, 24, MailboxInbox, false)
+	folder := &FolderInbox{previewPane: preview}
+	if _, cmd := folder.Update(LoadRemoteImagesMsg{}); cmd == nil || !preview.remoteImagesLoading {
+		t.Fatal("the split preview did not start loading remote images")
+	}
 }

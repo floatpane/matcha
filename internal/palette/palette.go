@@ -139,8 +139,12 @@ func BuildCommands(current tea.Model, folderInbox *tui.FolderInbox, cfg *config.
 			tui.PaletteCommand{Title: "Archive email", Hint: kb.Email.Archive, Keywords: "file store", Action: KeyAction(kb.Email.Archive)},
 			tui.PaletteCommand{Title: "Delete email", Hint: kb.Email.Delete, Keywords: "trash remove", Action: KeyAction(kb.Email.Delete)},
 			tui.PaletteCommand{Title: "Toggle images", Hint: kb.Email.ToggleImages, Keywords: "pictures show hide", Action: KeyAction(kb.Email.ToggleImages)},
-			tui.PaletteCommand{Title: "Load remote images", Hint: loadRemoteImagesKey, Keywords: "remote content privacy tracking", Action: KeyAction(loadRemoteImagesKey)},
 		)
+		if v.OffersRemoteImages() {
+			cmds = append(cmds,
+				tui.PaletteCommand{Title: "Load remote images", Hint: loadRemoteImagesKey, Keywords: "remote content privacy tracking", Action: KeyAction(loadRemoteImagesKey)},
+			)
+		}
 		if !v.IsPreviewMode() && splitEnabled {
 			cmds = append(cmds,
 				tui.PaletteCommand{Title: "Change to split view", Keywords: "split pane preview side by side layout", Action: func() tea.Msg { return tui.OpenSplitFromFullscreenMsg{} }},
@@ -173,6 +177,11 @@ func BuildCommands(current tea.Model, folderInbox *tui.FolderInbox, cfg *config.
 				tui.PaletteCommand{Title: "Open in full screen", Keywords: "fullscreen full screen maximize expand", Action: func() tea.Msg { return tui.OpenFullscreenFromSplitMsg{} }},
 			)
 			if ev := fi.GetPreviewPane(); ev != nil {
+				if ev.OffersRemoteImages() {
+					cmds = append(cmds,
+						tui.PaletteCommand{Title: "Load remote images", Keywords: "remote content privacy tracking preview", Action: func() tea.Msg { return tui.LoadRemoteImagesMsg{} }},
+					)
+				}
 				cmds = append(cmds, EmailExportCommands(ev, folderInbox)...)
 			}
 		}

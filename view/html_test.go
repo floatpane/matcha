@@ -89,42 +89,6 @@ func clearAllTerminalEnv() {
 	os.Setenv("TERM_PROGRAM", "basic")
 }
 
-func TestDecodeQuotedPrintable(t *testing.T) {
-	testCases := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "Simple case",
-			input:    "Hello=2C world=21",
-			expected: "Hello, world!",
-		},
-		{
-			name:     "With soft line break",
-			input:    "This is a long line that gets wrapped=\r\n and continues here.",
-			expected: "This is a long line that gets wrapped and continues here.",
-		},
-		{
-			name:     "No encoding",
-			input:    "Just a plain string.",
-			expected: "Just a plain string.",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			decoded, err := decodeQuotedPrintable(tc.input)
-			if err != nil {
-				t.Fatalf("decodeQuotedPrintable() failed: %v", err)
-			}
-			if decoded != tc.expected {
-				t.Errorf("Expected %q, got %q", tc.expected, decoded)
-			}
-		})
-	}
-}
-
 func TestDebugImageProtocolUsesLogger(t *testing.T) {
 	t.Setenv("DEBUG_IMAGE_PROTOCOL", "1")
 	t.Setenv("DEBUG_IMAGE_PROTOCOL_LOG", "")

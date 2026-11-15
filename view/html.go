@@ -1,15 +1,10 @@
 package view
 
 import (
-	"context"
-	"encoding/base64"
 	"fmt"
-	"io"
-	"mime/quotedprintable"
-	"net/http"
-	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -20,7 +15,6 @@ import (
 	"github.com/floatpane/matcha/internal/htmlsanitizer"
 	"github.com/floatpane/matcha/internal/loglevel"
 	"github.com/floatpane/matcha/theme"
-	lru "github.com/hashicorp/golang-lru/v2"
 	"golang.org/x/term"
 )
 
@@ -210,15 +204,6 @@ func hasTerminalControls(s string) bool {
 	}) != -1
 }
 
-func decodeQuotedPrintable(s string) (string, error) {
-	reader := quotedprintable.NewReader(strings.NewReader(s))
-	body, err := io.ReadAll(reader)
-	if err != nil {
-		return "", err
-	}
-	return string(body), nil
-}
-
 // markdownToHTML converts a Markdown string to an HTML string using md4c (C).
 // Single newlines are kept as line breaks: in email bodies they are part of
 // the message (signatures, addresses, short lines), not soft wraps.
@@ -373,69 +358,8 @@ func debugImageProtocol(format string, args ...interface{}) {
 	}
 }
 
-const remoteImageCacheSize = 20
-
-// remoteImageCache caches fetched remote images (URL -> base64 PNG string).
-var remoteImageCache *lru.Cache[string, string]
-
-func init() {
-	c, err := lru.New[string, string](remoteImageCacheSize)
-	if err != nil {
-		panic(err) // only fails on size <= 0
-	}
-	remoteImageCache = c
-}
-
-func fetchRemoteBase64(rawURL string) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil || !validRemoteImageURL(parsed) {
-		return ""
-	}
-
-	// Check cache first
-	if cached, ok := remoteImageCache.Get(rawURL); ok {
-		debugImageProtocol("remote cache hit url=%s", rawURL)
-		return cached
-	}
-
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, rawURL, nil)
-	if err != nil {
-		debugImageProtocol("remote request failed url=%s err=%v", rawURL, err)
-		return ""
-	}
-	resp, err := remoteImageClient.Do(req)
-	if err != nil {
-		debugImageProtocol("remote fetch failed url=%s err=%v", rawURL, err)
-		return ""
-	}
-	defer resp.Body.Close() //nolint:errcheck
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		debugImageProtocol("remote fetch non-200 url=%s status=%d", rawURL, resp.StatusCode)
-		return ""
-	}
-	// Limit response body to 10 MB to prevent memory exhaustion from
-	// malicious or very large images.
-	const maxImageSize = 10 << 20 // 10 MB
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxImageSize))
-	if err != nil {
-		debugImageProtocol("remote fetch read error url=%s err=%v", rawURL, err)
-		return ""
-	}
-
-	result, ok := clib.DecodeToPNG(data)
-	if !ok {
-		debugImageProtocol("remote decode failed url=%s", rawURL)
-		return ""
-	}
-
-	encoded := base64.StdEncoding.EncodeToString(result.PNGData)
-	debugImageProtocol("remote fetch ok url=%s len=%d", rawURL, len(encoded))
-	remoteImageCache.Add(rawURL, encoded)
-	return encoded
-}
-
 func dataURIBase64(uri string) string {
-	if !strings.HasPrefix(uri, "data:") {
+	if len(uri) < len("data:") || !strings.EqualFold(uri[:len("data:")], "data:") {
 		return ""
 	}
 	comma := strings.Index(uri, ",")
@@ -589,6 +513,10 @@ func ProcessBody(rawBody, mimeType string, h1Style, h2Style, bodyStyle lipgloss.
 type RenderOptions struct {
 	DisableImages     bool
 	AllowRemoteImages bool
+	// SkipRemoteImages lists remote image URLs not to download, such as the
+	// ones that failed in an earlier render of the same view. They count as
+	// failed.
+	SkipRemoteImages map[string]bool
 	// Bounds limits inline images, in cells. Zero values derive limits from
 	// the terminal size; views should pass their own viewport size.
 	Bounds ImageBounds
@@ -600,6 +528,11 @@ type RenderOptions struct {
 type RenderedBody struct {
 	Text   string
 	images map[int]*preparedImage
+	// RemoteImages counts the distinct remote images the body refers to;
+	// FailedRemoteImages lists the URLs of those a render with
+	// AllowRemoteImages could not show.
+	RemoteImages       int
+	FailedRemoteImages []string
 }
 
 // HasImages reports whether the body contains rendered inline images.
@@ -672,10 +605,12 @@ func (r *RenderedBody) Finalize(text string) (string, []ImagePlacement) {
 }
 
 func processBody(rawBody, mimeType string, inline map[string]string, h1Style, h2Style, bodyStyle lipgloss.Style, opts RenderOptions) (*RenderedBody, error) {
-	decodedBody, err := decodeQuotedPrintable(rawBody)
-	if err != nil {
-		decodedBody = rawBody
-	}
+	// Bodies arrive already transfer-decoded: the IMAP fetcher decodes each
+	// part per its BODYSTRUCTURE encoding, go-message decodes Maildir, POP3
+	// and raw messages, and JMAP returns decoded text. Decoding
+	// quoted-printable again would turn every "=XX" in the content into a
+	// raw byte, corrupting text and URLs ("?w=600" becomes "?w`0").
+	decodedBody := rawBody
 
 	// HTML bodies skip the markdown pre-pass — md4c can mangle attribute-heavy
 	// or indented HTML (#602-style raw-tag bleed-through). Empty mimeType keeps
@@ -689,7 +624,7 @@ func processBody(rawBody, mimeType string, inline map[string]string, h1Style, h2
 	}
 	htmlBody = htmlSanitizer.SanitizeBytes(htmlBody)
 
-	result, images, err := renderHTMLToText(htmlBody, inline, h1Style, h2Style, opts)
+	result, images, remote, err := renderHTMLToText(htmlBody, inline, h1Style, h2Style, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -701,14 +636,19 @@ func processBody(rawBody, mimeType string, inline map[string]string, h1Style, h2
 	// HTML path produces nothing.
 	if directHTML && strings.TrimSpace(result) == "" {
 		fallbackHTML := htmlSanitizer.SanitizeBytes(markdownToHTML([]byte(decodedBody)))
-		result, images, err = renderHTMLToText(fallbackHTML, inline, h1Style, h2Style, opts)
+		result, images, remote, err = renderHTMLToText(fallbackHTML, inline, h1Style, h2Style, opts)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	result = styleQuotedReplies(result)
-	return &RenderedBody{Text: bodyStyle.Render(result), images: images}, nil
+	return &RenderedBody{
+		Text:               bodyStyle.Render(result),
+		images:             images,
+		RemoteImages:       remote.requested,
+		FailedRemoteImages: remote.failedURLs(),
+	}, nil
 }
 
 // imageMarkerPrefix starts the marker line that records where an inline
@@ -717,11 +657,77 @@ const imageMarkerPrefix = "[[MATCHA_IMG:"
 
 var imageMarkerRegex = regexp.MustCompile(`\[\[MATCHA_IMG:(\d+)\]\]`)
 
-func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Style lipgloss.Style, opts RenderOptions) (string, map[int]*preparedImage, error) {
+// remoteImageSet holds the remote images of one render: the downloaded
+// payloads and the URLs that were wanted but could not be shown.
+type remoteImageSet struct {
+	payloads  map[string]string
+	requested int
+	failed    map[string]bool
+}
+
+func (r *remoteImageSet) fail(src string) {
+	if r.failed == nil {
+		r.failed = make(map[string]bool)
+	}
+	r.failed[src] = true
+}
+
+func (r *remoteImageSet) failedURLs() []string {
+	urls := make([]string, 0, len(r.failed))
+	for u := range r.failed {
+		urls = append(urls, u)
+	}
+	sort.Strings(urls)
+	return urls
+}
+
+// remoteImageSource returns the remote URL an image element would load, or
+// "" when it is not a loadable remote image.
+func remoteImageSource(elem clib.HTMLElement) string {
+	src := strings.TrimSpace(elem.Attr1)
+	if hasTerminalControls(src) || !isRemoteImageURL(src) {
+		return ""
+	}
+	return src
+}
+
+// remoteImageURLs returns the distinct remote image URLs elements show.
+func remoteImageURLs(elements []clib.HTMLElement) []string {
+	seen := make(map[string]bool)
+	var urls []string
+	for _, elem := range elements {
+		if elem.Type != clib.HElemImage {
+			continue
+		}
+		if src := remoteImageSource(elem); src != "" && !seen[src] {
+			seen[src] = true
+			urls = append(urls, src)
+		}
+	}
+	return urls
+}
+
+// loadRemoteImages downloads, in parallel, the remote images elements show.
+func loadRemoteImages(elements []clib.HTMLElement, skip map[string]bool) remoteImageSet {
+	urls := remoteImageURLs(elements)
+	set := remoteImageSet{requested: len(urls)}
+	fetch := urls[:0:0]
+	for _, src := range urls {
+		if skip[src] {
+			set.fail(src)
+			continue
+		}
+		fetch = append(fetch, src)
+	}
+	set.payloads = fetchRemoteImages(fetch)
+	return set
+}
+
+func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Style lipgloss.Style, opts RenderOptions) (string, map[int]*preparedImage, remoteImageSet, error) {
 	// Parse HTML into structured elements using C parser.
 	elements, ok := clib.HTMLToElements(string(htmlBody))
 	if !ok {
-		return "", nil, fmt.Errorf("could not parse email body")
+		return "", nil, remoteImageSet{}, fmt.Errorf("could not parse email body")
 	}
 
 	// Process elements: apply styles and collect image markers.
@@ -730,6 +736,12 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 	protocol := ImageProtocolNone
 	if !opts.DisableImages {
 		protocol = ActiveImageProtocol()
+	}
+	var remote remoteImageSet
+	if protocol != ImageProtocolNone && opts.AllowRemoteImages {
+		remote = loadRemoteImages(elements, opts.SkipRemoteImages)
+	} else {
+		remote.requested = len(remoteImageURLs(elements))
 	}
 
 	onWroteRegex := regexp.MustCompile(`On\s+(.+?),\s+(.+?)\s+wrote:`)
@@ -771,7 +783,7 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 			}
 
 		case clib.HElemImage:
-			renderImageElement(&text, images, elem, inline, protocol, opts)
+			renderImageElement(&text, images, elem, inline, &remote, protocol, opts)
 
 		case clib.HElemTable:
 			headerRows := 0
@@ -784,8 +796,8 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 
 		case clib.HElemBlockquote:
 			var from, date string
-			prevText := elem.Attr2
-			cite := elem.Attr1
+			prevText := stripTerminalControls(elem.Attr2)
+			cite := stripTerminalControls(elem.Attr1)
 
 			if matches := onWroteRegex.FindStringSubmatch(prevText); matches != nil {
 				date = parseDateForDisplay(matches[1])
@@ -817,18 +829,24 @@ func renderHTMLToText(htmlBody []byte, inline map[string]string, h1Style, h2Styl
 	// Now expand the image row placeholders to actual newlines
 	result = expandImageRowPlaceholders(result)
 
-	return result, images, nil
+	return result, images, remote, nil
 }
 
-func renderImageElement(text *strings.Builder, images map[int]*preparedImage, elem clib.HTMLElement, inline map[string]string, protocol ImageProtocol, opts RenderOptions) {
+func renderImageElement(text *strings.Builder, images map[int]*preparedImage, elem clib.HTMLElement, inline map[string]string, remote *remoteImageSet, protocol ImageProtocol, opts RenderOptions) {
 	src := strings.TrimSpace(elem.Attr1)
 	alt := stripTerminalControls(elem.Attr2)
 	if hasTerminalControls(src) {
 		return
 	}
 
-	if protocol != ImageProtocolNone && (opts.AllowRemoteImages || !isRemoteImageURL(src)) {
-		payload := resolveImagePayload(src, inline)
+	isRemote := isRemoteImageURL(src)
+	if protocol != ImageProtocolNone && (opts.AllowRemoteImages || !isRemote) {
+		var payload string
+		if isRemote {
+			payload = remote.payloads[src]
+		} else {
+			payload = resolveImagePayload(src, inline)
+		}
 
 		if payload != "" {
 			img, err := prepareImage(payload, protocol, opts.Bounds)
@@ -848,8 +866,11 @@ func renderImageElement(text *strings.Builder, images map[int]*preparedImage, el
 			}
 		}
 		debugImageProtocol("no payload for src=%s", src)
+		if isRemote {
+			remote.fail(src)
+		}
 	}
-	if isRemoteImageURL(src) && hyperlinkSupported() {
+	if isRemote && hyperlinkSupported() {
 		fmt.Fprintf(text, "\n %s \n", hyperlink(src, fmt.Sprintf("[Click here to view image: %s]", alt)))
 	} else {
 		fmt.Fprintf(text, "\n %s \n", linkStyle().Render(fmt.Sprintf("[Image: %s, %s]", alt, imageSourceLabel(src))))
@@ -874,12 +895,18 @@ func imageSourceLabel(src string) string {
 	return src
 }
 
+// resolveImagePayload returns the base64 payload of an image embedded in
+// the email (data: URI or cid: reference). Remote images are downloaded by
+// loadRemoteImages.
 func resolveImagePayload(src string, inline map[string]string) string {
+	// URI schemes are case-insensitive. Only the prefix is lowered: data:
+	// URIs can be megabytes long.
+	lower := strings.ToLower(src[:min(len(src), len("data:image/"))])
 	switch {
-	case strings.HasPrefix(src, "data:image/"):
+	case strings.HasPrefix(lower, "data:image/"):
 		return dataURIBase64(src)
-	case strings.HasPrefix(src, "cid:"):
-		cid := strings.TrimPrefix(src, "cid:")
+	case strings.HasPrefix(lower, "cid:"):
+		cid := src[len("cid:"):]
 		cid = strings.Trim(cid, "<>")
 		if inline != nil {
 			payload := inline[cid]
@@ -888,8 +915,6 @@ func resolveImagePayload(src string, inline map[string]string) string {
 		}
 		debugImageProtocol("cid lookup skipped inline map nil for %s", cid)
 		return ""
-	case strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://"):
-		return fetchRemoteBase64(src)
 	}
 	return ""
 }

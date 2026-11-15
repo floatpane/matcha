@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/tui"
 )
 
@@ -130,6 +131,26 @@ func TestHandleMouseClickOutsideCloses(t *testing.T) {
 	}
 	if p.IsOpen() {
 		t.Fatal("a click outside the palette should close it")
+	}
+}
+
+func TestRemoteImagesOfferedOnlyForEmailsThatHaveThem(t *testing.T) {
+	t.Setenv("TERM", "xterm-kitty")
+	offers := func(v *tui.EmailView) bool {
+		for _, c := range BuildCommands(v, nil, nil) {
+			if c.Title == "Load remote images" {
+				return true
+			}
+		}
+		return false
+	}
+	plain := tui.NewEmailView(fetcher.Email{Body: "hi", BodyMIMEType: "text/plain"}, 0, 80, 24, tui.MailboxInbox, false)
+	if offers(plain) {
+		t.Fatal("the palette offers remote images for an email without any")
+	}
+	remote := tui.NewEmailView(fetcher.Email{Body: `<p>x</p><img src="https://example.com/a.png">`, BodyMIMEType: "text/html"}, 0, 80, 24, tui.MailboxInbox, false)
+	if !offers(remote) {
+		t.Fatal("the palette does not offer the email's remote images")
 	}
 }
 

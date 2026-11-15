@@ -28,7 +28,14 @@ type remoteImagesLoadedMsg struct {
 	requestID uint64
 	body      *view.RenderedBody
 	err       error
+	// userRequested is set for loads the user asked for (as opposed to
+	// re-renders after a resize), whose outcome is reported.
+	userRequested bool
 }
+
+// LoadRemoteImagesMsg asks the email on screen (full screen or in the split
+// preview) to load its remote images.
+type LoadRemoteImagesMsg struct{}
 
 // BodyTransformer, if set, post-processes the rendered email body before it is
 // placed in the viewport. main.go wires this up to the plugin manager so that
@@ -59,6 +66,9 @@ type EmailView struct {
 	remoteImagesLoading bool
 	remoteLoadID        uint64
 	remoteBody          *view.RenderedBody
+	remoteFailed        []string // remote image URLs the last load could not show
+	remoteImageCount    int      // remote images the body refers to
+	resizedWhileLoading bool     // the loading images were sized for an old viewport
 	isSMIME             bool
 	smimeTrusted        bool
 	isEncrypted         bool
@@ -218,33 +228,21 @@ func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.setSize(msg.Width, msg.Height)
-		if m.showRemoteImages && !m.remoteImagesLoading {
+		if m.remoteImagesLoading {
+			m.resizedWhileLoading = true
+		} else if m.showRemoteImages {
 			// Remote images were sized for the old viewport; reload them
 			// (served from cache) so they fit the new one.
-			return m, m.loadRemoteImagesCmd()
+			return m, m.loadRemoteImagesCmd(false)
 		}
 		return m, nil
 	case tea.MouseClickMsg:
 		m.handleMouseClick(msg)
 		return m, nil
+	case LoadRemoteImagesMsg:
+		return m, m.requestRemoteImages()
 	case remoteImagesLoadedMsg:
-		if !m.remoteImagesLoading || msg.requestID != m.remoteLoadID {
-			return m, nil
-		}
-		m.remoteImagesLoading = false
-		if msg.err != nil || msg.body == nil {
-			// Keep showing the body without remote images and let the user retry.
-			m.showRemoteImages = false
-			m.syncLayout()
-			return m, nil
-		}
-		m.showRemoteImages = true
-		m.remoteBody = msg.body
-		if m.showImages {
-			m.regenerateBody()
-		}
-		m.syncLayout()
-		return m, nil
+		return m, m.remoteImagesLoaded(msg)
 	}
 
 	m.viewport, cmd = m.viewport.Update(msg)
@@ -346,21 +344,116 @@ func (m *EmailView) loadRemoteImagesKey() string {
 	return "I"
 }
 
+// canLoadRemoteImages reports whether the load-remote-images key does
+// anything: images were not loaded yet, or some failed and can be retried.
+func (m *EmailView) canLoadRemoteImages() bool {
+	return view.ImageProtocolSupported() && !m.remoteImagesLoading &&
+		(!m.showRemoteImages || len(m.remoteFailed) > 0)
+}
+
+// OffersRemoteImages reports whether loading remote images is worth
+// offering: the email has some and they can still be (re)loaded.
+func (m *EmailView) OffersRemoteImages() bool {
+	return m.remoteImageCount > 0 && m.canLoadRemoteImages()
+}
+
+// requestRemoteImages starts a load the user asked for.
+func (m *EmailView) requestRemoteImages() tea.Cmd {
+	if !m.canLoadRemoteImages() {
+		return nil
+	}
+	if !m.showImages {
+		m.showImages = true
+		m.regenerateBody()
+	}
+	cmd := m.loadRemoteImagesCmd(true)
+	m.syncLayout()
+	return cmd
+}
+
 // loadRemoteImagesCmd renders the body with remote images in the background.
-func (m *EmailView) loadRemoteImagesCmd() tea.Cmd {
+// A load the user asked for retries every image; re-renders for a new size
+// skip the ones that failed before, which would only fail again, slowly.
+func (m *EmailView) loadRemoteImagesCmd(userRequested bool) tea.Cmd {
 	m.remoteImagesLoading = true
+	m.resizedWhileLoading = false
 	m.remoteLoadID = remoteImageRequestID.Add(1)
 	body, mimeType := m.email.Body, m.email.BodyMIMEType
 	inline := inlineImagesFromAttachments(m.email.Attachments)
 	requestID := m.remoteLoadID
 	bounds := m.imageBounds()
+	var skip map[string]bool
+	if !userRequested && len(m.remoteFailed) > 0 {
+		skip = make(map[string]bool, len(m.remoteFailed))
+		for _, u := range m.remoteFailed {
+			skip[u] = true
+		}
+	}
 	return func() tea.Msg {
 		rendered, err := view.RenderBody(body, mimeType, inline, H1Style, H2Style, BodyStyle, view.RenderOptions{
 			AllowRemoteImages: true,
+			SkipRemoteImages:  skip,
 			Bounds:            bounds,
 		})
-		return remoteImagesLoadedMsg{requestID: requestID, body: rendered, err: err}
+		return remoteImagesLoadedMsg{requestID: requestID, body: rendered, err: err, userRequested: userRequested}
 	}
+}
+
+// remoteImagesLoaded shows the result of a remote image load and, for loads
+// the user asked for, reports images that could not be shown.
+func (m *EmailView) remoteImagesLoaded(msg remoteImagesLoadedMsg) tea.Cmd {
+	if !m.remoteImagesLoading || msg.requestID != m.remoteLoadID {
+		return nil
+	}
+	m.remoteImagesLoading = false
+	if msg.err != nil || msg.body == nil {
+		// Keep showing the body without remote images and let the user retry.
+		m.showRemoteImages = false
+		m.syncLayout()
+		if !msg.userRequested {
+			return nil
+		}
+		reason := "unknown error"
+		if msg.err != nil {
+			reason = msg.err.Error()
+		}
+		return func() tea.Msg { return NotifyMsg{Message: "Could not load remote images: " + reason} }
+	}
+	m.showRemoteImages = true
+	m.remoteBody = msg.body
+	m.remoteFailed = msg.body.FailedRemoteImages
+	if m.showImages {
+		m.regenerateBody()
+	}
+	m.syncLayout()
+	var cmds []tea.Cmd
+	if m.resizedWhileLoading {
+		// The images were sized for the viewport before the resize.
+		cmds = append(cmds, m.loadRemoteImagesCmd(false))
+	}
+	if msg.userRequested {
+		cmds = append(cmds, remoteImagesNotice(msg.body.RemoteImages, len(msg.body.FailedRemoteImages)))
+	}
+	return tea.Batch(cmds...)
+}
+
+// remoteImagesNotice reports a remote image load in which not every image
+// could be shown.
+func remoteImagesNotice(total, failed int) tea.Cmd {
+	var notice tea.Msg
+	switch {
+	case total == 0:
+		notice = InfoNotifyMsg{Message: "This email has no remote images", Duration: 3}
+	case failed == 0:
+		return nil
+	case total == 1:
+		notice = NotifyMsg{Message: "The remote image could not be loaded"}
+	case failed == total:
+		notice = NotifyMsg{Message: fmt.Sprintf("None of the %d remote images could be loaded", total)}
+	default:
+		notice = InfoNotifyMsg{Message: fmt.Sprintf("%d of %d remote images could not be loaded", failed, total), Duration: 4}
+	}
+	return func() tea.Msg { return notice }
 }
 
 // handleEmailBodyKey handles key presses when the email body has focus.
@@ -374,10 +467,8 @@ func (m *EmailView) handleEmailBodyKey(msg tea.KeyPressMsg) (bool, func() (tea.M
 			return true, func() (tea.Model, tea.Cmd) { return m, nil }
 		}
 	case m.loadRemoteImagesKey():
-		if view.ImageProtocolSupported() && !m.showRemoteImages && !m.remoteImagesLoading {
-			m.showImages = true
-			m.regenerateBody()
-			cmd := m.loadRemoteImagesCmd()
+		if m.canLoadRemoteImages() {
+			cmd := m.requestRemoteImages()
 			return true, func() (tea.Model, tea.Cmd) { return m, cmd }
 		}
 	case kb.Email.Reply, kb.Email.ReplyAll, kb.Email.Forward:
@@ -503,6 +594,7 @@ func (m *EmailView) regenerateBody() {
 		}
 	}
 	rendered := m.renderedBody()
+	m.remoteImageCount = rendered.RemoteImages
 	wrapped := wrapBodyToWidth(applyBodyTransform(rendered.Text, m.email), width)
 	text, placements := rendered.Finalize(wrapped)
 	m.imagePlacements = placements
@@ -768,12 +860,16 @@ func (m *EmailView) renderHelp() string {
 	if view.ImageProtocolSupported() {
 		shortcuts.WriteString(helpSeparator)
 		shortcuts.WriteString(helpItem("", kbKey(kb.Email.ToggleImages, "i"), "toggle images").String())
-		if m.remoteImagesLoading {
+		switch {
+		case m.remoteImagesLoading:
 			shortcuts.WriteString(helpSeparator)
 			shortcuts.WriteString("loading remote images…")
-		} else if !m.showRemoteImages {
+		case !m.showRemoteImages && m.remoteImageCount > 0:
 			shortcuts.WriteString(helpSeparator)
 			shortcuts.WriteString(helpItem("", m.loadRemoteImagesKey(), "load remote images").String())
+		case m.showRemoteImages && len(m.remoteFailed) > 0:
+			shortcuts.WriteString(helpSeparator)
+			shortcuts.WriteString(helpItem("", m.loadRemoteImagesKey(), "retry remote images").String())
 		}
 	}
 	for _, pk := range m.pluginKeyBindings {
