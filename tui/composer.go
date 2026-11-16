@@ -1527,6 +1527,9 @@ func (m *Composer) handleFormKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 
 	switch msg.String() {
 	case kb.Global.Quit:
+		if IsTypeableKey(msg.String()) {
+			break
+		}
 		return true, tea.Quit
 	case kb.Composer.ExternalEditor:
 		return true, func() tea.Msg { return OpenEditorMsg{} }

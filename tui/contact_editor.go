@@ -86,7 +86,7 @@ func (m *ContactEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg { return GoToSettingsMsg{} }
 		}
 
-		if msg.String() == kb.Global.Quit {
+		if msg.String() == kb.Global.Quit && !IsTypeableKey(msg.String()) {
 			return m, tea.Quit
 		}
 
