@@ -119,6 +119,10 @@ func TestIsQuitKeyTypeable(t *testing.T) {
 	if !isQuitKey("ctrl+c", false) {
 		t.Error("ctrl+c should always quit")
 	}
+	config.Keybinds.Global.Quit = "space"
+	if isQuitKey("space", false) || !isQuitKey("space", true) {
+		t.Error("space should be treated as typeable")
+	}
 	for _, k := range []string{"ctrl+q", "f10", "esc"} {
 		config.Keybinds.Global.Quit = k
 		if !isQuitKey(k, false) {
@@ -155,6 +159,7 @@ func TestQuitKeyAllowed(t *testing.T) {
 		{"marketplace", tui.NewMarketplace(false), true},
 		{"drafts", tui.NewDrafts(nil), true},
 		{"drafts filter open", draftsWithFilter(t), false},
+		{"setup guide", newSetupGuide(), true},
 		{"inbox", tui.NewInbox(nil, nil), true},
 		{"folder inbox", tui.NewFolderInbox([]string{"INBOX"}, nil), true},
 		{"login", tui.NewLogin(false), false},
@@ -222,10 +227,7 @@ func TestQuitKeyScreens(t *testing.T) {
 
 	m.current = tui.NewChoice()
 	_, cmd = m.Update(palette.KeyMsgFromBinding("q"))
-	if cmd == nil {
-		t.Fatal("q on the choice menu should quit")
-	}
-	if _, ok := cmd().(tea.QuitMsg); !ok {
+	if !producesQuit(cmd) {
 		t.Error("q on the choice menu should quit")
 	}
 
@@ -267,5 +269,39 @@ func TestQuitKeyScreens(t *testing.T) {
 	_, cmd = m.Update(palette.KeyMsgFromBinding("ctrl+q"))
 	if !producesQuit(cmd) {
 		t.Error("ctrl+q should quit from login")
+	}
+}
+
+func TestCancelKeyAllowed(t *testing.T) {
+	if cancelKeyAllowed(tui.NewLogin(false)) {
+		t.Error("typeable cancel key must not act on login")
+	}
+	if cancelKeyAllowed(tui.NewFilePicker(t.TempDir())) {
+		t.Error("typeable cancel key must not act on the file picker")
+	}
+	if !cancelKeyAllowed(tui.NewChoice()) {
+		t.Error("typeable cancel key should act on the choice menu")
+	}
+}
+
+func TestQuitKeyJumpFilter(t *testing.T) {
+	orig := config.Keybinds
+	t.Cleanup(func() { config.Keybinds = orig })
+
+	config.Keybinds.Global.Quit = "q"
+	m := NewModel(&config.Config{}, nil, nil, false, nil, nil)
+	fi := tui.NewFolderInbox([]string{"INBOX", "Sent"}, nil)
+	m.current = fi
+	m.Update(tui.JumpToFolderMsg{})
+	if fi.IsJumpFilterActive() {
+		t.Fatal("jump filter should not be focused before the filter key")
+	}
+	m.Update(palette.KeyMsgFromBinding(config.Keybinds.Inbox.Filter))
+	if !fi.IsJumpFilterActive() {
+		t.Fatal("filter key should focus the jump filter")
+	}
+	_, cmd := m.Update(palette.KeyMsgFromBinding("q"))
+	if producesQuit(cmd) {
+		t.Error("q typed into the folder jump filter must not quit")
 	}
 }

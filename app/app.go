@@ -218,16 +218,19 @@ func (m *Model) newSettings() *tui.Settings {
 // quitKeyAllowed reports whether a typeable configured quit key may quit on
 // the given screen. Screens with text inputs (or that handle quit themselves)
 // are excluded so typing the key doesn't quit. Inbox and FolderInbox allow it
-// only while no search or filter is active.
+// only while no search, filter or folder-jump filter is active.
 func quitKeyAllowed(current tea.Model) bool {
 	switch v := current.(type) {
-	case tui.Choice, tui.Status, tui.Marketplace, *tui.EmailView:
+	case tui.Choice, tui.Status, tui.Marketplace, *tui.EmailView, *tui.SetupGuide:
 		return true
 	case *tui.Drafts:
 		return !v.IsFilterActive()
 	case *tui.Inbox:
 		return !v.IsSearchActive() && !v.IsFilterActive()
 	case *tui.FolderInbox:
+		if v.IsJumpFilterActive() {
+			return false
+		}
 		if inbox := v.GetInbox(); inbox != nil {
 			return !inbox.IsSearchActive() && !inbox.IsFilterActive()
 		}
