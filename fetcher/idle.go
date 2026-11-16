@@ -50,28 +50,32 @@ func (w *IdleWatcher) Watch(account *config.Account, folder string) {
 	// IDLE is an IMAP-only concept; non-IMAP backends (maildir, etc.) have
 	// no remote socket to keep open. Skip silently rather than spinning the
 	// reconnect loop forever.
-	if account != nil && account.Protocol != "" && account.Protocol != "imap" {
+	if account == nil || (account.Protocol != "" && account.Protocol != "imap") {
 		return
 	}
+	// Keep a private copy: callers pass &cfg.Accounts[i], and the UI edits
+	// that slice in place (deleting an account shifts it), which would
+	// silently re-point this watcher at another account.
+	acct := *account
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	// Stop existing watcher for this account if any
-	if existing, ok := w.watchers[account.ID]; ok {
+	if existing, ok := w.watchers[acct.ID]; ok {
 		close(existing.stop)
-		delete(w.watchers, account.ID)
+		delete(w.watchers, acct.ID)
 		// Let old connection tear down in the background
 	}
 
 	a := &accountIdle{
-		account: account,
+		account: &acct,
 		folder:  folder,
 		notify:  w.notify,
 		stop:    make(chan struct{}),
 		done:    make(chan struct{}),
 	}
-	w.watchers[account.ID] = a
+	w.watchers[acct.ID] = a
 	w.wg.Add(1)
 	go func() {
 		defer w.wg.Done()

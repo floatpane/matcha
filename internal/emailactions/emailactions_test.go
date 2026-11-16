@@ -16,6 +16,14 @@ type fakeFolderInbox struct {
 	folders     []string
 	decremented []string
 	incremented []string
+	current     string // folder shown; defaults to INBOX
+}
+
+func (f *fakeFolderInbox) GetCurrentFolder() string {
+	if f.current == "" {
+		return emailstore.FolderInbox
+	}
+	return f.current
 }
 
 func (f *fakeFolderInbox) SetEmails(emails []fetcher.Email, accounts []config.Account) {

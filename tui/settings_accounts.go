@@ -2,11 +2,9 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
 )
 
@@ -18,19 +16,18 @@ func (m *Settings) updateAccounts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m2, cmd
 	}
 
-	if m.confirmingDelete {
+	if m.accountsConfirmingDelete {
 		switch msg.String() {
 		case "y", "Y":
+			m.accountsConfirmingDelete = false
 			if m.accountsCursor < len(m.cfg.Accounts) {
 				accountID := m.cfg.Accounts[m.accountsCursor].ID
-				m.confirmingDelete = false
 				return m, func() tea.Msg {
 					return DeleteAccountMsg{AccountID: accountID}
 				}
 			}
 		case "n", "N", "esc":
-			m.confirmingDelete = false
-			return m, nil
+			m.accountsConfirmingDelete = false
 		}
 		return m, nil
 	}
@@ -43,8 +40,8 @@ func (m *Settings) updateAccounts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		itemCount := len(m.cfg.Accounts) + 1
 		m.accountsCursor = (m.accountsCursor + 1) % itemCount
 	case "d":
-		if m.accountsCursor < len(m.cfg.Accounts) && len(m.cfg.Accounts) > 0 {
-			m.confirmingDelete = true
+		if m.accountsCursor < len(m.cfg.Accounts) {
+			m.accountsConfirmingDelete = true
 		}
 	case "e":
 		if m.accountsCursor < len(m.cfg.Accounts) {
@@ -68,12 +65,15 @@ func (m *Settings) updateAccounts(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 					POP3Server:   acc.POP3Server,
 					POP3Port:     acc.POP3Port,
 					MaildirPath:  acc.MaildirPath,
+					AuthMethod:   acc.AuthMethod,
 				}
 			}
 		}
 	case "s": // Edit account signature
 		if m.accountsCursor < len(m.cfg.Accounts) {
-			return m, func() tea.Msg { return GoToSignatureEditorMsg{AccountID: m.cfg.Accounts[m.accountsCursor].ID} }
+			// Capture the ID now: the command runs on another goroutine.
+			accountID := m.cfg.Accounts[m.accountsCursor].ID
+			return m, func() tea.Msg { return GoToSignatureEditorMsg{AccountID: accountID} }
 		}
 	case "c": // Quick shortcut to crypto config
 		if m.accountsCursor < len(m.cfg.Accounts) {
@@ -115,18 +115,18 @@ func (m *Settings) enterCryptoConfig() {
 	m.pgpPINInput.Blur()
 }
 
-func (m *Settings) viewAccounts() string {
+// accountsPage lists the configured accounts followed by "Add New Account".
+func (m *Settings) accountsPage() settingsPage {
 	if m.isCryptoConfig {
-		return m.viewSMIMEConfig()
+		return m.cryptoPage()
 	}
 
-	var b strings.Builder
-	b.WriteString(titleStyle.Render(t("settings_accounts.title")) + "\n\n")
-
+	header := titleStyle.Render(t("settings_accounts.title")) + "\n"
 	if len(m.cfg.Accounts) == 0 {
-		b.WriteString(accountEmailStyle.Render("  " + t("settings_accounts.no_accounts") + "\n\n"))
+		header += "\n" + accountEmailStyle.Render("  "+t("settings_accounts.no_accounts")) + "\n"
 	}
 
+	body := make([]string, 0, len(m.cfg.Accounts)+1)
 	for i, account := range m.cfg.Accounts {
 		displayName := account.Email
 		if account.Name != "" {
@@ -154,33 +154,20 @@ func (m *Settings) viewAccounts() string {
 		line := fmt.Sprintf("%s - %s", displayName, accountEmailStyle.Render(providerInfo))
 
 		selected := m.accountsCursor == i
-		cursor := m.contentCursor(selected)
-		style := m.contentItemStyle(selected)
-
-		b.WriteString(style.Render(cursor+line) + "\n")
+		body = append(body, m.contentItemStyle(selected).Render(m.contentCursor(selected)+line))
 	}
 
 	// Add Account option
 	selected := m.accountsCursor == len(m.cfg.Accounts)
-	cursor := m.contentCursor(selected)
-	style := m.contentItemStyle(selected)
-	b.WriteString(style.Render(cursor+t("settings_accounts.add_account")) + "\n\n")
+	body = append(body, m.contentItemStyle(selected).Render(m.contentCursor(selected)+t("settings_accounts.add_account")))
 
-	b.WriteString(helpStyle.Render(t("settings_accounts.help")))
-
-	if m.confirmingDelete {
-		accountName := m.cfg.Accounts[m.accountsCursor].Email
-		dialog := DialogBoxStyle.Render(
-			lipgloss.JoinVertical(lipgloss.Center,
-				dangerStyle.Render("Delete account?"),
-				accountEmailStyle.Render(accountName),
-				HelpStyle.Render("\n(y/n)"),
-			),
-		)
-		// Try to overlay dialog in a reasonable way, since we don't have full screen width access easily here.
-		// Just append it.
-		b.WriteString("\n\n" + dialog)
+	return settingsPage{
+		key:      "accounts",
+		header:   header,
+		body:     body,
+		focusTop: m.accountsCursor,
+		focusBot: m.accountsCursor,
+		footer:   "\n" + helpStyle.Render(t("settings_accounts.help")),
+		rows:     true,
 	}
-
-	return b.String()
 }

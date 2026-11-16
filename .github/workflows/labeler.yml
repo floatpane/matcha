@@ -22,7 +22,7 @@ jobs:
 
       - name: Apply Labels (issues — includes area/*)
         if: github.event_name == 'issues'
-        uses: github/issue-labeler@v3.4
+        uses: github/issue-labeler@v3.5
         with:
           repo-token: "${{ secrets.HOMEBREW_GITHUB_TOKEN }}"
           configuration-path: .github/labeler-config.yml
@@ -31,7 +31,7 @@ jobs:
 
       - name: Apply Labels (PRs — no area/*, paths handle those)
         if: github.event_name == 'pull_request_target'
-        uses: github/issue-labeler@v3.4
+        uses: github/issue-labeler@v3.5
         with:
           repo-token: "${{ secrets.HOMEBREW_GITHUB_TOKEN }}"
           configuration-path: .github/labeler-config-pr.yml

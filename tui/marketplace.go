@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/internal/httpclient"
 	"github.com/floatpane/matcha/internal/marketplace"
@@ -64,6 +65,22 @@ type PluginDeletedMsg struct {
 	Err  error
 }
 
+// mpStatusClearMsg clears the transient status line, unless a newer status
+// replaced the one it was scheduled for.
+type mpStatusClearMsg struct{ seq int }
+
+const (
+	// mpStatusTTL is how long a result message stays in the status line.
+	mpStatusTTL = 4 * time.Second
+	// mpErrorTTL is how long an error stays in the status line.
+	mpErrorTTL = 8 * time.Second
+	// mpEntryHeight is the number of rows one plugin entry takes.
+	mpEntryHeight = 2
+	// mpDoubleClick is the longest gap between two clicks on the same row
+	// that still counts as a double click.
+	mpDoubleClick = 500 * time.Millisecond
+)
+
 type Marketplace struct {
 	entries           []plugins.PluginEntry
 	installed         map[string]bool
@@ -73,9 +90,11 @@ type Marketplace struct {
 	height            int
 	state             marketplaceState
 	status            string // transient status message
+	statusSeq         int    // bumped on every status change so stale clears are ignored
+	statusBusy        bool   // status describes a running install/delete
 	standalone        bool   // true when launched via `matcha marketplace` (not from main menu)
 	lastClickTime     time.Time
-	lastClickY        int
+	lastClickEntry    int  // entry of the last click, for double-click detection
 	confirmingInstall bool // true when prompting the user to confirm plugin installation
 	installTarget     plugins.PluginEntry
 	confirmingDelete  bool   // true when prompting the user to confirm plugin removal
@@ -94,10 +113,94 @@ func (m Marketplace) Init() tea.Cmd {
 	return fetchFromNewMarketplace
 }
 
+// headerView renders the logo and title drawn above the plugin list,
+// including the blank line that separates them from the entries.
+func (m Marketplace) headerView() string {
+	return renderLogo(choiceLogo) + "\n" + mpTitleStyle.Render(" "+t("marketplace.title")+" ") + "\n"
+}
+
+// itemsStartY returns the screen row of the first visible entry, derived from
+// the rendered header so a plugin banner of any height maps clicks correctly.
 func (m Marketplace) itemsStartY() int {
-	// docStyle top margin (1) + choiceLogo blank+5 lines (6) + explicit \n (1) = 8
-	// mpTitleStyle title (1) + \n\n (2) = 3
-	return 8 + 3
+	return docStyle.GetMarginTop() + m.headerHeight()
+}
+
+// innerWidth is the usable width inside docStyle's margins (0 = unknown).
+func (m Marketplace) innerWidth() int {
+	if m.width <= 0 {
+		return 0
+	}
+	return max(1, m.width-docStyle.GetHorizontalMargins())
+}
+
+// dialogOpen reports whether a confirmation prompt is on screen. Prompts are
+// modal: mouse input must not move the cursor behind them.
+func (m Marketplace) dialogOpen() bool {
+	return m.confirmingInstall || m.confirmingDelete
+}
+
+// setStatus shows text in the status line. A ttl > 0 clears it after that
+// long; ttl == 0 marks a running operation that stays until its result.
+func (m *Marketplace) setStatus(text string, ttl time.Duration) tea.Cmd {
+	m.statusSeq++
+	m.status = text
+	m.statusBusy = ttl == 0
+	if ttl == 0 {
+		return nil
+	}
+	seq := m.statusSeq
+	return tea.Tick(ttl, func(time.Time) tea.Msg { return mpStatusClearMsg{seq: seq} })
+}
+
+// clearStatus removes the status line.
+func (m *Marketplace) clearStatus() {
+	m.statusSeq++
+	m.status = ""
+	m.statusBusy = false
+}
+
+// moveCursor moves the selection by delta, keeping it on screen. Moving away
+// dismisses a finished operation's message.
+func (m *Marketplace) moveCursor(delta int) {
+	if len(m.entries) == 0 {
+		return
+	}
+	next := max(0, min(len(m.entries)-1, m.cursor+delta))
+	if next == m.cursor {
+		return
+	}
+	m.cursor = next
+	if !m.statusBusy {
+		m.clearStatus()
+	}
+	m.offset, _ = m.window()
+}
+
+// entryAt maps a screen row to the entry drawn there, if any. Rows below the
+// last visible entry (footer, padding) map to nothing.
+func (m Marketplace) entryAt(y int) (int, bool) {
+	row := y - m.itemsStartY()
+	start, end := m.window()
+	if row < 0 || row >= (end-start)*mpEntryHeight {
+		return 0, false
+	}
+	return start + row/mpEntryHeight, true
+}
+
+// promptInstall asks to install the entry under the cursor.
+func (m Marketplace) promptInstall() (tea.Model, tea.Cmd) {
+	if m.cursor < 0 || m.cursor >= len(m.entries) {
+		return m, nil
+	}
+	entry := m.entries[m.cursor]
+	if m.installed[entry.Name] {
+		// m is a value: update it before it is returned.
+		cmd := m.setStatus(fmt.Sprintf("%s is already installed", entry.Name), mpStatusTTL)
+		return m, cmd
+	}
+	m.confirmingInstall = true
+	m.installTarget = entry
+	return m, nil
 }
 
 func fetchFromNewMarketplace() tea.Msg {
@@ -145,58 +248,56 @@ func fetchRegistry() tea.Msg {
 func (m Marketplace) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.MouseWheelMsg:
-		if m.state != marketplaceReady {
+		if m.state != marketplaceReady || m.dialogOpen() {
 			return m, nil
 		}
 		switch msg.Button {
 		case tea.MouseWheelDown:
-			if m.cursor < len(m.entries)-1 {
-				m.cursor++
-				visible := m.visibleRows()
-				if m.cursor >= m.offset+visible {
-					m.offset = m.cursor - visible + 1
-				}
-			}
+			m.moveCursor(1)
 		case tea.MouseWheelUp:
-			if m.cursor > 0 {
-				m.cursor--
-				if m.cursor < m.offset {
-					m.offset = m.cursor
-				}
-			}
+			m.moveCursor(-1)
+		default:
 		}
 		return m, nil
 
 	case tea.MouseClickMsg:
-		if msg.Button != tea.MouseLeft || m.state != marketplaceReady {
+		if msg.Button != tea.MouseLeft || m.state != marketplaceReady || m.dialogOpen() {
 			return m, nil
 		}
-		rowInList := msg.Y - m.itemsStartY()
-		if rowInList >= 0 {
-			entryIdx := m.offset + rowInList/2
-			if entryIdx >= 0 && entryIdx < len(m.entries) {
-				now := time.Now()
-				isDoubleClick := msg.Y == m.lastClickY && now.Sub(m.lastClickTime) < 500*time.Millisecond
-				m.lastClickTime = now
-				m.lastClickY = msg.Y
-				m.cursor = entryIdx
-				if isDoubleClick {
-					entry := m.entries[m.cursor]
-					if m.installed[entry.Name] {
-						m.status = fmt.Sprintf("%s is already installed", entry.Name)
-						return m, nil
-					}
-					m.confirmingInstall = true
-					m.installTarget = entry
-					return m, nil
-				}
-			}
+		entryIdx, ok := m.entryAt(msg.Y)
+		if !ok {
+			return m, nil
+		}
+		now := time.Now()
+		isDoubleClick := entryIdx == m.lastClickEntry && now.Sub(m.lastClickTime) < mpDoubleClick
+		m.lastClickTime = now
+		m.lastClickEntry = entryIdx
+		m.moveCursor(entryIdx - m.cursor)
+		if isDoubleClick {
+			m.lastClickTime = time.Time{} // a third click starts a new pair
+			return m.promptInstall()
 		}
 		return m, nil
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.offset, _ = m.window()
+		return m, nil
+
+	case mpStatusClearMsg:
+		if msg.seq == m.statusSeq {
+			m.clearStatus()
+		}
+		return m, nil
+
+	case NotifyMsg:
+		// Inside the app, the app shows notifications itself. Standalone
+		// (`matcha marketplace`) there is nobody else to show them.
+		if m.standalone {
+			cmd := m.setStatus(msg.Message, mpErrorTTL)
+			return m, cmd
+		}
 		return m, nil
 
 	case RegistryFetchedMsg:
@@ -210,23 +311,28 @@ func (m Marketplace) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PluginInstalledMsg:
 		if msg.Err != nil {
+			m.clearStatus() // drop "Installing…"
 			return m, func() tea.Msg {
 				return NotifyMsg{Message: fmt.Sprintf("Failed to install %s: %v", msg.Name, msg.Err)}
 			}
 		}
-		m.status = fmt.Sprintf("Installed %s", msg.Name)
+		if m.installed == nil {
+			m.installed = make(map[string]bool)
+		}
 		m.installed[msg.Name] = true
-		return m, nil
+		cmd := m.setStatus(fmt.Sprintf("Installed %s", msg.Name), mpStatusTTL)
+		return m, cmd
 
 	case PluginDeletedMsg:
 		if msg.Err != nil {
+			m.clearStatus() // drop "Deleting…"
 			return m, func() tea.Msg {
 				return NotifyMsg{Message: fmt.Sprintf("Failed to delete %s: %v", msg.Name, msg.Err)}
 			}
 		}
-		m.status = fmt.Sprintf("Deleted %s", msg.Name)
 		delete(m.installed, msg.Name)
-		return m, nil
+		cmd := m.setStatus(fmt.Sprintf("Deleted %s", msg.Name), mpStatusTTL)
+		return m, cmd
 
 	case tea.KeyPressMsg:
 		return m.handleKeyPress(msg)
@@ -244,7 +350,7 @@ func (m Marketplace) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			target := m.deleteTarget
 			m.confirmingDelete = false
 			m.deleteTarget = ""
-			m.status = fmt.Sprintf("Deleting %s...", target)
+			m.setStatus(fmt.Sprintf("Deleting %s...", target), 0)
 			return m, deletePlugin(target)
 		case "n", "N", kb.Global.Cancel:
 			m.confirmingDelete = false
@@ -261,9 +367,9 @@ func (m Marketplace) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.confirmingInstall = false
 			m.installTarget = plugins.PluginEntry{}
 			if entry.AuthorVerified {
-				m.status = fmt.Sprintf("Installing %s...", entry.Name)
+				m.setStatus(fmt.Sprintf("Installing %s...", entry.Name), 0)
 			} else {
-				m.status = fmt.Sprintf("Installing %s (unverified author)...", entry.Name)
+				m.setStatus(fmt.Sprintf("Installing %s (unverified author)...", entry.Name), 0)
 			}
 			return m, installPlugin(entry)
 		case "n", "N", kb.Global.Cancel:
@@ -293,31 +399,11 @@ func (m Marketplace) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case kb.Global.Quit:
 		return m, tea.Quit
 	case "up", kb.Global.NavUp:
-		if m.cursor > 0 {
-			m.cursor--
-			if m.cursor < m.offset {
-				m.offset = m.cursor
-			}
-		}
+		m.moveCursor(-1)
 	case keyDown, kb.Global.NavDown:
-		if m.cursor < len(m.entries)-1 {
-			m.cursor++
-			visible := m.visibleRows()
-			if m.cursor >= m.offset+visible {
-				m.offset = m.cursor - visible + 1
-			}
-		}
+		m.moveCursor(1)
 	case keyEnter:
-		if m.cursor < len(m.entries) {
-			entry := m.entries[m.cursor]
-			if m.installed[entry.Name] {
-				m.status = fmt.Sprintf("%s is already installed", entry.Name)
-				return m, nil
-			}
-			m.confirmingInstall = true
-			m.installTarget = entry
-			return m, nil
-		}
+		return m.promptInstall()
 	case kb.Inbox.Delete:
 		if m.cursor < len(m.entries) {
 			entry := m.entries[m.cursor]
@@ -331,35 +417,59 @@ func (m Marketplace) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// headerHeight is the number of rows above the first entry (logo, title and
+// the blank line below it).
 func (m Marketplace) headerHeight() int {
-	// renderLogo(choiceLogo) + \n + mpTitleStyle(1) + \n\n
-	return lipgloss.Height(renderLogo(choiceLogo)) + 1 + 1 + 1
+	return blockHeight(m.headerView())
 }
 
-func (m Marketplace) footerHeight() int {
-	h := 0
+// footerView renders the rows pinned to the bottom: scroll position, the
+// transient status and the keybind help, each fitted to the screen width.
+func (m Marketplace) footerView() string {
+	width := m.innerWidth()
+	var lines []string
 	// scroll position indicator (shown whenever there are entries)
 	if m.state == marketplaceReady && len(m.entries) > 0 {
-		h++
+		lines = append(lines, mpFooterStyle.Render(fmt.Sprintf("  %d/%d", m.cursor+1, len(m.entries))))
 	}
 	// transient status line
 	if m.status != "" {
-		h++
+		status := "  " + m.status
+		if width > 0 {
+			status = ansi.Truncate(status, width, "…")
+		}
+		lines = append(lines, mpStatusStyle.Render(status))
 	}
-	// keybind help line (always present)
-	h++
-	return h
+	// keybind help (always present)
+	lines = append(lines, helpStyle.Render(wrapBlock(keybindHelp("marketplace.help"), width)))
+	return strings.Join(lines, "\n")
 }
 
+func (m Marketplace) footerHeight() int {
+	return blockHeight(m.footerView())
+}
+
+// visibleRows is how many entries fit between the header and the footer.
 func (m Marketplace) visibleRows() int {
-	// docStyle margin (1 top + 1 bottom) + header + footer
-	reserved := 2 + m.headerHeight() + m.footerHeight()
-	available := m.height - reserved
-	if available < 1 {
-		return 1
+	available := m.height - docStyle.GetVerticalMargins() - m.headerHeight() - m.footerHeight()
+	// Each entry takes mpEntryHeight lines (name + description)
+	return max(1, available/mpEntryHeight)
+}
+
+// window returns the range of entries on screen. The stored offset is
+// clamped so the cursor stays visible even after the footer grew or the
+// terminal shrank; the view and click mapping share it.
+func (m Marketplace) window() (start, end int) {
+	visible := m.visibleRows()
+	start = m.offset
+	if m.cursor >= start+visible {
+		start = m.cursor - visible + 1
 	}
-	// Each entry takes 2 lines (name + description)
-	return available / 2
+	if m.cursor < start {
+		start = m.cursor
+	}
+	start = max(0, min(start, len(m.entries)-visible))
+	return start, min(len(m.entries), start+visible)
 }
 
 func getPluginInfo(name string) *marketplace.PluginInfo {
@@ -470,33 +580,30 @@ func installedPlugins() map[string]bool {
 }
 
 func (m Marketplace) View() tea.View {
-	var body strings.Builder
+	width := m.innerWidth()
+	fit := func(line string) string {
+		if width > 0 {
+			return ansi.Truncate(line, width, "…")
+		}
+		return line
+	}
 
-	body.WriteString(renderLogo(choiceLogo))
-	body.WriteString("\n")
-	body.WriteString(mpTitleStyle.Render(" " + t("marketplace.title") + " "))
-	body.WriteString("\n\n")
+	// headerView ends with the blank line above the entries.
+	lines := strings.Split(m.headerView(), "\n")
 
 	switch m.state {
 	case marketplaceLoading:
-		body.WriteString(itemStyle.Render(t("common.loading")))
-		body.WriteString("\n")
+		lines = append(lines, itemStyle.Render(t("common.loading")))
 	case marketplaceError:
-		body.WriteString(itemStyle.Render(mpErrorStyle.Render(t("common.error"))))
-		body.WriteString("\n")
+		lines = append(lines, itemStyle.Render(mpErrorStyle.Render(t("common.error"))))
 	case marketplaceReady:
-		visible := m.visibleRows()
-		end := m.offset + visible
-		if end > len(m.entries) {
-			end = len(m.entries)
-		}
-
-		for i := m.offset; i < end; i++ {
+		start, end := m.window()
+		for i := start; i < end; i++ {
 			entry := m.entries[i]
 			cursor := "  "
 			nameStyle := mpItemNameStyle
 			if i == m.cursor {
-				cursor = mpCursorStyle.Render("> ")
+				cursor = mpCursorStyle.Render("▌ ")
 				nameStyle = mpSelectedStyle
 			}
 
@@ -512,41 +619,27 @@ func (m Marketplace) View() tea.View {
 				name += author
 			}
 
-			fmt.Fprintf(&body, "%s%s\n", cursor, name)
-			fmt.Fprintf(&body, "    %s\n", mpItemDescStyle.Render(entry.Description))
+			// One row each, never wrapped: click mapping counts on it.
+			lines = append(lines,
+				fit(cursor+name),
+				fit("    "+mpItemDescStyle.Render(entry.Description)))
 		}
 	}
 
 	// Footer bar: scroll position + transient status, always pinned to the bottom
 	// so the keybind help line stays visible regardless of list length.
-	var footer strings.Builder
-	if m.state == marketplaceReady && len(m.entries) > 0 {
-		fmt.Fprintf(&footer, "%s\n", mpFooterStyle.Render(fmt.Sprintf("  %d/%d", m.cursor+1, len(m.entries))))
-	}
-	if m.status != "" {
-		footer.WriteString(mpStatusStyle.Render("  " + m.status))
-		footer.WriteString("\n")
-	}
-	footer.WriteString(helpStyle.Render(keybindHelp("marketplace.help")))
-
-	content := body.String()
-	help := footer.String()
+	content := strings.Join(lines, "\n")
+	help := m.footerView()
 
 	// Pin the footer to the bottom: pad the body so it fills the available
 	// height, leaving the footer as the last visible rows.
+	gap := 2
 	if m.height > 0 {
-		usable := m.height - 2 // docStyle top + bottom margin
-		bodyHeight := lipgloss.Height(content)
-		footerHeight := lipgloss.Height(help)
-		gap := usable - bodyHeight - footerHeight
-		if gap > 0 {
-			content += strings.Repeat("\n", gap)
-		}
-	} else {
-		content += "\n\n"
+		usable := m.height - docStyle.GetVerticalMargins()
+		gap = max(1, usable-blockHeight(content)-blockHeight(help)+1)
 	}
 
-	rendered := docStyle.Render(content + help)
+	rendered := docStyle.Render(content + strings.Repeat("\n", gap) + help)
 
 	// Confirmation overlay: prompt the user before deleting an installed plugin.
 	if m.confirmingDelete {

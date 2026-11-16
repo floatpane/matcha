@@ -40,6 +40,7 @@ func (m *Settings) updatePluginList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if len(schemas) == 0 {
 		return m, nil
 	}
+	m.pluginListCursor = max(0, min(m.pluginListCursor, len(schemas)-1))
 
 	kb := config.Keybinds.Global
 	key := msg.String()
@@ -61,6 +62,7 @@ func (m *Settings) updatePluginSettings(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 		m.pluginSelected = ""
 		return m, nil
 	}
+	m.pluginSettingCursor = max(0, min(m.pluginSettingCursor, len(defs)-1))
 
 	kb := config.Keybinds.Global
 	key := msg.String()
@@ -79,8 +81,7 @@ func (m *Settings) updatePluginSettings(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 			cur, _ := m.plugins.GetSettingValue(m.pluginSelected, def.Key)
 			b, _ := cur.(bool)
 			m.plugins.SetSettingValue(m.pluginSelected, def.Key, !b)
-			m.persistPluginSettings()
-			return m, func() tea.Msg { return ConfigSavedMsg{} }
+			return m, m.persistPluginSettings()
 		case plugin.SettingNumber, plugin.SettingString:
 			m.beginPluginEdit(def)
 		}
@@ -119,8 +120,7 @@ func (m *Settings) updatePluginEditor(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 		}
 		m.pluginEditing = false
 		m.pluginInput.Blur()
-		m.persistPluginSettings()
-		return m, func() tea.Msg { return ConfigSavedMsg{} }
+		return m, m.persistPluginSettings()
 	}
 
 	// Forward all other keys (typing, backspace, arrows, etc.) to textinput.
@@ -129,81 +129,77 @@ func (m *Settings) updatePluginEditor(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 	return m, cmd
 }
 
-func (m *Settings) persistPluginSettings() {
+// persistPluginSettings saves the plugin settings and tells the app the
+// config changed, reporting a failed save.
+func (m *Settings) persistPluginSettings() tea.Cmd {
 	if m.cfg == nil || m.plugins == nil {
-		return
+		return nil
 	}
 	m.cfg.PluginSettings = m.plugins.AllSettingValues()
-	_ = config.SaveConfig(m.cfg)
+	return tea.Batch(m.saveConfig(), func() tea.Msg { return ConfigSavedMsg{} })
 }
 
-func (m *Settings) viewPlugins() string {
-	var b strings.Builder
-	b.WriteString(titleStyle.Render(t("settings.category_plugins")) + "\n\n")
+// pluginsPage shows the plugins with configurable settings, or the settings
+// of the selected plugin.
+func (m *Settings) pluginsPage() settingsPage {
+	title := titleStyle.Render(t("settings.category_plugins"))
+	page := settingsPage{key: "plugins", header: title + "\n", focusTop: -1, focusBot: -1}
 
 	if m.plugins == nil {
-		b.WriteString(accountEmailStyle.Render("  Plugin manager unavailable.\n"))
-		return b.String()
+		page.body = []string{accountEmailStyle.Render("  Plugin manager unavailable.")}
+		return page
 	}
 
 	if m.pluginSelected == "" {
 		schemas := m.plugins.Schemas()
 		if len(schemas) == 0 {
-			b.WriteString(accountEmailStyle.Render("  No plugins declare configurable settings.\n"))
-			b.WriteString("\n")
-			b.WriteString(helpStyle.Render("Plugins use matcha.settings(...) to expose options."))
-			return b.String()
+			page.body = []string{accountEmailStyle.Render("  No plugins declare configurable settings.")}
+			page.footer = "\n" + helpStyle.Render("Plugins use matcha.settings(...) to expose options.")
+			return page
 		}
 
+		page.body = make([]string, len(schemas))
 		for i, s := range schemas {
 			selected := m.pluginListCursor == i
-			cursor := m.contentCursor(selected)
-			style := m.contentItemStyle(selected)
 			line := fmt.Sprintf("%s (%d %s)", s.Plugin, len(s.Defs), pluralSettings(len(s.Defs)))
-			b.WriteString(style.Render(cursor+line) + "\n")
+			page.body[i] = m.contentItemStyle(selected).Render(m.contentCursor(selected) + line)
 		}
-		b.WriteString("\n")
-		b.WriteString(helpStyle.Render(navArrowsLabel() + " navigate • enter open • esc back"))
-		return b.String()
+		page.focusTop, page.focusBot = m.pluginListCursor, m.pluginListCursor
+		page.footer = "\n" + helpStyle.Render(navArrowsLabel()+" navigate • enter open • esc back")
+		page.rows = true
+		return page
 	}
 
 	defs := m.plugins.Schema(m.pluginSelected)
-	b.WriteString(accountEmailStyle.Render(m.pluginSelected) + "\n\n")
-
+	page.key = "plugin:" + m.pluginSelected
+	page.header = title + "\n\n" + accountEmailStyle.Render(m.pluginSelected) + "\n"
+	page.body = make([]string, len(defs))
 	for i, def := range defs {
 		selected := m.pluginSettingCursor == i
-		cursor := m.contentCursor(selected)
-		style := m.contentItemStyle(selected)
-
 		label := def.Label
 		if label == "" {
 			label = def.Key
 		}
 		val, _ := m.plugins.GetSettingValue(m.pluginSelected, def.Key)
-		display := formatDisplayValue(def.Type, val)
-		line := fmt.Sprintf("%s: %s", label, display)
-		b.WriteString(style.Render(cursor+line) + "\n")
+		line := fmt.Sprintf("%s: %s", label, formatDisplayValue(def.Type, val))
+		page.body[i] = m.contentItemStyle(selected).Render(m.contentCursor(selected) + line)
 	}
+	page.focusTop, page.focusBot = m.pluginSettingCursor, m.pluginSettingCursor
 
 	if m.pluginEditing {
-		b.WriteString("\n")
-		b.WriteString(m.contentFocusStyle().Render("Edit "+m.pluginEditingKey) + "\n")
-		b.WriteString(m.pluginInput.View() + "\n")
-		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("enter save • esc cancel"))
-	} else {
-		if m.pluginSettingCursor < len(defs) {
-			tip := defs[m.pluginSettingCursor].Description
-			if tip != "" && !m.cfg.HideTips {
-				b.WriteString("\n")
-				b.WriteString(TipStyle.Render("Tip: " + tip))
-			}
-		}
-		b.WriteString("\n\n")
-		b.WriteString(helpStyle.Render(navArrowsLabel() + " navigate • enter toggle/edit • " + cancelKey() + " back"))
+		page.footer = "\n" + m.contentFocusStyle().Render("Edit "+m.pluginEditingKey) + "\n" +
+			m.pluginInput.View() + "\n\n" + helpStyle.Render("enter save • esc cancel")
+		return page
 	}
 
-	return b.String()
+	page.rows = true
+	if m.pluginSettingCursor >= 0 && m.pluginSettingCursor < len(defs) {
+		if tip := defs[m.pluginSettingCursor].Description; tip != "" && !m.cfg.HideTips {
+			page.extra = "\n" + TipStyle.Render("Tip: "+tip)
+		}
+	}
+	page.footer = "\n" + helpStyle.Render(navArrowsLabel()+" navigate • enter toggle/edit • "+cancelKey()+" back")
+	return page
 }
 
 func formatSettingValue(v interface{}) string {

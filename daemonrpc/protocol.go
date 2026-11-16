@@ -60,6 +60,9 @@ const (
 	EventSyncError      = "SyncError"
 	EventEmailsUpdated  = "EmailsUpdated"
 	EventConfigReloaded = "ConfigReloaded"
+	// EventSendFailed is broadcast when a queued email could not be sent.
+	// Without it the client had already told the user "Message sent".
+	EventSendFailed = "SendFailed"
 )
 
 // Param/result types for RPC methods.
@@ -219,6 +222,14 @@ type NewMailEvent struct {
 type SyncStartedEvent struct {
 	AccountID string `json:"account_id"`
 	Folder    string `json:"folder"`
+}
+
+// SendFailedEvent describes a queued email the daemon failed to deliver.
+type SendFailedEvent struct {
+	JobID     string `json:"job_id"`
+	AccountID string `json:"account_id"`
+	Subject   string `json:"subject"`
+	Error     string `json:"error"`
 }
 
 type SyncCompleteEvent struct {

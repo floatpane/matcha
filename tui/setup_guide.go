@@ -164,7 +164,7 @@ func (m *SetupGuide) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *SetupGuide) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch m.step {
 	case setupStepWelcome, setupStepFeatures:
-		if msg.String() == keyEnter || msg.String() == " " {
+		if msg.String() == keyEnter || msg.String() == keySpaceBar {
 			m.advanceStep()
 			return m, nil
 		}
@@ -182,7 +182,7 @@ func (m *SetupGuide) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleMouseKey(msg)
 
 	case setupStepDone:
-		if msg.String() == keyEnter || msg.String() == " " {
+		if msg.String() == keyEnter || msg.String() == keySpaceBar {
 			return m, func() tea.Msg { return SetupGuideDoneMsg{} }
 		}
 	}
@@ -196,7 +196,7 @@ func (m *SetupGuide) handleHelperKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.helperStatus != setupStatusPending {
 		switch msg.String() {
-		case keyEnter, " ":
+		case keyEnter, keySpaceBar:
 			m.advanceStep()
 		case "q", keyCtrlC:
 			return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
@@ -233,7 +233,7 @@ func (m *SetupGuide) handleMailtoKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.mailtoStatus != setupStatusPending {
 		switch msg.String() {
-		case keyEnter, " ":
+		case keyEnter, keySpaceBar:
 			m.advanceStep()
 		case "q", keyCtrlC:
 			return m, func() tea.Msg { return GoToChoiceMenuMsg{} }
@@ -267,7 +267,7 @@ func (m *SetupGuide) handleMailtoKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m *SetupGuide) handleShowcaseKey(msg tea.KeyPressMsg) {
 	switch m.showcaseTourStep {
 	case 0: // overview — any key advances
-		if msg.String() == keyEnter || msg.String() == " " {
+		if msg.String() == keyEnter || msg.String() == keySpaceBar {
 			m.showcaseTourStep = 1
 		}
 	case 1: // navigation — j/k live, space/enter to advance
@@ -280,7 +280,7 @@ func (m *SetupGuide) handleShowcaseKey(msg tea.KeyPressMsg) {
 			if m.showcaseCursor < len(demoEmails)-1 {
 				m.showcaseCursor++
 			}
-		case keyEnter, " ":
+		case keyEnter, keySpaceBar:
 			m.showcaseTourStep = 2
 		}
 	case 2: // opening — enter opens email, space skips to commands
@@ -296,16 +296,16 @@ func (m *SetupGuide) handleShowcaseKey(msg tea.KeyPressMsg) {
 		case keyEnter:
 			m.showcaseMode = 1
 			m.showcaseTourStep = 3
-		case " ":
+		case keySpaceBar:
 			m.showcaseTourStep = 4
 		}
 	case 3: // email view — any key returns to inbox + advances
-		if msg.String() == keyEnter || msg.String() == " " || msg.String() == "esc" {
+		if msg.String() == keyEnter || msg.String() == keySpaceBar || msg.String() == "esc" {
 			m.showcaseMode = 0
 			m.showcaseTourStep = 4
 		}
 	case 4: // commands — any key finishes
-		if msg.String() == keyEnter || msg.String() == " " {
+		if msg.String() == keyEnter || msg.String() == keySpaceBar {
 			m.advanceStep()
 		}
 	}
@@ -371,38 +371,51 @@ var (
 func (m *SetupGuide) View() tea.View {
 	// Showcase step gets the full screen — no surrounding box.
 	if m.step == setupStepShowcase {
-		return tea.NewView(m.viewShowcaseFull())
-	}
-
-	var content string
-	switch m.step {
-	case setupStepWelcome:
-		content = m.viewWelcome()
-	case setupStepFeatures:
-		content = m.viewFeatures()
-	case setupStepHelper:
-		content = m.viewHelper()
-	case setupStepMailto:
-		content = m.viewMailto()
-	case setupStepMouse:
-		content = m.viewMouse()
-	case setupStepDone:
-		content = m.viewDone()
+		return tea.NewView(clampRendered(m.viewShowcaseFull(), m.width, m.height))
 	}
 
 	boxW := 64
 	if m.width > 0 && m.width-6 < boxW {
-		boxW = m.width - 6
+		boxW = max(m.width-6, 1)
 	}
-	box := sgBoxStyle.Width(boxW).Render(content)
-	progress := m.viewProgress()
-	combined := box + "\n\n" + progress
+	// The logo only fits inside the box's content area on wide terminals.
+	showLogo := lipgloss.Width(choiceLogo) <= boxW-sgBoxStyle.GetHorizontalFrameSize()
+	box := sgBoxStyle.Width(boxW).Render(m.stepContent(showLogo))
+	combined := box + "\n\n" + m.viewProgress()
+
+	// On short terminals drop the progress dots, then the logo, before
+	// anything gets cut off.
+	if m.height > 0 && lipgloss.Height(combined) > m.height {
+		combined = box
+		if showLogo && lipgloss.Height(box) > m.height && m.step == setupStepWelcome {
+			combined = sgBoxStyle.Width(boxW).Render(m.stepContent(false))
+		}
+	}
 
 	if m.width > 0 && m.height > 0 {
 		combined = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, combined)
 	}
 
-	return tea.NewView(combined)
+	return tea.NewView(clampRendered(combined, m.width, m.height))
+}
+
+// stepContent renders the body of the current boxed step.
+func (m *SetupGuide) stepContent(showLogo bool) string {
+	switch m.step {
+	case setupStepWelcome:
+		return m.viewWelcome(showLogo)
+	case setupStepFeatures:
+		return m.viewFeatures()
+	case setupStepHelper:
+		return m.viewHelper()
+	case setupStepMailto:
+		return m.viewMailto()
+	case setupStepMouse:
+		return m.viewMouse()
+	case setupStepDone:
+		return m.viewDone()
+	}
+	return ""
 }
 
 func (m *SetupGuide) viewProgress() string {
@@ -427,9 +440,12 @@ func (m *SetupGuide) viewProgress() string {
 	return sgDimStyle.Render("  ") + strings.Join(dots, sgDimStyle.Render(" · "))
 }
 
-func (m *SetupGuide) viewWelcome() string {
+func (m *SetupGuide) viewWelcome(showLogo bool) string {
 	accentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	logo := accentStyle.Render(choiceLogo)
+	if !showLogo {
+		logo = sgTitleStyle.Render("matcha") + "\n"
+	}
 	body := sgSubtitleStyle.Render(
 		"Welcome to Matcha.\n\n" +
 			"A fast, keyboard-driven email client that\n" +
@@ -599,7 +615,7 @@ func (m *SetupGuide) viewShowcaseFull() string {
 	}
 
 	background := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, mainPane)
-	tooltip := m.viewTourTooltip()
+	tooltip := m.viewTourTooltip(w)
 	return overlay.Center(background, tooltip, w, h)
 }
 
@@ -640,7 +656,9 @@ func (m *SetupGuide) viewTourSidebar(h int) string {
 
 func (m *SetupGuide) viewTourInboxPane(w, h int) string {
 	spotlight := m.showcaseTourStep == 1 || m.showcaseTourStep == 2
-	innerW := w - 2
+	// Every row starts with a 3-cell gutter (" > " when selected, "   "
+	// otherwise), so selected and plain rows end in the same column.
+	innerW := w - 3
 
 	var rows strings.Builder
 	for i, e := range demoEmails {
@@ -670,11 +688,7 @@ func (m *SetupGuide) viewTourInboxPane(w, h int) string {
 
 		styledDate := st.Render(dateStr)
 		dateW := lipgloss.Width(styledDate)
-		cursorW := 0
-		if isSelected {
-			cursorW = 2
-		}
-		leftBudget := innerW - dateW - 2 - cursorW
+		leftBudget := innerW - dateW - 2
 		used := len(prefix) + 2 + lipgloss.Width(sender) + 3
 		subjectBudget := leftBudget - used
 		if subjectBudget < 4 {
@@ -689,7 +703,7 @@ func (m *SetupGuide) viewTourInboxPane(w, h int) string {
 		}
 
 		row := prefix + st.Render(icon+" "+sender) + sgDimStyle.Render(" \u00b7 ") + st.Render(subject)
-		pad := innerW - lipgloss.Width(row) - dateW - cursorW
+		pad := innerW - lipgloss.Width(row) - dateW
 		if pad < 1 {
 			pad = 1
 		}
@@ -721,11 +735,12 @@ func (m *SetupGuide) viewTourEmailPane(w, h int) string {
 	var b strings.Builder
 	b.WriteString(dim.Render(" \u2190 esc  back to inbox") + "\n")
 	b.WriteString(sep + "\n")
-	b.WriteString(" " + label.Render("From:") + sgSubtitleStyle.Render(e.bodyFrom) + "\n")
-	b.WriteString(" " + label.Render("Subject:") + sgTitleStyle.Render(e.subject) + "\n")
-	b.WriteString(" " + label.Render("Date:") + sgSubtitleStyle.Render(e.date) + "\n")
+	b.WriteString(truncateLines(" "+label.Render("From:")+sgSubtitleStyle.Render(e.bodyFrom), w) + "\n")
+	b.WriteString(truncateLines(" "+label.Render("Subject:")+sgTitleStyle.Render(e.subject), w) + "\n")
+	b.WriteString(truncateLines(" "+label.Render("Date:")+sgSubtitleStyle.Render(e.date), w) + "\n")
 	b.WriteString(sep + "\n\n")
-	for _, line := range strings.Split(e.body, "\n") {
+	// Wrap the body to the pane (one leading space, one spare column).
+	for _, line := range strings.Split(lipgloss.Wrap(e.body, max(w-2, 1), ""), "\n") {
 		b.WriteString(" " + sgSubtitleStyle.Render(line) + "\n")
 	}
 	body := b.String()
@@ -736,7 +751,10 @@ func (m *SetupGuide) viewTourEmailPane(w, h int) string {
 	return body
 }
 
-func (m *SetupGuide) viewTourTooltip() string {
+func (m *SetupGuide) viewTourTooltip(screenW int) string {
+	style := tourTooltipStyle.Width(min(tourTooltipStyle.GetWidth(), screenW))
+	// The divider must fit the tooltip's content area or it wraps.
+	ruleW := max(style.GetWidth()-style.GetHorizontalFrameSize(), 1)
 	key := func(s string) string {
 		return lipgloss.NewStyle().
 			Background(lipgloss.Color("236")).
@@ -785,7 +803,7 @@ func (m *SetupGuide) viewTourTooltip() string {
 		b.WriteString(body.Render("You're ready. Your real\ninbox is one step away.") + "\n")
 	}
 
-	b.WriteString("\n" + dim.Render(strings.Repeat("\u2500", 40)) + "\n")
+	b.WriteString("\n" + dim.Render(strings.Repeat("\u2500", ruleW)) + "\n")
 	b.WriteString(dim.Render(fmt.Sprintf("step %d of 5", step+1)))
 
 	switch step {
@@ -799,7 +817,7 @@ func (m *SetupGuide) viewTourTooltip() string {
 		b.WriteString(dim.Render("   \u00b7   ") + key("enter") + dim.Render(" next"))
 	}
 
-	return tourTooltipStyle.Render(b.String())
+	return style.Render(b.String())
 }
 
 func (m *SetupGuide) viewMouse() string {

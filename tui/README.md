@@ -11,7 +11,7 @@ The TUI layer is the interactive frontend of Matcha. Each view implements the `t
 | File | Description |
 |------|-------------|
 | `inbox.go` | Email inbox list with multi-account tab support. Handles pagination, keyboard navigation, and renders email items with sender, subject, and date. Supports different mailbox types (inbox, sent, trash, archive) and both multi-account and single-account modes. |
-| `email_view.go` | Full email display in a scrollable viewport. Shows headers (from, to, subject, date), rendered body content, attachment list, and S/MIME verification status. Manages inline image rendering through out-of-band stdout writes. |
+| `email_view.go` | Full email display in a scrollable viewport. Shows headers (from, to, subject, date), rendered body content, attachment list, and S/MIME verification status. Reports where its inline Kitty/Sixel images are on screen (`VisibleImages`); `graphics.go` paints them through Bubble Tea after each frame, and half-block images are drawn as part of the text. |
 | `composer.go` | Email composition form with fields for To, CC, BCC, Subject, and Body. Features contact autocomplete, file attachment picker, signature insertion, account selection dropdown, and draft auto-saving. Supports reply mode with pre-filled headers and quoted text. |
 | `drafts.go` | Draft email list view. Displays saved drafts with subject, recipient, and timestamp. Allows opening drafts in the composer or deleting them. |
 | `folder_inbox.go` | Folder navigation sidebar with an email list. Displays IMAP folders in a left panel and the selected folder's emails in the main area. Handles folder selection and email loading per folder. |

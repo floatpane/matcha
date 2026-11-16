@@ -32,7 +32,6 @@ import (
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/internal/loglevel"
 	"github.com/floatpane/matcha/pgp"
-	"go.mozilla.org/pkcs7"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/ianaindex"
 	"golang.org/x/text/encoding/unicode"
@@ -325,6 +324,37 @@ func decodeAttachmentData(rawBytes []byte, encoding string) ([]byte, error) {
 	default:
 		return rawBytes, nil
 	}
+}
+
+// parseRawMessage extracts body text and MIME type from raw RFC822 message bytes.
+// Used as fallback when BODYSTRUCTURE parsing fails (e.g., non-standard bounce messages).
+func parseRawMessage(rawBytes []byte) (body, mimeType string) {
+	mr, err := mail.CreateReader(bytes.NewReader(rawBytes))
+	if err != nil {
+		return string(rawBytes), mimeTextPlain
+	}
+	for {
+		p, err := mr.NextPart()
+		if err != nil {
+			break
+		}
+		cType, _, _ := mime.ParseMediaType(p.Header.Get("Content-Type"))
+		b, readErr := io.ReadAll(p.Body)
+		if readErr != nil {
+			continue
+		}
+		if cType == mimeTextHTML {
+			return string(b), mimeTextHTML
+		}
+		if cType == mimeTextPlain && body == "" {
+			body = string(b)
+			mimeType = mimeTextPlain
+		}
+	}
+	if body == "" {
+		return string(rawBytes), mimeTextPlain
+	}
+	return body, mimeType
 }
 
 // parsePartID converts a string part ID like "1.2.3" to []int{1, 2, 3}.
@@ -699,7 +729,21 @@ func FetchMailboxEmails(account *config.Account, mailbox string, limit, offset u
 // (mimeTextHTML or mimeTextPlain; empty if it could not be resolved), the
 // parsed attachments, and any error. The MIME type lets the renderer
 // skip the markdown→HTML pre-pass for already-HTML bodies.
-func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint32) (string, string, []Attachment, error) { //nolint:gocyclo
+//
+// Message parsing runs on untrusted input, so a panic anywhere below
+// (MIME, S/MIME, PGP decoders) is converted into an error instead of
+// crashing the caller (a Bubble Tea command or a daemon handler).
+func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint32) (body, mimeType string, atts []Attachment, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			body, mimeType, atts = "", "", nil
+			err = fmt.Errorf("could not parse message %d: %v", uid, r)
+		}
+	}()
+	return fetchEmailBodyFromMailbox(account, mailbox, uid)
+}
+
+func fetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint32) (string, string, []Attachment, error) { //nolint:gocyclo
 	if hasBackendProvider(account) {
 		p, err := newBackendProvider(account)
 		if err != nil {
@@ -775,7 +819,12 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 	})
 	bsMsgs, err := fetchCmd.Collect()
 	if err != nil {
-		return "", "", nil, err
+		rawBytes, rawErr := FetchRawMessageFromMailbox(account, mailbox, uid)
+		if rawErr != nil {
+			return "", "", nil, fmt.Errorf("body structure fetch failed: %w; raw fetch also failed: %w", err, rawErr)
+		}
+		body, mimeType := parseRawMessage(rawBytes)
+		return body, mimeType, nil, nil
 	}
 
 	if len(bsMsgs) == 0 || bsMsgs[0].BodyStructure == nil {
@@ -863,16 +912,10 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 				extractedBodyMIMEType = mimeTextPlain
 				htmlPartID = partExtracted
 			} else {
-				p7, parseErr := pkcs7.Parse(data)
-				if parseErr != nil {
-					// Fallback: IMAP servers sometimes drop the transfer-encoding header.
-					// We manually strip newlines and attempt a base64 decode just in case.
-					cleanData := bytes.ReplaceAll(data, []byte("\n"), []byte(""))
-					cleanData = bytes.ReplaceAll(cleanData, []byte("\r"), []byte(""))
-					if decoded, b64err := base64.StdEncoding.DecodeString(string(cleanData)); b64err == nil {
-						p7, parseErr = pkcs7.Parse(decoded)
-					}
-				}
+				// parseSMIMEPayload also retries with a manual base64 decode for
+				// servers that drop the transfer-encoding header, and never panics
+				// on malformed (attacker-controlled) payloads.
+				p7, p7Raw, parseErr := parseSMIMEPayload(data)
 
 				if parseErr != nil {
 					extractedBody = fmt.Sprintf("**S/MIME Error:** Failed to parse PKCS7 payload: %v\n", parseErr)
@@ -911,7 +954,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 								if err3 != nil || err4 != nil {
 									decryptionErr = fmt.Sprintf("Failed to parse cert/key. Cert: %v, Key: %v", err3, err4)
 								} else {
-									dec, err := p7.Decrypt(cert, privKey)
+									dec, err := safePKCS7Decrypt(p7, p7Raw, cert, privKey)
 									if err == nil {
 										innerBytes = dec
 										isEncrypted = true
@@ -936,7 +979,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 						if roots == nil {
 							roots = x509.NewCertPool()
 						}
-						if err := p7.VerifyWithChain(roots); err == nil {
+						if err := safePKCS7VerifyWithChain(p7, roots); err == nil {
 							smimeTrusted = true
 						}
 					}
@@ -1013,7 +1056,7 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 			}
 			if data, err := fetchInlinePart(partID, part.Encoding); err == nil {
 				att.Data = data
-				p7, err := pkcs7.Parse(data)
+				p7, err := safePKCS7Parse(data)
 				if err == nil {
 					boundary := getBodyStructureBoundary(msg.BodyStructure)
 					if boundary != "" {
@@ -1048,15 +1091,15 @@ func FetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 									}
 
 									p7.Content = canonical
-									if err := p7.VerifyWithChain(roots); err == nil {
+									if err := safePKCS7VerifyWithChain(p7, roots); err == nil {
 										att.SMIMEVerified = true
 									} else {
 										p7.Content = append(canonical, '\r', '\n') //nolint:gocritic
-										if err := p7.VerifyWithChain(roots); err == nil {
+										if err := safePKCS7VerifyWithChain(p7, roots); err == nil {
 											att.SMIMEVerified = true
 										} else {
 											p7.Content = bytes.TrimRight(canonical, "\r\n")
-											if err := p7.VerifyWithChain(roots); err == nil {
+											if err := safePKCS7VerifyWithChain(p7, roots); err == nil {
 												att.SMIMEVerified = true
 											}
 										}
@@ -1722,7 +1765,12 @@ func ArchiveSentEmail(account *config.Account, uid uint32) error {
 }
 
 // AppendToSentMailbox appends a raw RFC822 message to the Sent mailbox via IMAP APPEND.
+// Accounts served by other backends have no IMAP Sent mailbox (POP3 has no
+// server-side folders at all), so it is a no-op for them.
 func AppendToSentMailbox(account *config.Account, rawMsg []byte) error {
+	if hasBackendProvider(account) {
+		return nil
+	}
 	c, err := connect(account)
 	if err != nil {
 		return err

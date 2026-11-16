@@ -22,11 +22,15 @@ func ListenForIdleUpdates(ch <-chan fetcher.IdleUpdate) tea.Cmd {
 }
 
 // ListenForDaemonEvents blocks until a daemon event arrives, then returns it as a tea.Msg.
+//
+// When the channel is closed it returns tui.DaemonEventMsg{Event: nil} (not
+// nil) so the app can decide whether to re-arm on a new channel; returning
+// nil silently ended event delivery for the rest of the session.
 func ListenForDaemonEvents(ch <-chan *daemonrpc.Event) tea.Cmd {
 	return func() tea.Msg {
 		ev, ok := <-ch
 		if !ok {
-			return nil
+			return tui.DaemonEventMsg{}
 		}
 		return tui.DaemonEventMsg{Event: ev}
 	}

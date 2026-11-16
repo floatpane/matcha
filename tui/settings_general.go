@@ -2,7 +2,7 @@ package tui
 
 import (
 	"fmt"
-	"strings"
+	"sort"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/floatpane/matcha/config"
@@ -55,52 +55,31 @@ func (m *Settings) updateGeneral(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Settings) handleGeneralOption(idx int, key string) (*Settings, tea.Cmd) {
-	saved := false
 	switch idx {
 	case 0: // Image Display
 		m.cfg.DisableImages = !m.cfg.DisableImages
-		_ = config.SaveConfig(m.cfg)
-		saved = true
 	case 1: // Contextual Tips
 		m.cfg.HideTips = !m.cfg.HideTips
-		_ = config.SaveConfig(m.cfg)
-		saved = true
 	case 2: // Desktop Notifications
 		m.cfg.DisableNotifications = !m.cfg.DisableNotifications
-		_ = config.SaveConfig(m.cfg)
-		saved = true
 	case 3: // Background Daemon
 		m.cfg.DisableDaemon = !m.cfg.DisableDaemon
-		_ = config.SaveConfig(m.cfg)
-		saved = true
 	case 4: // Split Pane View
 		m.cfg.EnableSplitPane = !m.cfg.EnableSplitPane
-		_ = config.SaveConfig(m.cfg)
-		saved = true
 	case 5: // Split Pane Orientation
 		if m.cfg.GetSplitPaneOrientation() == config.SplitPaneVertical {
 			m.cfg.SplitPaneOrientation = config.SplitPaneHorizontal
 		} else {
 			m.cfg.SplitPaneOrientation = config.SplitPaneVertical
 		}
-		_ = config.SaveConfig(m.cfg)
-		saved = true
 	case 6: // Threaded Conversation View
 		m.cfg.EnableThreaded = !m.cfg.EnableThreaded
-		_ = config.SaveConfig(m.cfg)
-		saved = true
 	case 7: // Detailed Dates
 		m.cfg.EnableDetailedDates = !m.cfg.EnableDetailedDates
-		_ = config.SaveConfig(m.cfg)
-		saved = true
 	case 8: // Spellcheck
 		m.cfg.DisableSpellcheck = !m.cfg.DisableSpellcheck
-		_ = config.SaveConfig(m.cfg)
-		saved = true
 	case 9: // Spell Suggestions
 		m.cfg.DisableSpellSuggestions = !m.cfg.DisableSpellSuggestions
-		_ = config.SaveConfig(m.cfg)
-		saved = true
 	case 10: // Date Format
 		switch m.cfg.DateFormat {
 		case config.DateFormatEU:
@@ -110,11 +89,14 @@ func (m *Settings) handleGeneralOption(idx int, key string) (*Settings, tea.Cmd)
 		default: // or ISO
 			m.cfg.DateFormat = config.DateFormatEU
 		}
-		_ = config.SaveConfig(m.cfg)
-		saved = true
 	case 11: // Language
-		// Cycle through available languages
-		langs := i18n.LanguageCodes()
+		// Cycle through the languages that have translations, in a stable
+		// order (the list comes from a map).
+		langs := i18n.GetManager().AvailableLanguages()
+		if len(langs) == 0 {
+			return m, nil
+		}
+		sort.Strings(langs)
 		currentLang := m.cfg.GetLanguage()
 		currentIdx := -1
 		for i, lang := range langs {
@@ -125,11 +107,12 @@ func (m *Settings) handleGeneralOption(idx int, key string) (*Settings, tea.Cmd)
 		}
 		nextIdx := (currentIdx + 1) % len(langs)
 		m.cfg.Language = langs[nextIdx]
-		_ = config.SaveConfig(m.cfg)
+		saveErr := m.saveConfig()
 		// Apply language change immediately
 		i18n.GetManager().SetLanguage(m.cfg.Language) //nolint:errcheck,gosec
 		// Trigger full UI rebuild
 		return m, tea.Batch(
+			saveErr,
 			func() tea.Msg { return ConfigSavedMsg{} },
 			func() tea.Msg { return LanguageChangedMsg{} },
 		)
@@ -137,53 +120,49 @@ func (m *Settings) handleGeneralOption(idx int, key string) (*Settings, tea.Cmd)
 		if key == keyEnter || key == keyRight || key == "l" {
 			return m, func() tea.Msg { return GoToSignatureEditorMsg{} }
 		}
+		return m, nil
 	case 13: // Mouse Support
 		enabled := config.MouseEnabled == nil || !*config.MouseEnabled
 		config.MouseEnabled = &enabled
 		return m, func() tea.Msg { return MouseSupportChosenMsg{Enabled: enabled} }
 	case 14: // Show Original on Reply
 		m.cfg.ShowOriginalOnReply = !m.cfg.ShowOriginalOnReply
-		_ = config.SaveConfig(m.cfg)
-		saved = true
 	case 15: // Show CC/BCC by Default
 		m.cfg.ShowCcBccByDefault = !m.cfg.ShowCcBccByDefault
-		_ = config.SaveConfig(m.cfg)
-		saved = true
+	default:
+		return m, nil
 	}
-	if saved {
-		return m, func() tea.Msg { return ConfigSavedMsg{} }
-	}
-	return m, nil
+	// The change is live in memory either way; a failed save is reported.
+	return m, tea.Batch(m.saveConfig(), func() tea.Msg { return ConfigSavedMsg{} })
 }
 
-func (m *Settings) viewGeneral() string {
-	var b strings.Builder
-
-	b.WriteString(titleStyle.Render("General Settings") + "\n\n")
-
+// generalPage lists the general options; the selected option's tip is shown
+// below them when there is room.
+func (m *Settings) generalPage() settingsPage {
 	options := m.buildGeneralOptions()
-
+	body := make([]string, len(options))
 	for i, opt := range options {
 		selected := m.generalCursor == i
-		cursor := m.contentCursor(selected)
-		style := m.contentItemStyle(selected)
-
 		label := t(opt.labelKey)
 		text := fmt.Sprintf("%s: %s", label, opt.value)
 		if opt.labelKey == "settings_general.signature" {
 			text = fmt.Sprintf("%s (%s)", label, opt.value)
 		}
-
-		b.WriteString(style.Render(cursor+text) + "\n")
+		body[i] = m.contentItemStyle(selected).Render(m.contentCursor(selected) + text)
 	}
 
-	b.WriteString("\n\n")
-
+	page := settingsPage{
+		key:      "general",
+		header:   titleStyle.Render("General Settings") + "\n",
+		body:     body,
+		focusTop: m.generalCursor,
+		focusBot: m.generalCursor,
+		rows:     true,
+	}
 	if !m.cfg.HideTips && m.generalCursor < len(options) {
-		b.WriteString(TipStyle.Render("Tip: " + options[m.generalCursor].tip))
+		page.extra = "\n" + TipStyle.Render("Tip: "+options[m.generalCursor].tip)
 	}
-
-	return b.String()
+	return page
 }
 
 func onOff(b bool) string {

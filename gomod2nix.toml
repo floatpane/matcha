@@ -6,8 +6,8 @@ schema = 3
     hash = 'sha256-0PFf3lMornz1C2eR7WRZ1iTEu59AD+1fdwPS6j+AQ2c='
 
   [mod.'charm.land/bubbletea/v2']
-    version = 'v2.0.10'
-    hash = 'sha256-EjF+7MsSkrE81Xtp4um+FEBuv1NrB3D/nFG+9s5WuMk='
+    version = 'v2.1.1'
+    hash = 'sha256-70xD8FTEP2fmWOjOQYsBVmgFPR8lW8i1GlMulyaKYW8='
 
   [mod.'charm.land/lipgloss/v2']
     version = 'v2.0.6'
@@ -26,16 +26,16 @@ schema = 3
     hash = 'sha256-XlK7U7g+7VbGlgoPNMi37GfOeCl0e27fsT0N8CYTkgI='
 
   [mod.'github.com/ProtonMail/go-crypto']
-    version = 'v1.4.1'
-    hash = 'sha256-6iGAFCjoNveY+ipbKqq2gt+RXpi2eQyPXAY01rxPcWc='
+    version = 'v1.5.2'
+    hash = 'sha256-ktdR54NRxa/vmGkObvvRp4+DPEtOzHnOdxMVpauFL4w='
 
   [mod.'github.com/PuerkitoBio/goquery']
-    version = 'v1.12.0'
-    hash = 'sha256-TMoje93q9Rk+zEW78R+SmKew9qCVussko0w8GPnYy5c='
+    version = 'v1.13.0'
+    hash = 'sha256-RsJg+TAj07bkmmWOHOSrQxyA0gWMayR06zejgYcMrN0='
 
   [mod.'github.com/andybalholm/cascadia']
-    version = 'v1.3.3'
-    hash = 'sha256-jv7ZshpSd7FZzKKN6hqlUgiR8C3y85zNIS/hq7g76Ho='
+    version = 'v1.3.4'
+    hash = 'sha256-CpXE/C+gW7V8MXREZguszzAQumizrCXGTdDRPBaflCs='
 
   [mod.'github.com/arran4/golang-ical']
     version = 'v0.3.5'
@@ -54,12 +54,12 @@ schema = 3
     hash = 'sha256-y+QDUxGOKhugEMQLRUTZYT2C+wKqYHnMLJ44jbh7+JA='
 
   [mod.'github.com/charmbracelet/ultraviolet']
-    version = 'v0.0.0-20260811164956-006e29f97886'
-    hash = 'sha256-yCXV58PFdrl5jeCS8jyWF5X+5Ndye8W5hxux9981O6E='
+    version = 'v0.0.0-20261008173134-6b8d4baf91b4'
+    hash = 'sha256-1r9yJFWHGBJnT0SZEgrXqNdh8ggzCX6Us/Ui5n53hGI='
 
   [mod.'github.com/charmbracelet/x/ansi']
-    version = 'v0.11.8'
-    hash = 'sha256-IyGyFE/grl7aNEZEMXzmUl+X7qb8HaMAfmJXWhoRLQQ='
+    version = 'v0.11.9'
+    hash = 'sha256-7ug55TWTkYcBZYeqMmrwZt8tnZexToF2+8z/oGoKV2A='
 
   [mod.'github.com/charmbracelet/x/term']
     version = 'v0.2.2'
@@ -186,8 +186,8 @@ schema = 3
     hash = 'sha256-nY4QB5g4wsf/BNjtNBxzAbgE40kHDhYYYQMAQUHic60='
 
   [mod.'github.com/mattn/go-runewidth']
-    version = 'v0.0.27'
-    hash = 'sha256-TQd0ek+jjvxgN9YA6N/ctOyrADIAg9bBcClJCDltIWc='
+    version = 'v0.0.30'
+    hash = 'sha256-2idyB8BVjqiwBOmBteKMTM9uBfr96g29k8hqJWjlndE='
 
   [mod.'github.com/microcosm-cc/bluemonday']
     version = 'v1.0.27'
@@ -210,8 +210,8 @@ schema = 3
     hash = 'sha256-4Os6DWAt2B3EWVYfInUmYnGtwDTjS023YHykq/CXBLU='
 
   [mod.'github.com/xo/terminfo']
-    version = 'v0.0.0-20220910002029-abceb7e1c41e'
-    hash = 'sha256-GyCDxxMQhXA3Pi/TsWXpA8cX5akEoZV7CFx4RO3rARU='
+    version = 'v1.0.0'
+    hash = 'sha256-WRD2MrAHjXy2/DWPmUew1ojVQzamOJM3EEWmZedpYKs='
 
   [mod.'github.com/yuin/goldmark']
     version = 'v1.8.2'

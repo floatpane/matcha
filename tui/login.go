@@ -211,8 +211,10 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// Never hand the inputs a negative width: bubbles' textinput panics
+		// rendering its placeholder on tiny terminals otherwise.
 		for i := range m.inputs {
-			m.inputs[i].SetWidth(msg.Width - 6)
+			m.inputs[i].SetWidth(max(msg.Width-6, 1))
 		}
 
 	case tea.KeyPressMsg:
@@ -313,10 +315,15 @@ func (m *Login) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // updateFlags recalculates showCustom and useOAuth2 from current inputs.
 func (m *Login) updateFlags() {
 	provider := m.inputs[inputProvider].Value()
-	m.showCustom = provider == "custom"
-	m.useOAuth2 = m.inputs[inputAuthMethod].Value() == "oauth2"
-
 	authMethod := m.inputs[inputAuthMethod].Value()
+	m.showCustom = provider == "custom"
+	// OAuth2 only exists for IMAP Gmail/Outlook. A stale "oauth2" left in the
+	// auth field after switching provider or protocol must not hide the
+	// password field (or submit an OAuth2 account for a custom server).
+	m.useOAuth2 = m.protocol() == protocolIMAP &&
+		(provider == "gmail" || provider == "outlook") &&
+		authMethod == "oauth2"
+
 	if m.protocol() == protocolJMAP && (authMethod == "token" || authMethod == "") {
 		m.inputs[inputPassword].Placeholder = "API Token"
 	} else {
@@ -417,44 +424,58 @@ func (m *Login) viewProtocolCombobox() string {
 	return prompt + strings.Join(parts, "")
 }
 
+// loginRow is one rendered piece of the form and the input it belongs to.
+type loginRow struct {
+	view  string
+	field int // input index, or -1 for headers and notes
+}
+
+func (m *Login) inputRow(field int) loginRow {
+	return loginRow{view: m.inputs[field].View(), field: field}
+}
+
+func loginNote(view string) loginRow {
+	return loginRow{view: view, field: -1}
+}
+
 // protocolFieldViews returns the rendered input fields specific to the given
 // protocol, in display order.
-func (m *Login) protocolFieldViews(proto string) []string {
-	common := []string{
-		m.inputs[inputName].View(),
-		m.inputs[inputEmail].View(),
-		m.inputs[inputFetchEmail].View(),
-		m.inputs[inputSendAsEmail].View(),
-		m.inputs[inputCatchAll].View(),
+func (m *Login) protocolFieldViews(proto string) []loginRow {
+	common := []loginRow{
+		m.inputRow(inputName),
+		m.inputRow(inputEmail),
+		m.inputRow(inputFetchEmail),
+		m.inputRow(inputSendAsEmail),
+		m.inputRow(inputCatchAll),
 	}
 
 	switch proto {
 	case protocolJMAP:
 		return append(common,
-			m.inputs[inputAuthMethod].View(),
-			m.inputs[inputPassword].View(),
-			"",
-			listHeader.Render("JMAP Settings:"),
-			m.inputs[inputJMAPEndpoint].View(),
+			m.inputRow(inputAuthMethod),
+			m.inputRow(inputPassword),
+			loginNote(""),
+			loginNote(listHeader.Render("JMAP Settings:")),
+			m.inputRow(inputJMAPEndpoint),
 		)
 	case protocolPOP3:
 		return append(common,
-			m.inputs[inputPassword].View(),
-			"",
-			listHeader.Render("POP3 Server Settings:"),
-			m.inputs[inputPOP3Server].View(),
-			m.inputs[inputPOP3Port].View(),
-			"",
-			listHeader.Render("SMTP Settings (for sending):"),
-			m.inputs[inputSMTPServer].View(),
-			m.inputs[inputSMTPPort].View(),
-			m.inputs[inputInsecure].View(),
+			m.inputRow(inputPassword),
+			loginNote(""),
+			loginNote(listHeader.Render("POP3 Server Settings:")),
+			m.inputRow(inputPOP3Server),
+			m.inputRow(inputPOP3Port),
+			loginNote(""),
+			loginNote(listHeader.Render("SMTP Settings (for sending):")),
+			m.inputRow(inputSMTPServer),
+			m.inputRow(inputSMTPPort),
+			m.inputRow(inputInsecure),
 		)
 	case protocolMaildir:
 		return append(common,
-			"",
-			listHeader.Render("Maildir Settings:"),
-			m.inputs[inputMaildirPath].View(),
+			loginNote(""),
+			loginNote(listHeader.Render("Maildir Settings:")),
+			m.inputRow(inputMaildirPath),
 		)
 	default:
 		return m.imapFieldViews(common)
@@ -463,109 +484,143 @@ func (m *Login) protocolFieldViews(proto string) []string {
 
 // imapFieldViews renders the IMAP-specific fields (provider selector, optional
 // OAuth2/password, and custom server settings) appended after the common fields.
-func (m *Login) imapFieldViews(common []string) []string {
+func (m *Login) imapFieldViews(common []loginRow) []loginRow {
 	provider := m.inputs[inputProvider].Value()
 	hasOAuth := provider == "gmail" || provider == "outlook"
 
-	views := append([]string{m.inputs[inputProvider].View()}, common...)
+	views := append([]loginRow{m.inputRow(inputProvider)}, common...)
 
 	if hasOAuth {
-		views = append(views, m.inputs[inputAuthMethod].View())
+		views = append(views, m.inputRow(inputAuthMethod))
 	}
 
 	if !m.useOAuth2 {
-		views = append(views, m.inputs[inputPassword].View())
+		views = append(views, m.inputRow(inputPassword))
 	} else {
-		views = append(views, accountEmailStyle.Render("OAuth2 selected — browser authorization will open after submit"))
+		views = append(views, loginNote(accountEmailStyle.Render("OAuth2 selected — browser authorization will open after submit")))
 	}
 
 	if m.showCustom {
 		views = append(views,
-			"",
-			accountEmailStyle.Render("Custom provider selected - configure server settings below"),
-			m.inputs[inputIMAPServer].View(),
-			m.inputs[inputIMAPPort].View(),
-			m.inputs[inputSMTPServer].View(),
-			m.inputs[inputSMTPPort].View(),
-			m.inputs[inputInsecure].View(),
+			loginNote(""),
+			loginNote(accountEmailStyle.Render("Custom provider selected - configure server settings below")),
+			m.inputRow(inputIMAPServer),
+			m.inputRow(inputIMAPPort),
+			m.inputRow(inputSMTPServer),
+			m.inputRow(inputSMTPPort),
+			m.inputRow(inputInsecure),
 		)
 	}
 
 	return views
 }
 
-// View renders the login form.
+// tipText returns the contextual tip for the focused field.
+func (m *Login) tipText() string {
+	switch m.focusIndex {
+	case inputProtocol:
+		return "Use ←/→ to choose the protocol: imap (default), jmap, pop3, or maildir."
+	case inputProvider:
+		return "Enter your email provider (e.g., gmail, outlook, icloud) or 'custom'."
+	case inputName:
+		return "The name that will appear on emails you send."
+	case inputEmail:
+		return "Your full email address used to log in."
+	case inputFetchEmail:
+		return "The email address to fetch messages for (comma-separated for multiple, e.g. me@icloud.com,me@mac.com)."
+	case inputSendAsEmail:
+		return "Optional From header override for outgoing email. Leave blank to send as the fetched address."
+	case inputAuthMethod:
+		if m.protocol() == protocolJMAP {
+			return "Type 'token' for API token (Bearer auth, default) or 'password' for HTTP Basic auth."
+		}
+		return "Type 'oauth2' for OAuth2 or 'password' for app password."
+	case inputPassword:
+		return "Your password or an app-specific password if using 2FA."
+	case inputIMAPServer:
+		return "The server address for receiving emails."
+	case inputIMAPPort:
+		return "The port for the IMAP server (usually 993 for SSL)."
+	case inputSMTPServer:
+		return "The server address for sending emails."
+	case inputSMTPPort:
+		return "The port for the SMTP server (usually 587 for TLS)."
+	case inputInsecure:
+		return "Type 'true' to disable TLS certificate verification (not recommended)."
+	case inputCatchAll:
+		return "Type 'true' to show all inbox messages regardless of To address (useful for catch-all domains)."
+	case inputJMAPEndpoint:
+		return "The JMAP session resource URL (e.g., https://api.fastmail.com/jmap/session)."
+	case inputPOP3Server:
+		return "The POP3 server address for receiving emails."
+	case inputPOP3Port:
+		return "The port for the POP3 server (usually 995 for SSL)."
+	case inputMaildirPath:
+		return "Local path to a Maildir directory (cur/new/tmp). Subfolders use .Foldername (Maildir++)."
+	}
+	return ""
+}
+
+// wrapToWidth word-wraps s to the form width (no-op while the size is unknown).
+func (m *Login) wrapToWidth(s string) string {
+	if m.width <= 0 {
+		return s
+	}
+	return lipgloss.Wrap(s, m.width, "")
+}
+
+// oauthStatusView renders one OAuth progress line wrapped to the width. A URL
+// in the line becomes an OSC 8 hyperlink on every wrapped segment, so the
+// authorization link stays clickable even though it spans several rows.
+func (m *Login) oauthStatusView(line string) string {
+	style := accountEmailStyle
+	if i := strings.Index(line, "://"); i > 0 {
+		start := strings.LastIndexAny(line[:i], " \t") + 1
+		end := len(line)
+		if j := strings.IndexAny(line[start:], " \t"); j >= 0 {
+			end = start + j
+		}
+		style = style.Hyperlink(line[start:end])
+	}
+	segments := strings.Split(m.wrapToWidth(line), "\n")
+	for i, s := range segments {
+		segments[i] = style.Render(s)
+	}
+	return strings.Join(segments, "\n")
+}
+
+// View renders the login form. When the form is taller than the window, the
+// rows scroll so the focused field (or, during an OAuth flow, its progress
+// output) stays visible above the tip and help lines.
 func (m *Login) View() tea.View {
 	title := "Add Account"
 	if m.isEditMode {
 		title = "Edit Account"
 	}
 
-	proto := m.protocol()
-
-	tip := ""
-	switch m.focusIndex {
-	case inputProtocol:
-		tip = "Use ←/→ to choose the protocol: imap (default), jmap, pop3, or maildir."
-	case inputProvider:
-		tip = "Enter your email provider (e.g., gmail, outlook, icloud) or 'custom'."
-	case inputName:
-		tip = "The name that will appear on emails you send."
-	case inputEmail:
-		tip = "Your full email address used to log in."
-	case inputFetchEmail:
-		tip = "The email address to fetch messages for (comma-separated for multiple, e.g. me@icloud.com,me@mac.com)."
-	case inputSendAsEmail:
-		tip = "Optional From header override for outgoing email. Leave blank to send as the fetched address."
-	case inputAuthMethod:
-		if m.protocol() == protocolJMAP {
-			tip = "Type 'token' for API token (Bearer auth, default) or 'password' for HTTP Basic auth."
-		} else {
-			tip = "Type 'oauth2' for OAuth2 or 'password' for app password."
+	var rows []loginRow // one entry per rendered line
+	add := func(view string, field int) {
+		for _, l := range strings.Split(view, "\n") {
+			rows = append(rows, loginRow{view: l, field: field})
 		}
-	case inputPassword:
-		tip = "Your password or an app-specific password if using 2FA."
-	case inputIMAPServer:
-		tip = "The server address for receiving emails."
-	case inputIMAPPort:
-		tip = "The port for the IMAP server (usually 993 for SSL)."
-	case inputSMTPServer:
-		tip = "The server address for sending emails."
-	case inputSMTPPort:
-		tip = "The port for the SMTP server (usually 587 for TLS)."
-	case inputInsecure:
-		tip = "Type 'true' to disable TLS certificate verification (not recommended)."
-	case inputCatchAll:
-		tip = "Type 'true' to show all inbox messages regardless of To address (useful for catch-all domains)."
-	case inputJMAPEndpoint:
-		tip = "The JMAP session resource URL (e.g., https://api.fastmail.com/jmap/session)."
-	case inputPOP3Server:
-		tip = "The POP3 server address for receiving emails."
-	case inputPOP3Port:
-		tip = "The port for the POP3 server (usually 995 for SSL)."
-	case inputMaildirPath:
-		tip = "Local path to a Maildir directory (cur/new/tmp). Subfolders use .Foldername (Maildir++)."
 	}
-
-	views := []string{
-		titleStyle.Render(title),
-		"Enter your email account credentials.",
-		"",
-		m.viewProtocolCombobox(),
+	add(titleStyle.Render(title), -1)
+	add(m.wrapToWidth("Enter your email account credentials."), -1)
+	add("", -1)
+	add(m.viewProtocolCombobox(), inputProtocol)
+	for _, r := range m.protocolFieldViews(m.protocol()) {
+		add(r.view, r.field)
 	}
-
-	views = append(views, m.protocolFieldViews(proto)...)
-
 	if len(m.oauthStatus) > 0 {
-		views = append(views, "")
+		add("", -1)
 		for _, line := range m.oauthStatus {
-			views = append(views, accountEmailStyle.Render(line))
+			add(m.oauthStatusView(line), -1)
 		}
 	}
 
-	views = append(views, "")
-	if !m.hideTips && tip != "" {
-		views = append(views, TipStyle.Render("Tip: "+tip))
+	footer := []string{""}
+	if tip := m.tipText(); !m.hideTips && tip != "" {
+		footer = append(footer, TipStyle.Render(m.wrapToWidth("Tip: "+tip)))
 	}
 	helpLine := "enter: save • tab: next field • esc: back to menu"
 	if m.focusIndex == inputProtocol {
@@ -574,9 +629,29 @@ func (m *Login) View() tea.View {
 	if m.focusIndex == inputPassword {
 		helpLine += " • ctrl+v: toggle password visibility"
 	}
-	views = append(views, helpStyle.Render("\n"+helpLine))
+	footer = append(footer, "", helpStyle.Render(m.wrapToWidth(helpLine)))
+	footerView := strings.Join(footer, "\n")
 
-	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, views...))
+	if avail := m.height - lipgloss.Height(footerView); m.height > 0 && len(rows) > avail && avail > 0 {
+		target := len(rows) - 1 // OAuth progress is the newest output
+		if len(m.oauthStatus) == 0 {
+			for i, r := range rows {
+				if r.field == m.focusIndex {
+					target = i
+					break
+				}
+			}
+		}
+		start := min(max(target-avail/2, 0), len(rows)-avail)
+		rows = rows[start : start+avail]
+	}
+
+	lines := make([]string, 0, len(rows)+1)
+	for _, r := range rows {
+		lines = append(lines, r.view)
+	}
+	lines = append(lines, footerView)
+	return tea.NewView(clampRendered(strings.Join(lines, "\n"), m.width, m.height))
 }
 
 // AddOAuthStatus appends a progress line from a running OAuth2 flow, shown below the form.
@@ -640,6 +715,14 @@ func (m *Login) SetEditMode(accountID, protocol, provider, name, email, fetchEma
 	if maildirPath != "" {
 		m.inputs[inputMaildirPath].SetValue(maildirPath)
 	}
+}
+
+// SetAuthMethod seeds the auth-method field ("oauth2", "password" or "token")
+// when editing an existing account, so saving the form keeps the account's
+// authentication instead of silently switching it to a password login.
+func (m *Login) SetAuthMethod(method string) {
+	m.inputs[inputAuthMethod].SetValue(method)
+	m.updateFlags()
 }
 
 // GetAccountID returns the account ID being edited (if in edit mode).

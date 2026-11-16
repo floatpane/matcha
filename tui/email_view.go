@@ -3,7 +3,6 @@ package tui
 import (
 	"encoding/base64"
 	"fmt"
-	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -11,28 +10,13 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	calendar "github.com/floatpane/go-icalendar"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
 	"github.com/floatpane/matcha/theme"
 	"github.com/floatpane/matcha/view"
-	"github.com/floatpane/termimage"
-	"github.com/floatpane/termimage/detect"
 )
-
-// ClearKittyGraphics clears any rendered image residue using termimage's
-// protocol-aware clear (Kitty deletes all placements, Sixel/HalfBlock erases
-// the trailing rows). The name is kept for callsite compatibility.
-//
-// termimage.Auto is not handled by termimage.Clear (it falls to the rows-based
-// branch and no-ops when rows=0), so resolve the protocol up front.
-func ClearKittyGraphics() {
-	proto := detect.Best()
-	if err := termimage.Clear(os.Stdout, proto, 0); err != nil {
-		return
-	}
-	os.Stdout.Sync() //nolint:errcheck,gosec
-}
 
 var (
 	emailHeaderStyle     = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).Padding(0, 1)
@@ -41,11 +25,22 @@ var (
 )
 
 type remoteImagesLoadedMsg struct {
-	requestID  uint64
-	body       string
-	placements []view.ImagePlacement
-	err        error
+	requestID uint64
+	body      *view.RenderedBody
+	err       error
+	// userRequested is set for loads the user asked for (as opposed to
+	// re-renders after a resize), whose outcome is reported.
+	userRequested bool
 }
+
+// LoadRemoteImagesMsg asks the email on screen (full screen or in the split
+// preview) to load its remote images.
+type LoadRemoteImagesMsg struct{}
+
+// ImageProtocolChangedMsg tells the email on screen that the terminal's
+// image support may have changed (inside tmux, another terminal may have
+// attached), so that it draws its images again if needed.
+type ImageProtocolChangedMsg struct{}
 
 // BodyTransformer, if set, post-processes the rendered email body before it is
 // placed in the viewport. main.go wires this up to the plugin manager so that
@@ -62,6 +57,8 @@ func applyBodyTransform(body string, email fetcher.Email) string {
 
 type EmailView struct {
 	viewport            viewport.Model
+	width               int
+	height              int
 	email               fetcher.Email
 	emailIndex          int
 	attachmentCursor    int
@@ -73,8 +70,11 @@ type EmailView struct {
 	showRemoteImages    bool
 	remoteImagesLoading bool
 	remoteLoadID        uint64
-	remoteBody          string
-	remotePlacements    []view.ImagePlacement
+	remoteBody          *view.RenderedBody
+	remoteFailed        []string // remote image URLs the last load could not show
+	remoteImageCount    int      // remote images the body refers to
+	renderedProtocol    view.ImageProtocol
+	resizedWhileLoading bool // the loading images were sized for an old viewport
 	isSMIME             bool
 	smimeTrusted        bool
 	isEncrypted         bool
@@ -88,10 +88,13 @@ type EmailView struct {
 	calendarEvent       *calendar.Event
 	originalICSData     []byte
 	isPreviewMode       bool
-	columnOffset        int // horizontal offset for image rendering in split pane
-	rowOffset           int // vertical offset for image rendering in split pane (vertical layout)
+	columnOffset        int // screen column of the view's left edge (split panes)
+	rowOffset           int // screen row of the view's top edge (split panes)
 	isPatch             bool
 	patchInfo           *view.PatchInfo
+	// readOnly disables message actions (reply, delete, …); used when the
+	// email is shown next to a reply in progress.
+	readOnly bool
 }
 
 func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox MailboxKind, disableImages bool) *EmailView {
@@ -143,77 +146,31 @@ func NewEmailView(email fetcher.Email, emailIndex, width, height int, mailbox Ma
 	}
 	email.Attachments = filteredAtts
 
-	// Pass the styles from the tui package to the view package
-	inlineImages := inlineImagesFromAttachments(email.Attachments)
-
-	// Initial state for showImages matches config unless overridden later
-	showImages := !disableImages
-
 	// Detect git patches and render with diff syntax highlighting.
 	patchInfo := view.DetectPatch(email.Body, email.BodyMIMEType, email.Subject, email.From)
-	isPatch := patchInfo != nil
 
-	body, placements, err := view.ProcessBodyWithInline(email.Body, email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, !showImages)
-	if err != nil {
-		body = fmt.Sprintf("Error rendering body: %v", err)
-	}
-	body = applyBodyTransform(body, email)
-
-	// If a patch was detected, replace the body with the patch-rendered version
-	// (commit message + highlighted diff + metadata banner).
-	if isPatch {
-		// The viewport will be created below with this width; pass it in so the
-		// diff code box can be sized to fit.
-		patchBody, ok := view.RenderPatchBody(email.Body, email.BodyMIMEType, email.Subject, email.From, width)
-		if ok {
-			body = applyBodyTransform(patchBody, email)
-		}
-	}
-
-	// Create header and compute heights that reduce viewport space.
-	header := fmt.Sprintf("From: %s\nSubject: %s", email.From, email.Subject)
-	headerHeight := lipgloss.Height(header) + 2
-
-	attachmentHeight := 0
-	if len(email.Attachments) > 0 {
-		attachmentHeight = len(email.Attachments) + 2
-	}
-
-	// Account for calendar card height
-	calendarHeight := 0
-	if calendarEvent != nil {
-		calendarHeight = 10 // Approximate height for calendar card
-	}
-
-	// Build viewport with initial size and set wrapped content.
-	vp := viewport.New()
-	vp.SetWidth(width)
-	vp.SetHeight(height - headerHeight - attachmentHeight - calendarHeight)
-	wrapped := wrapBodyToWidth(body, vp.Width())
-	vp.SetContent(wrapped + "\n")
-
-	return &EmailView{
-		viewport:          vp,
+	m := &EmailView{
+		viewport:          viewport.New(),
 		email:             email,
 		emailIndex:        emailIndex,
 		accountID:         email.AccountID,
 		mailbox:           mailbox,
 		disableImages:     disableImages,
-		showImages:        showImages,
+		showImages:        !disableImages,
 		isSMIME:           isSMIME,
 		smimeTrusted:      smimeTrusted,
 		isEncrypted:       isEncrypted,
 		isPGP:             isPGP,
 		pgpTrusted:        pgpTrusted,
 		isPGPEncrypted:    isPGPEncrypted,
-		imagePlacements:   placements,
 		hasCalendarInvite: calendarEvent != nil,
 		calendarEvent:     calendarEvent,
 		originalICSData:   originalICSData,
-		isPreviewMode:     false,
-		isPatch:           isPatch,
+		isPatch:           patchInfo != nil,
 		patchInfo:         patchInfo,
 	}
+	m.setSize(width, height)
+	return m
 }
 
 // NewEmailViewPreview creates EmailView in preview mode with column and row
@@ -227,18 +184,20 @@ func NewEmailViewPreview(email fetcher.Email, width, height, colOffset, rowOffse
 	return ev
 }
 
-// SetRowOffset updates the vertical offset used for out-of-band image rendering.
-// Call this after a window resize in vertical split mode so images stay aligned
-// with the preview pane's new position.
+// SetRowOffset sets the screen row of the view's top edge. Parents that place
+// the view inside a pane call this after layout so images line up.
 func (m *EmailView) SetRowOffset(offset int) {
 	m.rowOffset = offset
 }
 
-// SetColumnOffset updates the horizontal offset used for out-of-band image
-// rendering. Call this after a layout change so images stay aligned with the
-// preview pane's new horizontal position.
+// SetColumnOffset sets the screen column of the view's left edge.
 func (m *EmailView) SetColumnOffset(offset int) {
 	m.columnOffset = offset
+}
+
+// SetSize resizes the view and re-lays out its body.
+func (m *EmailView) SetSize(width, height int) {
+	m.setSize(width, height)
 }
 
 func (m *EmailView) Init() tea.Cmd {
@@ -251,13 +210,10 @@ func (m *EmailView) handleComposeAction(key string) (tea.Msg, bool) {
 	kb := config.Keybinds
 	switch key {
 	case kb.Email.Reply:
-		ClearKittyGraphics()
 		return ReplyToEmailMsg{Email: m.email}, true
 	case kb.Email.ReplyAll:
-		ClearKittyGraphics()
 		return ReplyAllEmailMsg{Email: m.email}, true
 	case kb.Email.Forward:
-		ClearKittyGraphics()
 		return ForwardEmailMsg{Email: m.email}, true
 	}
 	return nil, false
@@ -265,36 +221,63 @@ func (m *EmailView) handleComposeAction(key string) (tea.Msg, bool) {
 
 func (m *EmailView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	cmds := make([]tea.Cmd, 0, 1)
 
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		if handled, handledCmd := m.handleKeyPress(msg); handled {
-			return handledCmd()
+			model, c := handledCmd()
+			m.syncLayout()
+			return model, c
 		}
 	case tea.WindowSizeMsg:
-		m.handleWindowSize(msg)
-	case remoteImagesLoadedMsg:
-		if !m.remoteImagesLoading || msg.requestID != m.remoteLoadID {
+		if msg.Width == m.width && msg.Height == m.height {
 			return m, nil
 		}
-		m.remoteImagesLoading = false
-		m.showRemoteImages = true
-		m.remoteBody = msg.body
-		m.remotePlacements = msg.placements
-		if msg.err != nil {
-			m.remoteBody = fmt.Sprintf("Error rendering body: %v", msg.err)
-		}
-		if m.showImages {
-			m.regenerateBody()
+		m.setSize(msg.Width, msg.Height)
+		if m.remoteImagesLoading {
+			m.resizedWhileLoading = true
+		} else if m.showRemoteImages {
+			// Remote images were sized for the old viewport; reload them
+			// (served from cache) so they fit the new one.
+			return m, m.loadRemoteImagesCmd(false)
 		}
 		return m, nil
+	case tea.MouseClickMsg:
+		m.handleMouseClick(msg)
+		return m, nil
+	case LoadRemoteImagesMsg:
+		return m, m.requestRemoteImages()
+	case ImageProtocolChangedMsg:
+		return m, m.redrawForImageProtocol()
+	case remoteImagesLoadedMsg:
+		return m, m.remoteImagesLoaded(msg)
 	}
 
 	m.viewport, cmd = m.viewport.Update(msg)
-	cmds = append(cmds, cmd)
+	return m, cmd
+}
 
-	return m, tea.Batch(cmds...)
+// handleMouseClick focuses an attachment when one is clicked and returns
+// focus to the body for clicks elsewhere. Coordinates are relative to the
+// view's top-left corner.
+func (m *EmailView) handleMouseClick(msg tea.MouseClickMsg) {
+	if msg.Button != tea.MouseLeft {
+		return
+	}
+	y := msg.Y - m.rowOffset
+	rows := len(m.email.Attachments)
+	if m.chrome().compactAttachments {
+		rows = min(rows, 1)
+	}
+	if top := m.attachmentsTop(); rows > 0 && y >= top && y < top+rows {
+		m.focusOnAttachments = true
+		if rows > 1 {
+			m.attachmentCursor = y - top
+		}
+	} else {
+		m.focusOnAttachments = false
+	}
+	m.syncLayout()
 }
 
 // handleKeyPress processes a key press in the email view. It returns a non-nil
@@ -307,7 +290,6 @@ func (m *EmailView) handleKeyPress(msg tea.KeyPressMsg) (bool, func() (tea.Model
 			m.focusOnAttachments = false
 			return true, func() (tea.Model, tea.Cmd) { return m, nil }
 		}
-		ClearKittyGraphics()
 		return true, func() (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg { return BackToMailboxMsg{Mailbox: m.mailbox} }
 		}
@@ -335,26 +317,30 @@ func (m *EmailView) handleAttachmentFocusKey(msg tea.KeyPressMsg) (bool, func() 
 		}
 		return true, func() (tea.Model, tea.Cmd) { return m, nil }
 	case keyEnter:
-		if len(m.email.Attachments) > 0 {
+		if len(m.email.Attachments) > 0 && m.attachmentCursor < len(m.email.Attachments) {
 			selected := m.email.Attachments[m.attachmentCursor]
 			idx := m.emailIndex
+			uid := m.email.UID
 			accountID := m.accountID
 			mailbox := m.mailbox
 			return true, func() (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg {
 					return DownloadAttachmentMsg{
 						Index:     idx,
+						UID:       uid,
 						Filename:  selected.Filename,
 						PartID:    selected.PartID,
 						Data:      selected.Data,
 						AccountID: accountID,
 						Mailbox:   mailbox,
+						Encoding:  selected.Encoding,
 					}
 				}
 			}
 		}
 	case kb.Email.FocusAttachments:
 		m.focusOnAttachments = false
+		return true, func() (tea.Model, tea.Cmd) { return m, nil }
 	}
 	return false, nil
 }
@@ -366,6 +352,143 @@ func (m *EmailView) loadRemoteImagesKey() string {
 	return "I"
 }
 
+// canLoadRemoteImages reports whether the load-remote-images key does
+// anything: images were not loaded yet, or some failed and can be retried.
+func (m *EmailView) canLoadRemoteImages() bool {
+	return view.ImageProtocolSupported() && !m.remoteImagesLoading &&
+		(!m.showRemoteImages || len(m.remoteFailed) > 0)
+}
+
+// OffersRemoteImages reports whether loading remote images is worth
+// offering: the email has some and they can still be (re)loaded.
+func (m *EmailView) OffersRemoteImages() bool {
+	return m.remoteImageCount > 0 && m.canLoadRemoteImages()
+}
+
+// requestRemoteImages starts a load the user asked for.
+func (m *EmailView) requestRemoteImages() tea.Cmd {
+	if !m.canLoadRemoteImages() {
+		return nil
+	}
+	if !m.showImages {
+		m.showImages = true
+		m.regenerateBody()
+	}
+	cmd := m.loadRemoteImagesCmd(true)
+	m.syncLayout()
+	return cmd
+}
+
+// loadRemoteImagesCmd renders the body with remote images in the background.
+// A load the user asked for retries every image; re-renders for a new size
+// skip the ones that failed before, which would only fail again, slowly.
+func (m *EmailView) loadRemoteImagesCmd(userRequested bool) tea.Cmd {
+	m.remoteImagesLoading = true
+	m.resizedWhileLoading = false
+	m.remoteLoadID = remoteImageRequestID.Add(1)
+	body, mimeType := m.email.Body, m.email.BodyMIMEType
+	inline := inlineImagesFromAttachments(m.email.Attachments)
+	requestID := m.remoteLoadID
+	bounds := m.imageBounds()
+	skip := m.remoteImagesToSkip(userRequested)
+	return func() tea.Msg {
+		rendered, err := view.RenderBody(body, mimeType, inline, H1Style, H2Style, BodyStyle, view.RenderOptions{
+			AllowRemoteImages: true,
+			SkipRemoteImages:  skip,
+			Bounds:            bounds,
+		})
+		return remoteImagesLoadedMsg{requestID: requestID, body: rendered, err: err, userRequested: userRequested}
+	}
+}
+
+// redrawForImageProtocol draws the images again when the protocol they were
+// drawn with is no longer the terminal's.
+func (m *EmailView) redrawForImageProtocol() tea.Cmd {
+	if !m.showImages || view.ActiveImageProtocol() == m.renderedProtocol {
+		return nil
+	}
+	if m.showRemoteImages {
+		if !m.remoteImagesLoading {
+			return m.loadRemoteImagesCmd(false) // downloads come from the cache
+		}
+		m.resizedWhileLoading = true // reload once the current load is done
+		return nil
+	}
+	m.regenerateBody()
+	m.syncLayout()
+	return nil
+}
+
+// remoteImagesToSkip returns the remote images a load should not download:
+// none when the user asked (a retry), the ones that failed before otherwise.
+func (m *EmailView) remoteImagesToSkip(userRequested bool) map[string]bool {
+	if userRequested || len(m.remoteFailed) == 0 {
+		return nil
+	}
+	skip := make(map[string]bool, len(m.remoteFailed))
+	for _, u := range m.remoteFailed {
+		skip[u] = true
+	}
+	return skip
+}
+
+// remoteImagesLoaded shows the result of a remote image load and, for loads
+// the user asked for, reports images that could not be shown.
+func (m *EmailView) remoteImagesLoaded(msg remoteImagesLoadedMsg) tea.Cmd {
+	if !m.remoteImagesLoading || msg.requestID != m.remoteLoadID {
+		return nil
+	}
+	m.remoteImagesLoading = false
+	if msg.err != nil || msg.body == nil {
+		// Keep showing the body without remote images and let the user retry.
+		m.showRemoteImages = false
+		m.syncLayout()
+		if !msg.userRequested {
+			return nil
+		}
+		reason := "unknown error"
+		if msg.err != nil {
+			reason = msg.err.Error()
+		}
+		return func() tea.Msg { return NotifyMsg{Message: "Could not load remote images: " + reason} }
+	}
+	m.showRemoteImages = true
+	m.remoteBody = msg.body
+	m.remoteFailed = msg.body.FailedRemoteImages
+	if m.showImages {
+		m.regenerateBody()
+	}
+	m.syncLayout()
+	var cmds []tea.Cmd
+	if m.resizedWhileLoading {
+		// The images were sized for the viewport before the resize.
+		cmds = append(cmds, m.loadRemoteImagesCmd(false))
+	}
+	if msg.userRequested {
+		cmds = append(cmds, remoteImagesNotice(msg.body.RemoteImages, len(msg.body.FailedRemoteImages)))
+	}
+	return tea.Batch(cmds...)
+}
+
+// remoteImagesNotice reports a remote image load in which not every image
+// could be shown.
+func remoteImagesNotice(total, failed int) tea.Cmd {
+	var notice tea.Msg
+	switch {
+	case total == 0:
+		notice = InfoNotifyMsg{Message: "This email has no remote images", Duration: 3}
+	case failed == 0:
+		return nil
+	case total == 1:
+		notice = NotifyMsg{Message: "The remote image could not be loaded"}
+	case failed == total:
+		notice = NotifyMsg{Message: fmt.Sprintf("None of the %d remote images could be loaded", total)}
+	default:
+		notice = InfoNotifyMsg{Message: fmt.Sprintf("%d of %d remote images could not be loaded", failed, total), Duration: 4}
+	}
+	return func() tea.Msg { return notice }
+}
+
 // handleEmailBodyKey handles key presses when the email body has focus.
 func (m *EmailView) handleEmailBodyKey(msg tea.KeyPressMsg) (bool, func() (tea.Model, tea.Cmd)) {
 	kb := config.Keybinds
@@ -373,26 +496,13 @@ func (m *EmailView) handleEmailBodyKey(msg tea.KeyPressMsg) (bool, func() (tea.M
 	case kb.Email.ToggleImages:
 		if view.ImageProtocolSupported() {
 			m.showImages = !m.showImages
-			ClearKittyGraphics()
 			m.regenerateBody()
 			return true, func() (tea.Model, tea.Cmd) { return m, nil }
 		}
 	case m.loadRemoteImagesKey():
-		if view.ImageProtocolSupported() && !m.showRemoteImages && !m.remoteImagesLoading {
-			m.showImages = true
-			m.remoteImagesLoading = true
-			m.remoteLoadID = remoteImageRequestID.Add(1)
-			ClearKittyGraphics()
-			m.regenerateBody()
-			body, mimeType := m.email.Body, m.email.BodyMIMEType
-			inline := inlineImagesFromAttachments(m.email.Attachments)
-			requestID := m.remoteLoadID
-			return true, func() (tea.Model, tea.Cmd) {
-				return m, func() tea.Msg {
-					rendered, placements, err := view.ProcessBodyWithInlineRemote(body, mimeType, inline, H1Style, H2Style, BodyStyle, false, true)
-					return remoteImagesLoadedMsg{requestID: requestID, body: rendered, placements: placements, err: err}
-				}
-			}
+		if m.canLoadRemoteImages() {
+			cmd := m.requestRemoteImages()
+			return true, func() (tea.Model, tea.Cmd) { return m, cmd }
 		}
 	case kb.Email.Reply, kb.Email.ReplyAll, kb.Email.Forward:
 		if composeMsg, ok := m.handleComposeAction(msg.String()); ok {
@@ -404,7 +514,6 @@ func (m *EmailView) handleEmailBodyKey(msg tea.KeyPressMsg) (bool, func() (tea.M
 		accountID := m.accountID
 		uid := m.email.UID
 		mailbox := m.mailbox
-		ClearKittyGraphics()
 		return true, func() (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg {
 				return DeleteEmailMsg{UID: uid, AccountID: accountID, Mailbox: mailbox}
@@ -414,7 +523,6 @@ func (m *EmailView) handleEmailBodyKey(msg tea.KeyPressMsg) (bool, func() (tea.M
 		accountID := m.accountID
 		uid := m.email.UID
 		mailbox := m.mailbox
-		ClearKittyGraphics()
 		return true, func() (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg {
 				return ArchiveEmailMsg{UID: uid, AccountID: accountID, Mailbox: mailbox}
@@ -461,6 +569,7 @@ func (m *EmailView) handleEmailBodyKey(msg tea.KeyPressMsg) (bool, func() (tea.M
 	case kb.Email.FocusAttachments:
 		if len(m.email.Attachments) > 0 {
 			m.focusOnAttachments = true
+			return true, func() (tea.Model, tea.Cmd) { return m, nil }
 		}
 	}
 	return false, nil
@@ -479,86 +588,230 @@ func rsvpResponseFromKey(key string, kb config.KeybindsConfig) string {
 	return ""
 }
 
-// renderedBody returns the already downloaded remote images when available.
-// Ordinary UI updates only render inline images and never access the network.
-func (m *EmailView) renderedBody() (string, []view.ImagePlacement) {
-	if m.showImages && m.showRemoteImages {
-		return m.remoteBody, m.remotePlacements
+// imageBounds limits inline images to the visible body area so they can
+// always be seen in full and never spill into neighbouring panes.
+func (m *EmailView) imageBounds() view.ImageBounds {
+	return view.ImageBounds{
+		MaxCols: max(1, m.viewport.Width()-1),
+		MaxRows: max(1, m.viewport.Height()),
+	}
+}
+
+// renderedBody returns the processed body, using the downloaded remote images
+// when the user opted in. Ordinary updates never touch the network.
+func (m *EmailView) renderedBody() *view.RenderedBody {
+	if m.showImages && m.showRemoteImages && m.remoteBody != nil {
+		return m.remoteBody
 	}
 	inlineImages := inlineImagesFromAttachments(m.email.Attachments)
-	body, placements, err := view.ProcessBodyWithInline(m.email.Body, m.email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, !m.showImages)
+	rendered, err := view.RenderBody(m.email.Body, m.email.BodyMIMEType, inlineImages, H1Style, H2Style, BodyStyle, view.RenderOptions{
+		DisableImages: !m.showImages,
+		Bounds:        m.imageBounds(),
+	})
 	if err != nil {
-		body = fmt.Sprintf("Error rendering body: %v", err)
+		return &view.RenderedBody{Text: fmt.Sprintf("Error rendering body: %v", err)}
 	}
-	return body, placements
+	return rendered
 }
 
-// regenerateBody re-renders the email body after a state change such as
-// toggling image display.
+// regenerateBody re-renders the email body for the current size and image
+// settings. Image positions are resolved after wrapping, so they always match
+// the final line layout.
 func (m *EmailView) regenerateBody() {
-	body, placements := m.renderedBody()
-	body = applyBodyTransform(body, m.email)
-	m.imagePlacements = placements
-	wrapped := wrapBodyToWidth(body, m.viewport.Width())
-	m.viewport.SetContent(wrapped + "\n")
-}
-
-// handleWindowSize updates the viewport and re-renders the body when the
-// terminal is resized.
-func (m *EmailView) handleWindowSize(msg tea.WindowSizeMsg) {
-	header := fmt.Sprintf("To: %s\nFrom: %s\nSubject: %s ", strings.Join(m.email.To, ", "), m.email.From, m.email.Subject)
-	headerHeight := lipgloss.Height(header) + 2
-	attachmentHeight := 0
-	if len(m.email.Attachments) > 0 {
-		attachmentHeight = len(m.email.Attachments) + 2
-	}
-	m.viewport.SetWidth(msg.Width)
-	m.viewport.SetHeight(msg.Height - headerHeight - attachmentHeight)
-
-	ClearKittyGraphics()
-	body, placements := m.renderedBody()
-	body = applyBodyTransform(body, m.email)
+	width := m.viewport.Width()
 	if m.isPatch {
-		if patchBody, ok := view.RenderPatchBody(m.email.Body, m.email.BodyMIMEType, m.email.Subject, m.email.From, m.viewport.Width()); ok {
-			body = applyBodyTransform(patchBody, m.email)
+		if patchBody, ok := view.RenderPatchBody(m.email.Body, m.email.BodyMIMEType, m.email.Subject, m.email.From, width); ok {
+			m.imagePlacements = nil
+			m.viewport.SetContent(wrapBodyToWidth(applyBodyTransform(patchBody, m.email), width) + "\n")
+			return
 		}
 	}
+	rendered := m.renderedBody()
+	m.renderedProtocol = view.ActiveImageProtocol()
+	m.remoteImageCount = rendered.RemoteImages
+	wrapped := wrapBodyToWidth(applyBodyTransform(rendered.Text, m.email), width)
+	text, placements := rendered.Finalize(wrapped)
 	m.imagePlacements = placements
-	wrapped := wrapBodyToWidth(body, m.viewport.Width())
-	m.viewport.SetContent(wrapped + "\n")
+	m.viewport.SetContent(text + "\n")
+}
+
+// setSize lays the view out for a new size and re-renders the body.
+func (m *EmailView) setSize(width, height int) {
+	m.width = max(width, 1)
+	m.height = max(height, 1)
+	m.viewport.SetWidth(m.width)
+	m.viewport.SetHeight(max(1, m.height-m.chromeHeight()))
+	m.regenerateBody()
+	// The help bar depends on the body (whether it has remote images), so
+	// measure again and fit the body to the final height.
+	if h := max(1, m.height-m.chromeHeight()); h != m.viewport.Height() {
+		m.viewport.SetHeight(h)
+		m.regenerateBody()
+	}
+}
+
+// syncLayout re-applies the viewport height after state changes that alter
+// the height of the surrounding chrome (help text, attachment focus).
+func (m *EmailView) syncLayout() {
+	if h := max(1, m.height-m.chromeHeight()); h != m.viewport.Height() {
+		m.viewport.SetHeight(h)
+	}
+}
+
+// emailChrome holds the rendered parts of the view around the body.
+type emailChrome struct {
+	header      string
+	calendar    string
+	attachments string
+	help        string
+	// compactAttachments is set when the attachment list is collapsed to a
+	// single line; only the selected attachment is then clickable.
+	compactAttachments bool
+}
+
+func (c emailChrome) height() int {
+	h := lipgloss.Height(c.header) + lipgloss.Height(c.help)
+	if c.calendar != "" {
+		h += lipgloss.Height(c.calendar)
+	}
+	if c.attachments != "" {
+		h += lipgloss.Height(c.attachments)
+	}
+	return h
+}
+
+// minBodyRows is the body height the chrome gives way to on small screens.
+const minBodyRows = 3
+
+// chrome renders everything around the body. When the view is too short for
+// all of it, parts are compacted one step at a time (one-line help, one-line
+// header, a single attachment line, no calendar card) so the body keeps
+// some room and the view never grows taller than its height.
+func (m *EmailView) chrome() emailChrome {
+	c := emailChrome{
+		header:      m.renderHeader(3),
+		calendar:    m.renderCalendar(),
+		attachments: m.renderAttachmentView(false),
+		help:        m.renderHelp(),
+	}
+	budget := m.height - min(minBodyRows, max(1, m.height/3))
+	if c.height() <= budget {
+		return c
+	}
+	c.help = ansi.Truncate(strings.ReplaceAll(c.help, "\n", " "), max(1, m.width-1), "…")
+	if c.height() <= budget {
+		return c
+	}
+	c.header = m.renderHeader(1)
+	if c.height() <= budget {
+		return c
+	}
+	if c.attachments != "" {
+		c.attachments = m.renderAttachmentView(true)
+		c.compactAttachments = true
+	}
+	if c.height() <= budget {
+		return c
+	}
+	c.calendar = ""
+	return c
+}
+
+// chromeHeight is the number of rows used by everything but the body.
+func (m *EmailView) chromeHeight() int {
+	return m.chrome().height()
+}
+
+// bodyTop is the row, relative to the view, where the body viewport starts.
+func (m *EmailView) bodyTop() int {
+	c := m.chrome()
+	top := lipgloss.Height(c.header)
+	if c.calendar != "" {
+		top += lipgloss.Height(c.calendar)
+	}
+	return top
+}
+
+// attachmentsTop is the row, relative to the view, of the first attachment
+// (after the box margin and, when expanded, the "Attachments:" title).
+func (m *EmailView) attachmentsTop() int {
+	top := m.bodyTop() + m.viewport.Height() + attachmentBoxStyle.GetMarginTop()
+	if !m.chrome().compactAttachments {
+		top++
+	}
+	return top
 }
 
 func (m *EmailView) View() tea.View {
-	os.Stdout.WriteString("\x1b_Ga=d,d=a\x1b\\") //nolint:errcheck,gosec
-	os.Stdout.Sync()                             //nolint:errcheck,gosec
-
-	styledHeader := m.renderHeader()
-	help := m.renderHelp()
-	attachmentView := m.renderAttachmentView()
-
-	if m.showImages && len(m.imagePlacements) > 0 {
-		m.renderVisibleImages(styledHeader)
+	c := m.chrome()
+	sections := []string{c.header}
+	if c.calendar != "" {
+		sections = append(sections, c.calendar)
 	}
-
-	calendarView := ""
-	if m.hasCalendarInvite && m.calendarEvent != nil {
-		calendarView = renderCalendarInvite(m.calendarEvent)
+	sections = append(sections, m.viewport.View())
+	if c.attachments != "" {
+		sections = append(sections, c.attachments)
 	}
-
-	var v tea.View
-	if calendarView != "" {
-		v = tea.NewView(fmt.Sprintf("%s\n%s\n%s\n%s\n%s", styledHeader, calendarView, m.viewport.View(), attachmentView, help))
-	} else {
-		v = tea.NewView(fmt.Sprintf("%s\n%s\n%s\n%s", styledHeader, m.viewport.View(), attachmentView, help))
+	sections = append(sections, c.help)
+	content := strings.Join(sections, "\n")
+	if m.width > 0 && m.height > 0 {
+		content = fitBox(content, m.width, m.height)
 	}
-	if config.MouseEnabled != nil && *config.MouseEnabled {
-		v.MouseMode = tea.MouseModeCellMotion
-	}
-	return v
+	return tea.NewView(content)
 }
 
-// renderHeader renders the email header bar, including crypto and patch badges.
-func (m *EmailView) renderHeader() string {
+// VisibleImages reports where the out-of-band images of this view are on
+// screen. Kitty images that are partly scrolled out of the body are clipped
+// to the visible band; Sixel images are only shown while fully visible.
+func (m *EmailView) VisibleImages() []ScreenImage {
+	if !m.showImages || len(m.imagePlacements) == 0 {
+		return nil
+	}
+	top := m.viewport.YOffset()
+	height := m.viewport.Height()
+	originRow := m.rowOffset + m.bodyTop()
+	var out []ScreenImage
+	for i, p := range m.imagePlacements {
+		if p.Rows < 1 || p.Cols < 1 {
+			continue
+		}
+		first := max(p.Line, top)
+		last := min(p.Line+p.Rows, top+height)
+		if first >= last {
+			continue
+		}
+		img := ScreenImage{
+			ID:        p.ID,
+			Placement: uint32(i + 1),
+			Protocol:  p.Protocol,
+			Row:       originRow + first - top,
+			Col:       m.columnOffset,
+			Cols:      p.Cols,
+			Rows:      last - first,
+			Data:      p.Encoded,
+		}
+		switch p.Protocol {
+		case view.ImageProtocolKitty:
+			img.SrcW = p.PixelW
+			img.SrcY = (first - p.Line) * p.PixelH / p.Rows
+			img.SrcH = max(1, (last-p.Line)*p.PixelH/p.Rows-img.SrcY)
+		case view.ImageProtocolSixel:
+			if first != p.Line || last != p.Line+p.Rows {
+				continue
+			}
+		case view.ImageProtocolKittyPlaceholder:
+			// Drawn by the body text; listed so that it gets uploaded.
+		case view.ImageProtocolNone, view.ImageProtocolHalfBlock:
+			continue
+		}
+		out = append(out, img)
+	}
+	return out
+}
+
+// renderHeader renders the email header bar, including crypto and patch
+// badges, wrapped to at most maxLines lines.
+func (m *EmailView) renderHeader(maxLines int) string {
 	var cryptoStatus strings.Builder
 
 	if m.isEncrypted {
@@ -583,11 +836,24 @@ func (m *EmailView) renderHeader() string {
 		cryptoStatus.WriteString(lipgloss.NewStyle().Foreground(theme.ActiveTheme.Accent).Render(" [📮 Patch]"))
 	}
 
-	header := fmt.Sprintf("To: %s | From: %s | Subject: %s%s", strings.Join(m.email.To, ", "), m.email.From, m.email.Subject, cryptoStatus.String())
-	return emailHeaderStyle.Width(m.viewport.Width()).Render(header)
+	header := fmt.Sprintf("To: %s | From: %s | Subject: %s%s",
+		normalizeInboxRowText(strings.Join(m.email.To, ", ")),
+		normalizeInboxRowText(m.email.From),
+		normalizeInboxRowText(m.email.Subject),
+		cryptoStatus.String())
+	// Long headers wrap; cap them so the body keeps most of the space.
+	maxLines = max(1, maxLines)
+	inner := max(1, m.width-emailHeaderStyle.GetHorizontalFrameSize())
+	lines := strings.Split(lipgloss.Wrap(header, inner, ""), "\n")
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+		lines[maxLines-1] = ansi.Truncate(lines[maxLines-1], max(1, inner-1), "") + "…"
+	}
+	return emailHeaderStyle.Width(m.width).Render(strings.Join(lines, "\n"))
 }
 
-// renderHelp renders the bottom help bar based on current focus and state.
+// renderHelp renders the bottom help bar based on current focus and state,
+// wrapped to the view width.
 func (m *EmailView) renderHelp() string {
 	kb := config.Keybinds
 	if m.focusOnAttachments {
@@ -599,97 +865,107 @@ func (m *EmailView) renderHelp() string {
 		if m.pluginStatus != "" {
 			helpText += helpSeparator + m.pluginStatus
 		}
-		return helpStyle.Render(helpText)
+		return helpStyle.Width(m.width).Render(helpText)
+	}
+
+	if m.readOnly {
+		helpText := joinHelp(
+			helpItem("", navArrowsLabel(), "scroll"),
+			helpItem("", joinKeys(kbKey(kb.Global.Cancel, "esc"), replySplitSwitchKey), "back to reply"),
+		)
+		if view.ImageProtocolSupported() {
+			helpText += helpSeparator + helpItem("", kbKey(kb.Email.ToggleImages, "i"), "toggle images").String()
+		}
+		return helpStyle.Width(m.width).Render(helpText)
 	}
 
 	var shortcuts strings.Builder
 	shortcuts.WriteString(joinHelp(
-		helpItem("\uf112", kbKey(kb.Email.Reply, "r"), "reply"),
-		helpItem("\uf064", kbKey(kb.Email.ReplyAll, "shift+r"), "reply all"),
-		helpItem("\uf064", kbKey(kb.Email.Forward, "f"), "forward"),
-		helpItem("\uea81", kbKey(kb.Email.Delete, "d"), "delete"),
-		helpItem("\uea98", kbKey(kb.Email.Archive, "a"), "archive"),
-		helpItem("\uf435", kbKey(kb.Email.FocusAttachments, "tab"), "focus attachments"),
-		helpItem("\ueb06", kbKey(kb.Global.Cancel, "esc"), "back to inbox"),
+		helpItem("", kbKey(kb.Email.Reply, "r"), "reply"),
+		helpItem("", kbKey(kb.Email.ReplyAll, "shift+r"), "reply all"),
+		helpItem("", kbKey(kb.Email.Forward, "f"), "forward"),
+		helpItem("", kbKey(kb.Email.Delete, "d"), "delete"),
+		helpItem("", kbKey(kb.Email.Archive, "a"), "archive"),
 	))
-	if m.isPatch && m.patchInfo != nil && m.patchInfo.HasDiff {
+	if len(m.email.Attachments) > 0 {
 		shortcuts.WriteString(helpSeparator)
-		shortcuts.WriteString(helpItem("\uf126", kbKey(kb.Email.ApplyPatch, "p"), "apply patch").String())
+		shortcuts.WriteString(helpItem("", kbKey(kb.Email.FocusAttachments, "tab"), "focus attachments").String())
 	}
 	shortcuts.WriteString(helpSeparator)
-	shortcuts.WriteString(helpItem("\uf1d3", kbKey(kb.Email.SendPatch, "P"), "send patch").String())
+	shortcuts.WriteString(helpItem("", kbKey(kb.Global.Cancel, "esc"), "back to inbox").String())
+	if m.isPatch && m.patchInfo != nil && m.patchInfo.HasDiff {
+		shortcuts.WriteString(helpSeparator)
+		shortcuts.WriteString(helpItem("", kbKey(kb.Email.ApplyPatch, "p"), "apply patch").String())
+	}
+	shortcuts.WriteString(helpSeparator)
+	shortcuts.WriteString(helpItem("", kbKey(kb.Email.SendPatch, "P"), "send patch").String())
 	if view.ImageProtocolSupported() {
 		shortcuts.WriteString(helpSeparator)
-		shortcuts.WriteString(helpItem("\uf03e", kbKey(kb.Email.ToggleImages, "i"), "toggle images").String())
-		if m.remoteImagesLoading {
+		shortcuts.WriteString(helpItem("", kbKey(kb.Email.ToggleImages, "i"), "toggle images").String())
+		switch {
+		case m.remoteImagesLoading:
 			shortcuts.WriteString(helpSeparator)
 			shortcuts.WriteString("loading remote images…")
-		} else if !m.showRemoteImages {
+		case !m.showRemoteImages && m.remoteImageCount > 0:
 			shortcuts.WriteString(helpSeparator)
-			shortcuts.WriteString(helpItem("\uf03e", m.loadRemoteImagesKey(), "load remote images").String())
+			shortcuts.WriteString(helpItem("", m.loadRemoteImagesKey(), "load remote images").String())
+		case m.showRemoteImages && len(m.remoteFailed) > 0:
+			shortcuts.WriteString(helpSeparator)
+			shortcuts.WriteString(helpItem("", m.loadRemoteImagesKey(), "retry remote images").String())
 		}
 	}
 	for _, pk := range m.pluginKeyBindings {
-		shortcuts.WriteString(" • ")
+		shortcuts.WriteString(helpSeparator)
 		shortcuts.WriteString(pk.Key)
 		shortcuts.WriteString(": ")
 		shortcuts.WriteString(pk.Description)
 	}
 	if m.pluginStatus != "" {
-		shortcuts.WriteString(" • ")
+		shortcuts.WriteString(helpSeparator)
 		shortcuts.WriteString(m.pluginStatus)
 	}
-	help := helpStyle.Render(shortcuts.String())
-	if m.isPreviewMode {
-		help = lipgloss.NewStyle().PaddingLeft(4).Render(help)
-	}
-	return help
+	return helpStyle.Width(m.width).Render(shortcuts.String())
 }
 
-// renderAttachmentView renders the attachment list panel.
-func (m *EmailView) renderAttachmentView() string {
+// renderAttachmentView renders the attachment list panel. The compact form
+// is a single line showing the selected attachment.
+func (m *EmailView) renderAttachmentView(compact bool) string {
 	if len(m.email.Attachments) == 0 {
 		return ""
 	}
-	var b strings.Builder
-	b.WriteString("Attachments:\n")
+	inner := max(1, m.width-attachmentBoxStyle.GetHorizontalFrameSize())
+	if compact {
+		cursor := min(m.attachmentCursor, len(m.email.Attachments)-1)
+		style := itemStyle
+		marker := "  "
+		if m.focusOnAttachments {
+			style = selectedItemStyle
+			marker = "▌ "
+		}
+		label := fmt.Sprintf("%s%s (%d/%d)", marker, normalizeInboxRowText(m.email.Attachments[cursor].Filename), cursor+1, len(m.email.Attachments))
+		return attachmentBoxStyle.Render(style.Render(ansi.Truncate(label, max(1, inner-style.GetHorizontalFrameSize()), "…")))
+	}
+	lines := make([]string, 0, len(m.email.Attachments)+1)
+	lines = append(lines, "Attachments:")
 	for i, attachment := range m.email.Attachments {
 		cursor := "  "
 		style := itemStyle
 		if m.focusOnAttachments && i == m.attachmentCursor {
-			cursor = "> "
+			cursor = "▌ "
 			style = selectedItemStyle
 		}
-		b.WriteString(style.Render(fmt.Sprintf("%s%s", cursor, attachment.Filename)))
-		b.WriteString("\n")
+		name := ansi.Truncate(cursor+normalizeInboxRowText(attachment.Filename), max(1, inner-style.GetHorizontalFrameSize()), "…")
+		lines = append(lines, style.Render(name))
 	}
-	return attachmentBoxStyle.Render(b.String())
+	return attachmentBoxStyle.Render(strings.Join(lines, "\n"))
 }
 
-// renderVisibleImages writes visible inline image placements directly to
-// stdout. Bubbletea v2's ultraviolet renderer uses a cell-based model that
-// cannot pass through graphics protocol escape sequences, so we write them
-// out-of-band.
-func (m *EmailView) renderVisibleImages(styledHeader string) {
-	headerLines := lipgloss.Height(styledHeader) + 1 // +1 for the newline after header
-	yOffset := m.viewport.YOffset()
-	vpHeight := m.viewport.Height()
-
-	for i := range m.imagePlacements {
-		p := &m.imagePlacements[i]
-		// Only render if the image's top line is within the viewport.
-		// We can't partially clip images scrolled off the top (Kitty
-		// always renders from the top-left), so we hide them once
-		// their start line scrolls above the viewport.
-		if p.Line >= yOffset && p.Line < yOffset+vpHeight {
-			screenRow := m.rowOffset + headerLines + (p.Line - yOffset)
-			if m.columnOffset > 0 {
-				view.RenderImageToStdout(p, screenRow, m.columnOffset+1)
-			} else {
-				view.RenderImageToStdout(p, screenRow)
-			}
-		}
+// renderCalendar renders the meeting invite card, or "" without an invite.
+func (m *EmailView) renderCalendar() string {
+	if !m.hasCalendarInvite || m.calendarEvent == nil {
+		return ""
 	}
+	return renderCalendarInvite(m.calendarEvent, m.width)
 }
 
 // GetAccountID returns the account ID for this email
@@ -721,11 +997,13 @@ func (m *EmailView) GetPatchInfo() *view.PatchInfo {
 // SetPluginStatus sets a persistent status string from plugins, shown in the help bar.
 func (m *EmailView) SetPluginStatus(status string) {
 	m.pluginStatus = status
+	m.syncLayout()
 }
 
 // SetPluginKeyBindings sets the plugin-registered key bindings for display in the help bar.
 func (m *EmailView) SetPluginKeyBindings(bindings []PluginKeyBinding) {
 	m.pluginKeyBindings = bindings
+	m.syncLayout()
 }
 
 func inlineImagesFromAttachments(atts []fetcher.Attachment) []view.InlineImage {
@@ -751,8 +1029,8 @@ func (m *EmailView) GetEmail() fetcher.Email {
 	return m.email
 }
 
-// renderCalendarInvite renders a calendar invite card
-func renderCalendarInvite(event *calendar.Event) string {
+// renderCalendarInvite renders a calendar invite card no wider than width.
+func renderCalendarInvite(event *calendar.Event, width int) string {
 	if event == nil {
 		return ""
 	}
@@ -763,7 +1041,11 @@ func renderCalendarInvite(event *calendar.Event) string {
 		Padding(1, 2).
 		MarginTop(1).
 		MarginBottom(1)
+	if width > 0 {
+		style = style.Width(min(width, 80))
+	}
 
+	kb := config.Keybinds
 	var b strings.Builder
 	b.WriteString("📅 Meeting Invite\n\n")
 	fmt.Fprintf(&b, "Title:    %s\n", event.Summary)
@@ -781,7 +1063,8 @@ func renderCalendarInvite(event *calendar.Event) string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Italic(true).Render("Press 1:Accept  2:Decline  3:Tentative"))
+	b.WriteString(lipgloss.NewStyle().Italic(true).Render(fmt.Sprintf("Press %s:Accept  %s:Decline  %s:Tentative",
+		kbKey(kb.Email.RsvpAccept, "1"), kbKey(kb.Email.RsvpDecline, "2"), kbKey(kb.Email.RsvpTentative, "3"))))
 
 	return style.Render(b.String())
 }
@@ -803,10 +1086,11 @@ func formatEventTime(start, end time.Time) string {
 		end.Format("Mon Jan 2 3:04 PM"))
 }
 
-// truncateString truncates string to maxLen
+// truncateString shortens s to at most maxLen display cells, appending "..."
+// when it was cut. It never splits a multi-byte character.
 func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	if ansi.StringWidth(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen] + "..."
+	return ansi.Truncate(s, maxLen, "") + "..."
 }

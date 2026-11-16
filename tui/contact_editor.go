@@ -6,6 +6,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/floatpane/matcha/config"
 )
 
@@ -66,8 +67,10 @@ func (m *ContactEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.nameInput.SetWidth(msg.Width - 4)
-		m.emailInput.SetWidth(msg.Width - 4)
+		// Never hand the inputs a negative width: bubbles' textinput panics
+		// rendering its placeholder on tiny terminals otherwise.
+		m.nameInput.SetWidth(max(msg.Width-4, 1))
+		m.emailInput.SetWidth(max(msg.Width-4, 1))
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -87,15 +90,16 @@ func (m *ContactEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-		// Navigate suggestions with arrow keys when visible.
+		// Navigate suggestions with the arrow keys when visible. Letters such
+		// as j/k must keep reaching the email field.
 		if m.showSuggestions && m.focus == 1 {
 			switch msg.String() {
-			case "up", "k":
+			case "up", "ctrl+p":
 				if m.selectedSuggestion > 0 {
 					m.selectedSuggestion--
 				}
 				return m, nil
-			case keyDown, "j":
+			case keyDown, "ctrl+n":
 				if m.selectedSuggestion < len(m.suggestions)-1 {
 					m.selectedSuggestion++
 				}
@@ -112,7 +116,7 @@ func (m *ContactEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
-		case "tab", keyShiftTab, "up":
+		case "tab", keyShiftTab, "up", keyDown:
 			if m.focus == 0 {
 				m.focus = 1
 				m.nameInput.Blur()
@@ -196,6 +200,10 @@ func (m *ContactEditor) View() tea.View {
 		var sb strings.Builder
 		for i, s := range m.suggestions {
 			display := s.Email
+			if m.width > 0 {
+				// Box border, padding and the "> " marker take 6 cells.
+				display = ansi.Truncate(display, max(m.width-6, 1), "…")
+			}
 			if i == m.selectedSuggestion {
 				sb.WriteString(selectedSuggestionStyle.Render("> "+display) + "\n")
 			} else {
@@ -205,13 +213,17 @@ func (m *ContactEditor) View() tea.View {
 		emailView = emailView + "\n" + suggestionBoxStyle.Render(strings.TrimSuffix(sb.String(), "\n"))
 	}
 
-	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left,
+	help := "tab/↑/↓: switch fields • enter: submit • " + cancelKey() + ": back"
+	if m.width > 0 {
+		help = lipgloss.Wrap(help, m.width, "")
+	}
+	return tea.NewView(clampRendered(lipgloss.JoinVertical(lipgloss.Left,
 		title,
 		"",
 		nameView,
 		"",
 		emailView,
 		"",
-		helpStyle.Render("tab/↑/↓: switch fields • enter: submit • "+cancelKey()+": back"),
-	))
+		helpStyle.Render(help),
+	), m.width, m.height))
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -30,6 +31,17 @@ const (
 // macOS menu bar agent that shows the unread count, posts new-mail
 // notifications, and lets you open Matcha from the menu bar.
 func RunHelper(args []string) error {
+	return runHelper(os.Stdout, os.Stderr, args)
+}
+
+// RunHelperTo is RunHelper with all of its output (including compiler and
+// warning messages) written to w. Use it (e.g. with io.Discard) while the TUI
+// owns the terminal.
+func RunHelperTo(w io.Writer, args []string) error {
+	return runHelper(w, w, args)
+}
+
+func runHelper(out, errOut io.Writer, args []string) error {
 	if runtime.GOOS != "darwin" {
 		return fmt.Errorf("the menu bar helper is only available on macOS")
 	}
@@ -39,11 +51,11 @@ func RunHelper(args []string) error {
 	}
 	switch sub {
 	case "install":
-		return installHelper()
+		return installHelper(out, errOut)
 	case "uninstall", "remove":
-		return uninstallHelper()
+		return uninstallHelper(out, errOut)
 	case "status":
-		return helperStatus()
+		return helperStatus(out)
 	default:
 		return fmt.Errorf("usage: matcha helper <install|uninstall|status>")
 	}
@@ -67,7 +79,7 @@ func helperLaunchAgentPath() (string, error) {
 	return filepath.Join(home, "Library", "LaunchAgents", helperBundleID+".plist"), nil
 }
 
-func installHelper() error {
+func installHelper(out, errOut io.Writer) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("could not find executable: %w", err)
@@ -131,7 +143,7 @@ func installHelper() error {
 
 	exeDest := filepath.Join(macosDir, helperExecutable)
 	cmd := exec.Command("swiftc", "-O", tmpSwift, "-o", exeDest) //nolint:noctx
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = errOut
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to compile menu bar helper (is the Xcode Command Line Tools' swiftc installed?): %w", err)
 	}
@@ -140,7 +152,7 @@ func installHelper() error {
 	// properly signed bundle (swiftc only linker-signs the inner executable),
 	// and signing after writing all bundle contents keeps the seal valid.
 	if err := exec.Command("codesign", "--force", "--deep", "--sign", "-", appDir).Run(); err != nil { //nolint:noctx
-		fmt.Fprintf(os.Stderr, "warning: could not code-sign helper bundle: %v\n", err)
+		_, _ = fmt.Fprintf(errOut, "warning: could not code-sign helper bundle: %v\n", err)
 	}
 
 	// Register the bundle with Launch Services.
@@ -152,16 +164,16 @@ func installHelper() error {
 		return err
 	}
 
-	fmt.Printf("Installed %s.app and started the Matcha menu bar helper.\n", helperAppName)
-	fmt.Println("A 🍵 icon should now appear in your menu bar showing your unread count.")
-	fmt.Println("It starts automatically at login. Remove it with: matcha helper uninstall")
+	_, _ = fmt.Fprintf(out, "Installed %s.app and started the Matcha menu bar helper.\n", helperAppName)
+	_, _ = fmt.Fprintln(out, "A 🍵 icon should now appear in your menu bar showing your unread count.")
+	_, _ = fmt.Fprintln(out, "It starts automatically at login. Remove it with: matcha helper uninstall")
 	return nil
 }
 
-func uninstallHelper() error {
+func uninstallHelper(out, errOut io.Writer) error {
 	if err := stopLaunchAgent(); err != nil {
 		// Non-fatal: the agent may not be loaded.
-		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+		_, _ = fmt.Fprintf(errOut, "warning: %v\n", err)
 	}
 	stopRunningHelper()
 
@@ -179,22 +191,22 @@ func uninstallHelper() error {
 		return fmt.Errorf("could not remove %s: %w", appDir, err)
 	}
 
-	fmt.Printf("Removed the Matcha menu bar helper (%s.app and LaunchAgent).\n", helperAppName)
+	_, _ = fmt.Fprintf(out, "Removed the Matcha menu bar helper (%s.app and LaunchAgent).\n", helperAppName)
 	return nil
 }
 
-func helperStatus() error {
+func helperStatus(out io.Writer) error {
 	appDir, _ := helperAppDir()
 	agentPath, _ := helperLaunchAgentPath()
 
 	appInstalled := fileExists(filepath.Join(appDir, "Contents", "MacOS", helperExecutable))
 	agentInstalled := fileExists(agentPath)
 
-	fmt.Printf("Menu bar app:  %s\n", installedLabel(appInstalled))
-	fmt.Printf("LaunchAgent:   %s\n", installedLabel(agentInstalled))
-	fmt.Printf("Daemon socket: %s\n", daemonLabel())
+	_, _ = fmt.Fprintf(out, "Menu bar app:  %s\n", installedLabel(appInstalled))
+	_, _ = fmt.Fprintf(out, "LaunchAgent:   %s\n", installedLabel(agentInstalled))
+	_, _ = fmt.Fprintf(out, "Daemon socket: %s\n", daemonLabel())
 	if !appInstalled {
-		fmt.Println("\nRun `matcha helper install` to set it up.")
+		_, _ = fmt.Fprintln(out, "\nRun `matcha helper install` to set it up.")
 	}
 	return nil
 }

@@ -1,14 +1,35 @@
 package daemonclient
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/floatpane/matcha/daemonrpc"
 )
+
+// dialTimeout bounds connecting to the daemon socket.
+const dialTimeout = 2 * time.Second
+
+// callTimeout bounds how long a call waits for the daemon's reply. Several
+// calls are made on the UI goroutine (Ping while connecting, Subscribe,
+// ReloadConfig), so a wedged daemon must not freeze the TUI. Mail operations
+// get a generous bound because the daemon talks to the mail server for them.
+func callTimeout(method string) time.Duration {
+	switch method {
+	case daemonrpc.MethodPing, daemonrpc.MethodGetStatus, daemonrpc.MethodGetAccounts,
+		daemonrpc.MethodSubscribe, daemonrpc.MethodUnsubscribe, daemonrpc.MethodCancelEmail:
+		return 5 * time.Second
+	case daemonrpc.MethodReloadConfig, daemonrpc.MethodQueueEmail:
+		return time.Minute
+	default:
+		return 5 * time.Minute
+	}
+}
 
 // Client connects to the matcha daemon over a Unix domain socket.
 type Client struct {
@@ -24,7 +45,10 @@ type Client struct {
 // Dial connects to the daemon socket.
 func Dial() (*Client, error) {
 	sockPath := daemonrpc.SocketPath()
-	conn, err := net.Dial("unix", sockPath) //nolint:noctx
+	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
+	defer cancel()
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "unix", sockPath)
 	if err != nil {
 		return nil, fmt.Errorf("connect to daemon: %w", err)
 	}
@@ -40,8 +64,15 @@ func Dial() (*Client, error) {
 	return c, nil
 }
 
-// Call makes a synchronous RPC call to the daemon.
+// Call makes a synchronous RPC call to the daemon, giving up after the
+// method's callTimeout.
 func (c *Client) Call(method string, params interface{}, result interface{}) error {
+	return c.CallTimeout(method, params, result, callTimeout(method))
+}
+
+// CallTimeout is Call with an explicit timeout (<= 0 waits indefinitely).
+// A timed-out call is not retried: the daemon may still execute it.
+func (c *Client) CallTimeout(method string, params interface{}, result interface{}, timeout time.Duration) error {
 	id := c.nextID.Add(1)
 
 	// Marshal params.
@@ -76,8 +107,17 @@ func (c *Client) Call(method string, params interface{}, result interface{}) err
 		return fmt.Errorf("send request: %w", err)
 	}
 
+	var expired <-chan time.Time
+	if timeout > 0 {
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		expired = timer.C
+	}
+
 	// Wait for response.
 	select {
+	case <-expired:
+		return fmt.Errorf("daemon %s: no reply after %v", method, timeout)
 	case resp := <-ch:
 		if resp.Error != nil {
 			return resp.Error
@@ -94,6 +134,16 @@ func (c *Client) Call(method string, params interface{}, result interface{}) err
 // Events returns the channel that receives push events from the daemon.
 func (c *Client) Events() <-chan *daemonrpc.Event {
 	return c.events
+}
+
+// isClosed reports whether the connection has been closed or lost.
+func (c *Client) isClosed() bool {
+	select {
+	case <-c.done:
+		return true
+	default:
+		return false
+	}
 }
 
 // Close closes the connection to the daemon.

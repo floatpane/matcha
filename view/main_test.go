@@ -14,5 +14,10 @@ import (
 // Mirrors the call in main.go's main().
 func TestMain(m *testing.M) {
 	termimage.MaybeRunWorker()
+	// Image protocol detection changes inside tmux; tests that want tmux
+	// set it up themselves.
+	for _, key := range []string{"TMUX", "TMUX_PANE"} {
+		_ = os.Unsetenv(key)
+	}
 	os.Exit(m.Run())
 }

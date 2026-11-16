@@ -32,6 +32,15 @@ type FolderInboxView interface {
 	DecrementUnreadCount(folder string)
 	GetFolders() []string
 	GetUnreadCountsCopy() map[string]int
+	GetCurrentFolder() string
+}
+
+// adjustCachedUnread persists a per-account unread delta in the background.
+// It is a variable so tests can observe it without touching the disk.
+var adjustCachedUnread = func(accountID, folder string, delta int) {
+	go func() {
+		_ = config.AdjustCachedUnread(accountID, folder, delta)
+	}()
 }
 
 // Manager handles delete, archive, and move actions with an undo grace period.
@@ -98,29 +107,39 @@ func (m *Manager) RestorePendingAction() {
 	m.pendingAction = nil
 	m.ActionNotice = ""
 
-	m.store.Emails = pa.EmailsSnap
-	m.store.EmailsByAcct[pa.AccountID] = pa.AcctSnap
+	// The folder's own list is always restored. store.Emails/EmailsByAcct and
+	// the visible list mirror the folder currently shown, so they are only
+	// restored when the user is still in the folder the action came from:
+	// restoring them after a folder switch put INBOX's emails under, e.g.,
+	// Archive, and later actions then hit the wrong messages.
 	m.store.FolderEmails[pa.FolderName] = pa.FolderSnap
+	stillInFolder := m.folderInbox == nil || m.folderInbox.GetCurrentFolder() == pa.FolderName
+	if stillInFolder {
+		m.store.Emails = pa.EmailsSnap
+		m.store.EmailsByAcct[pa.AccountID] = pa.AcctSnap
+	}
 
 	if m.folderInbox != nil {
-		m.folderInbox.SetEmails(pa.FolderSnap, m.deps.Config.Accounts)
-		restored := false
+		if stillInFolder {
+			m.folderInbox.SetEmails(pa.FolderSnap, m.deps.Config.Accounts)
+		}
+		restored := 0
 		for _, uid := range pa.UIDs {
 			for _, e := range pa.FolderSnap {
 				if e.UID == uid && e.AccountID == pa.AccountID {
 					if !e.IsRead {
 						m.folderInbox.IncrementUnreadCount(pa.FolderName)
-						restored = true
+						restored++
 					}
 					break
 				}
 			}
 		}
-		if restored {
-			config.SaveAccountFolders(pa.AccountID, m.folderInbox.GetFolders(), m.folderInbox.GetUnreadCountsCopy()) //nolint:errcheck,gosec
+		if restored > 0 {
+			adjustCachedUnread(pa.AccountID, pa.FolderName, restored)
 		}
 	}
-	go emailstore.SaveFolderEmailsToCache(pa.FolderName, pa.FolderSnap)
+	emailstore.SaveFolderEmailsAsync(pa.FolderName, pa.FolderSnap)
 }
 
 func (m *Manager) OnGracePeriodExpired(msg tui.ActionGracePeriodExpiredMsg) tea.Cmd {
@@ -291,8 +310,11 @@ func (m *Manager) HandleBatchMoveEmailsMsg(msg tui.BatchMoveEmailsMsg, folderNam
 }
 
 func (m *Manager) BatchDeleteEmailsCmd(uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
+	// Read the service now, on the UI goroutine: the command runs on another
+	// goroutine while UpdateDependencies may replace m.deps.
+	svc := m.deps.Service
 	return func() tea.Msg {
-		if m.deps.Service == nil {
+		if svc == nil {
 			return tui.BatchEmailActionDoneMsg{
 				Count:        count,
 				SuccessCount: 0,
@@ -303,7 +325,7 @@ func (m *Manager) BatchDeleteEmailsCmd(uids []uint32, accountID, folderName stri
 			}
 		}
 
-		err := m.deps.Service.DeleteEmails(accountID, folderName, uids)
+		err := svc.DeleteEmails(accountID, folderName, uids)
 		successCount, failureCount := count, 0
 		if err != nil {
 			successCount, failureCount = 0, count
@@ -321,8 +343,9 @@ func (m *Manager) BatchDeleteEmailsCmd(uids []uint32, accountID, folderName stri
 }
 
 func (m *Manager) BatchArchiveEmailsCmd(uids []uint32, accountID, folderName string, mailbox tui.MailboxKind, count int) tea.Cmd {
+	svc := m.deps.Service // see BatchDeleteEmailsCmd
 	return func() tea.Msg {
-		if m.deps.Service == nil {
+		if svc == nil {
 			return tui.BatchEmailActionDoneMsg{
 				Count:        count,
 				SuccessCount: 0,
@@ -333,7 +356,7 @@ func (m *Manager) BatchArchiveEmailsCmd(uids []uint32, accountID, folderName str
 			}
 		}
 
-		err := m.deps.Service.ArchiveEmails(accountID, folderName, uids)
+		err := svc.ArchiveEmails(accountID, folderName, uids)
 		successCount, failureCount := count, 0
 		if err != nil {
 			successCount, failureCount = 0, count
@@ -351,8 +374,9 @@ func (m *Manager) BatchArchiveEmailsCmd(uids []uint32, accountID, folderName str
 }
 
 func (m *Manager) BatchMoveEmailsCmd(uids []uint32, accountID, sourceFolder, destFolder string, count int) tea.Cmd {
+	svc := m.deps.Service // see BatchDeleteEmailsCmd
 	return func() tea.Msg {
-		if m.deps.Service == nil {
+		if svc == nil {
 			return tui.BatchEmailActionDoneMsg{
 				Count:        count,
 				SuccessCount: 0,
@@ -362,7 +386,7 @@ func (m *Manager) BatchMoveEmailsCmd(uids []uint32, accountID, sourceFolder, des
 			}
 		}
 
-		err := m.deps.Service.MoveEmails(accountID, uids, sourceFolder, destFolder)
+		err := svc.MoveEmails(accountID, uids, sourceFolder, destFolder)
 		successCount, failureCount := count, 0
 		if err != nil {
 			successCount, failureCount = 0, count
@@ -388,21 +412,24 @@ func (m *Manager) decrementFolderUnreadForRemoved(folderName, accountID string, 
 		return
 	}
 
-	decremented := false
+	decremented := 0
 	for _, uid := range uids {
 		for _, e := range emails {
 			if e.UID == uid && e.AccountID == accountID {
 				if !e.IsRead {
 					m.folderInbox.DecrementUnreadCount(folderName)
-					decremented = true
+					decremented++
 				}
 				break
 			}
 		}
 	}
 
-	if decremented {
-		config.SaveAccountFolders(accountID, m.folderInbox.GetFolders(), m.folderInbox.GetUnreadCountsCopy()) //nolint:errcheck,gosec
+	// Persist only this account's delta. Saving the folder inbox's merged
+	// folder list and summed counts as this account's cache entry inflated the
+	// unread counts on the next start (they are summed across accounts).
+	if decremented > 0 {
+		adjustCachedUnread(accountID, folderName, -decremented)
 	}
 }
 

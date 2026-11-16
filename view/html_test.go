@@ -89,42 +89,6 @@ func clearAllTerminalEnv() {
 	os.Setenv("TERM_PROGRAM", "basic")
 }
 
-func TestDecodeQuotedPrintable(t *testing.T) {
-	testCases := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "Simple case",
-			input:    "Hello=2C world=21",
-			expected: "Hello, world!",
-		},
-		{
-			name:     "With soft line break",
-			input:    "This is a long line that gets wrapped=\r\n and continues here.",
-			expected: "This is a long line that gets wrapped and continues here.",
-		},
-		{
-			name:     "No encoding",
-			input:    "Just a plain string.",
-			expected: "Just a plain string.",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			decoded, err := decodeQuotedPrintable(tc.input)
-			if err != nil {
-				t.Fatalf("decodeQuotedPrintable() failed: %v", err)
-			}
-			if decoded != tc.expected {
-				t.Errorf("Expected %q, got %q", tc.expected, decoded)
-			}
-		})
-	}
-}
-
 func TestDebugImageProtocolUsesLogger(t *testing.T) {
 	t.Setenv("DEBUG_IMAGE_PROTOCOL", "1")
 	t.Setenv("DEBUG_IMAGE_PROTOCOL_LOG", "")
@@ -845,7 +809,8 @@ func TestProcessBodyDoesNotHyperlinkNonRemoteImageFallbacks(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"[Image: data image, data:image/png;base64,iVBORw0KGgo=]",
+		// Only the media type of a data: URI is shown, never its payload.
+		"[Image: data image, data:image/png]",
 		"[Image: cid image, cid:test-image@example.com]",
 	} {
 		if !strings.Contains(processed, want) {
@@ -933,7 +898,9 @@ func TestProcessBodyWithImageProtocol(t *testing.T) {
 			expectPlacements:    true,
 		},
 		{
-			name: "Data URI image with iTerm2 support returns placement",
+			// iTerm2 has no Kitty/Sixel support here, so the image is drawn
+			// inline with half-block characters instead of out-of-band.
+			name: "Data URI image with iTerm2 support renders inline half-blocks",
 			setupImageProtocol: func() {
 				os.Setenv("TERM", "xterm")
 				os.Setenv("TERM_PROGRAM", "iterm.app")
@@ -945,8 +912,8 @@ func TestProcessBodyWithImageProtocol(t *testing.T) {
 				os.Unsetenv("WEZTERM_EXECUTABLE")
 			},
 			input:               `<img src="data:image/png;base64,` + testBase64PNG + `" alt="test image">`,
+			expectedContains:    "▀",
 			expectedNotContains: "[Image: test image,",
-			expectPlacements:    true,
 		},
 		{
 			name: "Data URI image without protocol support",

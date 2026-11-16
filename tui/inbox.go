@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	overlay "github.com/floatpane/bubble-overlay"
 	threading "github.com/floatpane/jwz-go"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/fetcher"
@@ -20,8 +21,8 @@ import (
 
 var (
 	// In bubbles v2, list.DefaultStyles() takes a boolean for hasDarkBackground
-	paginationStyle = list.DefaultStyles(true).PaginationStyle.PaddingLeft(4)
-	inboxHelpStyle  = list.DefaultStyles(true).HelpStyle.PaddingLeft(4).PaddingBottom(1)
+	paginationStyle = list.DefaultStyles(true).PaginationStyle.PaddingLeft(2)
+	inboxHelpStyle  = list.DefaultStyles(true).HelpStyle.Padding(0, 0, 0, 2)
 	tabStyle        = lipgloss.NewStyle().Padding(0, 2)
 	activeTabStyle  = lipgloss.NewStyle().Padding(0, 2).Foreground(lipgloss.Color("42")).Bold(true).Underline(true)
 	tabBarStyle     = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).PaddingBottom(1).MarginBottom(1)
@@ -31,6 +32,7 @@ var unreadEmailStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold
 var readEmailStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 var visualSelectedStyle lipgloss.Style
 var selectedDateStyle lipgloss.Style
+var inboxCursorStyle lipgloss.Style
 
 type item struct {
 	title, desc   string
@@ -96,6 +98,19 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		_, inVisualSelection = d.inbox.selectedUIDs[i.uid]
 	}
 	rowStyle, marker := inboxRowStyle(isSelected, inVisualSelection)
+	rowBg := rowStyle.GetBackground()
+	_, noBg := rowBg.(lipgloss.NoColor)
+	hasBG := !noBg
+	seg := lipgloss.NewStyle()
+	if hasBG {
+		seg = seg.Foreground(rowStyle.GetForeground()).Background(rowBg)
+	}
+	plain := func(text string) string {
+		if hasBG {
+			return seg.Render(text)
+		}
+		return text
+	}
 
 	contentWidth := listWidth - rowStyle.GetHorizontalFrameSize()
 	if contentWidth < 0 {
@@ -109,6 +124,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 
 	statusIcon, statusStyle := inboxStatusPresentation(i)
+	if hasBG {
+		statusStyle = seg.Bold(!i.isRead)
+	}
 	// Normalize before parsing so a tab or newline still separates "Name <email>".
 	sender := parseSenderName(normalizeInboxRowText(i.desc))
 	subject := inboxSubjectText(i)
@@ -121,7 +139,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 	dateStr := formatInboxDate(i.date, layout, detailedDates)
 	var styledDate string
-	if isSelected {
+	if isSelected && !hasBG {
 		styledDate = selectedDateStyle.Render(dateStr)
 	} else {
 		styledDate = statusStyle.Render(dateStr)
@@ -162,8 +180,8 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 	subject = ansi.Truncate(subject, subjectBudget, ellipsis)
 
-	left := marker + prefix + statusStyle.Render(statusIcon) + " " +
-		statusStyle.Render(sender) + separator + statusStyle.Render(subject)
+	left := plain(marker+prefix) + statusStyle.Render(statusIcon) + plain(" ") +
+		statusStyle.Render(sender) + plain(separator) + statusStyle.Render(subject)
 	if ansi.StringWidth(left) > leftBudget {
 		left = ansi.Truncate(left, leftBudget, ellipsis)
 	}
@@ -174,7 +192,10 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		if pad < 0 {
 			pad = 0
 		}
-		content += strings.Repeat(" ", pad) + styledDate
+		content += plain(strings.Repeat(" ", pad)) + styledDate
+	}
+	if used := ansi.StringWidth(content); hasBG && used < contentWidth {
+		content += seg.Render(strings.Repeat(" ", contentWidth-used))
 	}
 
 	rendered := rowStyle.Render(content)
@@ -189,9 +210,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 func inboxRowStyle(isSelected, inVisualSelection bool) (lipgloss.Style, string) {
 	switch {
 	case isSelected && inVisualSelection:
-		return selectedItemStyle, ">*"
+		return inboxCursorStyle, "* "
 	case isSelected:
-		return selectedItemStyle, "> "
+		return inboxCursorStyle, ""
 	case inVisualSelection:
 		return visualSelectedStyle, "* "
 	default:
@@ -298,28 +319,26 @@ func parseSenderName(from string) string {
 	return from
 }
 
-// truncateEmail shortens an email for display
+// truncateEmail shortens an email for display. It measures display cells,
+// so it never splits a multi-byte character.
 func truncateEmail(email string) string {
 	maxLength := 18
 
-	if len(email) <= maxLength {
+	if ansi.StringWidth(email) <= maxLength {
 		return email
 	}
 
 	parts := strings.SplitN(email, "@", 2)
 	if len(parts) != 2 {
-		if len(email) > maxLength {
-			return email[:maxLength-3] + "..."
-		}
-		return email
+		return ansi.Truncate(email, maxLength-3, "") + "..."
 	}
 
 	local := parts[0]
 	domain := parts[1]
 
 	// Keep full domain visible (e.g. ...@gmail.com) and truncate local part first.
-	if len(local) > 8 {
-		return local[:8] + "...@" + domain
+	if ansi.StringWidth(local) > 8 {
+		return ansi.Truncate(local, 8, "") + "...@" + domain
 	}
 
 	return local + "@" + domain
@@ -372,8 +391,8 @@ type Inbox struct {
 	dateFormat    string
 	detailedDates bool
 
-	lastClickTime time.Time
-	lastClickY    int
+	lastClickTime  time.Time
+	lastClickIndex int
 }
 
 // SetDateFormat configures the Go time layout used to render absolute
@@ -532,12 +551,9 @@ func (m *Inbox) updateList() {
 	// Disable default help to render it manually at the bottom
 	l.SetShowHelp(false)
 
-	if m.width > 0 {
-		l.SetWidth(m.width)
-	}
-	if m.height > 0 {
-		l.SetHeight(m.height / 2)
-	}
+	m.list = l
+	m.relayout()
+	l = m.list
 
 	// Restore index
 	// If index is out of bounds (e.g. list shrank), clamp it.
@@ -819,7 +835,7 @@ func (m *Inbox) getTitle() string {
 	if m.pluginStatus != "" {
 		title += " (" + m.pluginStatus + ")"
 	}
-	return title
+	return m.fitTitle(title)
 }
 
 func (m *Inbox) getBaseTitle() string {
@@ -899,51 +915,27 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 
 	switch msg := msg.(type) {
 	case tea.MouseWheelMsg:
+		if m.searchOverlay != nil || m.list.FilterState() == list.Filtering {
+			return m, nil
+		}
 		switch msg.Button {
 		case tea.MouseWheelDown:
 			m.list.CursorDown()
 		case tea.MouseWheelUp:
 			m.list.CursorUp()
+		default:
+			return m, nil
+		}
+		if m.visualMode {
+			m.updateVisualSelection()
+		}
+		if m.shouldFetchMore() {
+			return m, tea.Batch(m.fetchMoreCmds()...)
 		}
 		return m, nil
 
 	case tea.MouseClickMsg:
-		if msg.Button != tea.MouseLeft {
-			return m, nil
-		}
-		// tabBarH: 5 rows if multiple accounts (text+PaddingBottom+BorderBottom+MarginBottom+\n), else 0
-		// list header: 3 rows (title row + status row + 1 padding row)
-		tabBarH := 0
-		if len(m.tabs) > 1 {
-			tabBarH = 5
-		}
-		listContentStartY := tabBarH + 3
-		cursorInPage := msg.Y - listContentStartY
-		if cursorInPage >= 0 {
-			idx := m.list.Paginator.Page*m.list.Paginator.PerPage + cursorInPage
-			if idx >= 0 && idx < len(m.list.Items()) {
-				m.list.Select(idx)
-				now := time.Now()
-				isDoubleClick := msg.Y == m.lastClickY && now.Sub(m.lastClickTime) < 500*time.Millisecond
-				m.lastClickTime = now
-				m.lastClickY = msg.Y
-				if isDoubleClick {
-					if selectedItem, ok := m.list.SelectedItem().(item); ok && selectedItem.uid != 0 {
-						i := selectedItem.originalIndex
-						uid := selectedItem.uid
-						accountID := selectedItem.accountID
-						var email *fetcher.Email
-						if m.searchActive {
-							email = m.GetEmailAtIndex(i)
-						}
-						return m, func() tea.Msg {
-							return ViewEmailMsg{Index: i, UID: uid, AccountID: accountID, Mailbox: m.mailbox, Email: email}
-						}
-					}
-				}
-			}
-		}
-		return m, nil
+		return m, m.handleMouseClick(msg)
 
 	case tea.KeyPressMsg:
 		if m.searchOverlay != nil {
@@ -1116,40 +1108,17 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 				return RequestRefreshMsg{Mailbox: m.mailbox, Counts: counts}
 			}
 		case kb.Inbox.Open:
-			selectedItem, ok := m.list.SelectedItem().(item)
-			if ok {
-				// Thread header row: collapse the thread
-				if selectedItem.threadHeader {
-					m.expanded[selectedItem.threadKey] = false
-					m.updateList()
-					return m, nil
-				}
-				// Collapsed thread root: expand it
-				if selectedItem.threadRoot && selectedItem.threadCount > 1 && !selectedItem.expanded {
-					m.expanded[selectedItem.threadKey] = true
-					m.updateList()
-					return m, nil
-				}
-				if selectedItem.uid == 0 {
-					return m, nil
-				}
-				idx := selectedItem.originalIndex
-				uid := selectedItem.uid
-				accountID := selectedItem.accountID
-				var email *fetcher.Email
-				if m.searchActive {
-					email = m.GetEmailAtIndex(idx)
-				}
-				return m, func() tea.Msg {
-					return ViewEmailMsg{Index: idx, UID: uid, AccountID: accountID, Mailbox: m.mailbox, Email: email}
-				}
+			if cmd := m.openSelected(); cmd != nil {
+				return m, cmd
+			}
+			if _, ok := m.list.SelectedItem().(item); ok {
+				return m, nil
 			}
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.list.SetWidth(msg.Width)
-		m.list.SetHeight(msg.Height / 2)
+		m.relayout()
 		if m.searchOverlay != nil {
 			return m, m.searchOverlay.Update(msg, m.mailbox, m.currentAccountID)
 		}
@@ -1228,6 +1197,7 @@ func (m *Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocyclo
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
 	cmds = append(cmds, cmd)
+	m.list.Title = m.fitTitle(m.list.Title)
 
 	if m.shouldFetchMore() {
 		cmds = append(cmds, m.fetchMoreCmds()...)
@@ -1311,80 +1281,242 @@ func (m *Inbox) fetchMoreCmds() []tea.Cmd {
 }
 
 func (m *Inbox) View() tea.View {
-	var b strings.Builder
+	// Keep the list sized to the space left by the tab bar and help bar, so
+	// the help bar always sits on the last row.
+	m.relayout()
 
-	// The tab bar is part of the "header" component. Skip it when a plugin
-	// has hidden the header via matcha.ui.set_visible("header", false).
-	headerVisible := isUIVisible("header")
-
-	// Render tabs if there are multiple accounts and the header is visible
-	if headerVisible && len(m.tabs) > 1 {
-		var tabViews []string
-		for i, tab := range m.tabs {
-			label := tab.Label
-			if tab.ID == "" {
-				label = "ALL"
-			}
-
-			if i == m.activeTabIndex {
-				tabViews = append(tabViews, activeTabStyle.Render(label))
-			} else {
-				tabViews = append(tabViews, tabStyle.Render(label))
-			}
-		}
-		tabBar := tabBarStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, tabViews...))
-		b.WriteString(tabBar)
-		b.WriteString("\n")
+	var sections []string
+	if tabs := m.renderTabs(); tabs != "" {
+		sections = append(sections, tabs)
 	}
 
 	// Toggle the list title visibility based on the header component state.
 	// The list title is the "Inbox" / "Sent" / folder name header line.
-	m.list.SetShowTitle(headerVisible)
-
-	b.WriteString(m.list.View())
+	m.list.SetShowTitle(isUIVisible("header"))
+	sections = append(sections, m.list.View())
 
 	// When threaded, the built-in status bar is hidden because it counts
 	// list items (threads) instead of actual emails. Render our own.
 	if m.isThreaded() {
-		b.WriteString(m.threadedStatusBar())
+		sections = append(sections, m.threadedStatusBar())
+	}
+
+	content := strings.Join(sections, "\n")
+	help := m.renderHelpBar()
+	if m.height > 0 {
+		used := lipgloss.Height(content)
+		helpHeight := 0
+		if help != "" {
+			helpHeight = lipgloss.Height(help)
+		}
+		if gap := m.height - used - helpHeight; gap > 0 {
+			content += strings.Repeat("\n", gap)
+		}
+	}
+	if help != "" {
+		content += "\n" + help
+	}
+	if m.width > 0 && m.height > 0 {
+		content = fitBox(content, m.width, m.height)
 	}
 
 	if m.searchOverlay != nil {
-		b.WriteString("\n")
-		b.WriteString(m.searchOverlay.View())
+		w, h := max(m.width, 1), max(m.height, 1)
+		content = overlay.Center(content, m.searchOverlay.View(), w, h)
 	}
 
-	// Ensure we don't start gap calculation on the same line as the list
-	if !strings.HasSuffix(b.String(), "\n") {
-		b.WriteString("\n")
+	return tea.NewView(content)
+}
+
+// renderHelpBar renders the one-line help bar, or "" when a plugin hid the
+// status bar.
+func (m *Inbox) renderHelpBar() string {
+	if !isUIVisible("status_bar") {
+		return ""
 	}
+	return inboxHelpStyle.Render(m.list.Help.View(m.list))
+}
 
-	// The help/status bar is only rendered when the "status_bar" component
-	// is visible (plugin can hide it via matcha.ui.set_visible).
-	helpView := ""
-	if isUIVisible("status_bar") {
-		helpView = inboxHelpStyle.Render(m.list.Help.View(m.list))
+// renderTabs renders the account tab bar (multiple accounts only), fitted to
+// the inbox width.
+func (m *Inbox) renderTabs() string {
+	if !isUIVisible("header") || len(m.tabs) <= 1 {
+		return ""
 	}
-
-	if m.height > 0 {
-		usedHeight := lipgloss.Height(b.String())
-		helpHeight := lipgloss.Height(helpView)
-
-		gap := m.height - usedHeight - helpHeight
-		if gap > 0 {
-			b.WriteString(strings.Repeat("\n", gap))
+	labels := m.tabLabels()
+	views := make([]string, len(labels))
+	for i, label := range labels {
+		if i == m.activeTabIndex {
+			views[i] = activeTabStyle.Render(label)
+		} else {
+			views[i] = tabStyle.Render(label)
 		}
-	} else {
-		b.WriteString("\n")
+	}
+	return tabBarStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, views...))
+}
+
+// tabLabels returns the tab labels, shortened so the tab bar fits the width.
+func (m *Inbox) tabLabels() []string {
+	labels := make([]string, len(m.tabs))
+	for i, tab := range m.tabs {
+		labels[i] = tab.Label
+		if tab.ID == "" {
+			labels[i] = "ALL"
+		}
+	}
+	if m.width <= 0 {
+		return labels
+	}
+	frame := tabStyle.GetHorizontalFrameSize()
+	total := func(limit int) int {
+		sum := 0
+		for _, l := range labels {
+			sum += min(ansi.StringWidth(l), limit) + frame
+		}
+		return sum
+	}
+	limit := 0
+	for _, l := range labels {
+		limit = max(limit, ansi.StringWidth(l))
+	}
+	for limit > 6 && total(limit) > m.width {
+		limit--
+	}
+	for i, l := range labels {
+		labels[i] = ansi.Truncate(l, limit, "…")
+	}
+	return labels
+}
+
+// tabsHeight is the number of rows the tab bar occupies.
+func (m *Inbox) tabsHeight() int {
+	if tabs := m.renderTabs(); tabs != "" {
+		return lipgloss.Height(tabs)
+	}
+	return 0
+}
+
+// relayout sizes the list to the rows left over by the tab bar, the threaded
+// status bar and the help bar.
+func (m *Inbox) relayout() {
+	if m.width <= 0 || m.height <= 0 {
+		return
+	}
+	m.list.Help.SetWidth(max(1, m.width-inboxHelpStyle.GetHorizontalFrameSize()))
+	reserved := m.tabsHeight()
+	if help := m.renderHelpBar(); help != "" {
+		reserved += lipgloss.Height(help)
+	}
+	if m.isThreaded() {
+		reserved += lipgloss.Height(m.threadedStatusBar())
+	}
+	m.list.SetSize(m.width, max(1, m.height-reserved))
+	// The help bar is rendered with inboxHelpStyle's padding; leave room for
+	// it so the help truncates with "…" instead of being clipped mid-word.
+	m.list.Help.SetWidth(max(1, m.width-inboxHelpStyle.GetHorizontalFrameSize()))
+	m.list.Title = m.fitTitle(m.list.Title)
+}
+
+// fitTitle truncates a list title so the title bar never wraps.
+func (m *Inbox) fitTitle(title string) string {
+	if m.width <= 0 {
+		return title
+	}
+	return ansi.Truncate(title, max(1, m.width-m.list.Styles.TitleBar.GetHorizontalFrameSize()-1), "…")
+}
+
+// itemsTop is the row, relative to the inbox, of the first list item.
+func (m *Inbox) itemsTop() int {
+	top := m.tabsHeight()
+	if m.list.ShowTitle() || (m.list.ShowFilter() && m.list.FilteringEnabled()) {
+		top += 1 + m.list.Styles.TitleBar.GetVerticalFrameSize()
+	}
+	if m.list.ShowStatusBar() {
+		top += 1 + m.list.Styles.StatusBar.GetVerticalFrameSize()
+	}
+	return top
+}
+
+// handleMouseClick selects the clicked row (double-click opens it) or
+// switches to the clicked account tab. Coordinates are relative to the inbox.
+func (m *Inbox) handleMouseClick(msg tea.MouseClickMsg) tea.Cmd {
+	if msg.Button != tea.MouseLeft || m.searchOverlay != nil || m.list.FilterState() == list.Filtering {
+		return nil
+	}
+	if tabs := m.renderTabs(); tabs != "" && msg.Y == 0 {
+		x := 0
+		for i, label := range m.tabLabels() {
+			w := ansi.StringWidth(label) + tabStyle.GetHorizontalFrameSize()
+			if msg.X >= x && msg.X < x+w {
+				if i != m.activeTabIndex {
+					m.activeTabIndex = i
+					m.currentAccountID = m.tabs[i].ID
+					m.visualMode = false
+					m.selectedUIDs = make(map[uint32]string)
+					m.selectionOrder = []uint32{}
+					m.updateList()
+				}
+				return nil
+			}
+			x += w
+		}
+		return nil
 	}
 
-	b.WriteString(helpView)
-
-	v := tea.NewView(b.String())
-	if config.MouseEnabled != nil && *config.MouseEnabled {
-		v.MouseMode = tea.MouseModeCellMotion
+	row := msg.Y - m.itemsTop()
+	onPage := m.list.Paginator.ItemsOnPage(len(m.list.VisibleItems()))
+	if row < 0 || row >= onPage {
+		return nil
 	}
-	return v
+	idx := m.list.Paginator.Page*m.list.Paginator.PerPage + row
+	m.list.Select(idx)
+	if m.visualMode {
+		m.updateVisualSelection()
+	}
+
+	now := time.Now()
+	isDoubleClick := idx == m.lastClickIndex && now.Sub(m.lastClickTime) < 500*time.Millisecond
+	m.lastClickTime = now
+	m.lastClickIndex = idx
+	if !isDoubleClick {
+		return nil
+	}
+	m.lastClickTime = time.Time{}
+	return m.openSelected()
+}
+
+// openSelected opens the selected email, or expands/collapses a thread.
+func (m *Inbox) openSelected() tea.Cmd {
+	selectedItem, ok := m.list.SelectedItem().(item)
+	if !ok {
+		return nil
+	}
+	// Thread header row: collapse the thread
+	if selectedItem.threadHeader {
+		m.expanded[selectedItem.threadKey] = false
+		m.updateList()
+		return nil
+	}
+	// Collapsed thread root: expand it
+	if selectedItem.threadRoot && selectedItem.threadCount > 1 && !selectedItem.expanded {
+		m.expanded[selectedItem.threadKey] = true
+		m.updateList()
+		return nil
+	}
+	if selectedItem.uid == 0 {
+		return nil
+	}
+	idx := selectedItem.originalIndex
+	uid := selectedItem.uid
+	accountID := selectedItem.accountID
+	mailbox := m.mailbox
+	var email *fetcher.Email
+	if m.searchActive {
+		email = m.GetEmailAtIndex(idx)
+	}
+	return func() tea.Msg {
+		return ViewEmailMsg{Index: idx, UID: uid, AccountID: accountID, Mailbox: mailbox, Email: email}
+	}
 }
 
 // threadedStatusBar renders a custom status bar for threaded view that shows
@@ -1421,6 +1553,11 @@ func (m *Inbox) IsSearchActive() bool {
 
 func (m *Inbox) IsSearchOverlayOpen() bool {
 	return m != nil && m.searchOverlay != nil
+}
+
+// IsFiltering reports whether the user is typing a list filter.
+func (m *Inbox) IsFiltering() bool {
+	return m != nil && m.list.FilterState() == list.Filtering
 }
 
 func (m *Inbox) IsFilterActive() bool {
@@ -1536,7 +1673,7 @@ func (m *Inbox) updateVisualSelection() {
 func (m *Inbox) updateListTitle() {
 	if m.visualMode && len(m.selectedUIDs) > 0 {
 		baseTitle := m.getBaseTitle()
-		m.list.Title = fmt.Sprintf("%s - VISUAL (%d selected)", baseTitle, len(m.selectedUIDs))
+		m.list.Title = m.fitTitle(fmt.Sprintf("%s - VISUAL (%d selected)", baseTitle, len(m.selectedUIDs)))
 	} else {
 		m.list.Title = m.getTitle()
 	}
@@ -1601,8 +1738,10 @@ func (m *Inbox) RemoveEmail(uid uint32, accountID string) {
 func (m *Inbox) SetSize(width, height int) {
 	m.width = width
 	m.height = height
-	m.list.SetWidth(width)
-	m.list.SetHeight(height / 2)
+	m.relayout()
+	if m.searchOverlay != nil {
+		m.searchOverlay.Update(tea.WindowSizeMsg{Width: width, Height: height}, m.mailbox, m.currentAccountID)
+	}
 }
 
 // SetFolderName sets a custom folder name for the inbox title.

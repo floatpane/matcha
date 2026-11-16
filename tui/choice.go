@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"reflect"
 	"strings"
 
@@ -18,7 +17,14 @@ var (
 	listHeader        = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).PaddingBottom(1)
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(2)
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("42"))
+	menuItemStyle     = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("245"))
+	menuSelectedStyle = lipgloss.NewStyle().PaddingLeft(2).Background(lipgloss.Color("42")).Foreground(lipgloss.Color("#000000")).Bold(true)
+	menuHintStyle     = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("245"))
+	menuNoticeStyle   = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("214"))
 )
+
+// menuWidth is the width of the highlight bar behind the selected home entry.
+const menuWidth = 36
 
 // ASCII logo for the start screen
 const choiceLogo = `
@@ -67,20 +73,6 @@ func (m Choice) Init() tea.Cmd {
 	return nil
 }
 
-func (m Choice) computeMenuStartY() int {
-	y := 1 // docStyle top margin (Margin(1, 2))
-	y += 6 // choiceLogo: blank line + 5 ascii art lines (trailing \n doesn't add a visible row)
-	if len(m.keybindWarnings) > 0 {
-		y += len(m.keybindWarnings) + 1 // one row per warning + trailing \n
-	}
-	// listHeader with PaddingBottom(1) = 2 rows, then \n\n = 2 more rows
-	y += 4
-	if m.UpdateAvailable {
-		y += 3 // update message (1 row) + \n\n (2 rows)
-	}
-	return y
-}
-
 func (m Choice) handleSelect() (tea.Model, tea.Cmd) {
 	idx := m.cursor
 	marketplaceIdx := 2
@@ -120,6 +112,7 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = (m.cursor + 1) % len(m.choices)
 		case tea.MouseWheelUp:
 			m.cursor = (m.cursor - 1 + len(m.choices)) % len(m.choices)
+		default:
 		}
 		return m, nil
 
@@ -127,10 +120,18 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Button != tea.MouseLeft {
 			return m, nil
 		}
-		idx := msg.Y - m.computeMenuStartY()
-		if idx >= 0 && idx < len(m.choices) {
-			m.cursor = idx
-			return m.handleSelect()
+		// Entries are only clickable inside the menu column (the width of
+		// the selection bar), not anywhere on their row.
+		left := docStyle.GetMarginLeft()
+		if msg.X < left || msg.X >= left+menuWidth {
+			return m, nil
+		}
+		_, rows := m.menuContent()
+		for i, row := range rows {
+			if row == msg.Y-docStyle.GetMarginTop() {
+				m.cursor = i
+				return m.handleSelect()
+			}
 		}
 		return m, nil
 
@@ -170,29 +171,44 @@ func (m Choice) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Choice) View() tea.View {
-	var b strings.Builder
+// innerWidth is the width inside docStyle's margins (0 = unknown).
+func (m Choice) innerWidth() int {
+	if m.width <= 0 {
+		return 0
+	}
+	return max(1, m.width-docStyle.GetHorizontalMargins())
+}
 
-	// renderLogo checks the plugin banner override (set via
-	// matcha.ui.set_banner) and falls back to the default choiceLogo.
-	b.WriteString(renderLogo(choiceLogo))
-	b.WriteString("\n")
+// fitLines renders text with style, wrapped to the screen, as separate lines
+// so every one of them is counted when mapping clicks to rows.
+func (m Choice) fitLines(style lipgloss.Style, text string) []string {
+	if w := m.innerWidth(); w > 0 && style.GetHorizontalFrameSize() < w {
+		style = style.Width(w)
+	}
+	return strings.Split(style.Render(text), "\n")
+}
 
+// helpView renders the bottom help line, wrapped to the screen.
+func (m Choice) helpView() string {
+	return helpStyle.Render(wrapBlock(keybindHelp("choice.help"), m.innerWidth()))
+}
+
+// menuContent renders the home screen body and returns the row (relative to
+// the top of the body) of every menu entry, so mouse clicks map to items.
+func (m Choice) menuContent() (string, []int) {
+	logo := strings.Split(strings.TrimRight(renderLogo(choiceLogo), "\n"), "\n")
+	logo = append(logo, "")
+
+	var lines []string
 	if len(m.keybindWarnings) > 0 {
-		warnStyle := lipgloss.NewStyle().Foreground(theme.ActiveTheme.Warning).Padding(0, 1)
+		warnStyle := lipgloss.NewStyle().Foreground(theme.ActiveTheme.Warning).PaddingLeft(2)
 		for _, w := range m.keybindWarnings {
-			b.WriteString(warnStyle.Render("⚠ keybind " + w))
-			b.WriteString("\n")
+			lines = append(lines, m.fitLines(warnStyle, "⚠ keybind "+w)...)
 		}
-		b.WriteString("\n")
+		lines = append(lines, "")
 	}
 
-	b.WriteString(listHeader.Render(t("choice.what_to_do")))
-	b.WriteString("\n\n")
-
-	// If we detected an update, show a short message under the header.
 	if m.UpdateAvailable {
-		updateStyle := lipgloss.NewStyle().Foreground(theme.ActiveTheme.Warning).Padding(0, 1)
 		cur := m.CurrentVersion
 		if cur == "" {
 			cur = t("choice.unknown")
@@ -201,33 +217,46 @@ func (m Choice) View() tea.View {
 			"latest":  m.LatestVersion,
 			"current": cur,
 		})
-		b.WriteString(updateStyle.Render(msg))
-		b.WriteString("\n\n")
+		lines = append(lines, m.fitLines(menuNoticeStyle, msg)...)
+		lines = append(lines, "")
 	}
 
+	lines = append(lines, m.fitLines(menuHintStyle, t("choice.what_to_do"))...)
+	lines = append(lines, "")
+
+	// The logo is decoration: drop it when the menu would not fit otherwise.
+	needed := len(logo) + len(lines) + len(m.choices) + blockHeight(m.helpView()) + docStyle.GetVerticalMargins() + 1
+	if m.height <= 0 || needed <= m.height {
+		lines = append(logo, lines...)
+	}
+
+	rows := make([]int, len(m.choices))
 	for i, choice := range m.choices {
-		if m.cursor == i {
-			b.WriteString(selectedItemStyle.Render(fmt.Sprintf("> %s", choice)))
+		rows[i] = len(lines)
+		if i == m.cursor {
+			lines = append(lines, menuSelectedStyle.Width(menuWidth).Render(choice))
 		} else {
-			b.WriteString(itemStyle.Render(fmt.Sprintf("  %s", choice)))
+			lines = append(lines, menuItemStyle.Render(choice))
 		}
-		b.WriteString("\n")
 	}
+	return strings.Join(lines, "\n"), rows
+}
 
-	mainContent := b.String()
-	helpView := helpStyle.Render(keybindHelp("choice.help"))
+func (m Choice) View() tea.View {
+	content, _ := m.menuContent()
+	helpView := m.helpView()
 
+	mainContent := content
 	if m.height > 0 {
-		currentHeight := lipgloss.Height(docStyle.Render(mainContent + helpView))
-		gap := m.height - currentHeight
-		if gap > 0 {
+		currentHeight := lipgloss.Height(docStyle.Render(mainContent + "\n" + helpView))
+		if gap := m.height - currentHeight; gap > 0 {
 			mainContent += strings.Repeat("\n", gap)
 		}
 	} else {
 		mainContent += "\n\n"
 	}
 
-	v := tea.NewView(docStyle.Render(mainContent + helpView))
+	v := tea.NewView(docStyle.Render(mainContent + "\n" + helpView))
 	if config.MouseEnabled != nil && *config.MouseEnabled {
 		v.MouseMode = tea.MouseModeCellMotion
 	}

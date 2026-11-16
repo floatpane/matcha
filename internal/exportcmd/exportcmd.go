@@ -70,23 +70,50 @@ func TruncateUTF8(s string, maxBytes int) string {
 	return s
 }
 
-// DownloadAttachmentCmd downloads an email attachment and saves it to the
-// user's Downloads folder.
-func DownloadAttachmentCmd(account *config.Account, uid uint32, msg tui.DownloadAttachmentMsg) tea.Cmd {
-	return func() tea.Msg {
-		var data []byte
-		var err error
-		switch msg.Mailbox {
-		case tui.MailboxSent:
-			data, err = fetcher.FetchSentAttachment(account, uid, msg.PartID, msg.Encoding)
-		case tui.MailboxTrash:
-			data, err = fetcher.FetchTrashAttachment(account, uid, msg.PartID, msg.Encoding)
-		case tui.MailboxArchive:
-			data, err = fetcher.FetchArchiveAttachment(account, uid, msg.PartID, msg.Encoding)
-		case tui.MailboxInbox:
-			data, err = fetcher.FetchAttachment(account, uid, msg.PartID, msg.Encoding)
-		}
+// Seams for tests.
+var (
+	fetchFolderAttachment = fetcher.FetchFolderAttachment
+	openFile              = openWithSystemHandler
+)
 
+// fetchAttachmentData returns the attachment bytes for msg. Folder views pass
+// the real folder (msg.Folder) and UID; the MailboxKind fallback only knows
+// the fixed INBOX/Sent/Trash/Archive mailboxes, so for any other folder it
+// fetched the part with the same number from the INBOX message that happened
+// to share the UID.
+func fetchAttachmentData(account *config.Account, uid uint32, msg tui.DownloadAttachmentMsg) ([]byte, error) {
+	if len(msg.Data) > 0 {
+		return msg.Data, nil // already decoded (inline parts)
+	}
+	if msg.Folder != "" {
+		return fetchFolderAttachment(account, msg.Folder, uid, msg.PartID, msg.Encoding)
+	}
+	switch msg.Mailbox {
+	case tui.MailboxSent:
+		return fetcher.FetchSentAttachment(account, uid, msg.PartID, msg.Encoding)
+	case tui.MailboxTrash:
+		return fetcher.FetchTrashAttachment(account, uid, msg.PartID, msg.Encoding)
+	case tui.MailboxArchive:
+		return fetcher.FetchArchiveAttachment(account, uid, msg.PartID, msg.Encoding)
+	case tui.MailboxInbox:
+		return fetcher.FetchAttachment(account, uid, msg.PartID, msg.Encoding)
+	default:
+		return nil, fmt.Errorf("cannot download attachment: unknown mailbox %q", msg.Mailbox)
+	}
+}
+
+// DownloadAttachmentCmd downloads an email attachment and saves it to the
+// user's Downloads folder. msg.UID, when set, overrides uid.
+func DownloadAttachmentCmd(account *config.Account, uid uint32, msg tui.DownloadAttachmentMsg) tea.Cmd {
+	if msg.UID != 0 {
+		uid = msg.UID
+	}
+	if account == nil {
+		return func() tea.Msg { return tui.AttachmentDownloadedMsg{Err: fmt.Errorf("account not found")} }
+	}
+	acct := *account // the command runs on another goroutine
+	return func() tea.Msg {
+		data, err := fetchAttachmentData(&acct, uid, msg)
 		if err != nil {
 			return tui.AttachmentDownloadedMsg{Err: err}
 		}
@@ -137,25 +164,31 @@ func DownloadAttachmentCmd(account *config.Account, uid uint32, msg tui.Download
 
 		log.Printf("attachment saved to %s", filePath)
 
-		go func(p string) {
-			var cmd *exec.Cmd
-			switch runtime.GOOS {
-			case goosDarwin:
-				cmd = exec.Command("open", p) //nolint:noctx
-			case goosLinux:
-				cmd = exec.Command("xdg-open", p) //nolint:noctx
-			case goosWindows:
-				cmd = exec.Command("cmd", "/c", "start", "", p) //nolint:noctx
-			default:
-				return
-			}
-			if err := cmd.Start(); err != nil {
-				log.Printf("failed to open file %s: %v", p, err)
-			}
-		}(filePath)
+		go openFile(filePath)
 
 		return tui.AttachmentDownloadedMsg{Path: filePath, Err: nil}
 	}
+}
+
+// openWithSystemHandler opens p with the platform's default application and
+// reaps the launcher process (Start without Wait left a zombie per download).
+func openWithSystemHandler(p string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case goosDarwin:
+		cmd = exec.Command("open", p) //nolint:noctx
+	case goosLinux:
+		cmd = exec.Command("xdg-open", p) //nolint:noctx
+	case goosWindows:
+		cmd = exec.Command("cmd", "/c", "start", "", p) //nolint:noctx
+	default:
+		return
+	}
+	if err := cmd.Start(); err != nil {
+		log.Printf("failed to open file %s: %v", p, err)
+		return
+	}
+	_ = cmd.Wait()
 }
 
 // ExportEmailCmd fetches the raw RFC822 message, converts it to the desired

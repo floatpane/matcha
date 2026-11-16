@@ -42,6 +42,11 @@ func SaveFolderCache(cache *FolderCache) error {
 	if err != nil {
 		return err
 	}
+	defer lockFile(path)()
+	return saveFolderCacheLocked(path, cache)
+}
+
+func saveFolderCacheLocked(path string, cache *FolderCache) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
@@ -84,13 +89,62 @@ func GetCachedFolders(accountID string) ([]string, map[string]int) {
 	return nil, nil
 }
 
-// SaveAccountFolders saves folder names for a specific account, merging into the existing cache.
-func SaveAccountFolders(accountID string, folders []string, unread map[string]int) error {
-	cache, err := LoadFolderCache()
+// updateFolderCache runs fn on folder_cache.json under the file lock and
+// saves the result when fn reports a change. Concurrent callers (one
+// goroutine per account after a folder fetch, threading toggles, unread
+// adjustments) therefore never lose each other's updates.
+func updateFolderCache(fn func(cache *FolderCache) bool) error {
+	path, err := folderCacheFile()
 	if err != nil {
+		return err
+	}
+	defer lockFile(path)()
+	cache := &FolderCache{}
+	found, err := loadJSONForUpdate(path, cache, true)
+	if err != nil {
+		return err
+	}
+	if !found {
 		cache = &FolderCache{}
 	}
+	if !fn(cache) {
+		return nil
+	}
+	return saveFolderCacheLocked(path, cache)
+}
 
+// SaveAccountFolders saves folder names for a specific account, merging into the existing cache.
+func SaveAccountFolders(accountID string, folders []string, unread map[string]int) error {
+	return updateFolderCache(func(cache *FolderCache) bool {
+		saveAccountFoldersLocked(cache, accountID, folders, unread)
+		return true
+	})
+}
+
+// AdjustCachedUnread adds delta to the cached unread count of one folder of
+// one account (clamped at zero). Unlike SaveAccountFolders it never touches
+// other accounts' entries or the folder list, so it is safe to call with the
+// per-account effect of a local action (delete, archive, undo).
+func AdjustCachedUnread(accountID, folder string, delta int) error {
+	if delta == 0 {
+		return nil
+	}
+	return updateFolderCache(func(cache *FolderCache) bool {
+		for i := range cache.Accounts {
+			if cache.Accounts[i].AccountID != accountID {
+				continue
+			}
+			if cache.Accounts[i].Unread == nil {
+				cache.Accounts[i].Unread = make(map[string]int)
+			}
+			cache.Accounts[i].Unread[folder] = max(0, cache.Accounts[i].Unread[folder]+delta)
+			return true
+		}
+		return false
+	})
+}
+
+func saveAccountFoldersLocked(cache *FolderCache, accountID string, folders []string, unread map[string]int) {
 	found := false
 	for i, acc := range cache.Accounts {
 		if acc.AccountID == accountID {
@@ -110,29 +164,22 @@ func SaveAccountFolders(accountID string, folders []string, unread map[string]in
 			UpdatedAt: time.Now(),
 		})
 	}
-
-	return SaveFolderCache(cache)
 }
 
 func removeAccountFromFolderCache(accountID string) error {
-	cache, err := LoadFolderCache()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+	return updateFolderCache(func(cache *FolderCache) bool {
+		filtered := cache.Accounts[:0]
+		for _, account := range cache.Accounts {
+			if account.AccountID != accountID {
+				filtered = append(filtered, account)
+			}
 		}
-		return err
-	}
-	filtered := cache.Accounts[:0]
-	for _, account := range cache.Accounts {
-		if account.AccountID != accountID {
-			filtered = append(filtered, account)
+		if len(filtered) == len(cache.Accounts) {
+			return false
 		}
-	}
-	if len(filtered) == len(cache.Accounts) {
-		return nil
-	}
-	cache.Accounts = filtered
-	return SaveFolderCache(cache)
+		cache.Accounts = filtered
+		return true
+	})
 }
 
 // --- Per-folder email cache ---
@@ -177,6 +224,7 @@ func SaveFolderEmailCache(folderName string, emails []CachedEmail) error {
 	if err != nil {
 		return err
 	}
+	defer lockFile(path)()
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
@@ -224,48 +272,46 @@ func removeAccountFromFolderEmailCaches(accountID string) error {
 
 	var errs []error
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue // skip in-flight temp files of atomic writes
 		}
-		path := filepath.Join(dir, entry.Name())
-		data, err := SecureReadFile(path)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		var cache FolderEmailCache
-		if err := json.Unmarshal(data, &cache); err != nil {
-			errs = append(errs, err)
-			continue
-		}
-
-		filtered := cache.Emails[:0]
-		for _, email := range cache.Emails {
-			if email.AccountID != accountID {
-				filtered = append(filtered, email)
-			}
-		}
-		if len(filtered) == len(cache.Emails) {
-			continue
-		}
-		if len(filtered) == 0 {
-			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-				errs = append(errs, err)
-			}
-			continue
-		}
-		cache.Emails = filtered
-		cache.UpdatedAt = time.Now()
-		data, err = json.Marshal(cache)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		if err := SecureWriteFile(path, data, 0600); err != nil {
+		if err := removeAccountFromFolderEmailFile(filepath.Join(dir, entry.Name()), accountID); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func removeAccountFromFolderEmailFile(path, accountID string) error {
+	defer lockFile(path)()
+	var cache FolderEmailCache
+	found, err := loadJSONForUpdate(path, &cache, false)
+	if err != nil || !found {
+		return err
+	}
+
+	filtered := cache.Emails[:0]
+	for _, email := range cache.Emails {
+		if email.AccountID != accountID {
+			filtered = append(filtered, email)
+		}
+	}
+	if len(filtered) == len(cache.Emails) {
+		return nil
+	}
+	if len(filtered) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	cache.Emails = filtered
+	cache.UpdatedAt = time.Now()
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return err
+	}
+	return SecureWriteFile(path, data, 0600)
 }
 
 func LoadFolderEmailHeaders(folderName string) ([]threading.EmailHeader, error) {
@@ -305,15 +351,13 @@ func IsFolderThreaded(folderName string, defaultEnabled bool) bool {
 
 // SetFolderThreaded stores an explicit per-folder threading override.
 func SetFolderThreaded(folderName string, threaded bool) error {
-	cache, err := LoadFolderCache()
-	if err != nil {
-		cache = &FolderCache{}
-	}
-	if cache.ThreadedFolders == nil {
-		cache.ThreadedFolders = make(map[string]bool)
-	}
-	cache.ThreadedFolders[folderName] = threaded
-	return SaveFolderCache(cache)
+	return updateFolderCache(func(cache *FolderCache) bool {
+		if cache.ThreadedFolders == nil {
+			cache.ThreadedFolders = make(map[string]bool)
+		}
+		cache.ThreadedFolders[folderName] = threaded
+		return true
+	})
 }
 
 func cachedEmailID(email CachedEmail) string {

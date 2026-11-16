@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"unicode"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -35,7 +36,7 @@ func (p *LogPanel) View() string {
 
 	innerWidth := max(p.width, 1)
 	for i, line := range lines {
-		lines[i] = ansi.Truncate(line, innerWidth, "…")
+		lines[i] = ansi.Truncate(singleRowText(line), innerWidth, "…")
 	}
 
 	header := lipgloss.NewStyle().
@@ -54,6 +55,33 @@ func (p *LogPanel) View() string {
 		Render(body)
 
 	return lipgloss.JoinVertical(lipgloss.Left, separator, content)
+}
+
+// rowTabWidth matches lipgloss' tab expansion when text is rendered.
+const rowTabWidth = 4
+
+// singleRowText makes text safe to measure and draw on a single row. Escape
+// sequences are stripped, tabs are expanded (ansi.Truncate counts a tab as
+// zero cells but lipgloss draws it four wide, which pushed the newest log
+// line out of the panel), newlines become spaces and other control
+// characters are dropped.
+func singleRowText(line string) string {
+	line = ansi.Strip(line)
+	var b strings.Builder
+	b.Grow(len(line))
+	for _, r := range line {
+		switch {
+		case r == '\t':
+			b.WriteString(strings.Repeat(" ", rowTabWidth))
+		case r == '\n':
+			b.WriteByte(' ')
+		case unicode.IsControl(r):
+			// dropped
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func (p *LogPanel) tailLines(n int) []string {

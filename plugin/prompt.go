@@ -1,8 +1,6 @@
 package plugin
 
 import (
-	"log"
-
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -10,6 +8,7 @@ import (
 type PendingPrompt struct {
 	Placeholder string
 	callback    *lua.LFunction
+	plugin      string // plugin that requested the prompt (for storage and errors)
 }
 
 // luaPrompt implements matcha.prompt(placeholder, callback).
@@ -22,6 +21,7 @@ func (m *Manager) luaPrompt(L *lua.LState) int { //nolint:gocritic
 	m.pendingPrompt = &PendingPrompt{
 		Placeholder: placeholder,
 		callback:    fn,
+		plugin:      m.currentPlugin,
 	}
 	return 0
 }
@@ -41,11 +41,14 @@ func (m *Manager) ResolvePrompt(prompt *PendingPrompt, input string) {
 	if prompt == nil || prompt.callback == nil {
 		return
 	}
+	previousPlugin := m.currentPlugin
+	m.currentPlugin = prompt.plugin
+	defer func() { m.currentPlugin = previousPlugin }()
 	if err := m.state.CallByParam(lua.P{
 		Fn:      prompt.callback,
 		NRet:    0,
 		Protect: true,
 	}, lua.LString(input)); err != nil {
-		log.Printf("plugin prompt callback error: %v", err)
+		m.reportRuntimeError("prompt", err)
 	}
 }

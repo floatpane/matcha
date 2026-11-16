@@ -195,12 +195,18 @@ func SecureReadFile(path string) ([]byte, error) {
 }
 
 // SecureWriteFile writes data to a file, encrypting it if the vault is unlocked.
+// The write is atomic (temp file + rename): concurrent readers never see a
+// truncated file, which they would otherwise treat as empty and overwrite.
 func SecureWriteFile(path string, data []byte, perm os.FileMode) error {
 	v := getVault()
-	if v.Locked() {
-		return os.WriteFile(path, data, perm)
+	if !v.Locked() {
+		enc, err := v.Encrypt(data)
+		if err != nil {
+			return err
+		}
+		data = enc
 	}
-	return v.WriteFile(path, data, perm)
+	return writeFileAtomic(path, data, perm)
 }
 
 // reEncryptCacheFiles reads all plain data files (excluding config.json) and
@@ -392,7 +398,7 @@ func writeDataFile(path string, data []byte, perm os.FileMode) error {
 	if !isUnder(clean, cfgDir) && !isUnder(clean, cDir) {
 		return fmt.Errorf("config: refusing write outside app directories: %s", clean)
 	}
-	return os.WriteFile(clean, data, perm)
+	return writeFileAtomic(clean, data, perm)
 }
 
 // isUnder reports whether path is inside (or equal to) base.

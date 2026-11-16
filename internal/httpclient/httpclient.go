@@ -15,8 +15,10 @@ const (
 	PluginCallTimeout = 10 * time.Second
 	// RegistryFetchTimeout bounds plugin registry / plugin file fetches (plugins/embed.go).
 	RegistryFetchTimeout = 10 * time.Second
-	// RemoteImageTimeout bounds inline image fetches (view/html.go).
-	// Kept short so message rendering doesn't stall.
+	// RemoteImageTimeout bounds how long a remote image download
+	// (view/remote_images.go) may go without progress: waiting for the
+	// response headers, or between reads of the body. Downloads that keep
+	// going are not cut off, so several sharing a slow link still finish.
 	RemoteImageTimeout = 5 * time.Second
 	// InstallTimeout bounds CLI install downloads (cli/install.go).
 	InstallTimeout = 30 * time.Second

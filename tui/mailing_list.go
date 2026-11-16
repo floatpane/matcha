@@ -62,8 +62,10 @@ func (m *MailingListEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.nameInput.SetWidth(msg.Width - 4)
-		m.addrInput.SetWidth(msg.Width - 4)
+		// Never hand the inputs a negative width: bubbles' textinput panics
+		// rendering its placeholder on tiny terminals otherwise.
+		m.nameInput.SetWidth(max(msg.Width-4, 1))
+		m.addrInput.SetWidth(max(msg.Width-4, 1))
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -136,13 +138,17 @@ func (m *MailingListEditor) View() tea.View {
 		addrView = focusedStyle.Render("Addresses (comma-separated):") + "\n" + m.addrInput.View()
 	}
 
-	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left,
+	help := "tab/↑/↓: switch fields • enter: submit • " + cancelKey() + ": back"
+	if m.width > 0 {
+		help = lipgloss.Wrap(help, m.width, "")
+	}
+	return tea.NewView(clampRendered(lipgloss.JoinVertical(lipgloss.Left,
 		title,
 		"",
 		nameView,
 		"",
 		addrView,
 		"",
-		helpStyle.Render("tab/↑/↓: switch fields • enter: submit • "+cancelKey()+": back"),
-	))
+		helpStyle.Render(help),
+	), m.width, m.height))
 }

@@ -3,51 +3,64 @@ package macos
 import (
 	_ "embed"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync"
 )
 
 //go:embed badge.swift
 var badgeSwift string
 
+// maxBadgeFailures is how many consecutive helper failures are tolerated
+// before SetBadge gives up for the rest of the process.
+const maxBadgeFailures = 3
+
+var badgeState struct {
+	mu       sync.Mutex
+	last     int
+	haveLast bool
+	failures int
+	lastErr  error
+}
+
 // SetBadge updates the macOS Dock badge count.
+//
+// The Swift helper is compiled once and cached (see compiledHelper); calls are
+// serialized, repeated counts are skipped, and after repeated failures the
+// helper is no longer launched. It is safe to call from any goroutine, but it
+// still spawns a process, so callers on the UI goroutine should run it in a
+// command and debounce.
 func SetBadge(count int) error {
 	if runtime.GOOS != goosDarwin {
 		return nil
 	}
 
-	tmpDir, err := os.MkdirTemp("", "matcha-badge")
+	badgeState.mu.Lock()
+	defer badgeState.mu.Unlock()
+
+	if badgeState.failures >= maxBadgeFailures {
+		return fmt.Errorf("dock badge disabled after repeated failures: %w", badgeState.lastErr)
+	}
+	if badgeState.haveLast && badgeState.last == count {
+		return nil
+	}
+
+	bin, err := compiledHelper("badge", badgeSwift)
 	if err != nil {
+		badgeState.failures = maxBadgeFailures // a missing toolchain will not appear mid-session
+		badgeState.lastErr = err
 		return err
 	}
-	defer os.RemoveAll(tmpDir) //nolint:errcheck
 
-	swiftFile := filepath.Join(tmpDir, "badge.swift")
-	if err := os.WriteFile(swiftFile, []byte(badgeSwift), 0644); err != nil {
-		return err
-	}
-
-	binFile := filepath.Join(tmpDir, "badge")
-
-	// Compile
-	cmd := exec.Command("swiftc", swiftFile, "-o", binFile) //nolint:noctx
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to compile badge helper: %w\n%s", err, string(out))
-	}
-
-	// Run
-	// If we want to target our specific app, we might need a different approach,
-	// but for now, this will set the badge for the process that runs it.
-	// To set it for the 'MatchaMail.app', we'd need that app to be running and
-	// listen for a notification, OR we run this compiled tool *inside* the app bundle context.
-
-	err = exec.Command(binFile, strconv.Itoa(count)).Run() //nolint:noctx
-	if err != nil {
+	if err := exec.Command(bin, strconv.Itoa(count)).Run(); err != nil { //nolint:noctx
+		badgeState.failures++
+		badgeState.lastErr = err
 		return fmt.Errorf("failed to set badge: %w", err)
 	}
-
+	badgeState.failures = 0
+	badgeState.lastErr = nil
+	badgeState.last = count
+	badgeState.haveLast = true
 	return nil
 }

@@ -18,7 +18,8 @@ func TestPIDFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.pid")
 
-	if err := WritePID(path); err != nil {
+	release, err := LockPID(path)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -32,19 +33,18 @@ func TestPIDFile(t *testing.T) {
 
 	gotPID, running := IsRunning(path)
 	if !running {
-		t.Error("expected running=true for current process")
+		t.Error("expected running=true while the lock is held")
 	}
 	if gotPID != os.Getpid() {
 		t.Errorf("pid = %d, want %d", gotPID, os.Getpid())
 	}
-
-	if err := RemovePID(path); err != nil {
-		t.Fatal(err)
+	if _, err := LockPID(path); err == nil {
+		t.Error("a second daemon could take the PID file")
 	}
 
-	_, running = IsRunning(path)
-	if running {
-		t.Error("expected running=false after remove")
+	release()
+	if _, running = IsRunning(path); running {
+		t.Error("expected running=false after release")
 	}
 }
 
