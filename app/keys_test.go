@@ -89,19 +89,22 @@ func TestPaletteQuitKeyHandling(t *testing.T) {
 
 	config.Keybinds.Global.Quit = "q"
 	m := open()
-	m.Update(palette.KeyMsgFromBinding("q"))
+	if keyQuits(m, "q") {
+		t.Error("printable quit key must be typed into the palette filter, not quit")
+	}
 	if !m.palette.IsOpen() {
 		t.Error("printable quit key must be typed into the palette filter, not close it")
 	}
 
+	m = open()
+	if !keyQuits(m, "ctrl+c") {
+		t.Error("ctrl+c should quit from the palette")
+	}
+
 	config.Keybinds.Global.Quit = "ctrl+q"
 	m = open()
-	_, cmd := m.Update(palette.KeyMsgFromBinding("ctrl+q"))
-	if cmd == nil {
-		t.Fatal("ctrl+q should return a quit command")
-	}
-	if _, ok := cmd().(tea.QuitMsg); !ok {
-		t.Error("ctrl+q should quit")
+	if !keyQuits(m, "ctrl+q") {
+		t.Error("ctrl+q should quit from the palette")
 	}
 }
 
@@ -209,6 +212,14 @@ func producesQuit(cmd tea.Cmd) bool {
 	return false
 }
 
+// keyQuits sends key to m and reports whether it asked to quit. It resets
+// m.quitting/m.finalQuit first so one Model can be reused for many keys.
+func keyQuits(m *Model, key string) bool {
+	m.quitting, m.finalQuit = false, nil
+	_, cmd := m.Update(palette.KeyMsgFromBinding(key))
+	return m.quitting || producesQuit(cmd)
+}
+
 func TestQuitKeyScreens(t *testing.T) {
 	orig := config.Keybinds
 	t.Cleanup(func() { config.Keybinds = orig })
@@ -217,8 +228,7 @@ func TestQuitKeyScreens(t *testing.T) {
 	m := NewModel(&config.Config{}, nil, nil, false, nil, nil)
 
 	m.current = tui.NewLogin(false)
-	_, cmd := m.Update(palette.KeyMsgFromBinding("q"))
-	if producesQuit(cmd) {
+	if keyQuits(m, "q") {
 		t.Error("q typed into login must not quit")
 	}
 	if _, ok := m.current.(*tui.Login); !ok {
@@ -226,8 +236,7 @@ func TestQuitKeyScreens(t *testing.T) {
 	}
 
 	m.current = tui.NewChoice()
-	_, cmd = m.Update(palette.KeyMsgFromBinding("q"))
-	if !producesQuit(cmd) {
+	if !keyQuits(m, "q") {
 		t.Error("q on the choice menu should quit")
 	}
 
@@ -237,19 +246,16 @@ func TestQuitKeyScreens(t *testing.T) {
 	if !in.IsSearchActive() {
 		t.Fatal("/ should open inbox search")
 	}
-	_, cmd = m.Update(palette.KeyMsgFromBinding("q"))
-	if producesQuit(cmd) {
+	if keyQuits(m, "q") {
 		t.Error("q typed into inbox search must not quit")
 	}
 
 	m.current = tui.NewDrafts(nil)
-	_, cmd = m.Update(palette.KeyMsgFromBinding("q"))
-	if !producesQuit(cmd) {
+	if !keyQuits(m, "q") {
 		t.Error("q on drafts with no filter should quit")
 	}
 	m.current = draftsWithFilter(t)
-	_, cmd = m.Update(palette.KeyMsgFromBinding("q"))
-	if producesQuit(cmd) {
+	if keyQuits(m, "q") {
 		t.Error("q typed into drafts filter must not quit")
 	}
 
@@ -259,15 +265,18 @@ func TestQuitKeyScreens(t *testing.T) {
 	if !fi.GetInbox().IsSearchActive() {
 		t.Fatal("/ should open folder inbox search")
 	}
-	_, cmd = m.Update(palette.KeyMsgFromBinding("q"))
-	if producesQuit(cmd) {
+	if keyQuits(m, "q") {
 		t.Error("q typed into folder inbox search must not quit")
+	}
+
+	m.current = newSetupGuide()
+	if !keyQuits(m, "q") {
+		t.Error("q on the setup guide should quit")
 	}
 
 	config.Keybinds.Global.Quit = "ctrl+q"
 	m.current = tui.NewLogin(false)
-	_, cmd = m.Update(palette.KeyMsgFromBinding("ctrl+q"))
-	if !producesQuit(cmd) {
+	if !keyQuits(m, "ctrl+q") {
 		t.Error("ctrl+q should quit from login")
 	}
 }
@@ -300,8 +309,27 @@ func TestQuitKeyJumpFilter(t *testing.T) {
 	if !fi.IsJumpFilterActive() {
 		t.Fatal("filter key should focus the jump filter")
 	}
-	_, cmd := m.Update(palette.KeyMsgFromBinding("q"))
-	if producesQuit(cmd) {
+	if keyQuits(m, "q") {
 		t.Error("q typed into the folder jump filter must not quit")
+	}
+}
+
+func TestCancelKeyHandling(t *testing.T) {
+	orig := config.Keybinds
+	t.Cleanup(func() { config.Keybinds = orig })
+
+	config.Keybinds.Global.Cancel = "b"
+	m := NewModel(&config.Config{}, nil, nil, false, nil, nil)
+	fi := tui.NewFolderInbox([]string{"INBOX"}, nil)
+	m.folderInbox = fi
+	m.current = fi
+
+	m.Update(palette.KeyMsgFromBinding("esc"))
+	if m.current != tea.Model(fi) {
+		t.Fatalf("esc should do nothing once cancel is rebound, got %T", m.current)
+	}
+	m.Update(palette.KeyMsgFromBinding("b"))
+	if m.current == tea.Model(fi) {
+		t.Error("configured cancel key b should leave the folder inbox")
 	}
 }
