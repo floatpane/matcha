@@ -11,7 +11,7 @@ This package is the IMAP client layer for Matcha. It:
 - Retrieves full email bodies with MIME part traversal (preferring HTML over plain text)
 - Handles attachments including inline images (with CID references) and file attachments
 - Supports S/MIME decryption (opaque and enveloped) and detached signature verification
-- Provides mailbox operations: delete (expunge), archive (move), and folder-to-folder moves
+- Provides mailbox operations: delete (move to trash; expunge when already in trash), archive (move), and folder-to-folder moves
 - Exposes both mailbox-specific and convenience functions (e.g., `FetchEmails` defaults to INBOX)
 - Supports XOAUTH2 SASL authentication for Gmail OAuth2 accounts (see `xoauth2.go`)
 
