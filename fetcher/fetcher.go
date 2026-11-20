@@ -847,6 +847,29 @@ func fetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 	// still letting markdown error messages render formatted.
 	var extractedBodyMIMEType string
 
+	// Handle multipart/digest (e.g. Mailman MIME digests) by parsing the
+	// full raw message with a real MIME reader. The BodyStructure walk below
+	// does not descend into the message/rfc822 parts of a digest, so it
+	// would only ever find the outer text/plain (the digest masthead).
+	isDigest := false
+	msg.BodyStructure.Walk(func(path []int, part imap.BodyStructure) bool {
+		if mp, ok := part.(*imap.BodyStructureMultiPart); ok &&
+			strings.EqualFold(mp.Subtype, "digest") {
+			isDigest = true
+			return false // no hace falta seguir bajando
+		}
+		return true
+	})
+
+	if isDigest {
+		if raw, err := fetchWholeMessage(); err == nil {
+			if body, atts, ok := parseDigest(raw); ok {
+				return body, mimeTextPlain, atts, nil
+			}
+		}
+		loglevel.Debugf("fetcher: multipart/digest detected but parseDigest found no messages; falling back")
+	}
+
 	var checkPart func(part *imap.BodyStructureSinglePart, partID string) //nolint:staticcheck
 	checkPart = func(part *imap.BodyStructureSinglePart, partID string) {
 		// Check for text content (prefer html over plain)
@@ -2243,6 +2266,136 @@ func GetTrashMailbox(account *config.Account) string {
 // GetArchiveMailbox returns the archive mailbox name for the account.
 func GetArchiveMailbox(account *config.Account) string {
 	return getArchiveMailbox(account)
+}
+
+// parseDigest parses a multipart/digest raw message and returns a
+// human-readable concatenation of the digested messages, plus their
+// attachments.
+//
+// It is used instead of the regular BodyStructure walk because the walk
+// does not descend into the message/rfc822 parts of a digest (it only
+// sees the outer multipart), so it would never find the individual
+// messages. Parsing the full raw message with go-message handles the
+// nesting correctly.
+func parseDigest(raw []byte) (body string, atts []Attachment, ok bool) {
+	mr, err := mail.CreateReader(bytes.NewReader(raw))
+	if err != nil {
+		return "", nil, false
+	}
+
+	var prelude []string
+	var out []string
+	found := false
+
+	for {
+		p, err := mr.NextPart()
+		if err != nil {
+			break
+		}
+		cType, _, _ := mime.ParseMediaType(p.Header.Get("Content-Type"))
+
+		if strings.EqualFold(cType, "message/rfc822") {
+			msgBody, msgAtts := parseRFC822Part(p.Body)
+			if msgBody != "" {
+				out = append(out, msgBody)
+				atts = append(atts, msgAtts...)
+				found = true
+			}
+			continue
+		}
+
+		if strings.EqualFold(cType, "text/plain") {
+			rawBody, _ := io.ReadAll(p.Body)
+			enc := p.Header.Get("Content-Transfer-Encoding")
+			decoded, err := decodeAttachmentData(rawBody, enc)
+			if err != nil {
+				decoded = rawBody
+			}
+			prelude = append(prelude, string(decoded))
+		}
+	}
+
+	if !found {
+		return "", nil, false
+	}
+
+	var sb strings.Builder
+	if len(prelude) > 0 {
+		sb.WriteString(strings.Join(prelude, "\n"))
+		sb.WriteString("\n")
+	}
+	sb.WriteString(strings.Join(out, "\n\n"))
+	return sb.String(), atts, true
+}
+
+// parseRFC822Part parses a single message/rfc822 body and returns a
+// formatted representation of its headers and body, plus its attachments.
+func parseRFC822Part(r io.Reader) (string, []Attachment) {
+	mr, err := mail.CreateReader(r)
+	if err != nil {
+		return "", nil
+	}
+
+	var from, subject, date string
+	if v, err := mr.Header.Subject(); err == nil {
+		subject = v
+	}
+	if v, err := mr.Header.Date(); err == nil {
+		date = v.Format(time.RFC1123Z)
+	}
+	from = decodeHeader(mr.Header.Get("From"))
+
+	var body string
+	var htmlBody string
+	var atts []Attachment
+
+	for {
+		p, err := mr.NextPart()
+		if err != nil {
+			break
+		}
+		cType, cParams, _ := mime.ParseMediaType(p.Header.Get("Content-Type"))
+
+		switch {
+		case strings.EqualFold(cType, "text/plain") && body == "":
+			b, _ := io.ReadAll(p.Body)
+			body = string(b)
+		case strings.EqualFold(cType, "text/html") && htmlBody == "":
+			b, _ := io.ReadAll(p.Body)
+			htmlBody = string(b)
+		default:
+			// Attachment metadata only; don't decode data.
+			fn := cParams["name"]
+			if disp, dParams, _ := mime.ParseMediaType(p.Header.Get("Content-Disposition")); disp == "attachment" {
+				if dParams["filename"] != "" {
+					fn = dParams["filename"]
+				}
+			}
+			if fn != "" {
+				atts = append(atts, Attachment{
+					Filename: fn,
+					MIMEType: cType,
+				})
+			}
+		}
+	}
+
+	if body == "" && htmlBody != "" {
+		body = "[Only HTML, not shown]"
+	}
+
+	var sb strings.Builder
+	sb.WriteString(strings.Repeat("─", 56) + "\n")
+	sb.WriteString("From:     " + from + "\n")
+	sb.WriteString("Subject: " + subject + "\n")
+	sb.WriteString("Date:  " + date + "\n")
+	sb.WriteString(strings.Repeat("─", 56) + "\n")
+	sb.WriteString(body + "\n")
+	for _, a := range atts {
+		sb.WriteString("  📎 " + a.Filename + " (" + a.MIMEType + ")\n")
+	}
+
+	return sb.String(), atts
 }
 
 // loadPGPKeyring builds an openpgp.EntityList from the account's public key
