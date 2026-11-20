@@ -9,6 +9,7 @@ require (
 	git.sr.ht/~rockorager/go-jmap v0.5.3
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/PuerkitoBio/goquery v1.13.0
+	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-maildir v0.6.0
@@ -47,7 +48,6 @@ require (
 	cunicu.li/go-openpgp-card v0.3.11 // indirect
 	github.com/andybalholm/cascadia v1.3.4 // indirect
 	github.com/arran4/golang-ical v0.3.5 // indirect
-	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4 // indirect

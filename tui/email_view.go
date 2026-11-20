@@ -3,6 +3,8 @@ package tui
 import (
 	"encoding/base64"
 	"fmt"
+	"mime"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -10,6 +12,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/x/ansi"
 	calendar "github.com/floatpane/go-icalendar"
 	"github.com/floatpane/matcha/config"
@@ -566,6 +569,54 @@ func (m *EmailView) handleEmailBodyKey(msg tea.KeyPressMsg) (bool, func() (tea.M
 		return true, func() (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg { return GoToSendPatchMsg{} }
 		}
+
+	case kb.Email.YankBody:
+		var body string
+		isHTML := m.email.BodyMIMEType == "text/html"
+		if isHTML {
+			body = ansi.Strip(m.viewport.GetContent())
+		} else {
+			body = m.email.Body
+		}
+
+		body = sanitizeYankedText(body, isHTML)
+
+		if err := clipboard.WriteAll(body); err != nil {
+			return true, func() (tea.Model, tea.Cmd) {
+				return m, func() tea.Msg { return NotifyMsg{Message: "Failed to copy body: " + err.Error()} }
+			}
+		}
+		return true, func() (tea.Model, tea.Cmd) {
+			return m, func() tea.Msg { return InfoNotifyMsg{Message: "Email body copied to clipboard", Duration: 3} }
+		}
+
+	case kb.Email.YankHeaders:
+		// Format the main headers into a clean string. This is useful for
+		// referencing the email in a conversation or saving its metadata.
+		// Decode the From header to handle RFC 2047 encoded names (e.g. =?UTF-8?B?...?=).
+		dec := new(mime.WordDecoder)
+		decodedFrom, err := dec.DecodeHeader(m.email.From)
+		if err != nil {
+			decodedFrom = m.email.From
+		}
+
+		headers := fmt.Sprintf("From: %s\nTo: %s\nSubject: %s\nDate: %s",
+			decodedFrom,
+			strings.Join(m.email.To, ", "),
+			m.email.Subject,
+			m.email.Date.Format(time.RFC1123Z),
+		)
+		headers = sanitizeYankedText(headers, false)
+
+		if err := clipboard.WriteAll(headers); err != nil {
+			return true, func() (tea.Model, tea.Cmd) {
+				return m, func() tea.Msg { return NotifyMsg{Message: "Failed to copy headers: " + err.Error()} }
+			}
+		}
+		return true, func() (tea.Model, tea.Cmd) {
+			return m, func() tea.Msg { return InfoNotifyMsg{Message: "Email headers copied to clipboard", Duration: 3} }
+		}
+
 	case kb.Email.FocusAttachments:
 		if len(m.email.Attachments) > 0 {
 			m.focusOnAttachments = true
@@ -899,6 +950,10 @@ func (m *EmailView) renderHelp() string {
 	}
 	shortcuts.WriteString(helpSeparator)
 	shortcuts.WriteString(helpItem("", kbKey(kb.Email.SendPatch, "P"), "send patch").String())
+	shortcuts.WriteString(helpSeparator)
+	shortcuts.WriteString(helpItem("", kbKey(kb.Email.YankBody, "y"), "yank body").String())
+	shortcuts.WriteString(helpSeparator)
+	shortcuts.WriteString(helpItem("", kbKey(kb.Email.YankHeaders, "Y"), "yank headers").String())
 	if view.ImageProtocolSupported() {
 		shortcuts.WriteString(helpSeparator)
 		shortcuts.WriteString(helpItem("", kbKey(kb.Email.ToggleImages, "i"), "toggle images").String())
@@ -1093,4 +1148,30 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return ansi.Truncate(s, maxLen, "") + "..."
+}
+
+// sanitizeYankedText cleans up text before copying it to the clipboard.
+// It normalizes line endings (removing CR from CRLF) and trims trailing
+// whitespace left by the TUI renderer to fill the screen width.
+func sanitizeYankedText(text string, isHTML bool) string {
+	// 1. Remove carriage returns (CRLF -> LF) to avoid "^M" in the clipboard.
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "")
+
+	if isHTML {
+		// 2. Trim trailing spaces on each line. The HTML renderer pads lines
+		// with spaces to fill the viewport width. We don't want that in the
+		// clipboard.
+		lines := strings.Split(text, "\n")
+		for i, line := range lines {
+			lines[i] = strings.TrimRight(line, " ")
+		}
+		text = strings.Join(lines, "\n")
+
+		// 3. Collapse 3 or more consecutive newlines into just 2 (one blank line)
+		reNewlines := regexp.MustCompile(`\n{3,}`)
+		text = reNewlines.ReplaceAllString(text, "\n\n")
+	}
+
+	return strings.TrimSpace(text)
 }
