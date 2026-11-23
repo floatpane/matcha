@@ -30,6 +30,11 @@ func fprintf(w io.Writer, format string, a ...any) {
 	_, _ = fmt.Fprintf(w, format, a...)
 }
 
+// fprint is the fmt.Fprint counterpart of fprintln; see its note on errors.
+func fprint(w io.Writer, a ...any) {
+	_, _ = fmt.Fprint(w, a...)
+}
+
 // resolveAccount centralizes the logic for loading the config and selecting an account.
 // It returns the loaded config and the selected account, or an error.
 func resolveAccount(fromEmail string) (*config.Config, *config.Account, error) {
