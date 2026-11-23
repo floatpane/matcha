@@ -213,6 +213,21 @@ func runSubcommand(args []string) {
 			cliutil.Exit(1)
 		}
 		cliutil.Exit(0)
+	default:
+		runMailSubcommand(args)
+	}
+}
+
+func runMailSubcommand(args []string) {
+	handlers := map[string]func([]string) error{
+		"folders": matchaCli.RunFolders,
+	}
+	if fn, ok := handlers[args[1]]; ok {
+		if err := fn(args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "%s failed: %v\n", args[1], err)
+			cliutil.Exit(1)
+		}
+		cliutil.Exit(0)
 	}
 }
 
@@ -451,6 +466,7 @@ Usage:
 
 Commands:
   send             Send an email from the command line
+  folders          List the folders of an account
   apply            Apply a patch from a git-format-patch email
   send-patch       Send a git-format-patch email
   contacts         Manage contacts (export, sync)
