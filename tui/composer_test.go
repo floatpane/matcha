@@ -4,11 +4,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/floatpane/matcha/config"
+	"github.com/floatpane/matcha/spellcheck"
 )
 
 func TestMailingListSuggestionTruncates(t *testing.T) {
@@ -352,12 +356,16 @@ func TestComposerUpdate(t *testing.T) {
 			t.Error("Expected account picker to be shown")
 		}
 
-		// Navigate down to select second account
+		// Navigate down to highlight the second account; the selection is
+		// only applied on enter.
 		model, _ = multiComposer.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		multiComposer = model.(*Composer)
 
-		if multiComposer.selectedAccountIdx != 1 {
-			t.Errorf("Expected selectedAccountIdx to be 1, got %d", multiComposer.selectedAccountIdx)
+		if multiComposer.accountPickerCursor != 1 {
+			t.Errorf("Expected accountPickerCursor to be 1, got %d", multiComposer.accountPickerCursor)
+		}
+		if multiComposer.selectedAccountIdx != 0 {
+			t.Errorf("Expected selectedAccountIdx to stay 0 until enter, got %d", multiComposer.selectedAccountIdx)
 		}
 
 		// Press Enter to confirm selection
@@ -595,13 +603,298 @@ func TestComposerDynamicHeight(t *testing.T) {
 		t.Errorf("Expected bodyInput height (%d) > signatureInput height (%d)", bodyH, sigH)
 	}
 
-	// Small window: heights should not go below minimums
-	model, _ = composer.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+	// A regular terminal keeps the usual minimum editor sizes.
+	model, _ = composer.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	composer = model.(*Composer)
 	if composer.bodyInput.Height() < 3 {
 		t.Errorf("bodyInput height should be at least 3, got %d", composer.bodyInput.Height())
 	}
 	if composer.signatureInput.Height() < 2 {
 		t.Errorf("signatureInput height should be at least 2, got %d", composer.signatureInput.Height())
+	}
+
+	// A tiny window squeezes the editors instead of overflowing the screen.
+	model, _ = composer.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+	composer = model.(*Composer)
+	if composer.bodyInput.Height() < 1 {
+		t.Errorf("bodyInput height should be at least 1, got %d", composer.bodyInput.Height())
+	}
+	assertViewFits(t, "composer 80x10", composer.View().Content, 80, 10)
+}
+
+// assertViewFits fails when a rendered view is taller or wider than w×h.
+func assertViewFits(t *testing.T, name, view string, w, h int) {
+	t.Helper()
+	lines := strings.Split(view, "\n")
+	if len(lines) > h {
+		t.Errorf("%s: %d rows, want <= %d", name, len(lines), h)
+	}
+	for i, l := range lines {
+		if got := lipgloss.Width(l); got > w {
+			t.Errorf("%s: row %d is %d cells wide, want <= %d: %q", name, i, got, w, l)
+		}
+	}
+}
+
+// TestComposerViewFitsWindow renders the composer in its busiest states at
+// several sizes; the view must never exceed the window it was given.
+func TestComposerViewFitsWindow(t *testing.T) {
+	accounts := []config.Account{
+		{ID: "a1", Name: "Alexandra Very-Long-Surname", Email: "alexandra.very.long.surname@some-company-domain.example.com",
+			PGPPublicKey: "/k", SMIMECert: "/c", SMIMEKey: "/k"},
+		{ID: "a2", Name: "Second", Email: "second@example.com"},
+	}
+	states := map[string]func(c *Composer){
+		"default": func(*Composer) {},
+		"errors and attachments": func(c *Composer) {
+			c.toError, c.ccError, c.bccError = "✗ Invalid email address", "✗ Invalid email address", "✗ Invalid email address"
+			for i := range 6 {
+				c.attachmentPaths = append(c.attachmentPaths, fmt.Sprintf("/tmp/a/really/long/path/attachment-%d-with-a-long-file-name.pdf", i))
+			}
+			c.pgpKeysAvailable["bob@example.com"] = true
+			c.toInput.SetValue("bob@example.com")
+		},
+		"suggestions": func(c *Composer) {
+			c.suggestions = []config.Contact{
+				{Name: "Very Long Contact Name That Should Not Overflow", Email: "very.long.single.address.that.exceeds.width@example.com"},
+				{Name: "Bob", Email: "bob@example.com"},
+			}
+			c.showSuggestions = true
+		},
+		"plugin help": func(c *Composer) {
+			c.SetPluginKeyBindings([]PluginKeyBinding{{Key: "ctrl+g", Description: "grammar check"}, {Key: "ctrl+t", Description: "translate"}})
+			c.SetPluginStatus("words: 120")
+		},
+		"from focused": func(c *Composer) { c.setFocusTo(focusFrom) },
+		"account picker": func(c *Composer) {
+			c.showAccountPicker = true
+		},
+		"plugin prompt": func(c *Composer) {
+			c.ShowPluginPrompt("Enter a translation target language code (e.g. de, fr, es, ja)")
+		},
+		"confirm exit": func(c *Composer) { c.confirmingExit = true },
+		"wkd confirm": func(c *Composer) {
+			c.wkdConfirmRecipients = []string{"someone.with.a.long.address@example-domain.com", "b@example.com"}
+		},
+		"emoji popup": func(c *Composer) {
+			c.setFocusTo(focusBody)
+			for _, r := range "line one\nline two\n:smi" {
+				if r == '\n' {
+					c.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+					continue
+				}
+				c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+			}
+		},
+	}
+	sizes := [][2]int{{200, 60}, {120, 40}, {80, 24}, {60, 20}, {40, 12}, {20, 8}, {10, 5}, {1, 1}}
+	for name, setup := range states {
+		for _, sz := range sizes {
+			w, h := sz[0], sz[1]
+			c := NewComposerWithAccounts(accounts, "a1", "", "", "", false)
+			c.Update(tea.WindowSizeMsg{Width: w, Height: h})
+			setup(c)
+			assertViewFits(t, fmt.Sprintf("%s @%dx%d", name, w, h), c.View().Content, w, h)
+		}
+	}
+}
+
+func typeComposer(c *Composer, s string) {
+	for _, r := range s {
+		if r == '\n' {
+			c.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			continue
+		}
+		c.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+}
+
+// Regression: accepting a spelling/emoji suggestion after the external editor
+// replaced the body used stale byte offsets and panicked with "slice bounds
+// out of range".
+func TestComposerAcceptPopupAfterSetBody(t *testing.T) {
+	t.Run("emoji", func(t *testing.T) {
+		c := NewComposer("", "", "", "", false)
+		c.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+		c.setFocusTo(focusBody)
+		typeComposer(c, "hello :smi")
+		if !c.emojiShow {
+			t.Fatal("expected the emoji popup to be open")
+		}
+		c.SetBody("hi")
+		c.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+		if got := c.GetBody(); got != "hi" {
+			t.Fatalf("body = %q, want %q", got, "hi")
+		}
+	})
+
+	t.Run("spelling", func(t *testing.T) {
+		dict := filepath.Join(t.TempDir(), "en.dic")
+		if err := os.WriteFile(dict, []byte("2\nhello\nworld\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		checker := spellcheck.NewChecker()
+		if err := checker.Load(dict, "en"); err != nil {
+			t.Fatal(err)
+		}
+		c := NewComposer("", "", "", "", false)
+		c.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+		c.spellChecker = checker
+		c.setFocusTo(focusBody)
+		typeComposer(c, "hello wrold")
+		if !c.spellShow {
+			t.Fatal("expected the spelling popup to be open")
+		}
+		c.SetBody("hi")
+		c.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+		if got := c.GetBody(); got != "hi" {
+			t.Fatalf("body = %q, want %q", got, "hi")
+		}
+	})
+}
+
+// Regression: a terminal narrower than 6 columns gave the inputs a negative
+// width and bubbles' textinput panicked rendering its placeholder.
+func TestComposerTinyWindowNoPanic(t *testing.T) {
+	for w := 0; w <= 7; w++ {
+		c := NewComposer("", "", "", "", false)
+		c.Update(tea.WindowSizeMsg{Width: w, Height: 3})
+		_ = c.View()
+	}
+}
+
+// Regression: Bubble Tea v2 reports the space bar as "space", so the crypto
+// toggles ignored it although the tips advertise "Space or Enter".
+func TestComposerSpaceTogglesCrypto(t *testing.T) {
+	accounts := []config.Account{{ID: "a1", Email: "x@example.com", PGPPublicKey: "/k"}}
+	c := NewComposerWithAccounts(accounts, "a1", "", "", "", false)
+	c.focusIndex = focusSignPGP
+	before := c.signPGP
+	c.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	if c.signPGP == before {
+		t.Fatal("space did not toggle PGP signing")
+	}
+}
+
+// Mouse clicks are hit-tested against the rows actually rendered, so extra
+// rows (validation errors, the suggestion dropdown) don't shift the targets.
+func TestComposerMouseClicksFollowRenderedRows(t *testing.T) {
+	rowOf := func(c *Composer, needle string) int {
+		for i, l := range strings.Split(c.View().Content, "\n") {
+			if strings.Contains(ansi.Strip(l), needle) {
+				return i
+			}
+		}
+		t.Fatalf("%q not rendered", needle)
+		return -1
+	}
+
+	c := NewComposer("", "", "", "", false)
+	c.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	c.toInput.SetValue("not-an-email")
+	c.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // leaves To, adds an error row
+	c.Update(tea.MouseClickMsg{X: 4, Y: rowOf(c, "Subject"), Button: tea.MouseLeft})
+	if c.focusIndex != focusSubject {
+		t.Fatalf("click on the Subject row focused %d, want %d", c.focusIndex, focusSubject)
+	}
+
+	c.setFocusTo(focusTo)
+	c.suggestions = []config.Contact{{Name: "Bob", Email: "bob@example.com"}, {Name: "Bobby", Email: "bobby@example.com"}}
+	c.showSuggestions = true
+	c.Update(tea.MouseClickMsg{X: 4, Y: rowOf(c, "bobby@example.com"), Button: tea.MouseLeft})
+	if got, want := c.GetTo(), "Bobby <bobby@example.com>, "; got != want {
+		t.Fatalf("clicking a suggestion set To to %q, want %q", got, want)
+	}
+
+	// From can't take focus with a single account: clicking it is a no-op.
+	single := NewComposerWithAccounts([]config.Account{{ID: "a1", Email: "x@example.com"}}, "a1", "", "", "", false)
+	single.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	single.Update(tea.MouseClickMsg{X: 4, Y: rowOf(single, "From"), Button: tea.MouseLeft})
+	if single.focusIndex != focusTo {
+		t.Fatalf("click on From moved focus to %d", single.focusIndex)
+	}
+
+	// Dialogs block clicks on the form behind them.
+	single.wkdConfirmRecipients = []string{"a@b.c"}
+	single.Update(tea.MouseClickMsg{X: 4, Y: 5, Button: tea.MouseLeft})
+	if single.focusIndex != focusTo {
+		t.Fatalf("click behind the WKD dialog moved focus to %d", single.focusIndex)
+	}
+}
+
+// Contact suggestions belong to the To field: once focus moves elsewhere,
+// Enter must type a newline instead of rewriting To.
+func TestComposerSuggestionsOnlyActiveInTo(t *testing.T) {
+	c := NewComposer("", "", "", "", false)
+	c.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	c.toInput.SetValue("bo")
+	c.suggestions = []config.Contact{{Name: "Bob", Email: "bob@example.com"}}
+	c.showSuggestions = true
+	c.setFocusTo(focusBody)
+	typeComposer(c, "Hi\nthere")
+	if got := c.GetTo(); got != "bo" {
+		t.Fatalf("To = %q, want it untouched", got)
+	}
+	if got := c.GetBody(); got != "Hi\nthere" {
+		t.Fatalf("body = %q, want %q", got, "Hi\nthere")
+	}
+}
+
+func TestComposerAccountPickerEscCancels(t *testing.T) {
+	accounts := []config.Account{{ID: "a1", Email: "a@example.com"}, {ID: "a2", Email: "b@example.com"}}
+	c := NewComposerWithAccounts(accounts, "a1", "", "", "", false)
+	c.focusIndex = focusFrom
+	c.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	c.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	c.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if c.showAccountPicker || c.GetSelectedAccountID() != "a1" {
+		t.Fatalf("esc should cancel the picker: open=%v account=%q", c.showAccountPicker, c.GetSelectedAccountID())
+	}
+}
+
+// Hiding Cc/Bcc while one of them is focused must move focus to a visible
+// field; rows holding recipients always stay visible.
+func TestComposerHiddenCcBcc(t *testing.T) {
+	c := NewComposer("", "", "", "", false)
+	c.setFocusTo(focusCc)
+	c.Update(ToggleCcBccMsg{})
+	if c.focusIndex == focusCc || c.focusIndex == focusBcc {
+		t.Fatalf("focus stayed on hidden field %d", c.focusIndex)
+	}
+
+	c.SetShowCcBcc(false)
+	c.SetCc("carol@example.com")
+	if !strings.Contains(ansi.Strip(c.View().Content), "carol@example.com") {
+		t.Fatal("a Cc recipient must stay visible even when Cc/Bcc are hidden")
+	}
+}
+
+// An enabled encryption toggle stays visible when its precondition goes
+// away, so it can't silently apply (or fail) while hidden.
+func TestComposerEnabledEncryptionStaysVisible(t *testing.T) {
+	accounts := []config.Account{{ID: "a1", Email: "x@example.com", PGPPublicKey: "/k"}}
+	c := NewComposerWithAccounts(accounts, "a1", "bob@example.com", "", "", false)
+	c.pgpKeysAvailable["bob@example.com"] = true
+	c.focusIndex = focusEncryptPGP
+	c.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !c.encryptPGP {
+		t.Fatal("expected PGP encryption to be on")
+	}
+	c.toInput.SetValue("carol@example.com")
+	if !slices.Contains(c.visibleCryptoToggles(), focusEncryptPGP) {
+		t.Fatal("enabled PGP encryption toggle disappeared")
+	}
+}
+
+func TestComposerMouseWheelScrollsBody(t *testing.T) {
+	c := NewComposer("", "", "", "", false)
+	c.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	c.setFocusTo(focusBody)
+	c.SetBody(strings.Repeat("line\n", 40) + "end")
+	_ = c.View()
+	before := c.bodyInput.Line()
+	c.Update(tea.MouseWheelMsg{X: 10, Y: c.bodyRow, Button: tea.MouseWheelUp})
+	if c.bodyInput.Line() >= before {
+		t.Fatalf("wheel up did not scroll the body (line %d -> %d)", before, c.bodyInput.Line())
 	}
 }

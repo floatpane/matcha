@@ -8,8 +8,6 @@ import (
 	"net/netip"
 	"net/url"
 	"time"
-
-	"github.com/floatpane/matcha/internal/httpclient"
 )
 
 const maxRemoteImageRedirects = 5
@@ -91,10 +89,14 @@ func newRemoteImageClient(lookup remoteImageLookup, dial remoteImageDial) *http.
 			}
 			return nil, dialErr
 		},
-		TLSHandshakeTimeout: 5 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ResponseHeaderTimeout: remoteImageStall,
 	}
+	// No whole-request timeout: downloads share the link, so a large image
+	// may need longer than any fixed limit. Each one fails when it stops
+	// making progress (see fetchRemoteImage) and the whole load has a
+	// deadline.
 	return &http.Client{
-		Timeout:   httpclient.RemoteImageTimeout,
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) > maxRemoteImageRedirects || !validRemoteImageURL(req.URL) {

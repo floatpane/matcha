@@ -2,15 +2,23 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/floatpane/matcha/config"
 )
 
 const cryptoConfigMaxFocus = 9
 
+// cryptoAccountValid reports whether the account being edited still exists.
+func (m *Settings) cryptoAccountValid() bool {
+	return m.editingAccountIdx >= 0 && m.editingAccountIdx < len(m.cfg.Accounts)
+}
+
 func (m *Settings) updateSMIMEConfig(msg tea.KeyPressMsg) (*Settings, tea.Cmd) {
+	if !m.cryptoAccountValid() {
+		m.isCryptoConfig = false
+		return m, nil
+	}
+
 	key := msg.Key()
 	isEnter := key.Code == tea.KeyEnter || key.Code == tea.KeyReturn || key.Code == tea.KeyKpEnter
 	isSpace := key.Code == tea.KeySpace
@@ -96,9 +104,8 @@ func (m *Settings) cryptoHandleEnter() tea.Cmd {
 		acct.PGPPrivateKey = m.pgpPrivateKeyInput.Value()
 		acct.PGPKeySource = m.pgpKeySource
 		acct.PGPPIN = m.pgpPINInput.Value()
-		_ = config.SaveConfig(m.cfg)
 		m.isCryptoConfig = false
-		return nil
+		return m.saveConfig()
 	case 9: // Cancel
 		m.isCryptoConfig = false
 		return nil
@@ -151,50 +158,55 @@ func (m *Settings) cryptoForwardInput(msg tea.KeyPressMsg) tea.Cmd {
 	return cmd
 }
 
-func (m *Settings) viewSMIMEConfig() string {
-	var b strings.Builder
+// cryptoPage renders the S/MIME and PGP form of the account being edited,
+// keeping the focused field (label and value) in view.
+func (m *Settings) cryptoPage() settingsPage {
+	if !m.cryptoAccountValid() {
+		return settingsPage{focusTop: -1, focusBot: -1}
+	}
 	account := m.cfg.Accounts[m.editingAccountIdx]
-	b.WriteString(titleStyle.Render(fmt.Sprintf("Crypto Config: %s", account.FetchEmail)) + "\n\n")
 
-	renderField := func(index int, label, content string) {
+	body := make([]string, 0, 32)
+	focusTop, focusBot := -1, -1
+	field := func(index int, label, content string) {
+		style := settingsBlurredStyle
 		if m.cryptoFocusIndex == index {
-			b.WriteString(m.contentFocusStyle().Render(label) + "\n")
-		} else {
-			b.WriteString(settingsBlurredStyle.Render(label) + "\n")
+			style = m.contentFocusStyle()
+			focusTop, focusBot = len(body), len(body)+1
 		}
-		b.WriteString(content + "\n\n")
+		body = append(body, style.Render(label), content, "")
 	}
 
 	// S/MIME
-	b.WriteString(settingsFocusedStyle.Render("S/MIME") + "\n")
-	renderField(0, "Certificate (PEM) Path:", m.smimeCertInput.View())
-	renderField(1, "Private Key (PEM) Path:", m.smimeKeyInput.View())
+	body = append(body, settingsFocusedStyle.Render("S/MIME"))
+	field(0, "Certificate (PEM) Path:", m.smimeCertInput.View())
+	field(1, "Private Key (PEM) Path:", m.smimeKeyInput.View())
 	smimeSign := "OFF"
 	if account.SMIMESignByDefault {
 		smimeSign = "ON"
 	}
-	renderField(2, "Sign By Default:", smimeSign)
+	field(2, "Sign By Default:", smimeSign)
 
 	// PGP
-	b.WriteString(settingsFocusedStyle.Render("PGP") + "\n")
-	renderField(3, "Public Key Path:", m.pgpPublicKeyInput.View())
-	renderField(4, "Private Key Path:", m.pgpPrivateKeyInput.View())
+	body = append(body, settingsFocusedStyle.Render("PGP"))
+	field(3, "Public Key Path:", m.pgpPublicKeyInput.View())
+	field(4, "Private Key Path:", m.pgpPrivateKeyInput.View())
 
 	keySource := "File"
 	if m.pgpKeySource == keyYubikey {
 		keySource = "YubiKey"
 	}
-	renderField(5, "Key Source:", keySource)
+	field(5, "Key Source:", keySource)
 
 	if m.pgpKeySource == keyYubikey {
-		renderField(6, "YubiKey PIN:", m.pgpPINInput.View())
+		field(6, "YubiKey PIN:", m.pgpPINInput.View())
 	}
 
 	pgpSign := "OFF"
 	if account.PGPSignByDefault {
 		pgpSign = "ON"
 	}
-	renderField(7, "Sign By Default:", pgpSign)
+	field(7, "Sign By Default:", pgpSign)
 
 	saveBtn := "[ Save ]"
 	cancelBtn := "[ Cancel ]"
@@ -208,9 +220,17 @@ func (m *Settings) viewSMIMEConfig() string {
 	} else {
 		cancelBtn = settingsBlurredStyle.Render(cancelBtn)
 	}
+	if m.cryptoFocusIndex == 8 || m.cryptoFocusIndex == 9 {
+		focusTop, focusBot = len(body), len(body)
+	}
+	body = append(body, saveBtn+"  "+cancelBtn)
 
-	b.WriteString(saveBtn + "  " + cancelBtn + "\n\n")
-	b.WriteString(helpStyle.Render("tab: next • enter: next/save • space: toggle • esc: cancel"))
-
-	return b.String()
+	return settingsPage{
+		key:      "crypto",
+		header:   titleStyle.Render(fmt.Sprintf("Crypto Config: %s", account.FetchEmail)) + "\n",
+		body:     body,
+		focusTop: focusTop,
+		focusBot: focusBot,
+		footer:   "\n" + helpStyle.Render("tab: next • enter: next/save • space: toggle • esc: cancel"),
+	}
 }

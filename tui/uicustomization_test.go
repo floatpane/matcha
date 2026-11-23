@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/floatpane/matcha/plugin"
 )
 
@@ -183,16 +184,54 @@ func TestRenderCustomComponents_TopRightAlignment(t *testing.T) {
 	width := 80
 	result := renderCustomComponents("base content", width, 24)
 
-	// The top-right component should appear on the first line.
-	// With an 80-char terminal and a 5-char "12:34" block, there should be
-	// (80 - 5) = 75 spaces of padding before the content on that line.
+	// The top-right component is painted over the right end of the first
+	// line, leaving the rest of that line (and the line count) untouched.
 	lines := strings.Split(result, "\n")
-	if len(lines) < 2 {
-		t.Fatalf("expected at least 2 lines, got %d", len(lines))
+	if len(lines) != 1 {
+		t.Fatalf("a top component must not add rows, got %d lines", len(lines))
 	}
 
-	topLine := lines[0]
-	if !strings.HasSuffix(strings.TrimRight(topLine, " "), "12:34") {
-		t.Fatalf("expected first line to end with %q (right-aligned), got %q", "12:34", topLine)
+	topLine := ansi.Strip(lines[0])
+	if !strings.HasPrefix(topLine, "base content") {
+		t.Fatalf("expected the content to survive on the first line, got %q", topLine)
+	}
+	if !strings.HasSuffix(topLine, "12:34") || ansi.StringWidth(topLine) != width {
+		t.Fatalf("expected first line to end with %q at column %d, got %q", "12:34", width, topLine)
+	}
+}
+
+// TestRenderCustomComponents_FullHeightKeepsHeight paints top and bottom
+// components over a full-screen view: the result must stay exactly one
+// screen tall with the components on the first and last rows.
+func TestRenderCustomComponents_FullHeightKeepsHeight(t *testing.T) {
+	old := uiProvider
+	defer func() { uiProvider = old }()
+
+	uiProvider = &stubUIProvider{
+		components: []plugin.CustomComponent{
+			{ID: "top", Content: "TOP", Position: plugin.PosTopLeft},
+			{ID: "bottom", Content: "BOTTOM", Position: plugin.PosBottomRight},
+		},
+	}
+
+	const width, height = 40, 10
+	rows := make([]string, height)
+	for i := range rows {
+		rows[i] = strings.Repeat(".", width)
+	}
+	lines := strings.Split(ansi.Strip(renderCustomComponents(strings.Join(rows, "\n"), width, height)), "\n")
+	if len(lines) != height {
+		t.Fatalf("view grew to %d rows, want %d", len(lines), height)
+	}
+	if !strings.HasPrefix(lines[0], "TOP") {
+		t.Fatalf("top component not on the first row: %q", lines[0])
+	}
+	if !strings.HasSuffix(lines[height-1], "BOTTOM") {
+		t.Fatalf("bottom component not on the last row: %q", lines[height-1])
+	}
+	for i, line := range lines {
+		if w := ansi.StringWidth(line); w != width {
+			t.Fatalf("row %d is %d cells wide, want %d", i, w, width)
+		}
 	}
 }

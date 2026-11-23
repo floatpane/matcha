@@ -3,9 +3,7 @@ package macos
 import (
 	_ "embed"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -26,23 +24,9 @@ func GetAppearance() (*MacOSAppearance, error) {
 		return nil, fmt.Errorf("GetAppearance is only supported on macOS")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "matcha-appearance")
+	binFile, err := compiledHelper("appearance", appearanceSwift)
 	if err != nil {
 		return nil, err
-	}
-	defer os.RemoveAll(tmpDir) //nolint:errcheck
-
-	swiftFile := filepath.Join(tmpDir, "appearance.swift")
-	if err := os.WriteFile(swiftFile, []byte(appearanceSwift), 0644); err != nil {
-		return nil, err
-	}
-
-	binFile := filepath.Join(tmpDir, "appearance")
-
-	// Compile
-	cmd := exec.Command("swiftc", swiftFile, "-o", binFile) //nolint:noctx
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("failed to compile appearance helper: %w\n%s", err, string(out))
 	}
 
 	// Run

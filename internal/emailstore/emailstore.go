@@ -1,9 +1,12 @@
 package emailstore
 
 import (
+	"cmp"
 	"fmt"
 	"log"
 	"slices"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/floatpane/matcha/config"
@@ -205,7 +208,7 @@ func (s *Store) MarkEmailAsReadInStores(uid uint32, accountID string) {
 			if folderEmails[i].UID == uid && folderEmails[i].AccountID == accountID {
 				folderEmails[i].IsRead = true
 				s.FolderEmails[folderName] = folderEmails
-				go SaveFolderEmailsToCache(folderName, folderEmails)
+				SaveFolderEmailsAsync(folderName, folderEmails)
 				break
 			}
 		}
@@ -232,7 +235,7 @@ func (s *Store) MarkEmailAsUnreadInStores(uid uint32, accountID string) {
 			if folderEmails[i].UID == uid && folderEmails[i].AccountID == accountID {
 				folderEmails[i].IsRead = false
 				s.FolderEmails[folderName] = folderEmails
-				go SaveFolderEmailsToCache(folderName, folderEmails)
+				SaveFolderEmailsAsync(folderName, folderEmails)
 				break
 			}
 		}
@@ -270,7 +273,7 @@ func (s *Store) RemoveFolderEmail(folderName string, uid uint32, accountID strin
 		}
 	}
 	s.FolderEmails[folderName] = filtered
-	go SaveFolderEmailsToCache(folderName, filtered)
+	SaveFolderEmailsAsync(folderName, filtered)
 	return filtered
 }
 
@@ -286,23 +289,131 @@ func (s *Store) RemoveFolderEmails(folderName, accountID string, uids []uint32) 
 		}
 	}
 	s.FolderEmails[folderName] = filtered
-	go SaveFolderEmailsToCache(folderName, filtered)
+	SaveFolderEmailsAsync(folderName, filtered)
 	return filtered
 }
 
+// FlattenAndSort merges per-account lists into one list sorted newest first.
+// It runs on the UI goroutine for every folder load, so it must stay
+// O(n log n): the previous exchange sort took ~0.8s for 20k emails.
 func FlattenAndSort(emailsByAccount map[string][]fetcher.Email) []fetcher.Email {
 	var allEmails []fetcher.Email
 	for _, emails := range emailsByAccount {
 		allEmails = append(allEmails, emails...)
 	}
-	for i := 0; i < len(allEmails); i++ {
-		for j := i + 1; j < len(allEmails); j++ {
-			if allEmails[j].Date.After(allEmails[i].Date) {
-				allEmails[i], allEmails[j] = allEmails[j], allEmails[i]
-			}
+	SortNewestFirst(allEmails)
+	return allEmails
+}
+
+// SortNewestFirst sorts emails by date, newest first (UID descending breaks ties).
+func SortNewestFirst(emails []fetcher.Email) {
+	slices.SortStableFunc(emails, func(a, b fetcher.Email) int {
+		if c := b.Date.Compare(a.Date); c != 0 {
+			return c
+		}
+		return cmp.Compare(b.UID, a.UID)
+	})
+}
+
+// emailKey identifies an email across accounts (UIDs are per account/folder).
+func emailKey(e fetcher.Email) string {
+	return e.AccountID + ":" + strconv.FormatUint(uint64(e.UID), 10)
+}
+
+// NewEmails returns the emails of fetched that are not in previous (matched
+// by account and UID). Use it to fire "email received" plugin hooks only for
+// mail that actually arrived instead of for every email on every refresh.
+func NewEmails(previous, fetched []fetcher.Email) []fetcher.Email {
+	known := make(map[string]struct{}, len(previous))
+	for _, e := range previous {
+		known[emailKey(e)] = struct{}{}
+	}
+	var fresh []fetcher.Email
+	for _, e := range fetched {
+		if _, ok := known[emailKey(e)]; !ok {
+			fresh = append(fresh, e)
 		}
 	}
-	return allEmails
+	return fresh
+}
+
+// MergeFolderFetch combines a folder fetch result with the previously known
+// emails of the accounts whose fetch failed, so a transient error (offline,
+// expired login) does not blank those accounts' emails. The result is sorted
+// newest first. With no failures it returns fetched unchanged.
+func MergeFolderFetch(previous, fetched []fetcher.Email, failed map[string]error) []fetcher.Email {
+	if len(failed) == 0 {
+		return fetched
+	}
+	merged := slices.Clone(fetched)
+	for _, e := range previous {
+		if _, ok := failed[e.AccountID]; ok {
+			merged = append(merged, e)
+		}
+	}
+	SortNewestFirst(merged)
+	return merged
+}
+
+// CacheFolderSnapshot persists a folder's email list and prunes the folder's
+// body cache in the background. accountIDs are the configured accounts;
+// accounts in failed are left untouched (their fetch did not tell us which
+// emails still exist). The slice is copied before this returns, so the caller
+// may keep mutating it.
+func CacheFolderSnapshot(folderName string, emails []fetcher.Email, failed map[string]error, accountIDs []string, bodyCacheThreshold int) {
+	SaveFolderEmailsAsync(folderName, emails)
+
+	valid := make(map[string]map[uint32]bool, len(accountIDs))
+	for _, id := range accountIDs {
+		if _, bad := failed[id]; !bad {
+			valid[id] = make(map[uint32]bool)
+		}
+	}
+	for _, e := range emails {
+		if uids, ok := valid[e.AccountID]; ok {
+			uids[e.UID] = true
+		}
+	}
+	go func() {
+		if err := config.PruneEmailBodyCacheByAccount(folderName, valid, bodyCacheThreshold); err != nil {
+			log.Printf("Error pruning body cache for %s: %v", folderName, err)
+		}
+	}()
+}
+
+// folderSaves orders background saves of the same folder: each snapshot gets
+// a sequence number and a save is skipped when a newer snapshot is queued, so
+// a stale snapshot can never overwrite a newer one. writeMu serializes the
+// check-and-write so an older save cannot land after a newer one.
+var folderSaves = struct {
+	sync.Mutex
+	writeMu sync.Mutex
+	seq     map[string]uint64
+}{seq: make(map[string]uint64)}
+
+// SaveFolderEmailsAsync converts emails to their cache form on the calling
+// goroutine (so the caller may keep mutating the slice) and writes them in
+// the background.
+func SaveFolderEmailsAsync(folderName string, emails []fetcher.Email) {
+	cached := EmailsToCache(emails)
+	folderSaves.Lock()
+	folderSaves.seq[folderName]++
+	n := folderSaves.seq[folderName]
+	folderSaves.Unlock()
+
+	go func() {
+		folderSaves.writeMu.Lock()
+		defer folderSaves.writeMu.Unlock()
+		folderSaves.Lock()
+		latest := folderSaves.seq[folderName] == n
+		folderSaves.Unlock()
+		if !latest {
+			return
+		}
+		if err := config.SaveFolderEmailCache(folderName, cached); err != nil {
+			log.Printf("Error saving folder email cache for %s: %v", folderName, err)
+		}
+	}()
 }
 
 func FilterUnique(existing, incoming []fetcher.Email) []fetcher.Email {

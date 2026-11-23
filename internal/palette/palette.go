@@ -9,6 +9,10 @@ import (
 	"github.com/floatpane/matcha/tui"
 )
 
+// quitBinding is the key the app treats as "quit" (saving any open draft
+// first); the Quit command replays it.
+const quitBinding = "ctrl+c"
+
 // New creates a new, closed Palette wrapper.
 func New() *Palette {
 	return &Palette{}
@@ -65,11 +69,41 @@ func (p *Palette) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 }
 
+// HandleMouse routes a mouse event to the open palette. The wheel moves the
+// selection; a left click on a command row runs that command and closes the
+// palette (like enter); a left click outside the palette box closes it. The
+// palette is modal, so callers should not forward the event any further
+// while it is open. The geometry matches Render with the size last passed to
+// Open/UpdateSize.
+func (p *Palette) HandleMouse(msg tea.MouseMsg) tea.Cmd {
+	if p.CommandPalette == nil {
+		return nil
+	}
+	switch msg := msg.(type) {
+	case tea.MouseWheelMsg:
+		return p.Update(msg)
+	case tea.MouseClickMsg:
+		if msg.Button != tea.MouseLeft {
+			return nil
+		}
+		hit, inside := p.ClickAt(msg.X, msg.Y)
+		if hit {
+			action := p.SelectedCmd()
+			p.Close()
+			return action
+		}
+		if !inside {
+			p.Close()
+		}
+	}
+	return nil
+}
+
 // Allowed reports whether the command palette may be opened for the active view.
 func Allowed(current tea.Model) bool {
 	switch v := current.(type) {
 	case *tui.Login, *tui.SignatureEditor, *tui.MailingListEditor, *tui.ContactEditor,
-		*tui.PasswordPrompt, *tui.FilePicker, *tui.SaveFilePicker, *tui.Status:
+		*tui.PasswordPrompt, *tui.FilePicker, *tui.SaveFilePicker, tui.Status, *tui.Status:
 		return false
 	case *tui.Composer:
 		return true
@@ -105,8 +139,12 @@ func BuildCommands(current tea.Model, folderInbox *tui.FolderInbox, cfg *config.
 			tui.PaletteCommand{Title: "Archive email", Hint: kb.Email.Archive, Keywords: "file store", Action: KeyAction(kb.Email.Archive)},
 			tui.PaletteCommand{Title: "Delete email", Hint: kb.Email.Delete, Keywords: "trash remove", Action: KeyAction(kb.Email.Delete)},
 			tui.PaletteCommand{Title: "Toggle images", Hint: kb.Email.ToggleImages, Keywords: "pictures show hide", Action: KeyAction(kb.Email.ToggleImages)},
-			tui.PaletteCommand{Title: "Load remote images", Hint: loadRemoteImagesKey, Keywords: "remote content privacy tracking", Action: KeyAction(loadRemoteImagesKey)},
 		)
+		if v.OffersRemoteImages() {
+			cmds = append(cmds,
+				tui.PaletteCommand{Title: "Load remote images", Hint: loadRemoteImagesKey, Keywords: "remote content privacy tracking", Action: KeyAction(loadRemoteImagesKey)},
+			)
+		}
 		if !v.IsPreviewMode() && splitEnabled {
 			cmds = append(cmds,
 				tui.PaletteCommand{Title: "Change to split view", Keywords: "split pane preview side by side layout", Action: func() tea.Msg { return tui.OpenSplitFromFullscreenMsg{} }},
@@ -139,6 +177,11 @@ func BuildCommands(current tea.Model, folderInbox *tui.FolderInbox, cfg *config.
 				tui.PaletteCommand{Title: "Open in full screen", Keywords: "fullscreen full screen maximize expand", Action: func() tea.Msg { return tui.OpenFullscreenFromSplitMsg{} }},
 			)
 			if ev := fi.GetPreviewPane(); ev != nil {
+				if ev.OffersRemoteImages() {
+					cmds = append(cmds,
+						tui.PaletteCommand{Title: "Load remote images", Keywords: "remote content privacy tracking preview", Action: func() tea.Msg { return tui.LoadRemoteImagesMsg{} }},
+					)
+				}
 				cmds = append(cmds, EmailExportCommands(ev, folderInbox)...)
 			}
 		}
@@ -151,7 +194,9 @@ func BuildCommands(current tea.Model, folderInbox *tui.FolderInbox, cfg *config.
 		tui.PaletteCommand{Title: "Plugin marketplace", Keywords: "plugins install extensions", Action: func() tea.Msg { return tui.GoToMarketplaceMsg{} }},
 		tui.PaletteCommand{Title: "Settings", Keywords: "preferences config accounts theme", Action: func() tea.Msg { return tui.GoToSettingsMsg{} }},
 		tui.PaletteCommand{Title: "Main menu", Keywords: "home start choice", Action: func() tea.Msg { return tui.GoToChoiceMenuMsg{} }},
-		tui.PaletteCommand{Title: "Quit Matcha", Keywords: "exit close", Action: tea.Quit},
+		// Quit replays ctrl+c so it takes the app's normal quit path, which
+		// saves an open draft and shuts the service down before exiting.
+		tui.PaletteCommand{Title: "Quit Matcha", Hint: quitBinding, Keywords: "exit close", Action: KeyAction(quitBinding)},
 	)
 	return cmds
 }

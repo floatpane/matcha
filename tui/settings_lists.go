@@ -5,25 +5,22 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
-	"github.com/floatpane/matcha/config"
 )
 
 func (m *Settings) updateMailingLists(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	if m.confirmingDelete {
+	if m.listsConfirmingDelete {
 		switch msg.String() {
 		case "y", "Y":
+			m.listsConfirmingDelete = false
 			if m.listsCursor < len(m.cfg.MailingLists) {
 				m.cfg.MailingLists = append(m.cfg.MailingLists[:m.listsCursor], m.cfg.MailingLists[m.listsCursor+1:]...)
-				_ = config.SaveConfig(m.cfg)
 				if m.listsCursor >= len(m.cfg.MailingLists) && m.listsCursor > 0 {
 					m.listsCursor--
 				}
-				m.confirmingDelete = false
+				return m, m.saveConfig()
 			}
 		case "n", "N", "esc":
-			m.confirmingDelete = false
-			return m, nil
+			m.listsConfirmingDelete = false
 		}
 		return m, nil
 	}
@@ -36,38 +33,47 @@ func (m *Settings) updateMailingLists(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 		itemCount := len(m.cfg.MailingLists) + 1
 		m.listsCursor = (m.listsCursor + 1) % itemCount
 	case "d":
-		if m.listsCursor < len(m.cfg.MailingLists) && len(m.cfg.MailingLists) > 0 {
-			m.confirmingDelete = true
+		if m.listsCursor < len(m.cfg.MailingLists) {
+			m.listsConfirmingDelete = true
 		}
 	case "e":
-		if m.listsCursor < len(m.cfg.MailingLists) {
-			list := m.cfg.MailingLists[m.listsCursor]
-			idx := m.listsCursor
-			return m, func() tea.Msg {
-				return GoToEditMailingListMsg{
-					Index:     idx,
-					Name:      list.Name,
-					Addresses: strings.Join(list.Addresses, ", "),
-				}
-			}
-		}
+		return m, m.editMailingListCmd()
 	case keyEnter:
 		if m.listsCursor == len(m.cfg.MailingLists) {
 			return m, func() tea.Msg { return GoToAddMailingListMsg{} }
 		}
+		// "enter: select" on an existing list opens it for editing.
+		return m, m.editMailingListCmd()
 	}
 	return m, nil
 }
 
-func (m *Settings) viewMailingLists() string {
-	var b strings.Builder
+// editMailingListCmd opens the editor for the list under the cursor (nil on
+// the "Add New" row).
+func (m *Settings) editMailingListCmd() tea.Cmd {
+	if m.listsCursor < 0 || m.listsCursor >= len(m.cfg.MailingLists) {
+		return nil
+	}
+	list := m.cfg.MailingLists[m.listsCursor]
+	idx := m.listsCursor
+	addresses := strings.Join(list.Addresses, ", ")
+	return func() tea.Msg {
+		return GoToEditMailingListMsg{
+			Index:     idx,
+			Name:      list.Name,
+			Addresses: addresses,
+		}
+	}
+}
 
-	b.WriteString(titleStyle.Render(t("settings_mailing_lists.title")) + "\n\n")
-
+// mailingListsPage lists the mailing lists followed by "Add New Mailing List".
+func (m *Settings) mailingListsPage() settingsPage {
+	header := titleStyle.Render(t("settings_mailing_lists.title")) + "\n"
 	if len(m.cfg.MailingLists) == 0 {
-		b.WriteString(accountEmailStyle.Render("  " + t("settings_mailing_lists.no_lists") + "\n\n"))
+		header += "\n" + accountEmailStyle.Render("  "+t("settings_mailing_lists.no_lists")) + "\n"
 	}
 
+	body := make([]string, 0, len(m.cfg.MailingLists)+1)
 	for i, list := range m.cfg.MailingLists {
 		addrCount := tn("settings_mailing_lists.address_count", len(list.Addresses), map[string]interface{}{
 			keyCount: len(list.Addresses),
@@ -75,29 +81,19 @@ func (m *Settings) viewMailingLists() string {
 		line := fmt.Sprintf("%s - %s", list.Name, accountEmailStyle.Render(addrCount))
 
 		selected := m.listsCursor == i
-		cursor := m.contentCursor(selected)
-		style := m.contentItemStyle(selected)
-		b.WriteString(style.Render(cursor+line) + "\n")
+		body = append(body, m.contentItemStyle(selected).Render(m.contentCursor(selected)+line))
 	}
 
 	selected := m.listsCursor == len(m.cfg.MailingLists)
-	cursor := m.contentCursor(selected)
-	style := m.contentItemStyle(selected)
-	b.WriteString(style.Render(cursor+t("settings_mailing_lists.add_list")) + "\n\n")
+	body = append(body, m.contentItemStyle(selected).Render(m.contentCursor(selected)+t("settings_mailing_lists.add_list")))
 
-	b.WriteString(helpStyle.Render(t("settings_mailing_lists.help")))
-
-	if m.confirmingDelete {
-		listName := m.cfg.MailingLists[m.listsCursor].Name
-		dialog := DialogBoxStyle.Render(
-			lipgloss.JoinVertical(lipgloss.Center,
-				dangerStyle.Render(t("settings_mailing_lists.delete_confirm")),
-				accountEmailStyle.Render(listName),
-				HelpStyle.Render("\n(y/n)"),
-			),
-		)
-		b.WriteString("\n\n" + dialog)
+	return settingsPage{
+		key:      "lists",
+		header:   header,
+		body:     body,
+		focusTop: m.listsCursor,
+		focusBot: m.listsCursor,
+		footer:   "\n" + helpStyle.Render(t("settings_mailing_lists.help")),
+		rows:     true,
 	}
-
-	return b.String()
 }

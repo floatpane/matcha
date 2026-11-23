@@ -46,8 +46,15 @@ func (m *PasswordPrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
-		switch msg.String() {
-		case keyEnter:
+		if msg.String() == keyCtrlC {
+			return m, tea.Quit
+		}
+		if m.verifying {
+			// The input is hidden while the password is checked; another
+			// enter would start a second verification.
+			return m, nil
+		}
+		if msg.String() == keyEnter {
 			password := m.input.Value()
 			if password == "" {
 				m.err = t("password_prompt.error_empty")
@@ -55,8 +62,6 @@ func (m *PasswordPrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.verifying = true
 			return m, verifyPasswordCmd(password)
-		case keyCtrlC:
-			return m, tea.Quit
 		}
 		// Clear error on new input
 		if m.err != "" {

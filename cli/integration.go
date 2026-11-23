@@ -3,6 +3,7 @@ package cli
 import (
 	_ "embed"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,8 +16,15 @@ import (
 //go:embed macos_handler.swift
 var macosHandlerSwift string
 
-// SetupMailto registers matcha as the default handler for mailto: links.
+// SetupMailto registers matcha as the default handler for mailto: links,
+// printing progress to stdout.
 func SetupMailto() error {
+	return SetupMailtoTo(os.Stdout)
+}
+
+// SetupMailtoTo is SetupMailto with its progress output written to w. Use it
+// (e.g. with io.Discard) while the TUI owns the terminal.
+func SetupMailtoTo(w io.Writer) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("could not find executable: %w", err)
@@ -28,17 +36,24 @@ func SetupMailto() error {
 
 	switch runtime.GOOS {
 	case "linux":
-		return setupMailtoLinux(exe)
+		return setupMailtoLinux(w, exe)
 	case "darwin":
-		return setupMailtoDarwin(exe)
+		return setupMailtoDarwin(w, exe)
 	default:
 		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
 	}
 }
 
 // SetupProtocolHandler registers matcha as the handler for the matcha: URL scheme
-// (used for matcha:install:<slug> deep links from the marketplace website).
+// (used for matcha:install:<slug> deep links from the marketplace website),
+// printing progress to stdout.
 func SetupProtocolHandler() error {
+	return SetupProtocolHandlerTo(os.Stdout)
+}
+
+// SetupProtocolHandlerTo is SetupProtocolHandler with its progress output
+// written to w. Use it (e.g. with io.Discard) while the TUI owns the terminal.
+func SetupProtocolHandlerTo(w io.Writer) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("could not find executable: %w", err)
@@ -50,15 +65,15 @@ func SetupProtocolHandler() error {
 
 	switch runtime.GOOS {
 	case "linux":
-		return setupProtocolLinux(exe)
+		return setupProtocolLinux(w, exe)
 	case "darwin":
-		return setupProtocolDarwin(exe)
+		return setupProtocolDarwin(w, exe)
 	default:
 		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
 	}
 }
 
-func setupMailtoLinux(exe string) error {
+func setupMailtoLinux(w io.Writer, exe string) error {
 	desktopContent := fmt.Sprintf(`[Desktop Entry]
 Name=Matcha Email
 Comment=Terminal-based email client
@@ -101,11 +116,11 @@ MimeType=x-scheme-handler/mailto;
 		return fmt.Errorf("failed to run xdg-mime: %w", err)
 	}
 
-	fmt.Printf("Successfully registered %s as default mail handler on Linux\n", exe)
+	_, _ = fmt.Fprintf(w, "Successfully registered %s as default mail handler on Linux\n", exe)
 	return nil
 }
 
-func setupMailtoDarwin(exe string) error {
+func setupMailtoDarwin(w io.Writer, exe string) error {
 	// For macOS, we need to create a tiny AppleScript/Swift app bundle to handle the URL event,
 	// because standard terminal programs can't easily register as URL handlers without an app bundle.
 
@@ -198,23 +213,21 @@ func setupMailtoDarwin(exe string) error {
 	lsregister := "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
 	_ = exec.Command(lsregister, "-f", appDir).Run() //nolint:noctx
 
-	fmt.Printf("Successfully created %s.\n", appDir)
-
 	// Set as default handler
 	// macOS does not provide a straightforward CLI to change default handler without 3rd party tools (like duti).
 	// We'll instruct the user on how to do it or try our best.
 	// Actually, starting from macOS 12, there's no native Apple command for it. But registering it usually makes it show up in Apple Mail -> Preferences -> Default email reader.
 
-	fmt.Printf("Successfully created %s.\n", appDir)
-	fmt.Println("To complete the setup on macOS:")
-	fmt.Println("1. Open Apple Mail.")
-	fmt.Println("2. Go to Mail -> Settings (or Preferences) -> General.")
-	fmt.Println("3. Select 'MatchaMail.app' from the 'Default email reader' dropdown.")
+	_, _ = fmt.Fprintf(w, "Successfully created %s.\n", appDir)
+	_, _ = fmt.Fprintln(w, "To complete the setup on macOS:")
+	_, _ = fmt.Fprintln(w, "1. Open Apple Mail.")
+	_, _ = fmt.Fprintln(w, "2. Go to Mail -> Settings (or Preferences) -> General.")
+	_, _ = fmt.Fprintln(w, "3. Select 'MatchaMail.app' from the 'Default email reader' dropdown.")
 
 	return nil
 }
 
-func setupProtocolLinux(exe string) error {
+func setupProtocolLinux(w io.Writer, exe string) error {
 	desktopContent := fmt.Sprintf(`[Desktop Entry]
 Name=Matcha
 Comment=Terminal-based email client
@@ -248,11 +261,11 @@ MimeType=x-scheme-handler/matcha;
 		return fmt.Errorf("failed to run xdg-mime: %w", err)
 	}
 
-	fmt.Printf("Successfully registered %s as handler for matcha: URLs\n", exe)
+	_, _ = fmt.Fprintf(w, "Successfully registered %s as handler for matcha: URLs\n", exe)
 	return nil
 }
 
-func setupProtocolDarwin(exe string) error {
+func setupProtocolDarwin(w io.Writer, exe string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -336,6 +349,6 @@ func setupProtocolDarwin(exe string) error {
 	lsregister := "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
 	_ = exec.Command(lsregister, "-f", appDir).Run() //nolint:noctx
 
-	fmt.Printf("Successfully registered matcha: protocol handler at %s\n", appDir)
+	_, _ = fmt.Fprintf(w, "Successfully registered matcha: protocol handler at %s\n", appDir)
 	return nil
 }

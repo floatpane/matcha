@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,15 @@ import (
 )
 
 const jmapMailboxIds = "mailboxIds"
+
+// go-jmap's authenticated HTTP clients have no timeout, so a stalled server
+// hung every caller forever (provider construction runs on the UI goroutine
+// in some paths). Session setup gets a short bound; regular requests,
+// including attachment downloads, a generous one.
+const (
+	jmapSetupTimeout   = 30 * time.Second
+	jmapRequestTimeout = 5 * time.Minute
+)
 
 func init() {
 	backend.RegisterBackend("jmap", func(account *config.Account) (backend.Provider, error) {
@@ -58,6 +68,7 @@ func New(account *config.Account) (*Provider, error) {
 	} else {
 		client.WithBasicAuth(account.Email, account.Password)
 	}
+	client.HttpClient.Timeout = jmapSetupTimeout
 
 	if err := client.Authenticate(); err != nil {
 		return nil, fmt.Errorf("jmap auth: %w", err)
@@ -81,6 +92,7 @@ func New(account *config.Account) (*Provider, error) {
 	if err := p.refreshMailboxes(); err != nil {
 		return nil, fmt.Errorf("jmap mailboxes: %w", err)
 	}
+	client.HttpClient.Timeout = jmapRequestTimeout
 
 	return p, nil
 }
@@ -119,6 +131,16 @@ func folderName(mbox *mailbox.Mailbox) string {
 		return "INBOX"
 	}
 	return mbox.Name
+}
+
+// roleID returns the mailbox ID for a role. The maps are rewritten by
+// refreshMailboxes (FetchFolders) while other requests run on the same
+// provider, so every access must hold p.mu.
+func (p *Provider) roleID(role mailbox.Role) (jmapclient.ID, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	id, ok := p.roleToID[role]
+	return id, ok
 }
 
 // resolveMailboxID maps a folder name to a JMAP mailbox ID.
@@ -454,7 +476,7 @@ func (p *Provider) DeleteEmail(_ context.Context, folder string, uid uint32) err
 		return err
 	}
 
-	trashID, ok := p.roleToID[mailbox.RoleTrash]
+	trashID, ok := p.roleID(mailbox.RoleTrash)
 	if !ok {
 		// No trash, permanently delete
 		req := &jmapclient.Request{}
@@ -484,7 +506,7 @@ func (p *Provider) ArchiveEmail(_ context.Context, folder string, uid uint32) er
 		return err
 	}
 
-	archiveID, ok := p.roleToID[mailbox.RoleArchive]
+	archiveID, ok := p.roleID(mailbox.RoleArchive)
 	if !ok {
 		return fmt.Errorf("jmap: no archive mailbox found")
 	}
@@ -597,10 +619,10 @@ func (p *Provider) SendEmail(_ context.Context, msg *backend.OutgoingEmail) erro
 
 	// Create the email from the blob via Email/import would be ideal,
 	// but we can use Email/set create with the uploaded blob
-	draftsID := p.roleToID[mailbox.RoleDrafts]
+	draftsID, _ := p.roleID(mailbox.RoleDrafts)
 	if draftsID == "" {
 		// Use inbox as fallback
-		draftsID = p.roleToID[mailbox.RoleInbox]
+		draftsID, _ = p.roleID(mailbox.RoleInbox)
 	}
 
 	req := &jmapclient.Request{}
@@ -630,7 +652,7 @@ func (p *Provider) SendEmail(_ context.Context, msg *backend.OutgoingEmail) erro
 		rcptTo = append(rcptTo, &emailsubmission.Address{Email: addr})
 	}
 
-	sentID := p.roleToID[mailbox.RoleSent]
+	sentID, _ := p.roleID(mailbox.RoleSent)
 
 	// Submit for sending
 	subReq := &emailsubmission.Set{
@@ -692,8 +714,15 @@ func (p *Provider) FetchFolders(_ context.Context) ([]backend.Folder, error) {
 func (p *Provider) Watch(_ context.Context, _ string) (<-chan backend.NotifyEvent, func(), error) {
 	ch := make(chan backend.NotifyEvent, 16)
 
+	// The event stream is long-lived, so it must not inherit the request
+	// timeout: give it its own client sharing the authenticated transport.
+	pushClient := &jmapclient.Client{
+		HttpClient:      &http.Client{Transport: p.client.HttpClient.Transport},
+		SessionEndpoint: p.client.SessionEndpoint,
+		Session:         p.client.Session,
+	}
 	es := &push.EventSource{
-		Client: p.client,
+		Client: pushClient,
 		Handler: func(change *jmapclient.StateChange) {
 			for _, typeState := range change.Changed {
 				for objType := range typeState {

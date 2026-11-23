@@ -183,9 +183,13 @@ typedef struct {
     int name_len;
     int is_closing;
     int is_self_closing;
-    // Attributes (we parse href, src, alt, cite, class)
-    char href[2048];
-    char src[2048];
+    // Attributes (we parse href, src, alt, cite, class). href and src are
+    // kept as spans into the input: data: URIs and tracking links are often
+    // far longer than any fixed buffer.
+    const char* href;
+    size_t href_len;
+    const char* src;
+    size_t src_len;
     char alt[512];
     char cite[2048];
     char klass[256];
@@ -221,6 +225,40 @@ static const char* parse_attr_value(const char* p, const char* end, char* out, s
     }
     out[i] = '\0';
     return p;
+}
+
+// Parse an attribute value without copying it: *out/*out_len receive the
+// span of the value inside the input. Returns pointer past the value.
+static const char* parse_attr_span(const char* p, const char* end, const char** out, size_t* out_len) {
+    *out = p;
+    *out_len = 0;
+    if (p >= end) return p;
+    char quote = 0;
+    if (*p == '"' || *p == '\'') {
+        quote = *p++;
+    }
+    const char* start = p;
+    while (p < end) {
+        if (quote) {
+            if (*p == quote) break;
+        } else {
+            if (isspace((unsigned char)*p) || *p == '>' || *p == '/') break;
+        }
+        p++;
+    }
+    *out = start;
+    *out_len = (size_t)(p - start);
+    if (quote && p < end) p++; // closing quote
+    return p;
+}
+
+// dup_span copies a span into a new NUL-terminated string (caller frees).
+static char* dup_span(const char* s, size_t len) {
+    char* out = (char*)malloc(len + 1);
+    if (!out) return NULL;
+    if (len > 0) memcpy(out, s, len);
+    out[len] = '\0';
+    return out;
 }
 
 // Parse a tag starting after '<'. Returns pointer past '>'.
@@ -265,9 +303,9 @@ static const char* parse_tag(const char* p, const char* end, Tag* tag) {
 
             // Parse value into correct field
             if (strcmp(attr_name, "href") == 0) {
-                p = parse_attr_value(p, end, tag->href, sizeof(tag->href));
+                p = parse_attr_span(p, end, &tag->href, &tag->href_len);
             } else if (strcmp(attr_name, "src") == 0) {
-                p = parse_attr_value(p, end, tag->src, sizeof(tag->src));
+                p = parse_attr_span(p, end, &tag->src, &tag->src_len);
             } else if (strcmp(attr_name, "alt") == 0) {
                 p = parse_attr_value(p, end, tag->alt, sizeof(tag->alt));
             } else if (strcmp(attr_name, "cite") == 0) {
@@ -275,9 +313,10 @@ static const char* parse_tag(const char* p, const char* end, Tag* tag) {
             } else if (strcmp(attr_name, "class") == 0) {
                 p = parse_attr_value(p, end, tag->klass, sizeof(tag->klass));
             } else {
-                // Skip unknown attribute value
-                char discard[4096];
-                p = parse_attr_value(p, end, discard, sizeof(discard));
+                // Skip unknown attribute value (any length)
+                const char* ignored;
+                size_t ignored_len;
+                p = parse_attr_span(p, end, &ignored, &ignored_len);
             }
         }
     }
@@ -331,7 +370,7 @@ typedef struct {
     Buffer pre_buf;    // Captured <pre> content for HELEM_CODE
     char pre_lang[128]; // Language hint extracted from class="language-XXX"
     int in_a;          // Inside <a>
-    char a_href[2048]; // Current link href
+    char* a_href;      // Current link href (owned, may be NULL)
     Buffer a_text;     // Current link text accumulator
     int in_h1;
     int in_h2;
@@ -556,14 +595,14 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
                         HTMLElement* e = result_add(&result);
                         e->type = HELEM_LINK;
                         e->text = buf_finish(&state.a_text);
-                        e->attr1 = strdup(state.a_href);
+                        e->attr1 = strdup(state.a_href ? state.a_href : "");
                         buf_init(&state.a_text);
                     }
-                } else if (!tag.is_closing && tag.href[0]) {
+                } else if (!tag.is_closing && tag.href_len > 0) {
                     if (state.bq_depth == 0 && !state.in_li) flush_text(&result, &text_buf, state.cur_style);
                     state.in_a = 1;
-                    strncpy(state.a_href, tag.href, sizeof(state.a_href) - 1);
-                    state.a_href[sizeof(state.a_href) - 1] = '\0';
+                    free(state.a_href);
+                    state.a_href = dup_span(tag.href, tag.href_len);
                     buf_init(&state.a_text);
                 }
                 p = after;
@@ -572,11 +611,11 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
 
             // <img>
             if (tag_eq(tag.name, tag.name_len, "img")) {
-                if (tag.src[0]) {
+                if (tag.src_len > 0) {
                     flush_text(&result, &text_buf, state.cur_style);
                     HTMLElement* e = result_add(&result);
                     e->type = HELEM_IMAGE;
-                    e->attr1 = strdup(tag.src);
+                    e->attr1 = dup_span(tag.src, tag.src_len);
                     e->attr2 = tag.alt[0] ? strdup(tag.alt) : strdup("Does not contain alt text");
                 }
                 p = after;
@@ -1012,10 +1051,12 @@ HTMLConvertResult html_to_elements(const char* html, size_t len) {
         HTMLElement* e = result_add(&result);
         e->type = HELEM_LINK;
         e->text = buf_finish(&state.a_text);
-        e->attr1 = strdup(state.a_href);
+        e->attr1 = strdup(state.a_href ? state.a_href : "");
     } else {
         buf_free(&state.a_text);
     }
+    free(state.a_href);
+    state.a_href = NULL;
 
     if (state.bq_depth > 0) {
         HTMLElement* e = result_add(&result);

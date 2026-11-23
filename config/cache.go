@@ -3,6 +3,8 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -45,6 +47,11 @@ func SaveEmailCache(cache *EmailCache) error {
 	if err != nil {
 		return err
 	}
+	defer lockFile(path)()
+	return saveEmailCacheLocked(path, cache)
+}
+
+func saveEmailCacheLocked(path string, cache *EmailCache) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
@@ -93,11 +100,13 @@ func ClearEmailCache() error {
 }
 
 func removeAccountFromEmailCache(accountID string) error {
-	cache, err := LoadEmailCache()
+	path, err := cacheFile()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+		return err
+	}
+	defer lockFile(path)()
+	var cache EmailCache
+	if found, err := loadJSONForUpdate(path, &cache, true); err != nil || !found {
 		return err
 	}
 	filtered := cache.Emails[:0]
@@ -110,7 +119,7 @@ func removeAccountFromEmailCache(accountID string) error {
 		return nil
 	}
 	cache.Emails = filtered
-	return SaveEmailCache(cache)
+	return saveEmailCacheLocked(path, &cache)
 }
 
 // --- Contacts Cache ---
@@ -183,6 +192,11 @@ func SaveContactsCache(cache *ContactsCache) error {
 	if err != nil {
 		return err
 	}
+	defer lockFile(path)()
+	return saveContactsCacheLocked(path, cache)
+}
+
+func saveContactsCacheLocked(path string, cache *ContactsCache) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
@@ -220,6 +234,30 @@ func normalizeContactEmail(email string) string {
 	return strings.ToLower(strings.Trim(strings.TrimSpace(email), ",<>"))
 }
 
+// updateContacts runs fn on the contacts cache under the file lock and saves
+// the result when fn reports a change. A missing file starts empty; a file
+// that cannot be read or decoded is an error, never silently replaced.
+func updateContacts(fn func(cache *ContactsCache) (changed bool, err error)) error {
+	path, err := GetContactsCachePath()
+	if err != nil {
+		return err
+	}
+	defer lockFile(path)()
+	cache := &ContactsCache{Contacts: []Contact{}}
+	found, err := loadJSONForUpdate(path, cache, false)
+	if err != nil {
+		return fmt.Errorf("contacts: %w", err)
+	}
+	if !found {
+		cache = &ContactsCache{Contacts: []Contact{}}
+	}
+	changed, err := fn(cache)
+	if err != nil || !changed {
+		return err
+	}
+	return saveContactsCacheLocked(path, cache)
+}
+
 // AddContact adds or updates a global contact in the cache.
 func AddContact(name, email string) error {
 	return AddContactForAccount(name, email, "")
@@ -234,11 +272,13 @@ func AddContactForAccount(name, email, accountID string) error {
 	email = normalizeContactEmail(email)
 	name = strings.TrimSpace(name)
 
-	cache, err := LoadContactsCache()
-	if err != nil {
-		cache = &ContactsCache{Contacts: []Contact{}}
-	}
+	return updateContacts(func(cache *ContactsCache) (bool, error) {
+		addContactLocked(cache, name, email, accountID)
+		return true, nil
+	})
+}
 
+func addContactLocked(cache *ContactsCache, name, email, accountID string) {
 	// Check if contact exists
 	found := false
 	for i, c := range cache.Contacts {
@@ -273,8 +313,6 @@ func AddContactForAccount(name, email, accountID string) error {
 			},
 		})
 	}
-
-	return SaveContactsCache(cache)
 }
 
 func contactUsageForAccount(c Contact, accountID string) (ContactUsage, bool) {
@@ -376,9 +414,15 @@ func SearchContactsForAccount(query, accountID string) []Contact {
 
 // MigrateContactsCacheUsage expands legacy global contact usage to all accounts.
 func MigrateContactsCacheUsage(accountIDs []string) error {
-	cache, err := LoadContactsCache()
+	path, err := GetContactsCachePath()
 	if err != nil {
 		return err
+	}
+	defer lockFile(path)()
+	var cache ContactsCache
+	found, err := loadJSONForUpdate(path, &cache, false)
+	if err != nil || !found {
+		return err // nothing to migrate when there is no contacts file yet
 	}
 
 	changed := false
@@ -405,7 +449,7 @@ func MigrateContactsCacheUsage(accountIDs []string) error {
 	if !changed {
 		return nil
 	}
-	return SaveContactsCache(cache)
+	return saveContactsCacheLocked(path, &cache)
 }
 
 // GetNamedContacts returns all contacts with an explicit name, sorted alphabetically.
@@ -466,78 +510,88 @@ func SearchUnnamedContacts(query string) []Contact {
 
 // DeleteContact removes the contact with the given email from the cache.
 func DeleteContact(email string) error {
-	cache, err := LoadContactsCache()
+	email = normalizeContactEmail(email)
+	return updateExistingContacts(func(cache *ContactsCache) (bool, error) {
+		filtered := cache.Contacts[:0]
+		for _, c := range cache.Contacts {
+			if !strings.EqualFold(c.Email, email) {
+				filtered = append(filtered, c)
+			}
+		}
+		cache.Contacts = filtered
+		return true, nil
+	})
+}
+
+// updateExistingContacts is updateContacts for operations that need an
+// existing contacts file (a missing file is reported as an error).
+func updateExistingContacts(fn func(cache *ContactsCache) (bool, error)) error {
+	path, err := GetContactsCachePath()
 	if err != nil {
 		return err
 	}
-	email = normalizeContactEmail(email)
-	filtered := cache.Contacts[:0]
-	for _, c := range cache.Contacts {
-		if !strings.EqualFold(c.Email, email) {
-			filtered = append(filtered, c)
-		}
+	defer lockFile(path)()
+	var cache ContactsCache
+	found, err := loadJSONForUpdate(path, &cache, false)
+	if err != nil {
+		return err
 	}
-	cache.Contacts = filtered
-	return SaveContactsCache(cache)
+	if !found {
+		return &fs.PathError{Op: "open", Path: path, Err: fs.ErrNotExist}
+	}
+	changed, err := fn(&cache)
+	if err != nil || !changed {
+		return err
+	}
+	return saveContactsCacheLocked(path, &cache)
 }
 
 // UpdateContact updates the name and email of an existing contact identified
 // by originalEmail. Returns an error if the contact is not found or if the
 // new email collides with a different existing contact.
 func UpdateContact(originalEmail, newName, newEmail string) error {
-	cache, err := LoadContactsCache()
-	if err != nil {
-		return err
-	}
 	originalEmail = normalizeContactEmail(originalEmail)
 	newEmail = normalizeContactEmail(newEmail)
 	newName = strings.TrimSpace(newName)
 
-	if !strings.EqualFold(originalEmail, newEmail) {
-		for _, c := range cache.Contacts {
-			if strings.EqualFold(c.Email, newEmail) {
-				return errors.New("a contact with that email already exists")
+	return updateExistingContacts(func(cache *ContactsCache) (bool, error) {
+		if !strings.EqualFold(originalEmail, newEmail) {
+			for _, c := range cache.Contacts {
+				if strings.EqualFold(c.Email, newEmail) {
+					return false, errors.New("a contact with that email already exists")
+				}
 			}
 		}
-	}
 
-	for i, c := range cache.Contacts {
-		if strings.EqualFold(c.Email, originalEmail) {
-			cache.Contacts[i].Name = newName
-			cache.Contacts[i].Email = newEmail
-			return SaveContactsCache(cache)
+		for i, c := range cache.Contacts {
+			if strings.EqualFold(c.Email, originalEmail) {
+				cache.Contacts[i].Name = newName
+				cache.Contacts[i].Email = newEmail
+				return true, nil
+			}
 		}
-	}
-	return errors.New("contact not found")
+		return false, errors.New("contact not found")
+	})
 }
 
 func removeAccountFromContactsCache(accountID string) error {
-	cache, err := LoadContactsCache()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+	return updateContacts(func(cache *ContactsCache) (bool, error) {
+		changed := false
+		filtered := cache.Contacts[:0]
+		for _, contact := range cache.Contacts {
+			if _, ok := contact.Usage[accountID]; ok {
+				delete(contact.Usage, accountID)
+				changed = true
+			}
+			if len(contact.Usage) > 0 {
+				filtered = append(filtered, contact)
+			} else {
+				changed = true
+			}
 		}
-		return err
-	}
-
-	changed := false
-	filtered := cache.Contacts[:0]
-	for _, contact := range cache.Contacts {
-		if _, ok := contact.Usage[accountID]; ok {
-			delete(contact.Usage, accountID)
-			changed = true
-		}
-		if len(contact.Usage) > 0 {
-			filtered = append(filtered, contact)
-		} else {
-			changed = true
-		}
-	}
-	if !changed {
-		return nil
-	}
-	cache.Contacts = filtered
-	return SaveContactsCache(cache)
+		cache.Contacts = filtered
+		return changed, nil
+	})
 }
 
 // --- Drafts Cache ---
@@ -585,6 +639,11 @@ func SaveDraftsCache(cache *DraftsCache) error {
 	if err != nil {
 		return err
 	}
+	defer lockFile(path)()
+	return saveDraftsCacheLocked(path, cache)
+}
+
+func saveDraftsCacheLocked(path string, cache *DraftsCache) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
@@ -613,13 +672,41 @@ func LoadDraftsCache() (*DraftsCache, error) {
 	return &cache, nil
 }
 
-// SaveDraft saves or updates a draft.
-func SaveDraft(draft Draft) error {
-	cache, err := LoadDraftsCache()
+// updateDrafts runs fn on the drafts cache under the file lock and saves the
+// result. requireFile makes a missing file an error. A file that cannot be
+// read or decoded is always an error, never silently replaced.
+func updateDrafts(requireFile bool, fn func(cache *DraftsCache) bool) error {
+	path, err := draftsFile()
 	if err != nil {
+		return err
+	}
+	defer lockFile(path)()
+	cache := &DraftsCache{Drafts: []Draft{}}
+	found, err := loadJSONForUpdate(path, cache, false)
+	if err != nil {
+		return fmt.Errorf("drafts: %w", err)
+	}
+	if !found {
+		if requireFile {
+			return &fs.PathError{Op: "open", Path: path, Err: fs.ErrNotExist}
+		}
 		cache = &DraftsCache{Drafts: []Draft{}}
 	}
+	if !fn(cache) {
+		return nil
+	}
+	return saveDraftsCacheLocked(path, cache)
+}
 
+// SaveDraft saves or updates a draft.
+func SaveDraft(draft Draft) error {
+	return updateDrafts(false, func(cache *DraftsCache) bool {
+		saveDraftLocked(cache, draft)
+		return true
+	})
+}
+
+func saveDraftLocked(cache *DraftsCache, draft Draft) {
 	draft.UpdatedAt = time.Now()
 
 	// Check if draft exists (update) or is new
@@ -638,26 +725,20 @@ func SaveDraft(draft Draft) error {
 		}
 		cache.Drafts = append(cache.Drafts, draft)
 	}
-
-	return SaveDraftsCache(cache)
 }
 
 // DeleteDraft removes a draft by ID.
 func DeleteDraft(id string) error {
-	cache, err := LoadDraftsCache()
-	if err != nil {
-		return err
-	}
-
-	var filtered []Draft
-	for _, d := range cache.Drafts {
-		if d.ID != id {
-			filtered = append(filtered, d)
+	return updateDrafts(true, func(cache *DraftsCache) bool {
+		var filtered []Draft
+		for _, d := range cache.Drafts {
+			if d.ID != id {
+				filtered = append(filtered, d)
+			}
 		}
-	}
-	cache.Drafts = filtered
-
-	return SaveDraftsCache(cache)
+		cache.Drafts = filtered
+		return true
+	})
 }
 
 // GetDraft retrieves a draft by ID.
@@ -700,24 +781,19 @@ func HasDrafts() bool {
 }
 
 func removeAccountFromDraftsCache(accountID string) error {
-	cache, err := LoadDraftsCache()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+	return updateDrafts(false, func(cache *DraftsCache) bool {
+		filtered := cache.Drafts[:0]
+		for _, draft := range cache.Drafts {
+			if draft.AccountID != accountID {
+				filtered = append(filtered, draft)
+			}
 		}
-		return err
-	}
-	filtered := cache.Drafts[:0]
-	for _, draft := range cache.Drafts {
-		if draft.AccountID != accountID {
-			filtered = append(filtered, draft)
+		if len(filtered) == len(cache.Drafts) {
+			return false
 		}
-	}
-	if len(filtered) == len(cache.Drafts) {
-		return nil
-	}
-	cache.Drafts = filtered
-	return SaveDraftsCache(cache)
+		cache.Drafts = filtered
+		return true
+	})
 }
 
 // --- Email Body Cache ---
@@ -794,12 +870,7 @@ func LoadEmailBodyCache(folderName string) (*EmailBodyCache, error) {
 	return &cache, nil
 }
 
-// saveEmailBodyCache writes the body cache for a folder.
-func saveEmailBodyCache(cache *EmailBodyCache) error {
-	path, err := bodyCacheFile(cache.FolderName)
-	if err != nil {
-		return err
-	}
+func writeBodyCacheFile(path string, cache *EmailBodyCache) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
@@ -811,9 +882,42 @@ func saveEmailBodyCache(cache *EmailBodyCache) error {
 	return SecureWriteFile(path, data, 0600)
 }
 
-// GetCachedEmailBody returns the cached body for a specific email, or nil if not cached.
-// LastAccessedAt is updated by SaveEmailBody, not here -- a read should not
-// mutate cache state.
+// updateBodyCacheFile runs fn on a folder's body cache under the file lock.
+// fn returns whether the file changed; a cache left without bodies is
+// removed. A body cache that cannot be decoded is discarded (it is only a
+// cache), unless the vault is locked.
+func updateBodyCacheFile(folderName string, fn func(cache *EmailBodyCache) bool) error {
+	path, err := bodyCacheFile(folderName)
+	if err != nil {
+		return err
+	}
+	defer lockFile(path)()
+	cache := &EmailBodyCache{FolderName: folderName}
+	found, err := loadJSONForUpdate(path, cache, true)
+	if err != nil {
+		return err
+	}
+	if !found {
+		cache = &EmailBodyCache{FolderName: folderName}
+	}
+	if !fn(cache) {
+		return nil
+	}
+	if len(cache.Bodies) == 0 {
+		if !found {
+			return nil
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	return writeBodyCacheFile(path, cache)
+}
+
+// GetCachedEmailBody returns the cached body for a specific email, or nil if
+// not cached. It never touches the disk; the access time it records is
+// persisted lazily (see FlushEmailBodyCache).
 func GetCachedEmailBody(folderName string, uid uint32, accountID string, threshold int) *CachedEmailBody {
 	lru := GetLRUInstance(threshold)
 	return lru.Get(folderName, uid, accountID)
@@ -844,35 +948,55 @@ func SaveEmailBody(folderName string, body CachedEmailBody, threshold int) error
 	return nil
 }
 
+// FlushEmailBodyCache persists access times recorded by GetCachedEmailBody.
+// Call it on shutdown; it is a no-op when the cache was never used.
+func FlushEmailBodyCache() {
+	lruMu.Lock()
+	l := lru
+	lruMu.Unlock()
+	if l != nil {
+		l.flushAccessTimes()
+	}
+}
+
+// PruneEmailBodyCacheByAccount removes the cached bodies of folderName that no
+// longer exist on the server. valid maps account ID -> UIDs still present in
+// the folder; UIDs are only unique per account, so both are needed. Accounts
+// that are absent from valid (e.g. whose fetch failed) are left untouched.
+func PruneEmailBodyCacheByAccount(folderName string, valid map[string]map[uint32]bool, threshold int) error {
+	keep := func(uid uint32, accountID string) bool {
+		uids, covered := valid[accountID]
+		return !covered || uids[uid]
+	}
+	return GetLRUInstance(threshold).pruneFolder(folderName, keep)
+}
+
 // PruneEmailBodyCache removes cached bodies for emails that are no longer in the folder.
 // validUIDs is a map of UID -> AccountID for emails still present.
+//
+// Prefer PruneEmailBodyCacheByAccount: a UID-keyed map cannot represent two
+// accounts that share a UID (normal for IMAP), so one of them used to lose its
+// cached bodies on every fetch. Accounts that do not appear in validUIDs are
+// left untouched.
 func PruneEmailBodyCache(folderName string, validUIDs map[uint32]string, threshold int) error {
-	cache, err := LoadEmailBodyCache(folderName)
-
-	if err != nil {
-		return err
-	}
-
-	lru := GetLRUInstance(threshold)
-
-	var kept []CachedEmailBody
-	for _, b := range cache.Bodies {
-		if accID, ok := validUIDs[b.UID]; ok && accID == b.AccountID {
-			kept = append(kept, b)
-		} else {
-			lru.Delete(folderName, b.UID, b.AccountID)
+	valid := make(map[string]map[uint32]bool)
+	for uid, accountID := range validUIDs {
+		if valid[accountID] == nil {
+			valid[accountID] = make(map[uint32]bool)
 		}
+		valid[accountID][uid] = true
 	}
-
-	if len(kept) == len(cache.Bodies) {
-		return nil
-	}
-
-	cache.Bodies = kept
-	return saveEmailBodyCache(cache)
+	return PruneEmailBodyCacheByAccount(folderName, valid, threshold)
 }
 
 func removeAccountFromEmailBodyCaches(accountID string) error {
+	lruMu.Lock()
+	l := lru
+	lruMu.Unlock()
+	if l != nil {
+		l.removeAccount(accountID)
+	}
+
 	dir, err := bodyCacheDir()
 	if err != nil {
 		return err
@@ -887,48 +1011,41 @@ func removeAccountFromEmailBodyCaches(accountID string) error {
 
 	var errs []error
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue // skip in-flight temp files of atomic writes
 		}
 		path := filepath.Join(dir, entry.Name())
-		data, err := SecureReadFile(path)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		var cache EmailBodyCache
-		if err := json.Unmarshal(data, &cache); err != nil {
-			errs = append(errs, err)
-			continue
-		}
-
-		filtered := cache.Bodies[:0]
-		for _, body := range cache.Bodies {
-			if body.AccountID != accountID {
-				filtered = append(filtered, body)
-			}
-		}
-		if len(filtered) == len(cache.Bodies) {
-			continue
-		}
-		if len(filtered) == 0 {
-			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-				errs = append(errs, err)
-			}
-			continue
-		}
-		cache.Bodies = filtered
-		cache.UpdatedAt = time.Now()
-		data, err = json.Marshal(cache)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		if err := SecureWriteFile(path, data, 0600); err != nil {
+		if err := removeAccountFromBodyFile(path, accountID); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func removeAccountFromBodyFile(path, accountID string) error {
+	defer lockFile(path)()
+	var cache EmailBodyCache
+	found, err := loadJSONForUpdate(path, &cache, false)
+	if err != nil || !found {
+		return err
+	}
+	filtered := cache.Bodies[:0]
+	for _, body := range cache.Bodies {
+		if body.AccountID != accountID {
+			filtered = append(filtered, body)
+		}
+	}
+	if len(filtered) == len(cache.Bodies) {
+		return nil
+	}
+	if len(filtered) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	cache.Bodies = filtered
+	return writeBodyCacheFile(path, &cache)
 }
 
 // CleanupAccountCache removes cached data associated with an account.

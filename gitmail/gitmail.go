@@ -11,7 +11,11 @@ package gitmail
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"os/exec"
+	"strings"
+	"time"
 
 	mailpatch "github.com/floatpane/go-mailpatch"
 	patchapply "github.com/floatpane/go-patchapply"
@@ -122,16 +126,58 @@ type SendOptions struct {
 	References string
 }
 
-// GeneratePatch generates a format-patch email from a local git repository.
-// It runs `git format-patch --stdout` for the given commit range and returns
-// the raw email bytes.
+// gitTimeout bounds a single `git format-patch` run.
+const gitTimeout = 30 * time.Second
+
+// GeneratePatch generates a format-patch email for a single commit (or a
+// commit range) from a local git repository.
+//
+// git's stderr is captured and returned in the error instead of being written
+// to the terminal: this runs while the TUI owns the screen.
 func GeneratePatch(repoDir, commitRange string) ([]byte, error) {
-	return patchapply.GeneratePatch(repoDir, commitRange)
+	args := []string{"format-patch", "--stdout"}
+	// A single revision formats just that commit; ranges are passed as-is.
+	if !strings.Contains(commitRange, "..") && !strings.Contains(commitRange, " ") {
+		args = append(args, "-1", commitRange)
+	} else {
+		args = append(args, commitRange)
+	}
+	return formatPatch(repoDir, commitRange, args)
 }
 
 // GeneratePatchSeries generates a multi-patch mbox from a local git repository.
 func GeneratePatchSeries(repoDir, commitRange string) ([]byte, error) {
-	return patchapply.GeneratePatchSeries(repoDir, commitRange)
+	return formatPatch(repoDir, commitRange, []string{"format-patch", "--stdout", commitRange})
+}
+
+func formatPatch(repoDir, commitRange string, args []string) ([]byte, error) {
+	if repoDir == "" {
+		return nil, fmt.Errorf("repoDir is required")
+	}
+	if commitRange == "" {
+		return nil, fmt.Errorf("commitRange is required")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		return nil, fmt.Errorf("git not found in PATH: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = repoDir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if detail := strings.TrimSpace(stderr.String()); detail != "" {
+			return nil, fmt.Errorf("git format-patch failed: %w: %s", err, detail)
+		}
+		return nil, fmt.Errorf("git format-patch failed: %w", err)
+	}
+	if stdout.Len() == 0 {
+		return nil, fmt.Errorf("git format-patch produced no output for range %q", commitRange)
+	}
+	return stdout.Bytes(), nil
 }
 
 // FormatPatch constructs a format-patch email from structured data using

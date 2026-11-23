@@ -150,7 +150,7 @@ func TestRemoteImageFetchBlocksLocalServer(t *testing.T) {
 		requests++
 	}))
 	t.Cleanup(server.Close)
-	if got := fetchRemoteBase64(server.URL + "/image.png"); got != "" || requests != 0 {
-		t.Fatalf("private image fetch returned %q and made %d requests", got, requests)
+	if got, err := fetchRemoteImage(context.Background(), server.URL+"/image.png"); got != "" || err == nil || requests != 0 {
+		t.Fatalf("private image fetch returned %q (err %v) and made %d requests", got, err, requests)
 	}
 }

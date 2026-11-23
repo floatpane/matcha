@@ -2,13 +2,11 @@ package daemon
 
 import udsrpc "github.com/floatpane/go-uds-jsonrpc"
 
-// PID file helpers come from the shared go-uds-jsonrpc library, which handles
-// the Unix (signal-0 probe) and Windows (OpenProcess) implementations behind
-// build tags. Re-exported so daemon.WritePID/IsRunning/etc. keep working for
-// callers in main.go.
+// PID file helpers come from the shared go-uds-jsonrpc library. IsRunning
+// and LockPID, which decide whether a daemon is running, are per platform
+// (pidlock_unix.go, pidlock_windows.go).
 var (
 	WritePID  = udsrpc.WritePID
 	ReadPID   = udsrpc.ReadPID
-	IsRunning = udsrpc.IsRunning
 	RemovePID = udsrpc.RemovePID
 )

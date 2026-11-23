@@ -7,19 +7,23 @@ package clib
 #include <stdlib.h>
 */
 import "C"
-import "unsafe"
+
+import (
+	"html"
+	"unsafe"
+)
 
 // HTMLToElements parses HTML and returns structured elements.
 // This is a single-pass C parser that replaces goquery-based DOM parsing.
-func HTMLToElements(html string) ([]HTMLElement, bool) {
-	if len(html) == 0 {
+func HTMLToElements(doc string) ([]HTMLElement, bool) {
+	if len(doc) == 0 {
 		return nil, true
 	}
 
-	cHTML := C.CString(html)
+	cHTML := C.CString(doc)
 	defer C.free(unsafe.Pointer(cHTML))
 
-	result := C.html_to_elements(cHTML, C.size_t(len(html)))
+	result := C.html_to_elements(cHTML, C.size_t(len(doc)))
 	if result.ok == 0 {
 		return nil, false
 	}
@@ -50,7 +54,24 @@ func HTMLToElements(html string) ([]HTMLElement, bool) {
 		if ce.attr2 != nil {
 			elements[i].Attr2 = C.GoString(ce.attr2)
 		}
+		unescapeAttributes(&elements[i])
 	}
 
 	return elements, true
+}
+
+// unescapeAttributes decodes character references in the attribute values
+// the C parser copies verbatim. The sanitizer re-serializes every attribute
+// HTML-escaped, so without this a link or image URL "?a=1&b=2" would be
+// requested as "?a=1&amp;b=2". Text content is decoded by the parser itself.
+func unescapeAttributes(e *HTMLElement) {
+	switch e.Type {
+	case HElemLink, HElemCode:
+		e.Attr1 = html.UnescapeString(e.Attr1) // href, language
+	case HElemImage:
+		e.Attr1 = html.UnescapeString(e.Attr1) // src
+		e.Attr2 = html.UnescapeString(e.Attr2) // alt
+	case HElemBlockquote:
+		e.Attr1 = html.UnescapeString(e.Attr1) // cite
+	}
 }

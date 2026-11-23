@@ -77,6 +77,7 @@ func (p *CommandPalette) Update(msg tea.Msg) tea.Cmd {
 			p.moveCursor(1)
 		case tea.MouseWheelUp:
 			p.moveCursor(-1)
+		default:
 		}
 		return nil
 	}
@@ -172,25 +173,31 @@ func (p *CommandPalette) boxWidth() int {
 	return w
 }
 
-// View renders the palette box on its own (without the background).
-func (p *CommandPalette) View() string {
+// frameStyle is the border and padding drawn around the palette content.
+func (p *CommandPalette) frameStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.ActiveTheme.Accent).
+		Padding(1, 2)
+}
+
+// content renders the palette body (without its frame) and returns the body
+// row of the first command row.
+func (p *CommandPalette) content() (string, int) {
 	t := theme.ActiveTheme
 	inner := p.boxWidth()
 	p.input.SetWidth(inner - lipgloss.Width(p.input.Prompt))
 
 	var b strings.Builder
-	b.WriteString(p.input.View())
-	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(t.DimText).Render(strings.Repeat("─", inner)))
+	header := p.input.View() + "\n" +
+		lipgloss.NewStyle().Foreground(t.DimText).Render(strings.Repeat("─", inner))
+	b.WriteString(header)
 	b.WriteString("\n")
 
 	if len(p.filtered) == 0 {
 		b.WriteString(lipgloss.NewStyle().Foreground(t.MutedText).Render("No matching commands"))
 	} else {
-		end := p.top + paletteMaxVisible
-		if end > len(p.filtered) {
-			end = len(p.filtered)
-		}
+		end := min(p.top+paletteMaxVisible, len(p.filtered))
 		for i := p.top; i < end; i++ {
 			b.WriteString(p.renderRow(p.all[p.filtered[i]], i == p.cursor, inner))
 			if i < end-1 {
@@ -202,11 +209,40 @@ func (p *CommandPalette) View() string {
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().Foreground(t.SubtleText).Render("↑/↓ navigate · enter run · esc close"))
 
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(t.Accent).
-		Padding(1, 2).
-		Render(b.String())
+	return b.String(), lipgloss.Height(header)
+}
+
+// View renders the palette box on its own (without the background).
+func (p *CommandPalette) View() string {
+	body, _ := p.content()
+	return p.frameStyle().Render(body)
+}
+
+// ClickAt handles a click at screen cell (x, y), using the same geometry as
+// Render: the box centered on the width × height screen the palette was
+// sized to (NewCommandPalette / SetSize). A click on a command row selects
+// that command and reports hit; inside reports whether the cell lies within
+// the palette box at all, so callers can dismiss the palette on a click
+// outside it.
+func (p *CommandPalette) ClickAt(x, y int) (hit, inside bool) {
+	body, firstRow := p.content()
+	frame := p.frameStyle()
+	box := frame.Render(body)
+	boxW, boxH := lipgloss.Width(box), lipgloss.Height(box)
+	left := max(0, (p.width-boxW)/2)
+	top := max(0, (p.height-boxH)/2)
+	if x < left || x >= left+boxW || y < top || y >= top+boxH {
+		return false, false
+	}
+
+	row := y - top - frame.GetBorderTopSize() - frame.GetPaddingTop() - firstRow
+	col := x - left - frame.GetBorderLeftSize() - frame.GetPaddingLeft()
+	visible := min(len(p.filtered), p.top+paletteMaxVisible) - p.top
+	if row < 0 || row >= visible || col < 0 || col >= boxW-frame.GetHorizontalFrameSize() {
+		return false, true
+	}
+	p.cursor = p.top + row
+	return true, true
 }
 
 func (p *CommandPalette) renderRow(cmd PaletteCommand, selected bool, inner int) string {
@@ -215,7 +251,7 @@ func (p *CommandPalette) renderRow(cmd PaletteCommand, selected bool, inner int)
 	prefix := "  "
 	titleStyle := lipgloss.NewStyle().Foreground(t.DimText)
 	if selected {
-		prefix = "> "
+		prefix = "▌ "
 		titleStyle = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	}
 

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/floatpane/matcha/config"
+	"github.com/floatpane/matcha/fetcher"
 )
 
 // setKeybinds installs a modified copy of the active keybind config for the
@@ -20,6 +21,19 @@ func setKeybinds(t *testing.T, customize func(kb *config.KeybindsConfig)) {
 	config.Keybinds = kb
 }
 
+// emailViewWithAttachment returns a bare EmailView whose email has one
+// attachment, so the help includes the attachment shortcut.
+func emailViewWithAttachment() *EmailView {
+	return &EmailView{email: fetcher.Email{Attachments: []fetcher.Attachment{{Filename: "a.txt"}}}}
+}
+
+func TestEmailHelpHidesAttachmentKeyWithoutAttachments(t *testing.T) {
+	setKeybinds(t, func(_ *config.KeybindsConfig) {})
+	if help := (&EmailView{}).renderHelp(); strings.Contains(help, "focus attachments") {
+		t.Errorf("help offers to focus attachments on an email without any: %q", help)
+	}
+}
+
 func TestEmailHelpShowsCustomKeys(t *testing.T) {
 	setKeybinds(t, func(kb *config.KeybindsConfig) {
 		kb.Email.Reply = "q"
@@ -28,7 +42,7 @@ func TestEmailHelpShowsCustomKeys(t *testing.T) {
 		kb.Global.Cancel = "ctrl+g"
 	})
 
-	help := (&EmailView{}).renderHelp()
+	help := emailViewWithAttachment().renderHelp()
 	for _, want := range []string{"q: reply", "x: delete", "g: focus attachments", "ctrl+g: back to inbox"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("email help missing %q, got %q", want, help)
@@ -57,7 +71,7 @@ func TestEmailAttachmentHelpShowsCustomKeys(t *testing.T) {
 func TestEmailHelpKeepsDefaultWording(t *testing.T) {
 	setKeybinds(t, func(_ *config.KeybindsConfig) {})
 
-	help := (&EmailView{}).renderHelp()
+	help := emailViewWithAttachment().renderHelp()
 	want := "\uf112 r: reply • \uf064 shift+r: reply all • \uf064 f: forward • \uea81 d: delete • \uea98 a: archive • \uf435 tab: focus attachments • \ueb06 esc: back to inbox"
 	if !strings.Contains(help, want) {
 		t.Errorf("default email help changed shape:\ngot:  %q\nwant: %q", help, want)

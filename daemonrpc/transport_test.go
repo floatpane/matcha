@@ -6,13 +6,45 @@ import (
 	"testing"
 )
 
-func testPipe() (*Conn, *Conn) {
-	a, b := net.Pipe()
-	return NewConn(a), NewConn(b)
+// testPipe returns two connected Conns over a real loopback socket.
+//
+// net.Pipe is unbuffered: every Write blocks until the peer reads all of it.
+// Since Go 1.27, encoding/json's stream decoder stops right after a complete
+// value and leaves the trailing newline written by Encoder.Encode unread, so a
+// sender whose peer reads exactly one message blocked forever. Kernel sockets
+// buffer the newline like the real Unix socket does.
+func testPipe(t *testing.T) (*Conn, *Conn) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	type result struct {
+		conn net.Conn
+		err  error
+	}
+	accepted := make(chan result, 1)
+	go func() {
+		c, err := ln.Accept()
+		accepted <- result{c, err}
+	}()
+
+	a, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := <-accepted
+	if r.err != nil {
+		a.Close()
+		t.Fatal(r.err)
+	}
+	return NewConn(a), NewConn(r.conn)
 }
 
 func TestConn_SendReceiveRequest(t *testing.T) {
-	client, server := testPipe()
+	client, server := testPipe(t)
 	defer client.Close()
 	defer server.Close()
 
@@ -40,7 +72,7 @@ func TestConn_SendReceiveRequest(t *testing.T) {
 }
 
 func TestConn_SendResponse(t *testing.T) {
-	client, server := testPipe()
+	client, server := testPipe(t)
 	defer client.Close()
 	defer server.Close()
 
@@ -75,7 +107,7 @@ func TestConn_SendResponse(t *testing.T) {
 }
 
 func TestConn_SendError(t *testing.T) {
-	client, server := testPipe()
+	client, server := testPipe(t)
 	defer client.Close()
 	defer server.Close()
 
@@ -105,7 +137,7 @@ func TestConn_SendError(t *testing.T) {
 }
 
 func TestConn_SendEvent(t *testing.T) {
-	client, server := testPipe()
+	client, server := testPipe(t)
 	defer client.Close()
 	defer server.Close()
 
@@ -143,7 +175,7 @@ func TestConn_SendEvent(t *testing.T) {
 }
 
 func TestConn_MultipleMessages(t *testing.T) {
-	client, server := testPipe()
+	client, server := testPipe(t)
 	defer client.Close()
 	defer server.Close()
 

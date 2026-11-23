@@ -2,10 +2,9 @@ package macos
 
 import (
 	_ "embed"
+	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -20,23 +19,9 @@ func OpenFilePicker(initialPath string) ([]string, error) {
 		return nil, fmt.Errorf("OpenFilePicker is only supported on macOS")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "matcha-filepicker")
+	binFile, err := compiledHelper("file_picker", filePickerSwift)
 	if err != nil {
 		return nil, err
-	}
-	defer os.RemoveAll(tmpDir) //nolint:errcheck
-
-	swiftFile := filepath.Join(tmpDir, "file_picker.swift")
-	if err := os.WriteFile(swiftFile, []byte(filePickerSwift), 0644); err != nil {
-		return nil, err
-	}
-
-	binFile := filepath.Join(tmpDir, "file_picker")
-
-	// Compile
-	cmd := exec.Command("swiftc", swiftFile, "-o", binFile) //nolint:noctx
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("failed to compile file picker helper: %w\n%s", err, string(out))
 	}
 
 	// Run
@@ -46,8 +31,12 @@ func OpenFilePicker(initialPath string) ([]string, error) {
 	}
 	out, err := exec.Command(binFile, args...).Output() //nolint:noctx
 	if err != nil {
-		// Exit code 1 usually means user cancelled
-		return nil, nil
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			// Exit code 1 usually means user cancelled
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to run picker helper: %w", err)
 	}
 
 	trimmed := strings.TrimSpace(string(out))

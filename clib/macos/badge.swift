@@ -17,8 +17,11 @@ let label = countString == "0" ? "" : countString
 // which might not be what's intended. 
 // However, if we run this from our 'MatchaMail.app' shim, it will work for that app.
 
-NSApp.dockTile.badgeLabel = label
-NSApp.dockTile.display()
+// NSApp is nil until NSApplication.shared is touched; dereferencing it
+// directly crashed the helper (SIGTRAP) on every call.
+let app = NSApplication.shared
+app.dockTile.badgeLabel = label
+app.dockTile.display()
 
 // Give it a tiny bit of time to propagate
 RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))

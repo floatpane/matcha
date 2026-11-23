@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"strings"
-
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/floatpane/matcha/config"
@@ -17,6 +15,8 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "y", "Y":
 				m.confirmingDisable = false
+				m.encDisabling = true
+				m.encError = ""
 				cfg := m.cfg
 				return m, func() tea.Msg {
 					err := config.DisableSecureMode(cfg)
@@ -28,8 +28,18 @@ func (m *Settings) updateEncryption(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if msg.String() == keyEnter {
+		// esc/left are handled by the settings view (back to the menu).
+		if msg.String() == keyEnter && !m.encDisabling {
 			m.confirmingDisable = true
+		}
+		return m, nil
+	}
+
+	if m.encEnabling {
+		// Encryption is running: the form is locked so the password cannot be
+		// submitted twice; leaving is still allowed.
+		if s := msg.String(); s == "esc" || s == keyLeft {
+			m.leaveEncryptionSettings()
 		}
 		return m, nil
 	}
@@ -119,7 +129,7 @@ func (m *Settings) leaveEncryptionSettings() {
 	m.encPasswordInput.Blur()
 	m.encConfirmInput.Blur()
 	m.encError = ""
-	m.activePane = PaneMenu
+	m.leaveContent()
 }
 
 func (m *Settings) updateFocusedEncryptionInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -137,70 +147,81 @@ func (m *Settings) updateFocusedEncryptionInput(msg tea.KeyPressMsg) (tea.Model,
 	return m, cmd
 }
 
-func (m *Settings) viewEncryption() string {
-	var b strings.Builder
-	isEnabled := config.IsSecureModeEnabled()
-
-	b.WriteString(titleStyle.Render(t("settings_encryption.title")) + "\n\n")
-
-	if isEnabled {
-		if m.confirmingDisable {
-			dialog := DialogBoxStyle.Render(
-				lipgloss.JoinVertical(lipgloss.Center,
-					dangerStyle.Render(t("settings_encryption.disable_confirm")),
-					accountEmailStyle.Render(t("settings_encryption.disable_warning")),
-					HelpStyle.Render("\n(y/n)"),
-				),
-			)
-			b.WriteString(dialog + "\n")
-		} else {
-			b.WriteString(m.contentFocusStyle().Render("  "+t("settings_encryption.enabled")) + "\n\n")
-			b.WriteString(accountEmailStyle.Render("  "+t("settings_encryption.disable_button")) + "\n\n")
-			b.WriteString(helpStyle.Render("enter: disable"))
-		}
-	} else {
-		b.WriteString(accountEmailStyle.Render(t("settings_encryption.disabled")) + "\n\n")
-
-		if m.encFocusIndex == 0 {
-			b.WriteString(m.contentFocusStyle().Render(t("settings_encryption.password_label") + "\n"))
-		} else {
-			b.WriteString(settingsBlurredStyle.Render(t("settings_encryption.password_label") + "\n"))
-		}
-		b.WriteString(m.encPasswordInput.View() + "\n\n")
-		if m.encPasswordStrength != "" {
-			b.WriteString("  " + m.renderPasswordStrength() + "\n\n")
-		}
-
-		if m.encFocusIndex == 1 {
-			b.WriteString(m.contentFocusStyle().Render(t("settings_encryption.confirm_label") + "\n"))
-		} else {
-			b.WriteString(settingsBlurredStyle.Render(t("settings_encryption.confirm_label") + "\n"))
-		}
-		b.WriteString(m.encConfirmInput.View() + "\n")
-		if status := m.renderPasswordMatch(); status != "" {
-			b.WriteString("  " + status + "\n")
-		}
-		b.WriteString("\n")
-
-		saveBtn := "[ " + t("settings_encryption.enable_button") + " ]"
-		if m.encFocusIndex == 2 {
-			b.WriteString(m.contentFocusStyle().Render(saveBtn) + "\n")
-		} else {
-			b.WriteString(settingsBlurredStyle.Render(saveBtn) + "\n")
-		}
-
-		if m.encEnabling {
-			b.WriteString("\n" + accountEmailStyle.Render("  "+t("settings_encryption.encrypting")) + "\n")
-		}
-
-		b.WriteString("\n" + helpStyle.Render(t("settings_encryption.help")))
-	}
-
+// encryptionPage shows the encryption status, or the password form that
+// enables it with the focused field kept in view.
+func (m *Settings) encryptionPage() settingsPage {
+	title := titleStyle.Render(t("settings_encryption.title"))
+	errLine := ""
 	if m.encError != "" {
-		b.WriteString("\n" + dangerStyle.Render("  "+m.encError) + "\n")
+		errLine = "\n\n" + dangerStyle.Render("  "+m.encError)
 	}
 
-	return b.String()
+	if config.IsSecureModeEnabled() {
+		// The disable prompt is drawn as a dialog over the whole view.
+		return settingsPage{
+			key:    "encryption",
+			header: title + "\n",
+			body: []string{
+				m.contentFocusStyle().Render("  " + t("settings_encryption.enabled")),
+				"",
+				accountEmailStyle.Render("  " + t("settings_encryption.disable_button")),
+			},
+			focusTop: -1,
+			focusBot: -1,
+			footer:   "\n" + helpStyle.Render("enter: disable") + errLine,
+		}
+	}
+
+	labelStyle := func(idx int) lipgloss.Style {
+		if m.encFocusIndex == idx {
+			return m.contentFocusStyle()
+		}
+		return settingsBlurredStyle
+	}
+
+	body := make([]string, 0, 12)
+	focusTop, focusBot := -1, -1
+	mark := func(idx, top int) {
+		if m.encFocusIndex == idx {
+			focusTop, focusBot = top, len(body)-1
+		}
+	}
+
+	top := len(body)
+	body = append(body,
+		labelStyle(0).Render(t("settings_encryption.password_label")),
+		m.encPasswordInput.View())
+	mark(0, top)
+	body = append(body, "")
+	if m.encPasswordStrength != "" {
+		body = append(body, "  "+m.renderPasswordStrength(), "")
+	}
+
+	top = len(body)
+	body = append(body,
+		labelStyle(1).Render(t("settings_encryption.confirm_label")),
+		m.encConfirmInput.View())
+	mark(1, top)
+	if status := m.renderPasswordMatch(); status != "" {
+		body = append(body, "  "+status)
+	}
+	body = append(body, "")
+
+	top = len(body)
+	body = append(body, labelStyle(2).Render("[ "+t("settings_encryption.enable_button")+" ]"))
+	mark(2, top)
+	if m.encEnabling {
+		body = append(body, "", accountEmailStyle.Render("  "+t("settings_encryption.encrypting")))
+	}
+
+	return settingsPage{
+		key:      "encryption",
+		header:   title + "\n\n" + accountEmailStyle.Render(t("settings_encryption.disabled")) + "\n",
+		body:     body,
+		focusTop: focusTop,
+		focusBot: focusBot,
+		footer:   "\n" + helpStyle.Render(t("settings_encryption.help")) + errLine,
+	}
 }
 
 func (m *Settings) renderPasswordMatch() string {

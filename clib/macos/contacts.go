@@ -4,9 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 )
 
@@ -24,23 +22,9 @@ func FetchContacts() ([]MacOSContact, error) {
 		return nil, fmt.Errorf("FetchContacts is only supported on macOS")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "matcha-macos")
+	binFile, err := compiledHelper("contacts", contactsSwift)
 	if err != nil {
 		return nil, err
-	}
-	defer os.RemoveAll(tmpDir) //nolint:errcheck
-
-	swiftFile := filepath.Join(tmpDir, "contacts.swift")
-	if err := os.WriteFile(swiftFile, []byte(contactsSwift), 0644); err != nil {
-		return nil, err
-	}
-
-	binFile := filepath.Join(tmpDir, "contacts")
-
-	// Compile the Swift helper
-	cmd := exec.Command("swiftc", swiftFile, "-o", binFile) //nolint:noctx
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("failed to compile contacts helper: %w\n%s", err, string(out))
 	}
 
 	// Run the helper

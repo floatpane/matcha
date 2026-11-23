@@ -3,6 +3,7 @@ package send
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -164,8 +165,9 @@ func SendEmailCmd(deps *Dependencies, msg tui.SendEmailMsg) tea.Cmd {
 		for _, attachPath := range msg.AttachmentPaths {
 			fileData, err := os.ReadFile(attachPath)
 			if err != nil {
-				log.Printf("Could not read attachment file %s: %v", attachPath, err)
-				continue
+				// Fail the send rather than silently delivering the email
+				// without the attachment the user added.
+				return tui.EmailResultMsg{Err: fmt.Errorf("could not read attachment %s: %w", filepath.Base(attachPath), err)}
 			}
 			_, filename := filepath.Split(attachPath)
 			attachments[filename] = fileData
@@ -401,14 +403,25 @@ func ApplyPatchCmd(repoDir string, msg tui.ApplyPatchMsg) tea.Cmd {
 		}
 
 		var fileNames []string
+		var stagePaths []string
 		if result != nil {
 			for _, f := range result.Files {
 				fileNames = append(fileNames, f.Path)
+				stagePaths = append(stagePaths, f.Path)
+				if f.OldPath != "" {
+					stagePaths = append(stagePaths, f.OldPath) // stage the rename's removal
+				}
 			}
 		}
+		if len(stagePaths) == 0 {
+			return tui.PatchApplyResultMsg{Subject: msg.Subject, Files: fileNames}
+		}
 
-		// Stage all changes (new, modified, deleted files).
-		add := exec.CommandContext(context.Background(), "git", "-C", repoDir, "add", "-A")
+		// Stage exactly the files the patch touched (new, modified, deleted,
+		// renamed). A bare `git add -A` also staged the user's unrelated
+		// work-in-progress, which was then committed under the patch author.
+		args := append([]string{"-C", repoDir, "add", "-A", "--"}, stagePaths...)
+		add := exec.CommandContext(context.Background(), "git", args...)
 		if err := add.Run(); err != nil {
 			return tui.PatchApplyResultMsg{
 				Subject:  msg.Subject,
@@ -417,25 +430,28 @@ func ApplyPatchCmd(repoDir string, msg tui.ApplyPatchMsg) tea.Cmd {
 			}
 		}
 
-		// Check whether there is anything staged to commit.
-		status := exec.CommandContext(context.Background(), "git", "-C", repoDir, "status", "--porcelain", "--untracked-files=no")
-		statusOut, err := status.Output()
-		if err != nil {
+		// Check whether the patched paths have anything staged to commit
+		// (exit status 1 means they differ from HEAD).
+		diffArgs := append([]string{"-C", repoDir, "diff", "--cached", "--quiet", "--"}, stagePaths...)
+		diffErr := exec.CommandContext(context.Background(), "git", diffArgs...).Run()
+		if diffErr == nil {
+			return tui.PatchApplyResultMsg{Subject: msg.Subject, Files: fileNames}
+		}
+		var exitErr *exec.ExitError
+		if !errors.As(diffErr, &exitErr) || exitErr.ExitCode() != 1 {
 			return tui.PatchApplyResultMsg{
 				Subject:  msg.Subject,
 				Files:    fileNames,
-				Warnings: []string{fmt.Sprintf("patch applied but git status failed: %v", err)},
+				Warnings: []string{fmt.Sprintf("patch applied but git diff failed: %v", diffErr)},
 			}
-		}
-		if len(strings.TrimSpace(string(statusOut))) == 0 {
-			return tui.PatchApplyResultMsg{Subject: msg.Subject, Files: fileNames}
 		}
 
 		return tui.PatchStagedMsg{
-			Subject:   msg.Subject,
-			From:      msg.From,
-			CommitMsg: commitMsg,
-			Files:     fileNames,
+			Subject:     msg.Subject,
+			From:        msg.From,
+			CommitMsg:   commitMsg,
+			Files:       fileNames,
+			StagedPaths: stagePaths,
 		}
 	}
 }
@@ -444,19 +460,7 @@ func ApplyPatchCmd(repoDir string, msg tui.ApplyPatchMsg) tea.Cmd {
 // This releases the terminal so that GPG pinentry (curses or GUI) can run
 // cleanly, then restores the TUI when the commit finishes.
 func CommitPatchCmd(repoDir string, msg tui.PatchStagedMsg) tea.Cmd {
-	authorName, authorEmail := parseAuthor(msg.From)
-	message := buildCommitMessage(msg.Subject, msg.CommitMsg)
-
-	commit := exec.CommandContext(context.Background(), "git", "-C", repoDir, "commit", "-m", message)
-	if authorName != "" {
-		commit.Env = appendEnv(commit.Env, "GIT_AUTHOR_NAME", authorName)
-		commit.Env = appendEnv(commit.Env, "GIT_COMMITTER_NAME", authorName)
-	}
-	if authorEmail != "" {
-		commit.Env = appendEnv(commit.Env, "GIT_AUTHOR_EMAIL", authorEmail)
-		commit.Env = appendEnv(commit.Env, "GIT_COMMITTER_EMAIL", authorEmail)
-	}
-
+	commit := commitPatchCommand(repoDir, msg)
 	return tea.ExecProcess(commit, func(err error) tea.Msg {
 		if err != nil {
 			return tui.PatchApplyResultMsg{
@@ -467,6 +471,28 @@ func CommitPatchCmd(repoDir string, msg tui.PatchStagedMsg) tea.Cmd {
 		}
 		return tui.PatchApplyResultMsg{Subject: msg.Subject, Files: msg.Files}
 	})
+}
+
+// commitPatchCommand builds the git commit for a staged patch.
+func commitPatchCommand(repoDir string, msg tui.PatchStagedMsg) *exec.Cmd {
+	authorName, authorEmail := parseAuthor(msg.From)
+	message := buildCommitMessage(msg.Subject, msg.CommitMsg)
+
+	args := []string{"-C", repoDir, "commit", "-m", message}
+	if len(msg.StagedPaths) > 0 {
+		// Commit only the patched paths, not whatever else is in the index.
+		args = append(append(args, "--"), msg.StagedPaths...)
+	}
+	commit := exec.CommandContext(context.Background(), "git", args...)
+	if authorName != "" {
+		commit.Env = appendEnv(commit.Env, "GIT_AUTHOR_NAME", authorName)
+		commit.Env = appendEnv(commit.Env, "GIT_COMMITTER_NAME", authorName)
+	}
+	if authorEmail != "" {
+		commit.Env = appendEnv(commit.Env, "GIT_AUTHOR_EMAIL", authorEmail)
+		commit.Env = appendEnv(commit.Env, "GIT_COMMITTER_EMAIL", authorEmail)
+	}
+	return commit
 }
 
 // appendEnv sets key=value in the environment list, replacing any existing
@@ -556,9 +582,9 @@ func SendRawPatchCmd(deps *Dependencies, msg tui.SendPatchMsg, rawPatch []byte) 
 		if deps == nil || deps.Config == nil {
 			return tui.EmailResultMsg{Err: fmt.Errorf("no config available")}
 		}
-		account := deps.Config.GetFirstAccount()
-		if account == nil {
-			return tui.EmailResultMsg{Err: fmt.Errorf("no account configured")}
+		account, err := patchAccount(deps.Config, msg.AccountID)
+		if err != nil {
+			return tui.EmailResultMsg{Err: err}
 		}
 
 		// Rewrite the From header to use the configured account's sending
@@ -612,6 +638,22 @@ func SendRawPatchCmd(deps *Dependencies, msg tui.SendPatchMsg, rawPatch []byte) 
 
 		return tui.EmailResultMsg{}
 	}
+}
+
+// patchAccount returns the account a patch is sent from: the one chosen in
+// the form (it used to always be the first configured account), or the first
+// account when none was chosen.
+func patchAccount(cfg *config.Config, accountID string) (*config.Account, error) {
+	if accountID != "" {
+		if account := cfg.GetAccountByID(accountID); account != nil {
+			return account, nil
+		}
+		return nil, fmt.Errorf("account %s not found", accountID)
+	}
+	if account := cfg.GetFirstAccount(); account != nil {
+		return account, nil
+	}
+	return nil, fmt.Errorf("no account configured")
 }
 
 // rewriteFromHeader replaces the From header in a raw RFC 5322 message with

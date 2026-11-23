@@ -1,7 +1,6 @@
 package plugin
 
 import (
-	"log"
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
@@ -45,8 +44,10 @@ func (m *Manager) CallHook(event string, args ...lua.LValue) {
 	}
 
 	previousPlugin := m.currentPlugin
+	m.hookDepth++
 	defer func() {
 		m.currentPlugin = previousPlugin
+		m.hookDepth--
 	}()
 
 	for _, hook := range callbacks {
@@ -56,7 +57,7 @@ func (m *Manager) CallHook(event string, args ...lua.LValue) {
 			NRet:    0,
 			Protect: true,
 		}, args...); err != nil {
-			log.Printf("plugin hook %q error: %v", event, err)
+			m.reportRuntimeError("hook "+event, err)
 		}
 	}
 }
@@ -76,8 +77,10 @@ func (m *Manager) CallSendHook(event string, to, cc, subject, accountID string) 
 	t.RawSetString("account_id", lua.LString(accountID))
 
 	previousPlugin := m.currentPlugin
+	m.hookDepth++
 	defer func() {
 		m.currentPlugin = previousPlugin
+		m.hookDepth--
 	}()
 	for _, hook := range callbacks {
 		m.currentPlugin = hook.plugin
@@ -86,7 +89,7 @@ func (m *Manager) CallSendHook(event string, to, cc, subject, accountID string) 
 			NRet:    0,
 			Protect: true,
 		}, t); err != nil {
-			log.Printf("plugin hook %q error: %v", event, err)
+			m.reportRuntimeError("hook "+event, err)
 		}
 	}
 }
@@ -99,8 +102,10 @@ func (m *Manager) CallFolderHook(event string, folderName string) {
 	}
 
 	previousPlugin := m.currentPlugin
+	m.hookDepth++
 	defer func() {
 		m.currentPlugin = previousPlugin
+		m.hookDepth--
 	}()
 
 	for _, hook := range callbacks {
@@ -110,7 +115,7 @@ func (m *Manager) CallFolderHook(event string, folderName string) {
 			NRet:    0,
 			Protect: true,
 		}, lua.LString(folderName)); err != nil {
-			log.Printf("plugin hook %q error: %v", event, err)
+			m.reportRuntimeError("hook "+event, err)
 		}
 	}
 }
@@ -132,8 +137,10 @@ func (m *Manager) CallComposerHook(event string, body, subject, to, cc, bcc stri
 	t.RawSetString("bcc", lua.LString(bcc))
 
 	previousPlugin := m.currentPlugin
+	m.hookDepth++
 	defer func() {
 		m.currentPlugin = previousPlugin
+		m.hookDepth--
 	}()
 	for _, hook := range callbacks {
 		m.currentPlugin = hook.plugin
@@ -142,7 +149,7 @@ func (m *Manager) CallComposerHook(event string, body, subject, to, cc, bcc stri
 			NRet:    0,
 			Protect: true,
 		}, t); err != nil {
-			log.Printf("plugin hook %q error: %v", event, err)
+			m.reportRuntimeError("hook "+event, err)
 		}
 	}
 }
@@ -166,8 +173,10 @@ func (m *Manager) CallBodyRenderHook(email *lua.LTable, rendered, raw string) st
 
 	L := m.state
 	previousPlugin := m.currentPlugin
+	m.hookDepth++
 	defer func() {
 		m.currentPlugin = previousPlugin
+		m.hookDepth--
 	}()
 
 	for _, hook := range callbacks {
@@ -177,7 +186,7 @@ func (m *Manager) CallBodyRenderHook(email *lua.LTable, rendered, raw string) st
 			NRet:    1,
 			Protect: true,
 		}, email, lua.LString(rendered), lua.LString(raw)); err != nil {
-			log.Printf("plugin hook %q error: %v", HookEmailBodyRender, err)
+			m.reportRuntimeError("hook "+HookEmailBodyRender, err)
 			continue
 		}
 		ret := L.Get(-1)
@@ -202,7 +211,7 @@ func (m *Manager) CallKeyBinding(binding KeyBinding, args ...lua.LValue) {
 		NRet:    0,
 		Protect: true,
 	}, args...); err != nil {
-		log.Printf("plugin keybinding %q error: %v", binding.Key, err)
+		m.reportRuntimeError("key "+binding.Key, err)
 	}
 }
 
