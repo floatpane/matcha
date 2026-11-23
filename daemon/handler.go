@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -243,6 +244,7 @@ func (d *Daemon) handleMarkRead(ctx context.Context, _ *daemonrpc.Conn, params j
 	ctx, cancel := context.WithTimeout(ctx, mutateTimeout)
 	defer cancel()
 
+	var errs []error
 	for _, uid := range args.UIDs {
 		var err error
 		if args.Read {
@@ -252,7 +254,11 @@ func (d *Daemon) handleMarkRead(ctx context.Context, _ *daemonrpc.Conn, params j
 		}
 		if err != nil {
 			log.Printf("daemon: mark read=%v %d failed: %v", args.Read, uid, err)
+			errs = append(errs, fmt.Errorf("uid %d: %w", uid, err))
 		}
+	}
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
 	}
 	return true, nil
 }

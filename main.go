@@ -219,11 +219,19 @@ func runSubcommand(args []string) {
 }
 
 func runMailSubcommand(args []string) {
+	runManage := func(subArgs []string) error {
+		return matchaCli.RunManage(append([]string{args[1]}, subArgs...))
+	}
 	handlers := map[string]func([]string) error{
-		"folders": matchaCli.RunFolders,
-		"list":    matchaCli.RunList,
-		"read":    matchaCli.RunRead,
-		"search":  matchaCli.RunSearch,
+		"folders":     matchaCli.RunFolders,
+		"list":        matchaCli.RunList,
+		"read":        matchaCli.RunRead,
+		"search":      matchaCli.RunSearch,
+		"archive":     runManage,
+		"delete":      runManage,
+		"mark-read":   runManage,
+		"mark-unread": runManage,
+		"move":        runManage,
 	}
 	if fn, ok := handlers[args[1]]; ok {
 		if err := fn(args[2:]); err != nil {
@@ -473,6 +481,11 @@ Commands:
   list             List the messages in a folder
   read             Print one message
   search           Search a folder
+  archive          Archive messages
+  delete           Delete messages
+  mark-read        Mark messages as read
+  mark-unread      Mark messages as unread
+  move             Move messages to another folder
   apply            Apply a patch from a git-format-patch email
   send-patch       Send a git-format-patch email
   contacts         Manage contacts (export, sync)
