@@ -122,7 +122,7 @@ Enter
 Sleep 200ms
 Show
 Sleep 500ms
-Type "brew install floatpane/matcha/matcha  # docs.matcha.email"
+Type "brew install --cask floatpane/matcha/matcha"
 Sleep 4.5s
 
 # ---------------------------------------------------------------- clean reset (hidden)
