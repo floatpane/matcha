@@ -1487,6 +1487,36 @@ func MarkEmailAsUnreadInMailbox(account *config.Account, mailbox string, uid uin
 	}, nil).Close()
 }
 
+// trashMailboxName returns the account's trash folder: the \Trash special-use
+// mailbox when the server advertises one, otherwise the provider's default name.
+func trashMailboxName(c *imapclient.Client, account *config.Account) string {
+	if name, err := getMailboxByAttr(c, imap.MailboxAttrTrash); err == nil {
+		return name
+	}
+	return getTrashMailbox(account)
+}
+
+// deleteUIDSet moves messages to the trash folder. Messages already in the
+// trash are flagged \Deleted and expunged, since moving them onto themselves
+// is not a valid delete and this is how permanent deletion happens there.
+// The caller must have selected the source mailbox.
+func deleteUIDSet(c *imapclient.Client, account *config.Account, mailbox string, uidSet imap.UIDSet) error {
+	trash := trashMailboxName(c, account)
+	if !strings.EqualFold(mailbox, trash) {
+		_, err := c.Move(uidSet, trash).Wait()
+		return err
+	}
+
+	if err := c.Store(uidSet, &imap.StoreFlags{
+		Op:     imap.StoreFlagsAdd,
+		Silent: true,
+		Flags:  []imap.Flag{imap.FlagDeleted},
+	}, nil).Close(); err != nil {
+		return err
+	}
+	return c.Expunge().Close()
+}
+
 func DeleteEmailFromMailbox(account *config.Account, mailbox string, uid uint32) error {
 	if hasBackendProvider(account) {
 		p, err := newBackendProvider(account)
@@ -1507,16 +1537,7 @@ func DeleteEmailFromMailbox(account *config.Account, mailbox string, uid uint32)
 		return err
 	}
 
-	uidSet := imap.UIDSetNum(imap.UID(uid))
-	if err := c.Store(uidSet, &imap.StoreFlags{
-		Op:     imap.StoreFlagsAdd,
-		Silent: true,
-		Flags:  []imap.Flag{imap.FlagDeleted},
-	}, nil).Close(); err != nil {
-		return err
-	}
-
-	return c.Expunge().Close()
+	return deleteUIDSet(c, account, mailbox, imap.UIDSetNum(imap.UID(uid)))
 }
 
 func ArchiveEmailFromMailbox(account *config.Account, mailbox string, uid uint32) error {
@@ -1584,16 +1605,7 @@ func DeleteEmailsFromMailbox(account *config.Account, mailbox string, uids []uin
 		return err
 	}
 
-	uidSet := uidsToUIDSet(uids)
-	if err := c.Store(uidSet, &imap.StoreFlags{
-		Op:     imap.StoreFlagsAdd,
-		Silent: true,
-		Flags:  []imap.Flag{imap.FlagDeleted},
-	}, nil).Close(); err != nil {
-		return err
-	}
-
-	return c.Expunge().Close()
+	return deleteUIDSet(c, account, mailbox, uidsToUIDSet(uids))
 }
 
 // ArchiveEmailsFromMailbox archives multiple emails from a mailbox (batch operation)
