@@ -856,7 +856,7 @@ func fetchEmailBodyFromMailbox(account *config.Account, mailbox string, uid uint
 		if mp, ok := part.(*imap.BodyStructureMultiPart); ok &&
 			strings.EqualFold(mp.Subtype, "digest") {
 			isDigest = true
-			return false // no hace falta seguir bajando
+			return false
 		}
 		return true
 	})
@@ -2294,7 +2294,9 @@ func parseDigest(raw []byte) (body string, atts []Attachment, ok bool) {
 		}
 		cType, _, _ := mime.ParseMediaType(p.Header.Get("Content-Type"))
 
-		if strings.EqualFold(cType, "message/rfc822") {
+		// RFC 2046 §5.1.5: parts inside multipart/digest default to message/rfc822
+		// when no Content-Type header is present.
+		if cType == "" || strings.EqualFold(cType, "message/rfc822") {
 			msgBody, msgAtts := parseRFC822Part(p.Body)
 			if msgBody != "" {
 				out = append(out, msgBody)
@@ -2305,13 +2307,9 @@ func parseDigest(raw []byte) (body string, atts []Attachment, ok bool) {
 		}
 
 		if strings.EqualFold(cType, "text/plain") {
-			rawBody, _ := io.ReadAll(p.Body)
-			enc := p.Header.Get("Content-Transfer-Encoding")
-			decoded, err := decodeAttachmentData(rawBody, enc)
-			if err != nil {
-				decoded = rawBody
+			if decoded, err := io.ReadAll(p.Body); err == nil {
+				prelude = append(prelude, string(decoded))
 			}
-			prelude = append(prelude, string(decoded))
 		}
 	}
 
@@ -2364,7 +2362,6 @@ func parseRFC822Part(r io.Reader) (string, []Attachment) {
 			b, _ := io.ReadAll(p.Body)
 			htmlBody = string(b)
 		default:
-			// Attachment metadata only; don't decode data.
 			fn := cParams["name"]
 			if disp, dParams, _ := mime.ParseMediaType(p.Header.Get("Content-Disposition")); disp == "attachment" {
 				if dParams["filename"] != "" {
@@ -2372,9 +2369,11 @@ func parseRFC822Part(r io.Reader) (string, []Attachment) {
 				}
 			}
 			if fn != "" {
+				data, _ := io.ReadAll(p.Body)
 				atts = append(atts, Attachment{
 					Filename: fn,
 					MIMEType: cType,
+					Data:     data,
 				})
 			}
 		}
@@ -2384,15 +2383,29 @@ func parseRFC822Part(r io.Reader) (string, []Attachment) {
 		body = "[Only HTML, not shown]"
 	}
 
+	sep := strings.Repeat("─", 56)
 	var sb strings.Builder
-	sb.WriteString(strings.Repeat("─", 56) + "\n")
-	sb.WriteString("From:     " + from + "\n")
-	sb.WriteString("Subject: " + subject + "\n")
-	sb.WriteString("Date:  " + date + "\n")
-	sb.WriteString(strings.Repeat("─", 56) + "\n")
-	sb.WriteString(body + "\n")
+	sb.WriteString(sep)
+	sb.WriteByte('\n')
+	sb.WriteString("From:    ")
+	sb.WriteString(from)
+	sb.WriteByte('\n')
+	sb.WriteString("Subject: ")
+	sb.WriteString(subject)
+	sb.WriteByte('\n')
+	sb.WriteString("Date:    ")
+	sb.WriteString(date)
+	sb.WriteByte('\n')
+	sb.WriteString(sep)
+	sb.WriteByte('\n')
+	sb.WriteString(body)
+	sb.WriteByte('\n')
 	for _, a := range atts {
-		sb.WriteString("  📎 " + a.Filename + " (" + a.MIMEType + ")\n")
+		sb.WriteString("  📎 ")
+		sb.WriteString(a.Filename)
+		sb.WriteString(" (")
+		sb.WriteString(a.MIMEType)
+		sb.WriteString(")\n")
 	}
 
 	return sb.String(), atts
