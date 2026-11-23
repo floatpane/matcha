@@ -54,24 +54,10 @@ func OAuthScriptPath() (string, error) {
 // the file in place would let a concurrent python3 read it empty, exit 0 and
 // print no token.
 func writeOAuthScript(path string) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".oauth-*.py")
-	if err != nil {
+	if err := writeFileAtomic(path, embeddedOAuthScript, 0700); err != nil {
 		return err
 	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath) //nolint:errcheck
-
-	if _, err := tmp.Write(embeddedOAuthScript); err != nil {
-		tmp.Close() //nolint:errcheck,gosec
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmpPath, 0700); err != nil { // #nosec G302 -- the script is executable
-		return err
-	}
-	return os.Rename(tmpPath, path)
+	return os.Chmod(path, 0700) // #nosec G302 -- ensure stale non-executable script becomes executable
 }
 
 // GetOAuth2Token retrieves a fresh OAuth2 access token for the account by
