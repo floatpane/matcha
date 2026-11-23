@@ -1,0 +1,62 @@
+package cli
+
+import (
+	"errors"
+	"flag"
+	"fmt"
+	"time"
+)
+
+// ListJSON defines the structure for a single email in the JSON output.
+type ListJSON struct {
+	UID     uint32    `json:"uid"`
+	From    string    `json:"from"`
+	Subject string    `json:"subject"`
+	Date    time.Time `json:"date"`
+	IsRead  bool      `json:"is_read"`
+}
+
+// RunList implements the "list" subcommand.
+func RunList(args []string) error {
+	fs := flag.NewFlagSet("list", flag.ContinueOnError)
+	fs.SetOutput(ErrOut)
+	from := fs.String("from", "", "Email address of the account to use")
+	jsonOutput := fs.Bool("json", false, "Output in JSON format")
+	fs.Usage = func() {
+		fprintln(ErrOut, "Usage: matcha list [folder] [--from <email>] [--json]")
+		fs.PrintDefaults()
+	}
+	positionals, err := parseInterspersed(fs, args)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if len(positionals) > 1 {
+		return fmt.Errorf("unexpected arguments: %v", positionals[1:])
+	}
+
+	cfg, account, err := resolveAccount(*from)
+	if err != nil {
+		return err
+	}
+
+	folder := inboxFolder
+	if len(positionals) > 0 {
+		folder = positionals[0]
+	}
+	folder = NormalizeFolder(folder)
+
+	// Per design constraints, autoStart is always false for CLI commands.
+	svc := NewServiceFunc(cfg, false)
+	defer func() { _ = svc.Close() }()
+
+	// Using a hardcoded limit of 50 as per the spec.
+	emails, err := svc.FetchEmails(account.ID, folder, 50, 0)
+	if err != nil {
+		return fmt.Errorf("could not fetch emails: %w", err)
+	}
+
+	return printEmails(emails, *jsonOutput)
+}

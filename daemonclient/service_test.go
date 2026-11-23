@@ -227,3 +227,24 @@ func TestDirectServiceProvidersSurviveAccountRemoval(t *testing.T) {
 		t.Fatalf("getProvider after Close: %v", err)
 	}
 }
+
+func TestNewCLIClient_NoAutoStart(t *testing.T) {
+	origDial := dialDaemonFunc
+	dialDaemonFunc = func() (*Client, error) { return nil, errors.New("no daemon") }
+	t.Cleanup(func() { dialDaemonFunc = origDial })
+
+	cfg := &config.Config{
+		DisableDaemon: false,
+	}
+
+	// When autoStart is false and daemon is not running, we expect a directService fallback (IsDaemon() == false)
+	svc := NewCLIClient(cfg, false)
+	if svc == nil {
+		t.Fatal("expected non-nil service")
+	}
+	defer func() { _ = svc.Close() }()
+
+	if svc.IsDaemon() {
+		t.Error("expected IsDaemon() to be false (direct service fallback) when autoStart is false and daemon is not running")
+	}
+}
