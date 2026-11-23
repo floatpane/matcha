@@ -1,16 +1,23 @@
 package cli
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"strings"
+	"text/tabwriter"
 
+	"github.com/floatpane/matcha/backend"
 	"github.com/floatpane/matcha/config"
 	"github.com/floatpane/matcha/i18n"
 
 	// Register the bundled i18n translation catalogs via their init functions.
 	_ "github.com/floatpane/matcha/i18n/languages"
 )
+
+// inboxFolder is the canonical name of the default mailbox.
+const inboxFolder = "INBOX"
 
 // fprintln writes a line to w. Failed writes to the CLI's stdout/stderr are
 // not actionable, so the error is intentionally discarded.
@@ -76,4 +83,98 @@ func resolveAccount(fromEmail string) (*config.Config, *config.Account, error) {
 	}
 
 	return cfg, account, nil
+}
+
+// printEmails centralizes the logic for rendering a list of emails.
+func printEmails(emails []backend.Email, jsonOutput bool) error {
+	if jsonOutput {
+		jsonEmails := make([]ListJSON, len(emails))
+		for i, e := range emails {
+			jsonEmails[i] = ListJSON{
+				UID:     e.UID,
+				From:    e.From,
+				Subject: e.Subject,
+				Date:    e.Date,
+				IsRead:  e.IsRead,
+			}
+		}
+		encoder := json.NewEncoder(Out)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(jsonEmails)
+	}
+
+	// Text output
+	w := tabwriter.NewWriter(Out, 0, 0, 2, ' ', 0)
+	fprintln(w, "UID\tFROM\tSUBJECT\tDATE\tREAD")
+	for _, email := range emails {
+		readStatus := " "
+		if email.IsRead {
+			readStatus = "✔"
+		}
+		fprintf(w, "%d\t%s\t%s\t%s\t%s\n",
+			email.UID,
+			sanitizeTextForTable(email.From),
+			sanitizeTextForTable(email.Subject),
+			email.Date.Format("2006-01-02 15:04"),
+			readStatus,
+		)
+	}
+	return w.Flush()
+}
+
+// NormalizeFolder normalizes a folder name, mapping empty or case-insensitive "inbox" to "INBOX".
+func NormalizeFolder(folder string) string {
+	if folder == "" || strings.EqualFold(folder, "inbox") {
+		return inboxFolder
+	}
+	return folder
+}
+
+// parseInterspersed parses a flag set with interspersed positional arguments.
+// It returns the collected positional arguments in the order they were encountered,
+// stopping flag parsing after a "--" terminator.
+func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
+	var positionals []string
+	argsToParse := args
+	for len(argsToParse) > 0 {
+		if err := fs.Parse(argsToParse); err != nil {
+			return nil, err
+		}
+		rest := fs.Args()
+		if len(rest) == 0 {
+			break
+		}
+		consumed := len(argsToParse) - len(rest)
+		if consumed > 0 && argsToParse[consumed-1] == "--" &&
+			(consumed < 2 || !flagTakesSeparateValue(fs, argsToParse[consumed-2])) {
+			positionals = append(positionals, rest...)
+			break
+		}
+		positionals = append(positionals, rest[0])
+		argsToParse = rest[1:]
+	}
+	return positionals, nil
+}
+
+func flagTakesSeparateValue(fs *flag.FlagSet, token string) bool {
+	if !strings.HasPrefix(token, "-") || token == "-" || token == "--" || strings.Contains(token, "=") {
+		return false
+	}
+	name := strings.TrimPrefix(strings.TrimPrefix(token, "-"), "-")
+	f := fs.Lookup(name)
+	if f == nil {
+		return false
+	}
+	if bf, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && bf.IsBoolFlag() {
+		return false
+	}
+	return true
+}
+
+// sanitizeTextForTable replaces tabs and newlines with spaces to avoid breaking tabwriter formatting.
+func sanitizeTextForTable(s string) string {
+	s = strings.ReplaceAll(s, "\t", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	return s
 }

@@ -221,6 +221,7 @@ func runSubcommand(args []string) {
 func runMailSubcommand(args []string) {
 	handlers := map[string]func([]string) error{
 		"folders": matchaCli.RunFolders,
+		"list":    matchaCli.RunList,
 	}
 	if fn, ok := handlers[args[1]]; ok {
 		if err := fn(args[2:]); err != nil {
@@ -467,6 +468,7 @@ Usage:
 Commands:
   send             Send an email from the command line
   folders          List the folders of an account
+  list             List the messages in a folder
   apply            Apply a patch from a git-format-patch email
   send-patch       Send a git-format-patch email
   contacts         Manage contacts (export, sync)
