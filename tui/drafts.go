@@ -317,3 +317,8 @@ func (m *Drafts) SetDrafts(drafts []config.Draft) {
 	}
 	m.list.SetItems(items)
 }
+
+// IsFilterActive reports whether the list filter is being typed or applied.
+func (m *Drafts) IsFilterActive() bool {
+	return m != nil && (m.list.FilterState() == list.Filtering || m.list.FilterState() == list.FilterApplied)
+}

@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"log"
+	"sync"
 
 	keybind "github.com/floatpane/go-keybind"
 )
@@ -12,6 +13,8 @@ const keyDelete = "delete" // used in ValidateKeybinds action map keys
 
 //go:embed default_keybinds.json
 var defaultKeybindsJSON []byte
+
+var keybindsMu sync.Mutex
 
 // Keybinds is the active keybind configuration. Initialized to defaults at
 // package init; overwritten by LoadKeybindsFromDir when config is loaded.
@@ -103,6 +106,9 @@ func defaultKeybinds() KeybindsConfig {
 // LoadKeybindsFromDir reads keybinds.json from cfgDir, writing defaults if
 // the file does not exist, then updates the package-level Keybinds var.
 func LoadKeybindsFromDir(cfgDir string) error {
+	keybindsMu.Lock()
+	defer keybindsMu.Unlock()
+
 	kb, err := keybind.Load(cfgDir, "keybinds.json", defaultKeybinds())
 	if err != nil {
 		return err
