@@ -136,6 +136,10 @@ func (s *StartingService) Unsubscribe(accountID, folder string) error {
 	return s.wait().Unsubscribe(accountID, folder)
 }
 
+func (s *StartingService) Search(accountID, folder string, query backend.SearchQuery) ([]backend.Email, error) {
+	return s.wait().Search(accountID, folder, query)
+}
+
 func (s *StartingService) ReloadConfig() error {
 	return s.wait().ReloadConfig()
 }

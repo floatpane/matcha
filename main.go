@@ -223,6 +223,7 @@ func runMailSubcommand(args []string) {
 		"folders": matchaCli.RunFolders,
 		"list":    matchaCli.RunList,
 		"read":    matchaCli.RunRead,
+		"search":  matchaCli.RunSearch,
 	}
 	if fn, ok := handlers[args[1]]; ok {
 		if err := fn(args[2:]); err != nil {
@@ -471,6 +472,7 @@ Commands:
   folders          List the folders of an account
   list             List the messages in a folder
   read             Print one message
+  search           Search a folder
   apply            Apply a patch from a git-format-patch email
   send-patch       Send a git-format-patch email
   contacts         Manage contacts (export, sync)

@@ -42,6 +42,7 @@ type Service interface {
 	RefreshFolder(accountID, folder string) error
 	Subscribe(accountID, folder string) error
 	Unsubscribe(accountID, folder string) error
+	Search(accountID, folder string, query backend.SearchQuery) ([]backend.Email, error)
 	ReloadConfig() error
 	Events() <-chan *daemonrpc.Event
 	IsDaemon() bool
@@ -563,6 +564,18 @@ func (s *daemonService) Unsubscribe(accountID, folder string) error {
 	})
 }
 
+func (s *daemonService) Search(accountID, folder string, query backend.SearchQuery) ([]backend.Email, error) {
+	var emails []backend.Email
+	err := s.call(func(c *Client) error {
+		return c.Call(daemonrpc.MethodSearch, daemonrpc.SearchParams{
+			AccountID: accountID,
+			Folder:    folder,
+			Query:     query.Raw, // Send the raw query string over RPC
+		}, &emails)
+	})
+	return emails, err
+}
+
 func (s *daemonService) ReloadConfig() error {
 	return s.call(func(c *Client) error {
 		return c.Call(daemonrpc.MethodReloadConfig, nil, nil)
@@ -768,6 +781,14 @@ func (s *directService) Subscribe(_, _ string) error {
 
 func (s *directService) Unsubscribe(_, _ string) error {
 	return nil
+}
+
+func (s *directService) Search(accountID, folder string, query backend.SearchQuery) ([]backend.Email, error) {
+	p, err := s.getProvider(accountID)
+	if err != nil {
+		return nil, err
+	}
+	return p.Search(context.Background(), folder, query)
 }
 
 func (s *directService) ReloadConfig() error {
