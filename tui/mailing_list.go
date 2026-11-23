@@ -72,6 +72,9 @@ func (m *MailingListEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		kb := config.Keybinds
 		switch msg.String() {
 		case kb.Global.Quit:
+			if IsTypeableKey(msg.String()) {
+				break
+			}
 			return m, tea.Quit
 		case kb.Global.Cancel:
 			return m, func() tea.Msg { return GoToSettingsMsg{} }
