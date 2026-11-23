@@ -1502,7 +1502,7 @@ func trashMailboxName(c *imapclient.Client, account *config.Account) string {
 // The caller must have selected the source mailbox.
 func deleteUIDSet(c *imapclient.Client, account *config.Account, mailbox string, uidSet imap.UIDSet) error {
 	trash := trashMailboxName(c, account)
-	if mailbox != trash {
+	if !strings.EqualFold(mailbox, trash) {
 		_, err := c.Move(uidSet, trash).Wait()
 		return err
 	}
