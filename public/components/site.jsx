@@ -116,7 +116,7 @@ function TopNav() {
 }
 
 function QuickStart() {
-  const CMD1 = "brew install floatpane/matcha/matcha";
+  const CMD1 = "brew install --cask floatpane/matcha/matcha";
   const CMD2 = "matcha";
   const [l1, setL1] = useState("");
   const [l2, setL2] = useState("");
@@ -187,8 +187,8 @@ function Hero() {
         </h1>
         <p className="hero-sub">
           Matcha is a keyboard-native email client built for the shell.
-          Multi-account IMAP, PGP encryption, markdown composing, and a CLI
-          that pipes. One static binary. No cloud. No trackers.
+          Multi-account IMAP, PGP encryption, markdown composing, and a CLI that
+          pipes. One static binary. No cloud. No trackers.
         </p>
         <div className="hero-cta">
           <a href="#install" className="btn btn-primary btn-lg">
@@ -314,7 +314,7 @@ function Features() {
 const INSTALL_TABS = {
   brew: {
     plat: "macOS · Linux",
-    cmd: "$ brew install floatpane/matcha/matcha\n$ matcha",
+    cmd: "$ brew install --cask floatpane/matcha/matcha\n$ matcha",
   },
   winget: {
     plat: "Windows 10 / 11",
@@ -427,18 +427,12 @@ function CTA() {
     <section className="cta">
       <div className="cta-inner">
         <div className="cta-pre reveal">$ _</div>
-        <h2
-          className="cta-h2 reveal"
-          style={{ transitionDelay: "0.12s" }}
-        >
+        <h2 className="cta-h2 reveal" style={{ transitionDelay: "0.12s" }}>
           Your inbox is waiting
           <br />
           in the terminal.
         </h2>
-        <div
-          className="cta-row reveal"
-          style={{ transitionDelay: "0.24s" }}
-        >
+        <div className="cta-row reveal" style={{ transitionDelay: "0.24s" }}>
           <a href="#install" className="btn btn-primary btn-lg">
             install matcha
           </a>

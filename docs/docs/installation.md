@@ -14,8 +14,7 @@ Welcome to the installation guide for Matcha.
 The recommended way to install Matcha on macOS is via Homebrew.
 
 ```bash
-brew tap floatpane/matcha
-brew install floatpane/matcha/matcha
+brew install --cask floatpane/matcha/matcha
 ```
 
 After installation, run:
@@ -24,22 +23,25 @@ After installation, run:
 matcha
 ```
 
-::: warning
-If you have the [_"other"_ Matcha](https://github.com/piqoni/matcha) already installed, you will have to rename the executable to avoid conflicts.
+::: warning If you have the [_"other"_ Matcha](https://github.com/piqoni/matcha)
+already installed, you will have to rename the executable to avoid conflicts.
 :::
 
 ### Manual Binary Download
 
-You can download pre-compiled binaries from the [Releases page](https://github.com/floatpane/matcha/releases).
+You can download pre-compiled binaries from the
+[Releases page](https://github.com/floatpane/matcha/releases).
 
-1. Download the appropriate archive for your architecture (e.g., `matcha_0.17.0_darwin_amd64.tar.gz` or `matcha_0.17.0_darwin_arm64.tar.gz`).
+1. Download the appropriate archive for your architecture (e.g.,
+   `matcha_0.17.0_darwin_amd64.tar.gz` or `matcha_0.17.0_darwin_arm64.tar.gz`).
 2. Extract the archive.
 3. Move the binary to your path:
+
    ```bash
    mv matcha /usr/local/bin/
    chmod +x /usr/local/bin/executable_name
    ```
-  
+
 4. Run it:
    ```bash
    matcha
@@ -47,9 +49,11 @@ You can download pre-compiled binaries from the [Releases page](https://github.c
 
 ## 🐧 Linux
 
-::: warning
-Homebrew support for Linux was [dropped](https://github.com/floatpane/matcha/pull/1360) (since matcha [v0.40.0](https://github.com/flaotpane)). You can still use Homebrew on Linux for nightly releases, but for stable releases, please use one of the other installation methods below.
-:::
+::: warning Homebrew support for Linux was
+[dropped](https://github.com/floatpane/matcha/pull/1360) (since matcha
+[v0.40.0](https://github.com/flaotpane)). You can still use Homebrew on Linux
+for nightly releases, but for stable releases, please use one of the other
+installation methods below. :::
 
 ### Snap
 
@@ -69,9 +73,9 @@ flatpak install https://matcha.email/matcha.flatpakref
 
 ### AUR (Arch Linux) (unofficial)
 
-::: info
-This is an unofficial package, not maintained by the Matcha team. Use at your own risk. For any issues with the AUR package, please contact the maintainer ([Dominiquini](https://github.com/Dominiquini)).
-:::
+::: info This is an unofficial package, not maintained by the Matcha team. Use
+at your own risk. For any issues with the AUR package, please contact the
+maintainer ([Dominiquini](https://github.com/Dominiquini)). :::
 
 If you're using Arch Linux, you can install Matcha from the AUR:
 
@@ -95,9 +99,11 @@ nix profile install github:floatpane/matcha
 
 ### Manual Binary Download
 
-You can download pre-compiled binaries from the [Releases page](https://github.com/floatpane/matcha/releases).
+You can download pre-compiled binaries from the
+[Releases page](https://github.com/floatpane/matcha/releases).
 
-1. Download the appropriate archive for your architecture (e.g., `matcha_0.17.0_linux_amd64.tar.gz` or `matcha_0.17.0_linux_arm64.tar.gz`).
+1. Download the appropriate archive for your architecture (e.g.,
+   `matcha_0.17.0_linux_amd64.tar.gz` or `matcha_0.17.0_linux_arm64.tar.gz`).
 2. Extract the archive.
 3. Move the binary to your path:
    ```bash
@@ -118,30 +124,39 @@ winget install --id=floatpane.matcha
 
 ### Manual Binary Download
 
-You can download pre-compiled binaries from the [Releases page](https://github.com/floatpane/matcha/releases).
+You can download pre-compiled binaries from the
+[Releases page](https://github.com/floatpane/matcha/releases).
 
-1. Move the executable to a permanent, dedicated location on your computer (e.g., C:\CLI Tools\MyTool\).
-2. Open the System Properties window by searching for "environment variables" in the Windows Start menu and selecting "Edit the system environment variables".
-3. Click the "Environment Variables..." button at the bottom of the System Properties window, under the "Advanced" tab.
-4. Locate the "Path" variable in the "User variables for [Your Username]" section (for access only by your user account) or the "System variables" section (for all users).
+1. Move the executable to a permanent, dedicated location on your computer
+   (e.g., C:\CLI Tools\MyTool\).
+2. Open the System Properties window by searching for "environment variables" in
+   the Windows Start menu and selecting "Edit the system environment variables".
+3. Click the "Environment Variables..." button at the bottom of the System
+   Properties window, under the "Advanced" tab.
+4. Locate the "Path" variable in the "User variables for [Your Username]"
+   section (for access only by your user account) or the "System variables"
+   section (for all users).
 5. Double-click on the "Path" variable to edit it.
 6. Add the path to your executable's folder:
 
-    In the "Edit environment variable" window, click "New".
-    Type or paste the full path to the folder where your executable is located (e.g., C:\CLI Tools\MyTool\).
-    Click "OK" on all open windows to save the changes.
+   In the "Edit environment variable" window, click "New". Type or paste the
+   full path to the folder where your executable is located (e.g., C:\CLI
+   Tools\MyTool\). Click "OK" on all open windows to save the changes.
 
 ### WSL
 
-You can run Matcha on Windows using [WSL (Windows Subsystem for Linux)](https://learn.microsoft.com/en-us/windows/wsl/install).
+You can run Matcha on Windows using
+[WSL (Windows Subsystem for Linux)](https://learn.microsoft.com/en-us/windows/wsl/install).
 
-Once you have WSL installed and set up, you can follow the [Linux](#-linux) installation instructions inside your WSL terminal.
+Once you have WSL installed and set up, you can follow the [Linux](#-linux)
+installation instructions inside your WSL terminal.
 
 ## 🏗️ Building from Source
 
-::: warning
-Building from source is not recommended for most users, as it requires additional dependencies and setup. Only proceed if you are comfortable with development tools and want to contribute to the project or need a custom build.
-:::
+::: warning Building from source is not recommended for most users, as it
+requires additional dependencies and setup. Only proceed if you are comfortable
+with development tools and want to contribute to the project or need a custom
+build. :::
 
 If you have Go installed, you can build Matcha from source:
 
