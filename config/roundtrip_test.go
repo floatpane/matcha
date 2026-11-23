@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -121,5 +123,39 @@ func TestSaveLoadConfigRoundTripsEveryField(t *testing.T) {
 			}
 			compareAll(t, reflect.ValueOf(acct), reflect.ValueOf(got.Accounts[0]), "Account.")
 		})
+	}
+}
+
+func TestLoadConfigMigratesAndLoadsSMTPPassword(t *testing.T) {
+	isolateHome(t)
+	keyring.MockInit()
+
+	path, err := configFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"accounts":[{"id":"a1","email":"user@example.com","password":"imap-secret","smtp_password":"smtp-secret"}]}`
+	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Accounts[0].SMTPPassword != "smtp-secret" {
+		t.Fatalf("first load SMTPPassword = %q, want %q", got.Accounts[0].SMTPPassword, "smtp-secret")
+	}
+
+	// Second load reads from keyring without smtp_username set.
+	got2, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got2.Accounts[0].SMTPPassword != "smtp-secret" {
+		t.Fatalf("second load SMTPPassword = %q, want %q", got2.Accounts[0].SMTPPassword, "smtp-secret")
 	}
 }

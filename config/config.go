@@ -888,9 +888,15 @@ func LoadConfig() (*Config, error) {
 					acc.PGPPIN = pin
 				}
 			}
-			// Load SMTP-specific password from keyring if smtp_username is set
-			if acc.SMTPUsername != "" {
-				if smtpPwd, err := keyring.Get(keyringServiceName, acc.Email+":smtp-password"); err == nil {
+			// Load or migrate SMTP-specific password in non-secure mode.
+			if acc.PassCmd == "" {
+				if rawAcc.SMTPPassword != "" {
+					if err := keyring.Set(keyringServiceName, rawAcc.Email+":smtp-password", rawAcc.SMTPPassword); err != nil {
+						log.Printf("matcha: failed to migrate SMTP password for %s into keyring: %v", rawAcc.Email, err)
+					}
+					acc.SMTPPassword = rawAcc.SMTPPassword
+					needsMigration = true
+				} else if smtpPwd, err := keyring.Get(keyringServiceName, acc.Email+":smtp-password"); err == nil {
 					acc.SMTPPassword = smtpPwd
 				}
 			}
