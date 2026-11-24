@@ -2,8 +2,6 @@ package config
 
 import (
 	"encoding/json"
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -31,17 +29,16 @@ func folderSyncFile(folderName string) (string, error) {
 	return filepath.Join(dir, "folder_sync", sanitizeFolderName(folderName)+".json"), nil
 }
 
+// loadFolderSyncStates reads a folder's sync states. A state that cannot be
+// decoded is dropped (it only costs a full fetch), unless it is encrypted
+// and the vault is locked; see loadJSONForUpdate.
 func loadFolderSyncStates(path string) (map[string]FolderSyncState, error) {
-	data, err := SecureReadFile(path)
+	states := map[string]FolderSyncState{}
+	found, err := loadJSONForUpdate(path, &states, true)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return map[string]FolderSyncState{}, nil
-		}
 		return nil, err
 	}
-	states := map[string]FolderSyncState{}
-	if err := json.Unmarshal(data, &states); err != nil {
-		// A corrupt state only costs a full fetch.
+	if !found {
 		return map[string]FolderSyncState{}, nil
 	}
 	return states, nil
