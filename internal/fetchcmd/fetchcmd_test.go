@@ -63,8 +63,7 @@ func TestBodyCmdsCarryFolder(t *testing.T) {
 
 // A failing account must be reported, not silently turned into "no emails".
 func TestFetchFolderEmailsReportsErrors(t *testing.T) {
-	orig := fetchFolderEmails
-	t.Cleanup(func() { fetchFolderEmails = orig })
+	stubFolderSync(t)
 	now := time.Now()
 	fetchFolderEmails = func(acc *config.Account, _ string, _, _ uint32) ([]fetcher.Email, error) {
 		if acc.ID == "down" {
@@ -111,8 +110,7 @@ func TestMergeFoldersSumsUnread(t *testing.T) {
 // Commands must not alias cfg.Accounts: the UI goroutine can remove an
 // account (shifting the slice in place) while the command runs.
 func TestCommandsSnapshotAccounts(t *testing.T) {
-	orig := fetchFolderEmails
-	t.Cleanup(func() { fetchFolderEmails = orig })
+	stubFolderSync(t)
 	seen := make(chan string, 4)
 	fetchFolderEmails = func(acc *config.Account, _ string, _, _ uint32) ([]fetcher.Email, error) {
 		seen <- acc.ID
@@ -129,5 +127,16 @@ func TestCommandsSnapshotAccounts(t *testing.T) {
 	}
 	if !ids["a"] || !ids["b"] || !ids["c"] || len(ids) != 3 {
 		t.Fatalf("command saw accounts %v, want the snapshot a,b,c", ids)
+	}
+}
+
+// stubFolderSync restores the fetch seams after the test and routes the full
+// folder sync through the fetchFolderEmails stub the test installs.
+func stubFolderSync(t *testing.T) {
+	t.Helper()
+	origFetch, origSync := fetchFolderEmails, syncFolderEmails
+	t.Cleanup(func() { fetchFolderEmails, syncFolderEmails = origFetch, origSync })
+	syncFolderEmails = func(acc *config.Account, folder string) ([]fetcher.Email, error) {
+		return fetchFolderEmails(acc, folder, InitialEmailLimit, 0)
 	}
 }

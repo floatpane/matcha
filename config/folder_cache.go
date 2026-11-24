@@ -225,6 +225,12 @@ func SaveFolderEmailCache(folderName string, emails []CachedEmail) error {
 		return err
 	}
 	defer lockFile(path)()
+	return saveFolderEmailCacheLocked(path, folderName, emails)
+}
+
+// saveFolderEmailCacheLocked writes a folder's email cache; the caller holds
+// the file lock.
+func saveFolderEmailCacheLocked(path, folderName string, emails []CachedEmail) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
