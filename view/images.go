@@ -83,7 +83,7 @@ func ActiveImageProtocol() ImageProtocol {
 		return ImageProtocolSixel
 	case inTmux():
 		return tmuxImageProtocol()
-	case kittySupported(), ghosttySupported(), weztermSupported():
+	case kittySupported(), ghosttySupported(), monstarSupported(), weztermSupported():
 		return ImageProtocolKitty
 	case sixelSupported():
 		return ImageProtocolSixel
