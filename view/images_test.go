@@ -78,6 +78,14 @@ func TestImagePositionsFollowWrapping(t *testing.T) {
 	}
 }
 
+func TestMonstarUsesKittyGraphics(t *testing.T) {
+	// Monstar identifies itself only through TERM.
+	useImageTerminal(t, map[string]string{"TERM": "monstar"})
+	if got := ActiveImageProtocol(); got != ImageProtocolKitty {
+		t.Fatalf("protocol = %v, want kitty", got)
+	}
+}
+
 func TestHalfBlockImagesAreInlineText(t *testing.T) {
 	useImageTerminal(t, map[string]string{"TERM": "xterm-256color", "TERM_PROGRAM": "iterm.app"})
 	if got := ActiveImageProtocol(); got != ImageProtocolHalfBlock {

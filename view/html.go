@@ -235,6 +235,13 @@ func ghosttySupported() bool {
 	return os.Getenv("GHOSTTY_RESOURCES_DIR") != ""
 }
 
+// monstarSupported detects Monstar (github.com/rockorager/monstar), a
+// Wayland terminal built on libghostty that draws images with the Kitty
+// graphics protocol. It sets TERM=monstar and no TERM_PROGRAM.
+func monstarSupported() bool {
+	return strings.Contains(strings.ToLower(os.Getenv("TERM")), "monstar")
+}
+
 func iterm2Supported() bool {
 	termProgram := strings.ToLower(os.Getenv("TERM_PROGRAM"))
 	if termProgram == "iterm.app" {
@@ -327,7 +334,7 @@ func SixelSupported() bool {
 
 // imageProtocolSupported checks if any supported image protocol terminal is detected.
 func imageProtocolSupported() bool {
-	return sixelSupported() || kittySupported() || ghosttySupported() || iterm2Supported() ||
+	return sixelSupported() || kittySupported() || ghosttySupported() || monstarSupported() || iterm2Supported() ||
 		weztermSupported() || waystSupported() || warpSupported() || konsoleSupported() ||
 		(inTmux() && tmuxClientHasPlaceholders())
 }
