@@ -10,7 +10,7 @@ require (
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/PuerkitoBio/goquery v1.13.0
 	github.com/charmbracelet/x/ansi v0.11.9
-	github.com/emersion/go-imap/v2 v2.0.0-beta.8
+	github.com/emersion/go-imap/v2 v2.0.0-beta.9
 	github.com/emersion/go-maildir v0.6.0
 	github.com/emersion/go-message v0.18.2
 	github.com/emersion/go-pgpmail v0.2.2
