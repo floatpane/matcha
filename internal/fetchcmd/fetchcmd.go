@@ -26,6 +26,7 @@ const (
 var (
 	fetchFolderEmailBody = fetcher.FetchFolderEmailBody
 	fetchFolderEmails    = fetcher.FetchFolderEmails
+	syncFolderEmails     = fetcher.SyncFolderEmails
 )
 
 // snapshotAccounts copies the account list so a command running on another
@@ -250,7 +251,8 @@ func FetchFolderEmailsCmd(cfg *config.Config, folderName string) tea.Cmd {
 			wg.Add(1)
 			go func(acc config.Account) {
 				defer wg.Done()
-				emails, err := fetchFolderEmails(&acc, folderName, InitialEmailLimit, 0)
+				// The whole folder, synced incrementally rather than refetched.
+				emails, err := syncFolderEmails(&acc, folderName)
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {

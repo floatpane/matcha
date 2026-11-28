@@ -584,27 +584,70 @@ func fetchIMAPEmails(account *config.Account, mailbox string, limit, offset uint
 	if err != nil {
 		return nil, err
 	}
+	emails, _, err := fetchSelectedEmails(c, account, mailbox, selectData.NumMessages, limit, offset)
+	return emails, err
+}
 
-	if selectData.NumMessages == 0 {
-		return []Email{}, nil
-	}
+// headerFilter turns fetched header messages into Emails for one account,
+// leaving out mail addressed to another address of a shared mailbox.
+type headerFilter struct {
+	account       *config.Account
+	fetchEmail    string
+	isSentMailbox bool
+	section       *imap.FetchItemBodySection
+}
 
-	if selectData.NumMessages <= offset {
-		return []Email{}, nil
-	}
-
-	cursor := selectData.NumMessages - offset
-	fetchEmail := determineFetchEmail(account)
+func newHeaderFilter(c *imapclient.Client, account *config.Account, mailbox string) *headerFilter {
 	sentMailbox, err := getMailboxByAttr(c, imap.MailboxAttrSent)
 	if err != nil {
 		sentMailbox = getSentMailbox(account)
 	}
-	isSentMailbox := mailbox == sentMailbox
-	deliveryHeaderSection := buildDeliveryHeaderSection()
+	return &headerFilter{
+		account:       account,
+		fetchEmail:    determineFetchEmail(account),
+		isSentMailbox: mailbox == sentMailbox,
+		section:       buildDeliveryHeaderSection(),
+	}
+}
+
+func (f *headerFilter) fetchOptions() *imap.FetchOptions {
+	return &imap.FetchOptions{
+		Envelope:    true,
+		UID:         true,
+		Flags:       true,
+		BodySection: []*imap.FetchItemBodySection{f.section},
+	}
+}
+
+// build returns the emails kept for the account and the UIDs left out.
+func (f *headerFilter) build(msgs []*imapclient.FetchMessageBuffer) (kept []Email, skipped []uint32) {
+	kept = filterAndBuildBatchEmails(msgs, f.fetchEmail, f.account, f.isSentMailbox, f.section)
+	keptUIDs := make(map[uint32]struct{}, len(kept))
+	for _, e := range kept {
+		keptUIDs[e.UID] = struct{}{}
+	}
+	for _, msg := range msgs {
+		if _, ok := keptUIDs[uint32(msg.UID)]; !ok {
+			skipped = append(skipped, uint32(msg.UID))
+		}
+	}
+	return kept, skipped
+}
+
+// fetchSelectedEmails fetches headers of the selected mailbox newest first,
+// in chunks. It also returns the UIDs fetched but left out by the filter.
+func fetchSelectedEmails(c *imapclient.Client, account *config.Account, mailbox string, numMessages, limit, offset uint32) ([]Email, []uint32, error) {
+	if numMessages == 0 || numMessages <= offset {
+		return []Email{}, nil, nil
+	}
+
+	cursor := numMessages - offset
+	filter := newHeaderFilter(c, account, mailbox)
 	chunkSize := determineChunkSize(limit)
 	fetchAll := limit == 0
 
 	var allEmails []Email
+	var allSkipped []uint32
 	for (fetchAll || len(allEmails) < int(limit)) && cursor > 0 {
 		from := uint32(1)
 		if cursor > chunkSize {
@@ -614,19 +657,12 @@ func fetchIMAPEmails(account *config.Account, mailbox string, limit, offset uint
 		var seqset imap.SeqSet
 		seqset.AddRange(from, cursor)
 
-		fetchCmd := c.Fetch(seqset, &imap.FetchOptions{
-			Envelope:    true,
-			UID:         true,
-			Flags:       true,
-			BodySection: []*imap.FetchItemBodySection{deliveryHeaderSection},
-		})
-
-		batchMsgs, err := fetchCmd.Collect()
+		batchMsgs, err := c.Fetch(seqset, filter.fetchOptions()).Collect()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
-		batchEmails := filterAndBuildBatchEmails(batchMsgs, fetchEmail, account, isSentMailbox, deliveryHeaderSection)
+		batchEmails, skipped := filter.build(batchMsgs)
 
 		// Sort batch Newest -> Oldest by UID desc
 		sort.Slice(batchEmails, func(i, j int) bool {
@@ -634,10 +670,11 @@ func fetchIMAPEmails(account *config.Account, mailbox string, limit, offset uint
 		})
 
 		allEmails = append(allEmails, batchEmails...)
+		allSkipped = append(allSkipped, skipped...)
 		cursor = from - 1
 	}
 
-	return trimEmailsToLimit(allEmails, limit), nil
+	return trimEmailsToLimit(allEmails, limit), allSkipped, nil
 }
 
 func filterAndBuildBatchEmails(batchMsgs []*imapclient.FetchMessageBuffer, fetchEmail string, account *config.Account, isSentMailbox bool, deliveryHeaderSection *imap.FetchItemBodySection) []Email {

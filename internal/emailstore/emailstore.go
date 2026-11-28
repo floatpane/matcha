@@ -431,41 +431,11 @@ func FilterUnique(existing, incoming []fetcher.Email) []fetcher.Email {
 }
 
 func EmailsToCache(emails []fetcher.Email) []config.CachedEmail {
-	cached := make([]config.CachedEmail, 0, len(emails))
-	for _, email := range emails {
-		cached = append(cached, config.CachedEmail{
-			UID:        email.UID,
-			From:       email.From,
-			To:         email.To,
-			Subject:    email.Subject,
-			Date:       email.Date,
-			MessageID:  email.MessageID,
-			InReplyTo:  email.InReplyTo,
-			References: email.References,
-			AccountID:  email.AccountID,
-			IsRead:     email.IsRead,
-		})
-	}
-	return cached
+	return fetcher.ToCachedEmails(emails)
 }
 
 func CacheToEmails(cached []config.CachedEmail) []fetcher.Email {
-	emails := make([]fetcher.Email, 0, len(cached))
-	for _, c := range cached {
-		emails = append(emails, fetcher.Email{
-			UID:        c.UID,
-			From:       c.From,
-			To:         c.To,
-			Subject:    c.Subject,
-			Date:       c.Date,
-			MessageID:  c.MessageID,
-			InReplyTo:  c.InReplyTo,
-			References: c.References,
-			AccountID:  c.AccountID,
-			IsRead:     c.IsRead,
-		})
-	}
-	return emails
+	return fetcher.FromCachedEmails(cached)
 }
 
 func SaveFolderEmailsToCache(folderName string, emails []fetcher.Email) {
