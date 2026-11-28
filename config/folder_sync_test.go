@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -32,6 +33,24 @@ func TestFolderSyncStateRoundTrip(t *testing.T) {
 	}
 	if b, ok := LoadFolderSyncState("INBOX", "b"); !ok || b.UIDValidity != 9 {
 		t.Fatalf("account b = %+v, %v", b, ok)
+	}
+}
+
+func TestFolderSyncStateIsEncrypted(t *testing.T) {
+	isolateCache(t)
+	if err := SaveFolderSyncState("INBOX", "a", FolderSyncState{UIDValidity: 7}); err != nil {
+		t.Fatal(err)
+	}
+	path, err := folderSyncFile("INBOX")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := collectDataFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(files, path) {
+		t.Fatalf("%s missing from data files %v", path, files)
 	}
 }
 

@@ -93,10 +93,11 @@ func syncIMAPFolder(account *config.Account, mailbox string, known []Email, prev
 	state := config.FolderSyncState{
 		UIDValidity:   sel.UIDValidity,
 		HighestModSeq: sel.HighestModSeq,
+		Filter:        syncFilter(account),
 		FullAt:        prev.FullAt,
 	}
 
-	if needsFullSync(prev, hasPrev, sel, condStore, now) {
+	if needsFullSync(prev, hasPrev, sel, condStore, state.Filter, now) {
 		emails, skipped, err := fetchSelectedEmails(c, account, mailbox, sel.NumMessages, 0, 0)
 		if err != nil {
 			return nil, config.FolderSyncState{}, err
@@ -157,11 +158,21 @@ func syncIMAPFolder(account *config.Account, mailbox string, known []Email, prev
 	return mergeSync(known, present, readFlags, fresh), state, nil
 }
 
-func needsFullSync(prev config.FolderSyncState, hasPrev bool, sel *imap.SelectData, condStore bool, now time.Time) bool {
+// syncFilter names the account settings that decide which mail is skipped,
+// so a change to them refetches the folder.
+func syncFilter(account *config.Account) string {
+	if account.CatchAll {
+		return "*"
+	}
+	return determineFetchEmail(account)
+}
+
+func needsFullSync(prev config.FolderSyncState, hasPrev bool, sel *imap.SelectData, condStore bool, filter string, now time.Time) bool {
 	return !hasPrev ||
 		!condStore ||
 		sel.HighestModSeq == 0 ||
 		prev.UIDValidity != sel.UIDValidity ||
+		prev.Filter != filter ||
 		now.Sub(prev.FullAt) >= fullSyncInterval
 }
 

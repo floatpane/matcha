@@ -46,20 +46,24 @@ func TestMergeSyncFreshReplacesKnownCopy(t *testing.T) {
 
 func TestNeedsFullSync(t *testing.T) {
 	now := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
-	prev := config.FolderSyncState{UIDValidity: 7, HighestModSeq: 100, FullAt: now.Add(-time.Hour)}
+	prev := config.FolderSyncState{UIDValidity: 7, HighestModSeq: 100, Filter: "a@x.com", FullAt: now.Add(-time.Hour)}
 	sel := &imap.SelectData{UIDValidity: 7, HighestModSeq: 120}
+	f := prev.Filter
 
-	if needsFullSync(prev, true, sel, true, now) {
+	if needsFullSync(prev, true, sel, true, f, now) {
 		t.Fatal("fresh state with CONDSTORE should sync incrementally")
 	}
 	cases := map[string]func() bool{
-		"no state":         func() bool { return needsFullSync(prev, false, sel, true, now) },
-		"no CONDSTORE":     func() bool { return needsFullSync(prev, true, sel, false, now) },
-		"no HIGHESTMODSEQ": func() bool { return needsFullSync(prev, true, &imap.SelectData{UIDValidity: 7}, true, now) },
+		"no state":         func() bool { return needsFullSync(prev, false, sel, true, f, now) },
+		"no CONDSTORE":     func() bool { return needsFullSync(prev, true, sel, false, f, now) },
+		"no HIGHESTMODSEQ": func() bool { return needsFullSync(prev, true, &imap.SelectData{UIDValidity: 7}, true, f, now) },
 		"UIDVALIDITY change": func() bool {
-			return needsFullSync(prev, true, &imap.SelectData{UIDValidity: 8, HighestModSeq: 120}, true, now)
+			return needsFullSync(prev, true, &imap.SelectData{UIDValidity: 8, HighestModSeq: 120}, true, f, now)
 		},
-		"day since full": func() bool { return needsFullSync(prev, true, sel, true, now.Add(fullSyncInterval)) },
+		"filter change": func() bool {
+			return needsFullSync(prev, true, sel, true, syncFilter(&config.Account{Email: "a@x.com", CatchAll: true}), now)
+		},
+		"day since full": func() bool { return needsFullSync(prev, true, sel, true, f, now.Add(fullSyncInterval)) },
 	}
 	for name, full := range cases {
 		if !full() {

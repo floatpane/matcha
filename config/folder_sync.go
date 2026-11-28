@@ -17,6 +17,9 @@ type FolderSyncState struct {
 	// Skipped are UIDs fetched but left out of the list (mail for another
 	// address of a shared mailbox), so they are not fetched again.
 	Skipped []uint32 `json:"skipped,omitempty"`
+	// Filter is the address filter Skipped was built with; when the account's
+	// fetch address or catch-all setting changes, the folder is fetched in full.
+	Filter string `json:"filter,omitempty"`
 	// FullAt is when the folder was last fetched in full.
 	FullAt time.Time `json:"full_at"`
 }
